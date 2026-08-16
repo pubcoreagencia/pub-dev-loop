@@ -53,6 +53,7 @@ Antes de qualquer task: `git fetch`, verificar HEAD vs origin/main, ler `.agent/
   - `COMPLETED` → chama `TaskFinalizer.finalize()` → auto-commit
 - `FAILED_UNEXPECTED_CHANGES`: NOT YET IMPLEMENTED (limitation documentada)
 - `.agent/` é fonte canônica do contexto operacional; Git é fonte canônica do código
+- `CURRENT_STATE.md` uses `LAST_KNOWN_STABLE_COMMIT` (not volatile HEAD) to avoid bootstrap loop
 
 ### Limitations Conhecidas
 1. `CODEX_CLI_UNAVAILABLE` — CLI Codex não instalado no Windows
@@ -66,7 +67,8 @@ Antes de qualquer task: `git fetch`, verificar HEAD vs origin/main, ler `.agent/
 - `tests/finalizer.test.ts` — 11 testes (unit)
 - `tests/git-tool.test.ts` — 13 testes (integration)
 - `tests/executor.test.ts` — 6 testes (1 environmental: CODEX_CLI_UNAVAILABLE)
-- `src/context/agent-context.ts` — testes unitários incluídos em `tests/context/`
+- `tests/context/` — 3 arquivos, 23 testes (context loading, git state, handoff)
+- `src/context/cli.ts` — CLI de validação
 
 ### Comandos Oficiais
 ```bash
@@ -75,13 +77,14 @@ npm test             # vitest run
 # E2E real (necessita 9Router proxy rodando):
 RUN_9ROUTER_E2E=1 ROUTER_MODEL=ag/gemini-3-flash npx vitest run tests/e2e-real-worker.test.ts
 # Context validation:
-npx tsx src/context/agent-context.ts --validate
+npx tsx src/context/cli.ts --validate
+npx tsx src/context/cli.ts --summary
+npx tsx src/context/cli.ts --git-state
 ```
 
 ### Estado Atual
-- Branch: `main` @ `ed4142b`
+- Branch: `main` @ `41c72e2`
 - Origin: `pubcoreagencia/pub-dev-loop`
 - Build: ✅ exit 0
 - Tests: 70/71 pass (1 environmental)
-- E2E 9Router: ✅ 5/5 pass
 - Context: ✅ bootstrapped + validated (23 unit tests)

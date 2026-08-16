@@ -1,21 +1,21 @@
 # Current State
 
 ## Último Commit Estável
-`ed4142b` — task-000026: bootstrap context loader + validation tests
+`41c72e2` — task-000026: bootstrap context loader + validation tests
 
 ## Branch
 main
 
-## HEAD
-LOCAL:  `ed4142b01e8c712340cde8fdfcf9b8b277465f10`
-REMOTE: `851ca16c833c63eb755ed15dc2202c9430e2e245`
-**Sync: NO (1 commit local ahead) ⚠️** — awaiting approval to push
+## Git State (runtime)
+- Obtenha HEAD real via: `git rev-parse HEAD`
+- Ou via CLI: `npx tsx src/context/cli.ts --validate`
+- Este arquivo NÃO registra o SHA do commit que o contém (evita bootstrap loop).
+- Ver: DECISIONS.md §10 (Volatile HEAD Bootstrap Loop)
 
 ## Último Teste Validado
 ```
 npm test → 70 passed | 1 failed (CODEX_CLI_UNAVAILABLE) | 8 skipped
-RUN_9ROUTER_E2E=1 npx vitest run tests/e2e-real-worker.test.ts → 5 passed
-npx vitest run tests/context/ → 23 passed (new)
+npx vitest run tests/context/ → 23 passed
 ```
 
 ## Build

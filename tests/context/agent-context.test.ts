@@ -36,9 +36,9 @@ describe('AgentContext — Context Loading', () => {
   it('finds last completed task from TASKS.md', async () => {
     const ctx = await AgentContext.load();
     const last = ctx.getLastCompletedTask();
-    // TASK-000025 foi a última COMPLETE
+    // TASK-000026 foi a última COMPLETE
     expect(last).toBeDefined();
-    expect(last).toMatch(/TASK-0000(24|25)/);
+    expect(last).toMatch(/TASK-0000(25|26)/);
   });
 
   it('throws when .agent/ directory does not exist', async () => {

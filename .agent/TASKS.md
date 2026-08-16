@@ -24,11 +24,11 @@
 ## TASK-000026
 - **Objetivo**: Institucionalizar contexto compartilhado Codex ↔ Hermes + preparar próximo ciclo
 - **Status**: COMPLETE ✅
-- **Commit**: `ed4142b` — task-000026: bootstrap context loader + validation tests
+- **Commit**: `41c72e2` — task-000026: bootstrap context loader + validation tests
 - **Changes**:
   1. `src/context/agent-context.ts` — bootstrap module (AgentContext.load, getGitState, validateGit, findAgentDir)
-  2. `src/context/cli.ts` — CLI (—validate, —summary, —git-state)
+  2. `src/context/cli.ts` — CLI (--validate, --summary, --git-state)
   3. `tests/context/` — 3 test files, 23 tests (parsing, git state, handoff continuity)
-  4. `.agent/` updated to HEAD `ed4142b`
+  4. `.agent/` — 5 context files established + sync protocol documented
 - **Tests**: 23/23 context tests pass; 70/71 full suite (1 environmental: CODEX_CLI_UNAVAILABLE)
-- **Limitations**: Same as TASK-000025; LOCAL_HEAD != REMOTE_HEAD (pending push approval)
+- **Limitations**: Bootstrap loop resolved via LAST_KNOWN_STABLE_COMMIT + merge-base ancestor test

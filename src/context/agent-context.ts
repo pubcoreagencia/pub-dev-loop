@@ -114,7 +114,7 @@ function parseState(md: string): ParsedState {
   if (remoteMatch) result.remoteHead = remoteMatch[1];
 
   // HEAD from table format: | **CURRENT_HEAD** | `abc123` |
-  const tableLocal = tableValue(md, 'CURRENT_HEAD') ?? tableValue(md, 'LOCAL');
+  const tableLocal = tableValue(md, 'CURRENT_HEAD') ?? tableValue(md, 'LAST_KNOWN_STABLE_COMMIT') ?? tableValue(md, 'LOCAL');
   if (tableLocal) {
     const m = tableLocal.match(/([0-9a-f]{7,40})/);
     if (m) result.localHead = m[1];

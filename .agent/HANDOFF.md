@@ -7,15 +7,13 @@
 | **CURRENT_TASK** | TASK-000026 (COMPLETE) |
 | **CURRENT_AGENT** | Hermes |
 | **CURRENT_BRANCH** | main |
-| **CURRENT_HEAD** | `ed4142b01e8c712340cde8fdfcf9b8b277465f10` |
-| **REMOTE_HEAD** | `851ca16c833c63eb755ed15dc2202c9430e2e245` (1 commit behind) |
-| **CHANGES** | Context bootstrap module + 23 tests + .agent/ updates |
-| **TESTS** | 70 passed | 1 failed (CODEX_CLI_UNAVAILABLE) | 8 skipped; 23 context tests pass |
+| **LAST_KNOWN_STABLE_COMMIT** | `41c72e2` |
+| **LAST_TESTS_RUN** | 70 passed, 1 failed (CODEX_CLI_UNAVAILABLE), 8 skipped |
 | **BUILD** | ✅ exit 0 |
-| **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE (environmental)<br>2. FAILED_UNEXPECTED_CHANGES (not implemented)<br>3. RouterWorker permanente (not implemented)<br>4. GitHub web UI returns 404 (Git remote works)<br>5. 1 commit local ahead (pending push approval) |
+| **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE (environmental)<br>2. FAILED_UNEXPECTED_CHANGES (not implemented)<br>3. RouterWorker permanente (not implemented)<br>4. GitHub web UI returns 404 (Git remote works)<br>5. Bootstrap loop: context HEAD always 1 commit behind (use merge-base, not exact match) |
 | **NEXT_TASK** | TASK-000027 — RouterWorker permanente |
-| **DO_NOT_REPEAT** | Context bootstrap + sync protocol already implemented in 851ca16 + ed4142b. Do NOT re-create .agent/ files, re-implement agent-context.ts, or re-run sync push without checking git state first. |
-| **OPEN_RISKS** | 1. LOCAL_HEAD != REMOTE_HEAD until push approved<br>2. Local agent sessions may diverge if git fetch not run before task |
+| **DO_NOT_REPEAT** | Context bootstrap + sync protocol already implemented in 851ca16 + 41c72e2. Do NOT re-create .agent/ files, re-implement agent-context.ts, or re-run sync push without checking git state first. |
+| **OPEN_RISKS** | 1. Local commits not yet pushed — awaiting approval<br>2. Local agent sessions may diverge if git fetch not run before task |
 
 ## 4.2 — Before Starting Any Task
 
@@ -34,11 +32,12 @@
 
 ## 4.3 — After Completing Any Task
 
-1. Update `.agent/CURRENT_STATE.md` (HEAD, build, tests status)
+1. Update `.agent/CURRENT_STATE.md` (LAST_KNOWN_STABLE_COMMIT, build, tests status)
 2. Update `.agent/TASKS.md` (add completed task)
 3. Update `.agent/HANDOFF.md` (new handoff state)
 4. Commit code + context in the same change when possible
 5. Run `npm run build` + `npm test` before committing
+6. Do NOT record the commit's own SHA inside the files it contains (bootstrap loop)
 
 ## 4.4 — Branch Protocol
 
@@ -63,7 +62,7 @@ Both must read `.agent/*` before starting, and update it after finishing.
 ### Continuity Test
 `tests/context/handoff.test.ts` proves that a second agent reading `.agent/` from the repo (without chat history) can:
 - Identify the last completed task
-- Identify the last commit
+- Identify the last commit (LAST_KNOWN_STABLE_COMMIT)
 - Identify known limitations
 - Identify the NEXT_TASK
 - Continue working without prior conversation

@@ -40,3 +40,37 @@
 ## 9. Tool Surface Area
 - Available tools: `read_file`, `write_file`, `list_files`, `git_status`, `git_diff`, `git_commit`, `run_command`
 - `git_commit` is blocked at the system-prompt level (model discouraged from using it; worker handles auto-commit).
+
+
+## 10. Volatile HEAD Bootstrap Loop
+
+### Problem
+When a context file (e.g., `CURRENT_STATE.md`) records the exact git SHA of the
+commit that *contains* that file, a bootstrap loop occurs:
+
+1. Commit contains `CURRENT_STATE.md` with SHA `aaa...`
+2. HEAD is now `bbb...` (different from what's recorded)
+3. Context file says `aaa...` but git HEAD is `bbb...` → context is "stale"
+4. To fix → update context file → new commit → HEAD changes to `ccc...` → still stale
+
+### Solution
+**Do NOT record the exact SHA of the containing commit in context files.**
+
+Instead:
+- `CURRENT_STATE.md` uses `LAST_KNOWN_STABLE_COMMIT` — the last known good commit
+  from a *previous* commit, not the current one.
+- `HANDOFF.md` uses `LAST_KNOWN_STABLE_COMMIT` instead of `CURRENT_HEAD`.
+- To get the **real** current HEAD, agents call `git rev-parse HEAD` at runtime
+  via `AgentContext.getGitState()` or `cli.ts --git-state`.
+
+### Test Validation
+`tests/context/handoff.test.ts` uses `git merge-base --is-ancestor` to validate
+that the context's `LAST_KNOWN_STABLE_COMMIT` is an ancestor of the current
+`git rev-parse HEAD` — this handles the bootstrap delay correctly (the context
+HEAD will always be 1-N commits behind the actual HEAD when committed in the
+same batch).
+
+### Branch Protocol Note
+- `main` remains the canonical branch.
+- Work-in-progress: `agent/codex/<task-id>` or `agent/hermes/<task-id>`.
+- Never rebase or force-push to `main`.
