@@ -6,13 +6,13 @@ This document is the architectural source of truth for PUB DEV LOOP.
 
 PUB DEV LOOP is cloud-first and cloud-only. Local Windows and macOS computers are development clients, never operational components. GPT is the future planning/orchestration brain. PostgreSQL is the initial durable task-state store and queue. GitHub is the source of truth for source code.
 
-The V0.1 loop is: task API -> PostgreSQL queue -> ephemeral Codex worker -> isolated Git branch -> persisted result -> future GPT follow-up task. Workers run on Linux/Docker with temporary workspaces. The only MVP coding worker is Codex. `AgentExecutor` is the process-execution abstraction used by coding adapters.
+The V0.1 loop is: task API -> PostgreSQL queue -> ephemeral coding worker -> isolated Git branch -> persisted result -> future GPT follow-up task. Workers run on Linux/Docker with temporary workspaces. The MVP coding backends are Codex API and 9Router, selected through the provider abstraction. `AgentExecutor` is the process-execution abstraction used by coding adapters.
 
-GitHub Actions on an Ubuntu runner is the first experimental cloud runtime used to validate a real Codex worker. It is an ephemeral execution environment, not the definitive architecture; the same worker remains portable to Docker/Linux and future cloud runtimes.
+GitHub Actions on an Ubuntu runner is the first experimental cloud runtime used to validate the worker. It is an ephemeral execution environment, not the definitive architecture; the same worker remains portable to Docker/Linux and future cloud runtimes.
 
 ## Explicit exclusions
 
-Hermes, Antigravity, OpenClaw, dashboards, auto-merge, auto-push, automatic deployment, Kubernetes, and distributed messaging are out of scope. No worker may merge code automatically.
+Hermes, Antigravity, OpenClaw, dashboards, auto-merge, auto-push, automatic deployment, Kubernetes, and distributed messaging are out of scope. No worker may merge code automatically. The new 9Router gateway is a provider backend only; it does not replace worker isolation or give direct host access.
 
 ## Security
 
@@ -20,7 +20,7 @@ Secrets are injected at runtime by the deployment platform's Secret Manager; nev
 
 ## Evolution
 
-New workers must implement the existing worker/agent interfaces without changing orchestration or the task model. Multiple workers, richer test policies, secret-manager bindings, and cloud deployment are future work once the single-Codex loop is proven.
+New workers must implement the existing worker/agent interfaces without changing orchestration or the task model. Multiple workers, richer test policies, secret-manager bindings, and cloud deployment are future work once the single-Codex loop is proven. Provider selection now goes through `AGENT_PROVIDER`, with `mock`, `codex-api`, and `9router` as initial options.
 
 ## Historical direction
 

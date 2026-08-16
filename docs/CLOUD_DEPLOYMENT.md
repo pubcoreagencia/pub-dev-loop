@@ -18,7 +18,7 @@ O host precisa de Linux x86_64, Docker Engine com Docker Compose v2, saída HTTP
 
 `Dockerfile.worker` usa `node:22-bookworm-slim`, instala Git e o instalador Linux oficial do Codex, valida `codex --version` durante o build e executa como usuário `codex` não-root. O diretório temporário é `/tmp`; cada task ainda recebe um subdiretório temporário exclusivo, removido ao final.
 
-No host, obtenha o repositório e crie um arquivo de ambiente fora do Git, com permissões do administrador do host. Use `.env.example` somente como lista de chaves, nunca como arquivo de secrets. Configure `DATABASE_URL`, `AGENT_MODE=codex`, `AGENT_TIMEOUT_MS` e, opcionalmente, `CODEX_AUTH_SECRET_REF` como referência não secreta para auditoria de deployment.
+No host, obtenha o repositório e crie um arquivo de ambiente fora do Git, com permissões do administrador do host. Use `.env.example` somente como lista de chaves, nunca como arquivo de secrets. Configure `DATABASE_URL`, `AGENT_MODE=codex`, `AGENT_PROVIDER=codex-api`, `AGENT_TIMEOUT_MS` e, opcionalmente, `CODEX_AUTH_SECRET_REF` como referência não secreta para auditoria de deployment. Para 9Router, ajuste `AGENT_PROVIDER=9router`, `ROUTER_BASE_URL`, `ROUTER_MODEL` e, se necessário, `ROUTER_API_KEY`.
 
 O comando de subida é `docker compose up --build -d`. Verifique `docker compose ps`, `docker compose logs worker`, `docker compose exec worker npm run worker:health` e `curl http://localhost:3000/health`. O health check do worker valida configuração básica e executabilidade de Git e Codex; ele não valida saldo, permissão de conta ou conectividade de uma task real.
 
@@ -32,7 +32,7 @@ O worker só requer clone, fetch, branch e commit local neste MVP; push está de
 
 ## Codex headless
 
-O adapter executa `codex exec --sandbox workspace-write --ask-for-approval never <prompt>` sem shell, no repositório clonado dentro do workspace temporário. `AgentExecutor` captura stdout/stderr, redige valores sensíveis conhecidos, aplica `AGENT_TIMEOUT_MS` e termina o grupo de processos em timeout. Consulte a [documentação de modo não interativo](https://learn.chatgpt.com/docs/non-interactive-mode) antes de atualizar a versão/credencial do CLI.
+O adapter executa `codex -c approval_policy=never -c sandbox_mode=workspace-write exec <prompt>` sem shell, no repositório clonado dentro do workspace temporário. `AgentExecutor` captura stdout/stderr, redige valores sensíveis conhecidos, aplica `AGENT_TIMEOUT_MS` e termina o grupo de processos em timeout. Consulte a [documentação de modo não interativo](https://learn.chatgpt.com/docs/non-interactive-mode) antes de atualizar a versão/credencial do CLI.
 
 ## Teste controlado `hello.txt`
 

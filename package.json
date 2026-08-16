@@ -8,6 +8,7 @@
     "start": "node dist/api.js",
     "worker": "node dist/worker.js",
     "worker:health": "node dist/worker-health.js",
+    "router:health": "node dist/router-health.js",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:integration": "vitest run tests/integration/codex-hello.integration.test.ts",

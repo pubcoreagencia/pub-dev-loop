@@ -39,7 +39,9 @@ Task states: `QUEUED`, `ASSIGNED`, `RUNNING`, `TESTING`, `COMPLETED`, `FAILED`, 
 
 ## Real Codex Worker
 
-`AGENT_MODE=mock` is the safe default. To use the real worker, install the Codex CLI in the Linux worker image, authenticate it non-interactively using the credential mechanism supported by the deployed CLI, set `AGENT_MODE=codex`, and set `AGENT_TIMEOUT_MS` as appropriate. The adapter invokes the documented headless form `codex exec --sandbox workspace-write --ask-for-approval never <prompt>` only inside the task's isolated cloned workspace.
+`AGENT_MODE=mock` is the safe default. To use the real worker, install the Codex CLI in the Linux worker image, authenticate it non-interactively using the credential mechanism supported by the deployed CLI, set `AGENT_MODE=codex`, and set `AGENT_TIMEOUT_MS` as appropriate. The adapter invokes the documented headless form `codex -c approval_policy=never -c sandbox_mode=workspace-write exec <prompt>` only inside the task's isolated cloned workspace.
+
+`AGENT_PROVIDER` is the new explicit provider selector. Supported values are `mock`, `codex-api`, and `9router`. `codex-api` preserves the Codex worker path, while `9router` uses an OpenAI-compatible gateway as the planning brain and keeps filesystem, shell, and Git control inside the worker runtime.
 
 `AgentExecutor` starts the process without a shell, captures stdout/stderr, redacts common secret values before persistence, and kills a timed-out process. A missing CLI records `CODEX_CLI_UNAVAILABLE`; an inaccessible CLI returns structured `START_ERROR`; authentication failures are captured as failed process results. The Docker image intentionally does not claim to contain Codex: install and authenticate the official Linux CLI in the production worker image before enabling this mode. This retains Linux/container/headless compatibility and does not require any desktop UI. `AUTO_PUSH` and auto-merge are not implemented.
 
