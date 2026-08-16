@@ -5,9 +5,65 @@ import { rmSync, readFileSync } from 'node:fs';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { RouterProvider } from '../src/providers/router.js';
 import { RouterWorker } from '../src/router-worker.js';
+import { BaseWorker } from '../src/worker-service.js';
 import { TaskFinalizer, type FinalizeResult } from '../src/finalizer.js';
 import type { Task, TaskRepository } from '../src/domain.js';
 import type { AgentProvider, ProviderTaskResult } from '../src/providers/types.js';
+
+/**
+ * Test spy: extends the production RouterWorker but adds test-only
+ * observability (captures FinalizeResult).
+ *
+ * This keeps RouterWorker production-clean — test-only capture
+ * logic lives here, not in the production class.
+ */
+class RouterWorkerSpy extends RouterWorker {
+  /** Captured workspace path for validation */
+  capturedWorkspace: string | null = null;
+  /** Captured FinalizeResult for validation */
+  capturedFinalize: FinalizeResult | null = null;
+
+  protected async executeTask(task: Task, repo: string): Promise<{
+    stdout: string;
+    stderr: string;
+    exitCode: number | null;
+    status: 'COMPLETED' | 'FAILED';
+    provider: string | null;
+    model: string | null;
+    changedFiles: string[];
+    toolCalls: number;
+    toolRounds: number;
+    durationMs: number;
+    execution?: Record<string, unknown>;
+    errorCode?: string | null;
+  }> {
+    this.capturedWorkspace = repo;
+    return super.executeTask(task, repo);
+  }
+
+  protected async finalize(
+    task: Task,
+    repo: string,
+    result: { stdout: string; stderr: string; status: 'COMPLETED' | 'FAILED' },
+  ): Promise<FinalizeResult> {
+    const fr = await super.finalize(task, repo, result);
+    this.capturedFinalize = fr;
+    return fr;
+  }
+
+  get finalizeCalled(): boolean {
+    return this.finalizeWasCalled;
+  }
+
+  get finalizeStatus(): 'SKIPPED_AGENT_FAILED' | 'COMPLETED' | 'FAILED' | null {
+    return this.lastFinalize;
+  }
+
+  get lastFinalizeResult(): FinalizeResult | null {
+    return this.capturedFinalize;
+  }
+}
+
 
 function git(root: string | undefined, args: string[]): string {
   return execSync('git ' + args.join(' '), { cwd: root, stdio: ['pipe', 'pipe', 'pipe'] }).toString();
@@ -163,7 +219,7 @@ Não altere nenhum outro arquivo.`,
         process.env.ROUTER_API_KEY,
       );
 
-      const worker = new RouterWorker(taskRepo, provider);
+      const worker = new RouterWorkerSpy(taskRepo, provider);
 
       // Record HEAD before execution
       const headBefore = gitRevParseHead(repoMain);
@@ -285,7 +341,7 @@ Não altere nenhum outro arquivo.`,
         },
       };
 
-      const worker = new RouterWorker(taskRepo, mockProvider);
+      const worker = new RouterWorkerSpy(taskRepo, mockProvider);
 
       // Record HEAD before execution
       const headBefore = gitRevParseHead(repo2);
@@ -358,7 +414,7 @@ Não altere nenhum outro arquivo.`,
         },
       };
 
-      const worker = new RouterWorker(taskRepo, mockProvider);
+      const worker = new RouterWorkerSpy(taskRepo, mockProvider);
       await worker.executeOnce();
 
       const updatedTask = await taskRepo.get(task.id);
@@ -418,7 +474,7 @@ Não altere nenhum outro arquivo.`,
       };
 
       const headBefore = gitRevParseHead(repoMain);
-      const worker = new RouterWorker(taskRepo, mockProvider);
+      const worker = new RouterWorkerSpy(taskRepo, mockProvider);
       await worker.executeOnce();
 
       const updatedTask = await taskRepo.get(task.id);
@@ -506,7 +562,7 @@ Não altere nenhum outro arquivo.`,
         },
       };
 
-      const worker = new RouterWorker(taskRepo, mockProvider);
+      const worker = new RouterWorkerSpy(taskRepo, mockProvider);
       await worker.executeOnce();
 
       const updatedTask = await taskRepo.get(task.id);
