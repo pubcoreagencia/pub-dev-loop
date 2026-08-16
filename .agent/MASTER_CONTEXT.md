@@ -39,6 +39,7 @@ Antes de qualquer task: `git fetch`, verificar HEAD vs origin/main, ler `.agent/
 | `TaskFinalizer` | `src/finalizer.ts` | Valida + auto-commit (bloca push/reset/clean) |
 | `CodexWorker` | `src/worker-service.ts` | Worker concreto para Codex CLI |
 | `AgentContext` | `src/context/agent-context.ts` | Carrega/valida contexto operacional |
+|| `RouterWorker` | `src/router-worker.ts` | Worker permanente usando AgentProvider (RouterProvider) |
 
 ### Security Policies
 - `git_commit` tool: **modelo NÃO deve chamar** — system prompt instrui "Do NOT use git_commit"
@@ -83,8 +84,9 @@ npx tsx src/context/cli.ts --git-state
 ```
 
 ### Estado Atual
-- Branch: `main` @ `41c72e2`
+- Branch: `main` @ `e65e814` (synced)
 - Origin: `pubcoreagencia/pub-dev-loop`
 - Build: ✅ exit 0
-- Tests: 70/71 pass (1 environmental)
+- Tests: 78/87 pass (1 environmental: CODEX_CLI_UNAVAILABLE), 8 skipped
 - Context: ✅ bootstrapped + validated (23 unit tests)
+- RouterWorker: ✅ permanente implementado (`fe37d6c`)
