@@ -38,13 +38,14 @@ describe.skipIf(!enabled)('real Codex hello integration', () => {
         '',
         'Não altere nenhum outro arquivo.',
       ].join('\n');
+      const codexArgs = ['-c', 'approval_policy=never', '-c', 'sandbox_mode=workspace-write', 'exec', prompt];
 
       expect((await run(['status', '--porcelain'])).stdout).toBe('');
       expect((await run(['checkout', '-b', branch])).status).toBe('COMPLETED');
 
       const result = await executor.execute({
         command: 'codex',
-        args: ['exec', '--sandbox', 'workspace-write', '--ask-for-approval', 'never', prompt],
+        args: codexArgs,
         cwd: repository,
         timeoutMs,
         environment: process.env,
@@ -64,7 +65,7 @@ describe.skipIf(!enabled)('real Codex hello integration', () => {
               timeoutMs: 10_000,
               environment: process.env,
             })).stdout.trim(),
-            commandArgs: ['exec', '--sandbox', 'workspace-write', '--ask-for-approval', 'never', prompt],
+            commandArgs: codexArgs,
             exitCode: result.exitCode,
             durationMs: result.durationMs,
             stdout: safe(result.stdout),
