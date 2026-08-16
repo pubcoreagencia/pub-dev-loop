@@ -83,5 +83,17 @@
 - **Limitations**: None new — FAILED_UNEXPECTED_CHANGES v1 implemented
 
 ## TASK-000030
-- **Objetivo**: (pending definition)
-- **Status**: PENDING
+- **Objetivo**: Implementar retry/fallback de provider no RouterWorker
+- **Status**: COMPLETE ✅
+- **Commit**: `86850ac` — feat: implement provider retry with workspace isolation
+- **Changes**:
+  1. `src/providers/types.ts` — expanded ProviderResultStatus to include TOOL_LOOP_LIMIT, ROUTER_HTTP_ERROR, ROUTER_TIMEOUT, ROUTER_CONNECTION_ERROR; added httpStatus?: number to ProviderTaskResult
+  2. `src/providers/router.ts` — RouterProvider error returns use proper statuses (ROUTER_HTTP_ERROR with httpStatus, ROUTER_TIMEOUT/ROUTER_CONNECTION_ERROR for catch); added optional modelOverride parameter (4th constructor param)
+  3. `src/worker-service.ts` — added AttemptResult interface; BaseWorker.executeOnce() delegates to abstract executeWithRetry(); added CodexWorker.executeWithRetry() (single attempt, no retry)
+  4. `src/router-worker.ts` — implemented executeWithRetry() with provider retry/fallback, fresh workspace per attempt, hard global deadline, HTTP status classification (fail-closed on undefined), backoff capped to deadline; getProviderChain() supports only RouterProvider instances (kind === 'router')
+  5. `tests/worker-retry.test.ts` (NEW, 13 tests) — retry/fallback logic (10 tests) + workspace isolation (3 tests)
+  6. `tests/e2e-real-worker.test.ts` — RouterWorkerSpy updated to override executeWithRetry instead of executeTask
+  7. `tests/router.test.ts` — updated HTTP error test to expect ROUTER_HTTP_ERROR status
+- **Tests**: 13/13 worker-retry pass; 91 total pass (1 environmental: CODEX_CLI_UNAVAILABLE) | 8 skipped; REAL E2E fails (environmental: 9Router credentials 404)
+- **Limitations**: REAL E2E requires 9Router credentials (environmental)
+- **Invariant**: finalizer.ts and security.ts UNTOUCHED ✅
