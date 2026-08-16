@@ -94,6 +94,7 @@ describe('HANDOFF Continuity — Codex → Hermes', () => {
     const ctx = await AgentContext.load();
     // The handoff should contain a DO_NOT_REPEAT directive
     expect(ctx.loaded.handoff).toMatch(/DO_NOT_REPEAT/i);
-    expect(ctx.loaded.handoff.toLowerCase()).toContain('context bootstrap');
+    // Should mention what not to repeat
+    expect(ctx.loaded.handoff.toLowerCase()).toMatch(/not re[- ]?create|não recriar|routerworker/i);
   });
 });

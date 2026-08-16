@@ -4,16 +4,16 @@
 
 | Field | Value |
 |-------|-------|
-| **CURRENT_TASK** | TASK-000026 (COMPLETE) |
+| **CURRENT_TASK** | TASK-000028 (COMPLETE) |
 | **CURRENT_AGENT** | Hermes |
 | **CURRENT_BRANCH** | main |
-| **LAST_KNOWN_STABLE_COMMIT** | `41c72e2` |
-| **LAST_TESTS_RUN** | 70 passed, 1 failed (CODEX_CLI_UNAVAILABLE), 8 skipped |
+| **LAST_KNOWN_STABLE_COMMIT** | `521c4bd` |
+| **LAST_TESTS_RUN** | 78 passed, 1 failed (CODEX_CLI_UNAVAILABLE), 8 skipped |
 | **BUILD** | ✅ exit 0 |
-| **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE (environmental)<br>2. FAILED_UNEXPECTED_CHANGES (not implemented)<br>3. RouterWorker permanente (not implemented)<br>4. GitHub web UI returns 404 (Git remote works)<br>5. Bootstrap loop: context HEAD always 1 commit behind (use merge-base, not exact match) |
-| **NEXT_TASK** | TASK-000027 — RouterWorker permanente |
-| **DO_NOT_REPEAT** | Context bootstrap + sync protocol already implemented in 851ca16 + 41c72e2. Do NOT re-create .agent/ files, re-implement agent-context.ts, or re-run sync push without checking git state first. |
-| **OPEN_RISKS** | 1. Local commits not yet pushed — awaiting approval<br>2. Local agent sessions may diverge if git fetch not run before task |
+| **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE (environmental)<br>2. FAILED_UNEXPECTED_CHANGES (not implemented)<br>3. RouterWorker permanente — IMPLEMENTED (TASK-000028)<br>4. GitHub web UI returns 404 (Git remote works) |
+| **NEXT_TASK** | TASK-000029 |
+| **DO_NOT_REPEAT** | RouterWorker permanente implementado em src/router-worker.ts. Não recriar TestRouterWorker, não duplicar lógica de finalização. BaseWorker + TaskFinalizer já controlam todo commit/security/FAILED-guard. |
+| **OPEN_RISKS** | 1. E2E real requires RUN_9ROUTER_E2E=1 + 9Router proxy running (not available in current env)<br>2. Codex CLI not installed on Windows (environmental) |
 
 ## 4.2 — Before Starting Any Task
 

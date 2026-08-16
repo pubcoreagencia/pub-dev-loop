@@ -32,3 +32,23 @@
   4. `.agent/` — 5 context files established + sync protocol documented
 - **Tests**: 23/23 context tests pass; 70/71 full suite (1 environmental: CODEX_CLI_UNAVAILABLE)
 - **Limitations**: Bootstrap loop resolved via LAST_KNOWN_STABLE_COMMIT + merge-base ancestor test
+
+
+## TASK-000027
+- **Objetivo**: Validar sincronização Codex ↔ Hermes — checkpoint final
+- **Status**: COMPLETE ✅
+- **Commit**: N/A (checkpoint, no code changes)
+- **Result**: LOCAL_HEAD == REMOTE_HEAD (`521c4bd`), worktree clean, 78/78 new tests pass
+- **Changes**: Audit + validation only, no code modifications
+- **Limitations**: Nenhuma nova
+
+## TASK-000028
+- **Objetivo**: ROUTERWORKER PERMANENTE sobre BaseWorker + RouterProvider + TaskFinalizer
+- **Status**: COMPLETE ✅
+- **Commit**: (pending)
+- **Changes**:
+  1. `src/router-worker.ts` — permanent RouterWorker (extends BaseWorker, uses AgentProvider)
+  2. `tests/router-worker.test.ts` — 8 unit tests (status mapping, toolCalls, toolRounds, model, provider, execution)
+  3. `tests/e2e-real-worker.test.ts` — updated to use RouterWorker (removed TestRouterWorker)
+- **Tests**: 8/8 router-worker unit tests pass; 78 total pass (1 environmental: CODEX_CLI_UNAVAILABLE)
+- **Limitations**: E2E real requires RUN_9ROUTER_E2E=1 + 9Router proxy
