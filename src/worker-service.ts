@@ -52,6 +52,82 @@ export interface AttemptResult {
   execution?: Record<string, unknown>;
   errorCode?: string | null;
   errorMessage?: string | null;
+  /** Full execution trace for diagnostics (populated by retry-capable workers) */
+  trace?: WorkerExecutionTrace;
+}
+
+/**
+ * Trace of a single provider attempt within an execution.
+ * Preserved for diagnostics even when retryable (attempt was destroyed).
+ */
+export interface AttemptTrace {
+  /** Zero-based attempt index */
+  attempt: number;
+  /** Provider kind (e.g., '9router') */
+  provider: string;
+  /** Model used */
+  model: string | null;
+  /** Original provider result status BEFORE mapping to COMPLETED/FAILED */
+  status: ProviderResultStatus;
+  /** Whether this attempt's failure was retryable */
+  retryable: boolean;
+  /** Human-readable reason if retryable (e.g., 'provider_timeout', 'http_503', 'connection_error') */
+  retryReason: string | null;
+  /** HTTP status code (if ROUTER_HTTP_ERROR), undefined otherwise */
+  httpStatus: number | undefined;
+  /** Error code (if failed) */
+  errorCode: string | null;
+  /** Error message (if failed) */
+  errorMessage: string | null;
+  /** Tool calls made in this attempt */
+  toolCalls: number;
+  /** Tool rounds consumed in this attempt */
+  toolRounds: number;
+  /** Duration of this attempt in milliseconds */
+  durationMs: number;
+  /** Exit code from provider */
+  exitCode: number | null;
+  /** Per-attempt timeout applied (ms) */
+  attemptTimeoutMs: number;
+  /** Whether this attempt was the winner */
+  isWinner: boolean;
+  /** Lifecycle: workspace was created for this attempt */
+  workspaceCreated: boolean;
+  /** Lifecycle: workspace was cleaned up after this attempt */
+  workspaceCleaned: boolean;
+}
+
+/**
+ * Full execution trace for diagnostic purposes.
+ * Persisted in task.result.trace.
+ */
+export interface WorkerExecutionTrace {
+  /** Total elapsed time across all attempts */
+  totalDurationMs: number;
+  /** Number of attempts executed */
+  totalAttempts: number;
+  /** Number of providers in the chain */
+  providerChainLength: number;
+  /** Per-attempt traces */
+  attempts: AttemptTrace[];
+  /** Index of the winning attempt (if COMPLETED) */
+  winningAttempt: number | null;
+  /** Final task result status */
+  finalStatus: 'COMPLETED' | 'FAILED';
+  /** Final error code */
+  errorCode: string | null;
+  /** Final error message */
+  errorMessage: string | null;
+  /** Whether global timeout was hit */
+  timedOut: boolean;
+  /** Global timeout in ms (ROUTER_TIMEOUT_TOTAL_MS) */
+  globalTimeoutMs: number;
+  /** Whether TaskFinalizer.finalize() was called */
+  finalizeWasCalled: boolean;
+  /** Finalize result status */
+  finalizeStatus: 'COMPLETED' | 'FAILED' | 'SKIPPED_AGENT_FAILED' | null;
+  /** Commit SHA (if committed) */
+  commitSha: string | null;
 }
 
 export interface Worker {
@@ -217,7 +293,13 @@ export abstract class BaseWorker implements Worker {
             stdout: winningAttempt.stdout,
             stderr: winningAttempt.stderr,
             exitCode: winningAttempt.exitCode,
+            provider: winningAttempt.provider,
+            model: winningAttempt.model,
+            toolCalls: winningAttempt.toolCalls,
+            toolRounds: winningAttempt.toolRounds,
+            durationMs: winningAttempt.durationMs,
             finalize: null,
+            trace: winningAttempt.trace,
           },
         });
         return true;
@@ -238,6 +320,13 @@ export abstract class BaseWorker implements Worker {
       );
       this.lastFinalizeStatus = finalizeResult.status;
 
+      // Enrich trace with finalization outcome
+      if (winningAttempt.trace) {
+        winningAttempt.trace.finalizeWasCalled = this.finalizeWasCalled;
+        winningAttempt.trace.finalizeStatus = this.lastFinalize;
+        winningAttempt.trace.commitSha = finalizeResult.commitSha;
+      }
+
       // Update task with final status
       await this.tasks.update(task.id, {
         status: finalizeResult.status as Task['status'],
@@ -248,6 +337,12 @@ export abstract class BaseWorker implements Worker {
           summary: winningAttempt.stdout.slice(-8000),
           execution: winningAttempt.execution,
           finalize: finalizeResult,
+          trace: winningAttempt.trace,
+          provider: winningAttempt.provider,
+          model: winningAttempt.model,
+          toolCalls: winningAttempt.toolCalls,
+          toolRounds: winningAttempt.toolRounds,
+          durationMs: winningAttempt.durationMs,
         },
       });
 
@@ -300,7 +395,7 @@ export abstract class BaseWorker implements Worker {
     const baseline = captureWorkspaceSnapshot(repo);
 
     const result = await this.executeTask(task, repo);
-
+    const globalStart = Date.now();
     return {
       status: result.status,
       workspace: repo,
@@ -316,6 +411,39 @@ export abstract class BaseWorker implements Worker {
       durationMs: result.durationMs,
       execution: result.execution,
       errorCode: 'errorCode' in result ? result.errorCode : undefined,
+      trace: {
+        totalDurationMs: Date.now() - globalStart,
+        totalAttempts: 1,
+        providerChainLength: 1,
+        attempts: [{
+          attempt: 0,
+          provider: String(result.provider ?? 'unknown'),
+          model: result.model,
+          status: result.status === 'COMPLETED' ? 'COMPLETED' : 'FAILED',
+          retryable: false,
+          retryReason: null,
+          httpStatus: undefined,
+          errorCode: ('errorCode' in result ? result.errorCode : null) ?? null,
+          errorMessage: null,
+          toolCalls: result.toolCalls,
+          toolRounds: result.toolRounds,
+          durationMs: result.durationMs,
+          exitCode: result.exitCode,
+          attemptTimeoutMs: 0,
+          isWinner: result.status === 'COMPLETED',
+          workspaceCreated: true,
+          workspaceCleaned: false,
+        }],
+        winningAttempt: result.status === 'COMPLETED' ? 0 : null,
+        finalStatus: result.status,
+        errorCode: ('errorCode' in result ? result.errorCode : null) ?? null,
+        errorMessage: null,
+        timedOut: false,
+        globalTimeoutMs: Number(process.env.ROUTER_TIMEOUT_TOTAL_MS ?? 180000),
+        finalizeWasCalled: false,
+        finalizeStatus: null,
+        commitSha: null,
+      },
     };
   }
 
@@ -399,7 +527,7 @@ export class CodexWorker extends BaseWorker {
     const baseline = captureWorkspaceSnapshot(repo);
 
     const outcome = await this.agent.execute(task, repo);
-
+    const started = Date.now();
     return {
       status: 'COMPLETED',
       workspace: repo,
@@ -414,6 +542,39 @@ export class CodexWorker extends BaseWorker {
       toolRounds: 0,
       durationMs: 0,
       execution: outcome as unknown as Record<string, unknown>,
+      trace: {
+        totalDurationMs: Date.now() - started,
+        totalAttempts: 1,
+        providerChainLength: 1,
+        attempts: [{
+          attempt: 0,
+          provider: 'codex',
+          model: null,
+          status: 'COMPLETED',
+          retryable: false,
+          retryReason: null,
+          httpStatus: undefined,
+          errorCode: null,
+          errorMessage: null,
+          toolCalls: 0,
+          toolRounds: 0,
+          durationMs: 0,
+          exitCode: 0,
+          attemptTimeoutMs: 0,
+          isWinner: true,
+          workspaceCreated: true,
+          workspaceCleaned: false,
+        }],
+        winningAttempt: 0,
+        finalStatus: 'COMPLETED',
+        errorCode: null,
+        errorMessage: null,
+        timedOut: false,
+        globalTimeoutMs: 0,
+        finalizeWasCalled: false,
+        finalizeStatus: null,
+        commitSha: null,
+      },
     };
   }
 

@@ -1,6 +1,6 @@
-import type { AgentProvider, ProviderTaskResult } from './providers/types.js';
+import type { AgentProvider, ProviderTaskResult, ProviderResultStatus } from './providers/types.js';
 import type { Task, TaskRepository } from './domain.js';
-import { BaseWorker, type AttemptResult } from './worker-service.js';
+import { BaseWorker, type AttemptResult, type AttemptTrace, type WorkerExecutionTrace } from './worker-service.js';
 import type { WorkspaceSnapshot } from './finalizer.js';
 import { captureWorkspaceSnapshot } from './finalizer.js';
 import { RouterProvider } from './providers/router.js';
@@ -30,29 +30,50 @@ function sleep(ms: number): Promise<void> {
 }
 
 // Retryable provider statuses — per TASK-000030 v4.3
-const RETRYABLE_PROVIDER_STATUSES: ProviderTaskResult['status'][] = [
+const RETRYABLE_PROVIDER_STATUSES: ProviderResultStatus[] = [
   'TIMED_OUT',
   'ROUTER_TIMEOUT',
   'ROUTER_CONNECTION_ERROR',
 ];
 
 function isRetryableHttpStatus(statusCode: number | undefined): boolean {
+  // Fail closed: undefined httpStatus → NOT retryable
   if (statusCode === undefined) return false;
+  // 429 (Too Many Requests) → retryable
   if (statusCode === 429) return true;
+  // 5xx → retryable
   if (statusCode >= 500 && statusCode < 600) return true;
+  // 4xx (except 429) → fail-fast
   return false;
 }
 
 /**
  * Determine if a ProviderTaskResult is retryable.
- * Uses original ProviderTaskResult status BEFORE status mapping.
+ * Uses the original ProviderTaskResult BEFORE status mapping.
  */
 function isRetryableProviderResult(result: ProviderTaskResult): boolean {
   if (RETRYABLE_PROVIDER_STATUSES.includes(result.status)) return true;
   if (result.status === 'ROUTER_HTTP_ERROR') {
     return isRetryableHttpStatus(result.httpStatus);
   }
+  // FAILED, START_ERROR, TOOL_LOOP_LIMIT, COMPLETED → non-retryable
   return false;
+}
+
+/**
+ * Get a human-readable retry reason from a provider result.
+ */
+function getRetryReason(result: ProviderTaskResult): string | null {
+  if (result.status === 'TIMED_OUT') return 'provider_timeout';
+  if (result.status === 'ROUTER_TIMEOUT') return 'router_timeout';
+  if (result.status === 'ROUTER_CONNECTION_ERROR') return 'connection_error';
+  if (result.status === 'ROUTER_HTTP_ERROR') {
+    if (result.httpStatus !== undefined) {
+      return 'http_' + result.httpStatus;
+    }
+    return 'http_undefined';
+  }
+  return null;
 }
 
 function getRetryConfig(): {
@@ -120,6 +141,7 @@ export class RouterWorker extends BaseWorker {
           )
         );
       }
+      // Only 'router' kind supported — no other provider types in chain
     }
 
     return providers.length > 0 ? providers : [this.provider];
@@ -139,6 +161,7 @@ export class RouterWorker extends BaseWorker {
    * If COMPLETED -> return attempt result (winner)
    *
    * TaskFinalizer receives EXACTLY the winning attempt's workspace + baseline + changedFiles.
+   * A full WorkerExecutionTrace is included in the result for diagnostics.
    */
   protected async executeWithRetry(
     task: Task,
@@ -153,6 +176,7 @@ export class RouterWorker extends BaseWorker {
     const globalStart = Date.now();
     const deadline = globalStart + config.timeoutTotalMs;
 
+    const attemptTraces: AttemptTrace[] = [];
     const errors: { provider: string; status: string; message: string; attempt: number }[] = [];
 
     for (let attempt = 0; attempt < effectiveProviders.length; attempt++) {
@@ -176,6 +200,21 @@ export class RouterWorker extends BaseWorker {
           durationMs: Date.now() - globalStart,
           errorCode: 'ROUTER_TIMEOUT_TOTAL',
           errorMessage: 'Total timeout exceeded',
+          trace: {
+            totalDurationMs: Date.now() - globalStart,
+            totalAttempts: attempt,
+            providerChainLength: effectiveProviders.length,
+            attempts: attemptTraces,
+            winningAttempt: null,
+            finalStatus: 'FAILED',
+            errorCode: 'ROUTER_TIMEOUT_TOTAL',
+            errorMessage: 'Total timeout exceeded',
+            timedOut: true,
+            globalTimeoutMs: config.timeoutTotalMs,
+            finalizeWasCalled: false,
+            finalizeStatus: null,
+            commitSha: null,
+          },
         };
       }
 
@@ -185,13 +224,15 @@ export class RouterWorker extends BaseWorker {
       const branch = 'worker/' + this.name + '/' + task.id + '-attempt-' + attempt;
 
       let attemptBaseline: WorkspaceSnapshot | undefined;
+      let workspaceCleaned = false;
 
       try {
         // 3. CLONE (respecting deadline)
         const cloneRemaining = deadline - Date.now();
         if (cloneRemaining <= 0) {
           await rm(attemptWS, { recursive: true, force: true });
-          return this.createTotalTimeoutResult(globalStart, config.timeoutTotalMs);
+          workspaceCleaned = true;
+          return this.createTotalTimeoutResult(globalStart, config.timeoutTotalMs, attemptTraces, effectiveProviders.length);
         }
 
         await run('git', ['clone', repository, repo]);
@@ -205,7 +246,7 @@ export class RouterWorker extends BaseWorker {
         const providerRemaining = deadline - Date.now();
         const effectiveTimeout = Math.min(
           config.timeoutPerAttemptMs,
-          Math.max(0, providerRemaining)
+          Math.max(0, providerRemaining),
         );
 
         let subResult: ProviderTaskResult;
@@ -224,6 +265,7 @@ export class RouterWorker extends BaseWorker {
             errorMessage: 'Remaining budget exhausted before provider execution',
             toolCalls: 0,
             toolRounds: 0,
+            httpStatus: undefined,
           };
         } else {
           subResult = await Promise.race([
@@ -233,11 +275,54 @@ export class RouterWorker extends BaseWorker {
                 reject(new Error('Provider timeout after ' + effectiveTimeout + 'ms'));
               }, effectiveTimeout);
             }),
-          ]);
+          ]).catch((error: Error) => {
+            // Promise.race rejected → provider timed out
+            return {
+              status: 'ROUTER_TIMEOUT',
+              provider: provider.kind,
+              model: provider.model,
+              exitCode: null,
+              durationMs: Date.now() - globalStart,
+              stdout: '',
+              stderr: error.message,
+              changedFiles: [],
+              commit: null,
+              errorCode: 'ROUTER_TIMEOUT',
+              errorMessage: error.message,
+              toolCalls: 0,
+              toolRounds: 0,
+              httpStatus: undefined,
+            };
+          }) as ProviderTaskResult;
         }
+
+        // Collect attempt trace
+        const retryable = isRetryableProviderResult(subResult);
+        const trace: AttemptTrace = {
+          attempt,
+          provider: String(provider.kind),
+          model: provider.model,
+          status: subResult.status,
+          retryable,
+          retryReason: retryable ? getRetryReason(subResult) : null,
+          httpStatus: subResult.httpStatus,
+          errorCode: subResult.errorCode,
+          errorMessage: subResult.errorMessage,
+          toolCalls: subResult.toolCalls ?? 0,
+          toolRounds: subResult.toolRounds ?? 0,
+          durationMs: subResult.durationMs,
+          exitCode: subResult.exitCode,
+          attemptTimeoutMs: effectiveTimeout,
+          isWinner: false,
+          workspaceCreated: true,
+          workspaceCleaned: false,
+        };
+        attemptTraces.push(trace);
 
         if (!this.active) {
           await rm(attemptWS, { recursive: true, force: true });
+          workspaceCleaned = true;
+          attemptTraces[attemptTraces.length - 1].workspaceCleaned = true;
           return {
             status: 'FAILED',
             workspace: attemptWS,
@@ -253,14 +338,29 @@ export class RouterWorker extends BaseWorker {
             durationMs: Date.now() - globalStart,
             errorCode: 'WORKER_CANCELLED',
             errorMessage: 'Worker was cancelled',
+            trace: {
+              totalDurationMs: Date.now() - globalStart,
+              totalAttempts: attempt + 1,
+              providerChainLength: effectiveProviders.length,
+              attempts: attemptTraces,
+              winningAttempt: null,
+              finalStatus: 'FAILED',
+              errorCode: 'WORKER_CANCELLED',
+              errorMessage: 'Worker was cancelled',
+              timedOut: false,
+              globalTimeoutMs: config.timeoutTotalMs,
+              finalizeWasCalled: false,
+              finalizeStatus: null,
+              commitSha: null,
+            },
           };
         }
 
         // 6. CLASSIFY RESULT
-        const status: 'COMPLETED' | 'FAILED' =
-          subResult.status === 'COMPLETED' ? 'COMPLETED' : 'FAILED';
+        const isCompleted = subResult.status === 'COMPLETED';
 
-        if (status === 'COMPLETED') {
+        if (isCompleted) {
+          attemptTraces[attemptTraces.length - 1].isWinner = true;
           return {
             status: 'COMPLETED',
             workspace: repo,
@@ -277,12 +377,29 @@ export class RouterWorker extends BaseWorker {
             execution: subResult.execution as Record<string, unknown> | undefined,
             errorCode: subResult.errorCode,
             errorMessage: subResult.errorMessage,
+            trace: {
+              totalDurationMs: Date.now() - globalStart,
+              totalAttempts: attempt + 1,
+              providerChainLength: effectiveProviders.length,
+              attempts: attemptTraces,
+              winningAttempt: attempt,
+              finalStatus: 'COMPLETED',
+              errorCode: subResult.errorCode,
+              errorMessage: subResult.errorMessage,
+              timedOut: false,
+              globalTimeoutMs: config.timeoutTotalMs,
+              finalizeWasCalled: false,
+              finalizeStatus: null,
+              commitSha: null,
+            },
           };
         }
 
         // Non-COMPLETED — check retryable
-        if (!isRetryableProviderResult(subResult)) {
+        if (!retryable) {
           await rm(attemptWS, { recursive: true, force: true });
+          workspaceCleaned = true;
+          attemptTraces[attemptTraces.length - 1].workspaceCleaned = true;
           return {
             status: 'FAILED',
             workspace: attemptWS,
@@ -299,6 +416,21 @@ export class RouterWorker extends BaseWorker {
             execution: subResult.execution as Record<string, unknown> | undefined,
             errorCode: subResult.errorCode,
             errorMessage: subResult.errorMessage,
+            trace: {
+              totalDurationMs: Date.now() - globalStart,
+              totalAttempts: attempt + 1,
+              providerChainLength: effectiveProviders.length,
+              attempts: attemptTraces,
+              winningAttempt: null,
+              finalStatus: 'FAILED',
+              errorCode: subResult.errorCode,
+              errorMessage: subResult.errorMessage,
+              timedOut: false,
+              globalTimeoutMs: config.timeoutTotalMs,
+              finalizeWasCalled: false,
+              finalizeStatus: null,
+              commitSha: null,
+            },
           };
         }
 
@@ -312,33 +444,56 @@ export class RouterWorker extends BaseWorker {
 
         // Destroy this attempt's workspace BEFORE creating next attempt
         await rm(attemptWS, { recursive: true, force: true });
+        workspaceCleaned = true;
+        attemptTraces[attemptTraces.length - 1].workspaceCleaned = true;
 
         // BACKOFF (respecting deadline)
         if (attempt < effectiveProviders.length - 1) {
           const backoffRemaining = deadline - Date.now();
           if (backoffRemaining <= 0) {
-            return this.createTotalTimeoutResult(globalStart, config.timeoutTotalMs);
+            return this.createTotalTimeoutResult(globalStart, config.timeoutTotalMs, attemptTraces, effectiveProviders.length);
           }
           const backoffMs = Math.min(
             config.backoffMs * (attempt + 1),
-            backoffRemaining
+            backoffRemaining,
           );
           await sleep(backoffMs);
 
           if (deadline - Date.now() <= 0) {
-            return this.createTotalTimeoutResult(globalStart, config.timeoutTotalMs);
+            return this.createTotalTimeoutResult(globalStart, config.timeoutTotalMs, attemptTraces, effectiveProviders.length);
           }
         }
 
       } catch (error) {
+        // FIX: remainingBudget is scoped to the for-loop body; use deadline for timeout check
         await rm(attemptWS, { recursive: true, force: true }).catch(() => {});
         const elapsed = Date.now() - globalStart;
-
-        if (remainingBudget - elapsed <= 0) {
-          return this.createTotalTimeoutResult(globalStart, config.timeoutTotalMs);
+        if (deadline - Date.now() <= 0) {
+          return this.createTotalTimeoutResult(globalStart, config.timeoutTotalMs, attemptTraces, effectiveProviders.length);
         }
 
         // Other setup errors — START_ERROR (fail-fast)
+        const trace: AttemptTrace = {
+          attempt,
+          provider: provider.kind,
+          model: provider.model,
+          status: 'START_ERROR',
+          retryable: false,
+          retryReason: null,
+          httpStatus: undefined,
+          errorCode: 'START_ERROR',
+          errorMessage: error instanceof Error ? error.message : String(error),
+          toolCalls: 0,
+          toolRounds: 0,
+          durationMs: elapsed,
+          exitCode: null,
+          attemptTimeoutMs: Math.min(config.timeoutPerAttemptMs, Math.max(0, deadline - Date.now() - elapsed)),
+          isWinner: false,
+          workspaceCreated: true,
+          workspaceCleaned: true,
+        };
+        attemptTraces.push(trace);
+
         return {
           status: 'FAILED',
           workspace: attemptWS,
@@ -354,6 +509,21 @@ export class RouterWorker extends BaseWorker {
           durationMs: elapsed,
           errorCode: 'START_ERROR',
           errorMessage: error instanceof Error ? error.message : String(error),
+          trace: {
+            totalDurationMs: elapsed,
+            totalAttempts: attempt + 1,
+            providerChainLength: effectiveProviders.length,
+            attempts: attemptTraces,
+            winningAttempt: null,
+            finalStatus: 'FAILED',
+            errorCode: 'START_ERROR',
+            errorMessage: error instanceof Error ? error.message : String(error),
+            timedOut: false,
+            globalTimeoutMs: config.timeoutTotalMs,
+            finalizeWasCalled: false,
+            finalizeStatus: null,
+            commitSha: null,
+          },
         };
       }
     }
@@ -376,6 +546,22 @@ export class RouterWorker extends BaseWorker {
       errorCode: 'ALL_PROVIDERS_FAILED',
       errorMessage: 'All ' + effectiveProviders.length + ' providers failed:\n' +
         errors.map(e => '  Attempt ' + e.attempt + ' [' + e.provider + ']: ' + e.status + ' - ' + e.message).join('\n'),
+      trace: {
+        totalDurationMs: Date.now() - globalStart,
+        totalAttempts: effectiveProviders.length,
+        providerChainLength: effectiveProviders.length,
+        attempts: attemptTraces,
+        winningAttempt: null,
+        finalStatus: 'FAILED',
+        errorCode: 'ALL_PROVIDERS_FAILED',
+        errorMessage: 'All ' + effectiveProviders.length + ' providers failed:\n' +
+          errors.map(e => '  Attempt ' + e.attempt + ' [' + e.provider + ']: ' + e.status + ' - ' + e.message).join('\n'),
+        timedOut: false,
+        globalTimeoutMs: config.timeoutTotalMs,
+        finalizeWasCalled: false,
+        finalizeStatus: null,
+        commitSha: null,
+      },
     };
   }
 
@@ -413,7 +599,12 @@ export class RouterWorker extends BaseWorker {
     };
   }
 
-  private createTotalTimeoutResult(globalStart: number, totalMs: number): AttemptResult {
+  private createTotalTimeoutResult(
+    globalStart: number,
+    totalMs: number,
+    attemptTraces: AttemptTrace[],
+    chainLength: number,
+  ): AttemptResult {
     return {
       status: 'FAILED',
       workspace: '',
@@ -429,6 +620,21 @@ export class RouterWorker extends BaseWorker {
       durationMs: Date.now() - globalStart,
       errorCode: 'ROUTER_TIMEOUT_TOTAL',
       errorMessage: 'Total timeout exceeded',
+      trace: {
+        totalDurationMs: Date.now() - globalStart,
+        totalAttempts: attemptTraces.length,
+        providerChainLength: chainLength,
+        attempts: attemptTraces.map(t => ({ ...t })),
+        winningAttempt: null,
+        finalStatus: 'FAILED',
+        errorCode: 'ROUTER_TIMEOUT_TOTAL',
+        errorMessage: 'Total timeout exceeded',
+        timedOut: true,
+        globalTimeoutMs: totalMs,
+        finalizeWasCalled: false,
+        finalizeStatus: null,
+        commitSha: null,
+      },
     };
   }
 }
