@@ -15,7 +15,7 @@ const BLOCKED_GIT_COMMANDS = [
  * - Truncate to 200 chars
  * - Remove control characters
  */
-function sanitizeCommitMessage(message: string): string {
+export function sanitizeCommitMessage(message: string): string {
   let sanitized = message
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove control chars except \t \n \r
     .trim();
