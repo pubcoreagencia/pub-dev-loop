@@ -4,15 +4,15 @@
 
 | Field | Value |
 |-------|-------|
-| **CURRENT_TASK** | TASK-000028 (COMPLETE) |
+| **CURRENT_TASK** | TASK-000029 (COMPLETE) |
 | **CURRENT_AGENT** | Hermes |
 | **CURRENT_BRANCH** | main |
 | **LAST_KNOWN_STABLE_COMMIT** | `521c4bd` |
-| **LAST_TESTS_RUN** | 78 passed, 1 failed (CODEX_CLI_UNAVAILABLE), 8 skipped |
+| **LAST_TESTS_RUN** | 78 passed, 1 failed (CODEX_CLI_UNAVAILABLE), 8 skipped (+ 11 finalizer tests, 5 E2E real) |
 | **BUILD** | ✅ exit 0 |
-| **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE (environmental)<br>2. FAILED_UNEXPECTED_CHANGES (not implemented)<br>3. E2E real requires RUN_9ROUTER_E2E=1 + 9Router proxy<br>4. GitHub web UI returns 404 (Git remote works) |
-| **NEXT_TASK** | TASK-000029 |
-| **DO_NOT_REPEAT** | RouterWorker permanente implementado e PRODUCTION-CLEAN em src/router-worker.ts (76 lines). Apenas executeTask() — sem finalize override, sem getters de teste. Test observability isolada em RouterWorkerSpy (tests/e2e-real-worker.test.ts). VALIDADO via REAL E2E 5/5 com 9Router. Context bootstrap já implementado em src/context/agent-context.ts. |
+| **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE (environmental)<br>2. E2E real requires RUN_9ROUTER_E2E=1 + 9Router proxy<br>3. GitHub web UI returns 404 (Git remote works) |
+| **DO_NOT_REPEAT** | RouterWorker permanente em src/router-worker.ts (production-clean, 76 lines). FAILED_UNEXPECTED_CHANGES implementado em src/finalizer.ts (WorkspaceValidator + baseline capture). Test observability no RouterWorkerSpy. Context bootstrap em src/context/agent-context.ts. |
+| **NEXT_TASK** | TASK-000030 |
 | **OPEN_RISKS** | 1. E2E real precisa de 9Router proxy (RUN_9ROUTER_E2E=1 + 9Router running)<br>2. Codex CLI não instalado no Windows (environmental) |
 
 ## 4.2 — Before Starting Any Task
@@ -44,8 +44,6 @@
 When two agents work simultaneously:
 - Codex: `agent/codex/<task-id>`
 - Hermes: `agent/hermes/<task-id>`
-
-Until a formal orchestration system exists, do NOT assume two local sessions pointing to `main` are synchronized.
 
 ## 4.5 — Work Preservation
 

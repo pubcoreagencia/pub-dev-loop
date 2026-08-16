@@ -69,3 +69,19 @@
 ## TASK-000029
 - **Objetivo**: (pending definition)
 - **Status**: PENDING
+
+
+## TASK-000029
+- **Objetivo**: Implementar FAILED_UNEXPECTED_CHANGES workspace validation
+- **Status**: COMPLETE ✅
+- **Commit**: `1494669` — feat: implement FAILED_UNEXPECTED_CHANGES workspace validation
+- **Changes**:
+  1. `src/finalizer.ts` — WorkspaceSnapshot interface, WorkspaceValidator class, captureWorkspaceSnapshot export, baseline validation in finalize()
+  2. `src/worker-service.ts` — BaseWorker captures baseline snapshot after clone, passes to finalize()
+  3. `tests/finalizer.test.ts` (NEW, 11 tests) — unexpected change detection, pre-existing isolation, fail-closed
+- **Tests**: 11/11 finalizer unit tests pass; 5/5 REAL E2E; 78 total pass (1 environmental)
+- **Limitations**: None new — FAILED_UNEXPECTED_CHANGES v1 implemented
+
+## TASK-000030
+- **Objetivo**: (pending definition)
+- **Status**: PENDING
