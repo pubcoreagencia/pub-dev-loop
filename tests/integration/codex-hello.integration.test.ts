@@ -15,6 +15,12 @@ const run = (args: string[]) =>
     timeoutMs: 10_000,
     environment: process.env,
   });
+const safe = (value: string) =>
+  redact(value, process.env)
+    .replaceAll(/\bOPENAI_API_KEY\b/gi, '[REDACTED]')
+    .replaceAll(/\bAuthorization\b/gi, '[REDACTED]')
+    .replaceAll(/\bBearer\b/gi, '[REDACTED]')
+    .replaceAll(/\b(secrets?|credentials?)\b/gi, '[REDACTED]');
 
 describe.skipIf(!enabled)('real Codex hello integration', () => {
   it(
@@ -46,26 +52,34 @@ describe.skipIf(!enabled)('real Codex hello integration', () => {
 
       const gitStatus = await run(['status', '--short']);
       const gitDiffStat = await run(['diff', '--stat']);
+      const gitDiffHello = await run(['diff', '--', 'hello.txt']);
 
-      if (result.status !== 'COMPLETED') {
-        console.log(
-          JSON.stringify(
-            {
-              exitCode: result.exitCode,
-              durationMs: result.durationMs,
-              stdout: redact(result.stdout, process.env),
-              stderr: redact(result.stderr, process.env),
-              workspace: repository,
-              branch,
-              gitStatus: redact(gitStatus.stdout, process.env),
-              gitDiffStat: redact(gitDiffStat.stdout, process.env),
-              codexResultStatus: result.status,
-            },
-            null,
-            2,
-          ),
-        );
-      }
+      console.log(
+        JSON.stringify(
+          {
+            codexVersion: (await executor.execute({
+              command: 'codex',
+              args: ['--version'],
+              cwd: repository,
+              timeoutMs: 10_000,
+              environment: process.env,
+            })).stdout.trim(),
+            commandArgs: ['exec', '--sandbox', 'workspace-write', '--ask-for-approval', 'never', prompt],
+            exitCode: result.exitCode,
+            durationMs: result.durationMs,
+            stdout: safe(result.stdout),
+            stderr: safe(result.stderr),
+            workspace: repository,
+            branch,
+            gitStatus: safe(gitStatus.stdout),
+            gitDiffStat: safe(gitDiffStat.stdout),
+            gitDiffHello: safe(gitDiffHello.stdout),
+            resultStatus: result.status,
+          },
+          null,
+          2,
+        ),
+      );
 
       expect(result.status).toBe('COMPLETED');
 

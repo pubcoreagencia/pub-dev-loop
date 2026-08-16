@@ -17,7 +17,7 @@ export class CodexCliAgent implements CodingAgent {
 
     const execution=await this.executor.execute({
       command:this.command,
-      args:['exec','--sandbox','workspace-write','--ask-for-approval','never',task.prompt],
+      args:['-c','approval_policy=never','-c','sandbox_mode=workspace-write','exec',task.prompt],
       cwd:workspace,
       timeoutMs:this.timeoutMs
     });

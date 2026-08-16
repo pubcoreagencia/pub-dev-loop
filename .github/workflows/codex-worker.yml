@@ -39,9 +39,24 @@ jobs:
 
       - name: Verify Codex CLI
         id: codex
+        shell: bash
         run: |
+          set -euo pipefail
           codex --version
-          codex --help >/dev/null
+          codex --help > codex-help.txt
+          codex exec --help > codex-exec-help.txt
+          {
+            echo "## Codex CLI"
+            echo ""
+            echo "### Version"
+            codex --version
+            echo ""
+            echo "### codex --help"
+            sed -n '1,220p' codex-help.txt
+            echo ""
+            echo "### codex exec --help"
+            sed -n '1,220p' codex-exec-help.txt
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check Codex authentication secret
         id: auth
@@ -100,6 +115,7 @@ jobs:
             echo "## Codex cloud worker report"
             echo "- CODEX CLI STATUS: ${{ steps.codex.outcome || 'not-run' }}"
             echo "- CODEX VERSION: $(codex --version 2>/dev/null || echo unavailable)"
+            echo "- CODEX EXEC HELP: available in previous step summary"
             echo "- NODE VERSION: $(node --version)"
             echo "- GIT VERSION: $(git --version)"
             echo "- AUTH STATUS: $AUTH_STATUS"
