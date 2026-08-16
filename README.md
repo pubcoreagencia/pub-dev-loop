@@ -41,6 +41,8 @@ Task states: `QUEUED`, `ASSIGNED`, `RUNNING`, `TESTING`, `COMPLETED`, `FAILED`, 
 
 `AgentExecutor` starts the process without a shell, captures stdout/stderr, redacts common secret values before persistence, and kills a timed-out process. A missing CLI records `CODEX_CLI_UNAVAILABLE`; an inaccessible CLI returns structured `START_ERROR`; authentication failures are captured as failed process results. The Docker image intentionally does not claim to contain Codex: install and authenticate the official Linux CLI in the production worker image before enabling this mode. This retains Linux/container/headless compatibility and does not require any desktop UI. `AUTO_PUSH` and auto-merge are not implemented.
 
+For the first cloud proof, a manual GitHub Actions Ubuntu worker runs the real isolated `hello.txt` integration test. See [GitHub Actions Worker](docs/GITHUB_ACTIONS_WORKER.md). It is experimental and does not replace the Docker/Linux worker runtime.
+
 `Dockerfile.worker` is the Linux runtime for the Codex worker. It installs Git and the official Codex Linux installer, then runs as the non-root `codex` user. It intentionally contains no credentials. In cloud production, use the platform Secret Manager to inject the credential supported by the installed Codex CLI and set only the non-secret `CODEX_AUTH_SECRET_REF` for deployment observability. The application does not read or log that credential.
 
 ### Controlled real integration test

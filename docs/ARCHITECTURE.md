@@ -22,3 +22,5 @@ The real adapter detects whether `codex` is executable before task execution. It
 `Dockerfile.worker` is the dedicated Linux worker runtime. It installs Git and Codex from the official installer, verifies the binary at image build time, then executes as a non-root account. A cloud Secret Manager injects authentication at runtime; `CODEX_AUTH_SECRET_REF` is only an optional non-secret reference for deployment configuration and is never dereferenced by the application. Successful changes are committed on the isolated task branch but are never pushed or merged.
 
 Temporary workspaces are removed in `finally`. Git remote push and merging are intentionally excluded. PostgreSQL is the only persistent queue/result store in this version.
+
+GitHub Actions is the first experimental cloud runtime: an Ubuntu runner installs Codex, creates a disposable Git sandbox, and runs the real hello integration test. The runner is ephemeral and does not change `Worker`, `AgentExecutor`, queue, or GitHub source-of-truth boundaries. Docker/Linux remains the portable runtime path.

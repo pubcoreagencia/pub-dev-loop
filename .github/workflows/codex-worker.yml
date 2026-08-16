@@ -1,0 +1,73 @@
+name: Codex cloud worker proof
+on: { workflow_dispatch: {} }
+permissions: { contents: read }
+jobs:
+  codex-hello:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env: { AGENT_TIMEOUT_MS: "900000" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - name: Verify Git
+        id: git
+        run: git --version
+      - name: Install Codex CLI
+        id: codex_install
+        run: |
+          curl -fsSL https://chatgpt.com/codex/install.sh | sh
+          CODEX_BIN="$(find "$HOME" -type f -name codex -perm -u+x -print -quit)"
+          test -n "$CODEX_BIN"
+          dirname "$CODEX_BIN" >> "$GITHUB_PATH"
+      - name: Verify Codex CLI
+        id: codex
+        run: codex --version && codex --help >/dev/null
+      - name: Check Codex authentication secret
+        id: auth
+        env: { OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }} }
+        run: test -n "$OPENAI_API_KEY" && echo "status=configured" >> "$GITHUB_OUTPUT"
+      - name: Install dependencies
+        run: npm ci
+      - name: Build
+        id: build
+        run: npm run build
+      - name: Unit tests
+        id: unit
+        run: npm test
+      - name: Create disposable Git sandbox
+        run: |
+          SANDBOX="$(mktemp -d)"
+          git init "$SANDBOX"
+          git -C "$SANDBOX" config user.name "PUB DEV LOOP Test"
+          git -C "$SANDBOX" config user.email "test@pub.dev.loop"
+          printf '%s\n' '# Codex sandbox' > "$SANDBOX/README.md"
+          git -C "$SANDBOX" add README.md
+          git -C "$SANDBOX" commit -m "test: initialize sandbox"
+          echo "CODEX_INTEGRATION_REPOSITORY=$SANDBOX" >> "$GITHUB_ENV"
+      - name: Real Codex hello integration
+        id: integration
+        env: { RUN_CODEX_INTEGRATION: "1", OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }} }
+        run: npm run test:integration
+      - name: Worker report
+        if: always()
+        env:
+          AUTH_STATUS: ${{ steps.auth.outputs.status || 'not-run' }}
+          BUILD_STATUS: ${{ steps.build.outcome }}
+          UNIT_TEST_STATUS: ${{ steps.unit.outcome }}
+          INTEGRATION_TEST_STATUS: ${{ steps.integration.outcome }}
+        run: |
+          {
+            echo "## Codex cloud worker report"
+            echo "- CODEX CLI STATUS: ${{ steps.codex.outcome }}"
+            echo "- CODEX VERSION: $(codex --version 2>/dev/null || echo unavailable)"
+            echo "- NODE VERSION: $(node --version)"
+            echo "- GIT VERSION: $(git --version)"
+            echo "- AUTH STATUS: $AUTH_STATUS"
+            echo "- BUILD STATUS: $BUILD_STATUS"
+            echo "- UNIT TEST STATUS: $UNIT_TEST_STATUS"
+            echo "- INTEGRATION TEST STATUS: $INTEGRATION_TEST_STATUS"
+            echo "- GIT BRANCH: worker/codex/TASK-000005 (local only)"
+            echo "- GIT COMMIT: produced only inside the disposable sandbox"
+            echo "- RESULT: $INTEGRATION_TEST_STATUS"
+          } >> "$GITHUB_STEP_SUMMARY"

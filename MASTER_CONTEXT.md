@@ -8,6 +8,8 @@ PUB DEV LOOP is cloud-first and cloud-only. Local Windows and macOS computers ar
 
 The V0.1 loop is: task API -> PostgreSQL queue -> ephemeral Codex worker -> isolated Git branch -> persisted result -> future GPT follow-up task. Workers run on Linux/Docker with temporary workspaces. The only MVP coding worker is Codex. `AgentExecutor` is the process-execution abstraction used by coding adapters.
 
+GitHub Actions on an Ubuntu runner is the first experimental cloud runtime used to validate a real Codex worker. It is an ephemeral execution environment, not the definitive architecture; the same worker remains portable to Docker/Linux and future cloud runtimes.
+
 ## Explicit exclusions
 
 Hermes, Antigravity, OpenClaw, dashboards, auto-merge, auto-push, automatic deployment, Kubernetes, and distributed messaging are out of scope. No worker may merge code automatically.

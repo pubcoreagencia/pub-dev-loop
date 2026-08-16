@@ -10,6 +10,7 @@
     "worker:health": "node dist/worker-health.js",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
+    "test:integration": "vitest run tests/integration/codex-hello.integration.test.ts",
     "db:migrate": "tsx src/db/migrate.ts"
   },
   "dependencies": {
