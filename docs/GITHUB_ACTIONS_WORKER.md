@@ -14,6 +14,6 @@ O workflow roda `npm run test:integration` com `RUN_CODEX_INTEGRATION=1`. O test
 
 ## Resultado e troubleshooting
 
-O GitHub Actions Summary informa versões de Codex, Node e Git, estado de autenticação sem valor do secret, build, testes, integração, branch e resultado. Se a instalação falhar, veja o passo **Install Codex CLI**. Se autenticação falhar, confira a existência do Secret, sem copiá-lo para logs. Se `codex exec` falhar, o workflow permanece falho e o output redigido do teste mostra a causa; não há mock ou sucesso sintético.
+O GitHub Actions Summary informa versões de Codex, Node e Git, estado de autenticação sem valor do secret, build, testes, integração, branch e resultado. Se a instalação falhar, veja o passo **Install Codex CLI**. Se autenticação falhar, confira a existência do Secret, sem copiá-lo para logs. Se `codex exec` falhar, o workflow permanece falho e o output redigido do teste mostra a causa; não há mock ou sucesso sintético. A execução não interativa usa o modo explícito `codex exec --sandbox workspace-write --ask-for-approval never`.
 
 GitHub-hosted runners têm uma cota que varia por plano e podem não ser gratuitos para todos os repositórios/organizações. Este workflow é manual para limitar consumo. Consulte a [documentação oficial do Codex CLI](https://learn.chatgpt.com/docs/codex/cli) e o modo [não interativo](https://learn.chatgpt.com/docs/non-interactive-mode) ao atualizar a instalação ou a autenticação.

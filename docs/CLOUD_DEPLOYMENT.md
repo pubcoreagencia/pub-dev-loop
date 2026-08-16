@@ -32,7 +32,7 @@ O worker só requer clone, fetch, branch e commit local neste MVP; push está de
 
 ## Codex headless
 
-O adapter executa `codex exec --full-auto <prompt>` sem shell, no repositório clonado dentro do workspace temporário. `AgentExecutor` captura stdout/stderr, redige valores sensíveis conhecidos, aplica `AGENT_TIMEOUT_MS` e termina o grupo de processos em timeout. Consulte a [documentação de modo não interativo](https://learn.chatgpt.com/docs/non-interactive-mode) antes de atualizar a versão/credencial do CLI.
+O adapter executa `codex exec --sandbox workspace-write --ask-for-approval never <prompt>` sem shell, no repositório clonado dentro do workspace temporário. `AgentExecutor` captura stdout/stderr, redige valores sensíveis conhecidos, aplica `AGENT_TIMEOUT_MS` e termina o grupo de processos em timeout. Consulte a [documentação de modo não interativo](https://learn.chatgpt.com/docs/non-interactive-mode) antes de atualizar a versão/credencial do CLI.
 
 ## Teste controlado `hello.txt`
 
