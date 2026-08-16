@@ -48,7 +48,7 @@ describe('RouterProvider', () => {
       'C:/tmp/workspace',
     );
 
-    expect(result.status).toBe('FAILED');
+    expect(result.status).toBe('ROUTER_HTTP_ERROR');
     expect(result.exitCode).toBe(500);
     expect(result.errorCode).toBe('ROUTER_HTTP_ERROR');
   });

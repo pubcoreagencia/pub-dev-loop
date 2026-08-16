@@ -5,7 +5,7 @@ import { rmSync, readFileSync } from 'node:fs';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { RouterProvider } from '../src/providers/router.js';
 import { RouterWorker } from '../src/router-worker.js';
-import { BaseWorker } from '../src/worker-service.js';
+import { BaseWorker, type AttemptResult } from '../src/worker-service.js';
 import { TaskFinalizer, type FinalizeResult, type WorkspaceSnapshot } from '../src/finalizer.js';
 import type { Task, TaskRepository } from '../src/domain.js';
 import type { AgentProvider, ProviderTaskResult } from '../src/providers/types.js';
@@ -20,31 +20,23 @@ import type { AgentProvider, ProviderTaskResult } from '../src/providers/types.j
 class RouterWorkerSpy extends RouterWorker {
   /** Captured workspace path for validation */
   capturedWorkspace: string | null = null;
+  /** Captured workspace paths per attempt for retry validation */
+  capturedWorkspaces: string[] = [];
   /** Captured FinalizeResult for validation */
   capturedFinalize: FinalizeResult | null = null;
 
-  protected async executeTask(task: Task, repo: string): Promise<{
-    stdout: string;
-    stderr: string;
-    exitCode: number | null;
-    status: 'COMPLETED' | 'FAILED';
-    provider: string | null;
-    model: string | null;
-    changedFiles: string[];
-    toolCalls: number;
-    toolRounds: number;
-    durationMs: number;
-    execution?: Record<string, unknown>;
-    errorCode?: string | null;
-  }> {
-    this.capturedWorkspace = repo;
-    return super.executeTask(task, repo);
+  protected async executeWithRetry(task: Task, repository: string): Promise<AttemptResult> {
+    this.capturedWorkspace = null;
+    const attemptResult = await super.executeWithRetry(task, repository);
+    this.capturedWorkspace = attemptResult.workspace;
+    this.capturedWorkspaces.push(attemptResult.workspace);
+    return attemptResult;
   }
 
   protected async finalize(
     task: Task,
     repo: string,
-    result: { stdout: string; stderr: string; status: 'COMPLETED' | 'FAILED' },
+    result: AttemptResult,
     baselineSnapshot?: WorkspaceSnapshot,
     declaredChangedFiles?: string[],
   ): Promise<FinalizeResult> {
@@ -366,7 +358,7 @@ Não altere nenhum outro arquivo.`,
       expect(headAfter).toBe(headBefore);
 
       // VALIDATION: error info preserved
-      expect(updatedTask.error).toContain('FAILED');
+      expect(updatedTask.error).toMatch(/(TEST_FAILURE|FAILED)/);
 
       // VALIDATION: no commitSha
       expect(updatedTask.commitSha).toBeNull();
@@ -499,7 +491,7 @@ Não altere nenhum outro arquivo.`,
 
       // VALIDATION: error info preserved
       // BaseWorker.executeOnce() sets error to the worker guard message
-      expect(updatedTask.error).toContain('FAILED');
+      expect(updatedTask.error).toMatch(/(AGENT_FAILURE|FAILED)/);
     },
     30_000,
   );

@@ -66,7 +66,7 @@ function toOpenAITools(defs: ToolDefinition[]) {
 
 export class RouterProvider implements AgentProvider {
   readonly kind = '9router' as const;
-  readonly model = process.env.ROUTER_MODEL ?? null;
+  readonly model: string | null;
   readonly baseUrl: string;
   readonly apiKey: string | undefined;
   readonly timeoutMs: number;
@@ -77,12 +77,14 @@ export class RouterProvider implements AgentProvider {
     baseUrl = process.env.ROUTER_BASE_URL ?? DEFAULT_ROUTER_BASE_URL,
     apiKey = process.env.ROUTER_API_KEY,
     timeoutMs = Number(process.env.ROUTER_TIMEOUT_MS ?? 900000),
+    modelOverride?: string,
   ) {
     this.baseUrl = normalizeBaseUrl(baseUrl, DEFAULT_ROUTER_BASE_URL);
     this.apiKey = apiKey?.trim() || undefined;
     this.timeoutMs = timeoutMs;
     this.maxToolRounds = Number(process.env.ROUTER_MAX_TOOL_ROUNDS ?? 20);
     this.maxToolCalls = Number(process.env.ROUTER_MAX_TOOL_CALLS ?? 50);
+    this.model = modelOverride ?? process.env.ROUTER_MODEL ?? null;
   }
 
   async execute(task: Task, workspace: string): Promise<ProviderTaskResult> {
@@ -149,9 +151,10 @@ export class RouterProvider implements AgentProvider {
         if (!response.ok) {
           const errPayload = this.parseError(text);
           return {
-            status: 'FAILED',
+            status: 'ROUTER_HTTP_ERROR',
             provider: this.kind,
             model: modelUsed,
+            httpStatus: response.status,
             exitCode: response.status,
             durationMs: Date.now() - started,
             stdout: lastResponseText || '',
@@ -196,7 +199,7 @@ export class RouterProvider implements AgentProvider {
         for (const tc of toolCalls) {
           if (totalToolCalls >= this.maxToolCalls) {
             return {
-              status: 'FAILED',
+              status: 'TOOL_LOOP_LIMIT',
               provider: this.kind,
               model: modelUsed,
               exitCode: null,
@@ -259,7 +262,7 @@ export class RouterProvider implements AgentProvider {
       // Check if we hit the round limit
       if (round >= this.maxToolRounds && messages.length > 2) {
         return {
-          status: 'TIMED_OUT',
+          status: 'TOOL_LOOP_LIMIT',
           provider: this.kind,
           model: modelUsed,
           exitCode: null,
@@ -295,7 +298,7 @@ export class RouterProvider implements AgentProvider {
       const isAbort = message.includes('abort') || (error as any)?.name === 'AbortError';
 
       return {
-        status: 'FAILED',
+        status: isAbort ? 'ROUTER_TIMEOUT' : 'ROUTER_CONNECTION_ERROR',
         provider: this.kind,
         model: modelUsed,
         exitCode: null,

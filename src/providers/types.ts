@@ -3,8 +3,18 @@ import type { ExecutionResult } from '../executor.js';
 
 export type ProviderKind = 'mock' | 'codex-api' | '9router';
 
+export type ProviderResultStatus =
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'TIMED_OUT'
+  | 'START_ERROR'
+  | 'TOOL_LOOP_LIMIT'
+  | 'ROUTER_HTTP_ERROR'
+  | 'ROUTER_TIMEOUT'
+  | 'ROUTER_CONNECTION_ERROR';
+
 export interface ProviderTaskResult {
-  status: 'COMPLETED' | 'FAILED' | 'TIMED_OUT' | 'START_ERROR';
+  status: ProviderResultStatus;
   provider: ProviderKind;
   model: string | null;
   exitCode: number | null;
@@ -20,6 +30,7 @@ export interface ProviderTaskResult {
   toolRounds?: number;
   commitMessage?: string | null;
   testsPassed?: boolean | null;
+  httpStatus?: number;
 }
 
 export interface AgentProvider {

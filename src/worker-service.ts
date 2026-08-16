@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
+import type { ProviderTaskResult, ProviderResultStatus } from './providers/types.js';
 import { AgentExecutionError } from './agent.js';
 import type { CodingAgent } from './agent.js';
 import type { TaskRepository, Task } from './domain.js';
@@ -28,6 +29,31 @@ function run(cmd: string, args: string[], cwd?: string): Promise<string> {
   });
 }
 
+/**
+ * Result of a single provider attempt, including the workspace that produced it.
+ * The workspace, baselineSnapshot, and declaredChangedFiles form an inseparable unit.
+ */
+export interface AttemptResult {
+  status: 'COMPLETED' | 'FAILED';
+  /** Path to the attempt's workspace (repo directory). */
+  workspace: string;
+  /** Baseline snapshot of THIS attempt's workspace. */
+  baselineSnapshot: WorkspaceSnapshot;
+  /** Changed files declared by THIS attempt's provider. */
+  declaredChangedFiles: string[];
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  provider: string | null;
+  model: string | null;
+  toolCalls: number;
+  toolRounds: number;
+  durationMs: number;
+  execution?: Record<string, unknown>;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+}
+
 export interface Worker {
   executeOnce(): Promise<boolean>;
   status(): string;
@@ -50,6 +76,65 @@ export interface WorkerResult {
   errorMessage: string | null;
   stdout: string;
   stderr: string;
+}
+
+/**
+ * Retryable provider statuses — per TASK-000030 v4.3
+ */
+const RETRYABLE_STATUSES: ProviderResultStatus[] = [
+  'TIMED_OUT',
+  'ROUTER_TIMEOUT',
+  'ROUTER_CONNECTION_ERROR',
+];
+
+function isRetryableHttpStatus(statusCode: number | undefined): boolean {
+  // Fail closed: undefined httpStatus → NOT retryable
+  if (statusCode === undefined) return false;
+  // 429 (Too Many Requests) → retryable
+  if (statusCode === 429) return true;
+  // 5xx → retryable
+  if (statusCode >= 500 && statusCode < 600) return true;
+  // 4xx (except 429) → fail-fast
+  return false;
+}
+
+/**
+ * Determine if a ProviderTaskResult is retryable.
+ * Uses the original ProviderTaskResult BEFORE status mapping.
+ */
+function isRetryableProviderResult(result: ProviderTaskResult): boolean {
+  if (RETRYABLE_STATUSES.includes(result.status)) return true;
+  if (result.status === 'ROUTER_HTTP_ERROR') {
+    return isRetryableHttpStatus(result.httpStatus);
+  }
+  // FAILED, START_ERROR, TOOL_LOOP_LIMIT, COMPLETED → non-retryable
+  return false;
+}
+
+/**
+ * Sleep helper with duration cap.
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Retry config from environment — per TASK-000030 v4.3
+ */
+interface RetryConfig {
+  maxAttempts: number;
+  timeoutPerAttemptMs: number;
+  timeoutTotalMs: number;
+  backoffMs: number;
+}
+
+function getRetryConfig(): RetryConfig {
+  return {
+    maxAttempts: Number(process.env.ROUTER_MAX_ATTEMPTS ?? 3),
+    timeoutPerAttemptMs: Number(process.env.ROUTER_TIMEOUT_PER_ATTEMPT_MS ?? 60000),
+    timeoutTotalMs: Number(process.env.ROUTER_TIMEOUT_TOTAL_MS ?? 180000),
+    backoffMs: Number(process.env.ROUTER_BACKOFF_MS ?? 1000),
+  };
 }
 
 /**
@@ -92,11 +177,11 @@ export abstract class BaseWorker implements Worker {
   /**
    * Execute one task cycle:
    * 1. Claim task
-   * 2. Clone repo + create branch
-   * 3. Run agent
-   * 4. If agent FAILED → mark FAILED (no finalize, no commit)
-   * 5. If agent COMPLETED → finalize (validate + auto-commit)
-   * 6. Update task status
+   * 2. Delegate to executeWithRetry — subclasses create attempt workspaces, run providers, handle retry
+   * 3. If FAILED → mark FAILED (no finalize, no commit)
+   * 4. If COMPLETED → finalize (validate + auto-commit) using WINNING attempt's workspace + baseline
+   * 5. Update task status
+   * 6. Cleanup (only the winning workspace)
    */
   async executeOnce(): Promise<boolean> {
     const task = await this.tasks.claim(this.name);
@@ -104,55 +189,53 @@ export abstract class BaseWorker implements Worker {
 
     this.active = true;
 
-    let workspace: string | undefined;
+    let winningAttempt: AttemptResult | undefined;
     let branch: string | undefined;
-    /** Workspace baseline snapshot captured BEFORE agent runs. */
-    let baselineSnapshot: WorkspaceSnapshot | undefined;
 
     try {
       await this.tasks.update(task.id, { status: 'RUNNING' });
 
-      workspace = await mkdtemp(join(tmpdir(), 'pub-dev-loop-'));
-      const repo = join(workspace, 'repo');
-      branch = `worker/${this.name}/${task.id}`;
-
-      // Clone and create branch
-      await run('git', ['clone', task.repository, repo]);
-      await run('git', ['checkout', '-b', branch], repo);
-
-      // Capture baseline BEFORE agent runs — this isolates agent changes
-      // from any pre-existing workspace state.
-      baselineSnapshot = captureWorkspaceSnapshot(repo);
-
-      // Execute the agent
-      const result = await this.executeTask(task, repo);
+      // Delegate ALL attempt/workspace lifecycle to subclass.
+      // The subclass returns the WINNING attempt (workspace + baseline + changedFiles unified).
+      winningAttempt = await this.executeWithRetry(task, task.repository);
 
       if (!this.active) {
         throw new Error('Worker cancelled');
       }
 
-      // CRITICAL: Do not finalize or commit if the agent failed
-      if (result.status === 'FAILED') {
+      // FAILED guard — do not finalize or commit if agent failed
+      if (winningAttempt.status === 'FAILED') {
         this.lastFinalizeStatus = 'SKIPPED_AGENT_FAILED';
         await this.tasks.update(task.id, {
           status: 'FAILED',
           branch,
           gitStatus: 'skipped — agent returned FAILED',
-          error: `Agent returned FAILED status. No finalization or commit was performed.`,
+          error: winningAttempt.errorCode
+            ? `(${winningAttempt.errorCode}) ${winningAttempt.errorMessage || ''}`
+            : winningAttempt.errorMessage || 'Agent returned FAILED status. No finalization or commit was performed.',
           result: {
-            stdout: result.stdout,
-            stderr: result.stderr,
-            exitCode: result.exitCode,
+            stdout: winningAttempt.stdout,
+            stderr: winningAttempt.stderr,
+            exitCode: winningAttempt.exitCode,
             finalize: null,
           },
         });
         return true;
       }
 
+      branch = `worker/${this.name}/${task.id}`;
+
       await this.tasks.update(task.id, { status: 'TESTING' });
 
       // Finalize: validate + auto-commit (only when agent COMPLETED)
-      const finalizeResult = await this.finalize(task, repo, result, baselineSnapshot, result.changedFiles);
+      // Uses EXACTLY the winning attempt's workspace + baseline + declaredChangedFiles
+      const finalizeResult = await this.finalize(
+        task,
+        winningAttempt.workspace,           // ← winning attempt workspace
+        winningAttempt,
+        winningAttempt.baselineSnapshot,     // ← winning attempt baseline
+        winningAttempt.declaredChangedFiles,  // ← winning attempt declared files
+      );
       this.lastFinalizeStatus = finalizeResult.status;
 
       // Update task with final status
@@ -162,8 +245,8 @@ export abstract class BaseWorker implements Worker {
         commitSha: finalizeResult.commitSha,
         gitStatus: finalizeResult.gitStatus,
         result: {
-          summary: result.stdout.slice(-8000),
-          execution: result.execution,
+          summary: winningAttempt.stdout.slice(-8000),
+          execution: winningAttempt.execution,
           finalize: finalizeResult,
         },
       });
@@ -184,14 +267,62 @@ export abstract class BaseWorker implements Worker {
     } finally {
       this.active = false;
       this.state = 'IDLE';
-      if (workspace) {
-        await rm(workspace, { recursive: true, force: true });
+      // Cleanup ONLY the winning workspace — attempt workspaces destroyed by subclasses
+      if (winningAttempt?.workspace) {
+        await rm(winningAttempt.workspace, { recursive: true, force: true }).catch(() => {});
       }
     }
   }
 
   /**
+   * Subclasses implement retry/fallback logic.
+   * Must manage workspace lifecycle for each attempt:
+   * - Create fresh workspace per attempt
+   * - Clone repository into it
+   * - Capture baseline BEFORE provider execution
+   * - Execute provider on SAME workspace
+   * - Return AttemptResult with workspace + baseline + declaredChangedFiles as unified unit
+   *
+   * Default implementation: single attempt, no retry (CodexWorker behavior).
+   */
+  protected async executeWithRetry(
+    task: Task,
+    repository: string,
+  ): Promise<AttemptResult> {
+    // Default: single attempt, single workspace — current behavior
+    const ws = await mkdtemp(join(tmpdir(), 'pub-dev-loop-'));
+    const repo = join(ws, 'repo');
+    const branch = `worker/${this.name}/${task.id}`;
+
+    await run('git', ['clone', repository, repo]);
+    await run('git', ['checkout', '-b', branch], repo);
+
+    const baseline = captureWorkspaceSnapshot(repo);
+
+    const result = await this.executeTask(task, repo);
+
+    return {
+      status: result.status,
+      workspace: repo,
+      baselineSnapshot: baseline,
+      declaredChangedFiles: result.changedFiles,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.exitCode,
+      provider: result.provider,
+      model: result.model,
+      toolCalls: result.toolCalls,
+      toolRounds: result.toolRounds,
+      durationMs: result.durationMs,
+      execution: result.execution,
+      errorCode: 'errorCode' in result ? result.errorCode : undefined,
+    };
+  }
+
+  /**
    * Execute the task via the provider/agent. Returns the raw execution result.
+   * Subclasses may keep this for single-attempt use (CodexWorker).
+   * Deprecated in favor of executeWithRetry — retained for backward compatibility.
    */
   protected abstract executeTask(task: Task, workspace: string): Promise<{
     stdout: string;
@@ -205,6 +336,7 @@ export abstract class BaseWorker implements Worker {
     toolRounds: number;
     durationMs: number;
     execution?: Record<string, unknown>;
+    errorCode?: string | null;
   }>;
 
   /**
@@ -213,7 +345,7 @@ export abstract class BaseWorker implements Worker {
   protected async finalize(
     task: Task,
     repo: string,
-    result: { stdout: string; stderr: string; status: 'COMPLETED' | 'FAILED' },
+    result: AttemptResult,
     baselineSnapshot?: WorkspaceSnapshot,
     declaredChangedFiles?: string[],
   ): Promise<FinalizeResult> {
@@ -252,6 +384,40 @@ export class CodexWorker extends BaseWorker {
     this.agent = agent;
   }
 
+  protected async executeWithRetry(
+    task: Task,
+    repository: string,
+  ): Promise<AttemptResult> {
+    // CodexWorker: NO retry — single attempt, single workspace
+    const ws = await mkdtemp(join(tmpdir(), 'pub-dev-loop-'));
+    const repo = join(ws, 'repo');
+    const branch = `worker/${this.name}/${task.id}`;
+
+    await run('git', ['clone', repository, repo]);
+    await run('git', ['checkout', '-b', branch], repo);
+
+    const baseline = captureWorkspaceSnapshot(repo);
+
+    const outcome = await this.agent.execute(task, repo);
+
+    return {
+      status: 'COMPLETED',
+      workspace: repo,
+      baselineSnapshot: baseline,
+      declaredChangedFiles: [],
+      stdout: outcome.summary,
+      stderr: '',
+      exitCode: 0,
+      provider: 'codex',
+      model: null,
+      toolCalls: 0,
+      toolRounds: 0,
+      durationMs: 0,
+      execution: outcome as unknown as Record<string, unknown>,
+    };
+  }
+
+  // executeTask is still required by BaseWorker (abstract)
   protected async executeTask(task: Task, repo: string): Promise<{
     stdout: string;
     stderr: string;
@@ -264,6 +430,7 @@ export class CodexWorker extends BaseWorker {
     toolRounds: number;
     durationMs: number;
     execution?: Record<string, unknown>;
+    errorCode?: string | null;
   }> {
     const outcome = await this.agent.execute(task, repo);
     return {
