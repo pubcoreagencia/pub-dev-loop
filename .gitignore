@@ -1,0 +1,32 @@
+# Secrets and environment
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Build outputs
+.next/
+dist/
+build/
+out/
+coverage/
+
+# Runtime data
+logs/*.log
+*.log
+
+# Local worker state
+workers/**/runtime/
+workers/**/state/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.temp
