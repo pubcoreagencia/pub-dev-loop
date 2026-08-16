@@ -10,10 +10,10 @@
 | **LAST_KNOWN_STABLE_COMMIT** | `521c4bd` |
 | **LAST_TESTS_RUN** | 78 passed, 1 failed (CODEX_CLI_UNAVAILABLE), 8 skipped |
 | **BUILD** | ✅ exit 0 |
-| **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE (environmental)<br>2. FAILED_UNEXPECTED_CHANGES (not implemented)<br>3. RouterWorker permanente — IMPLEMENTED (TASK-000028)<br>4. GitHub web UI returns 404 (Git remote works) |
+| **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE (environmental)<br>2. FAILED_UNEXPECTED_CHANGES (not implemented)<br>3. E2E real requires RUN_9ROUTER_E2E=1 + 9Router proxy<br>4. GitHub web UI returns 404 (Git remote works) |
 | **NEXT_TASK** | TASK-000029 |
-| **DO_NOT_REPEAT** | RouterWorker permanente implementado em src/router-worker.ts. Não recriar TestRouterWorker, não duplicar lógica de finalização. BaseWorker + TaskFinalizer já controlam todo commit/security/FAILED-guard. Context bootstrap já implementado em src/context/agent-context.ts. |
-| **OPEN_RISKS** | 1. E2E real requires RUN_9ROUTER_E2E=1 + 9Router proxy running (not available in current env)<br>2. Codex CLI not installed on Windows (environmental) |
+| **DO_NOT_REPEAT** | RouterWorker permanente implementado em src/router-worker.ts e validado via REAL E2E (5/5 pass). Test-only observability (finalize capture) movido para RouterWorkerSpy em tests/e2e-real-worker.test.ts — NÃO reintroduzir test fields na classe de produção. Context bootstrap já implementado em src/context/agent-context.ts. |
+| **OPEN_RISKS** | 1. E2E real precisa de 9Router proxy (RUN_9ROUTER_E2E=1 + 9Router running)<br>2. Codex CLI não instalado no Windows (environmental) |
 
 ## 4.2 — Before Starting Any Task
 
