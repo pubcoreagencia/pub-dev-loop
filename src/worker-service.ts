@@ -9,6 +9,9 @@ import type { TaskRepository, Task } from './domain.js';
 import { TaskFinalizer, type FinalizeResult, type WorkspaceSnapshot, WorkspaceValidator } from './finalizer.js';
 import { captureWorkspaceSnapshot } from './finalizer.js';
 
+const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
+const HEARTBEAT_INTERVAL_MS = Number(process.env.WORKER_HEARTBEAT_MS ?? 10000);
+
 function run(cmd: string, args: string[], cwd?: string): Promise<string> {
   // Use execSync for cross-platform PATH resolution reliability.
   // spawn with shell: false doesn't find git on Windows/MSYS,
@@ -267,12 +270,34 @@ export abstract class BaseWorker implements Worker {
 
     let winningAttempt: AttemptResult | undefined;
     let branch: string | undefined;
+    // TASK-000032: Heartbeat for crash recovery / lease management
+    let heartbeat: NodeJS.Timeout | undefined;
+
+    const startHeartbeat = (id: string) => {
+      heartbeat = setInterval(async () => {
+        await this.tasks.heartbeat(id, new Date(Date.now() + LEASE_TIMEOUT_MS)).catch(() => {});
+      }, HEARTBEAT_INTERVAL_MS);
+      heartbeat.unref();
+    };
+
+    const stopHeartbeat = () => {
+      if (heartbeat) {
+        clearInterval(heartbeat);
+        heartbeat = undefined;
+      }
+    };
+
+    // Refresh lease when transitioning to RUNNING
+    const leaseDeadline = new Date(Date.now() + LEASE_TIMEOUT_MS);
+    await this.tasks.update(task.id, {
+      status: 'RUNNING',
+      leaseOwner: this.name,
+      leaseDeadline,
+    });
+    startHeartbeat(task.id);
 
     try {
-      await this.tasks.update(task.id, { status: 'RUNNING' });
-
       // Delegate ALL attempt/workspace lifecycle to subclass.
-      // The subclass returns the WINNING attempt (workspace + baseline + changedFiles unified).
       winningAttempt = await this.executeWithRetry(task, task.repository);
 
       if (!this.active) {
@@ -301,13 +326,23 @@ export abstract class BaseWorker implements Worker {
             finalize: null,
             trace: winningAttempt.trace,
           },
+          // Clear lease — task is terminal
+          leaseOwner: null,
+          leaseDeadline: null,
+          workspacePath: null,
         });
         return true;
       }
 
       branch = `worker/${this.name}/${task.id}`;
 
-      await this.tasks.update(task.id, { status: 'TESTING' });
+      // Refresh lease when transitioning to TESTING
+      await this.tasks.update(task.id, {
+        status: 'TESTING',
+        leaseOwner: this.name,
+        leaseDeadline: new Date(Date.now() + LEASE_TIMEOUT_MS),
+        workspacePath: winningAttempt.workspace,
+      });
 
       // Finalize: validate + auto-commit (only when agent COMPLETED)
       // Uses EXACTLY the winning attempt's workspace + baseline + declaredChangedFiles
@@ -344,6 +379,10 @@ export abstract class BaseWorker implements Worker {
           toolRounds: winningAttempt.toolRounds,
           durationMs: winningAttempt.durationMs,
         },
+        // Clear lease — task is terminal
+        leaseOwner: null,
+        leaseDeadline: null,
+        workspacePath: null,
       });
 
       return true;
@@ -356,10 +395,15 @@ export abstract class BaseWorker implements Worker {
         status: 'FAILED',
         error: error instanceof Error ? error.message.slice(0, 4000) : 'Unknown worker error',
         result: details,
+        // Clear lease — task is terminal
+        leaseOwner: null,
+        leaseDeadline: null,
+        workspacePath: null,
       });
 
       return true;
     } finally {
+      stopHeartbeat();
       this.active = false;
       this.state = 'IDLE';
       // Cleanup ONLY the winning workspace — attempt workspaces destroyed by subclasses

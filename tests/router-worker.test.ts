@@ -27,6 +27,10 @@ class TestTaskRepository implements TaskRepository {
       gitStatus: null,
       createdAt: new Date(),
       updatedAt: new Date(),
+      leaseOwner: null,
+      leaseDeadline: null,
+      heartbeatAt: null,
+      workspacePath: null,
     };
     this.tasks.set(task.id, task);
     return task;
@@ -68,6 +72,35 @@ class TestTaskRepository implements TaskRepository {
 
   async retry(id: string): Promise<Task | null> {
     return this.update(id, { status: 'QUEUED' });
+  }
+
+  async reclaimStuck(_worker: string, _leaseWindowMs: number, _now: Date): Promise<number> {
+    let count = 0;
+    for (const [id, task] of this.tasks) {
+      if (task.status === 'ASSIGNED' || task.status === 'RUNNING' || task.status === 'TESTING') {
+        if (!task.leaseDeadline || task.leaseDeadline < _now) {
+          task.status = 'QUEUED';
+          task.worker = null;
+          task.leaseOwner = null;
+          task.leaseDeadline = null;
+          task.workspacePath = null;
+          task.updatedAt = new Date();
+          this.tasks.set(id, task);
+          count++;
+        }
+      }
+    }
+    return count;
+  }
+
+  async heartbeat(id: string, deadline: Date): Promise<boolean> {
+    const task = this.tasks.get(id);
+    if (!task || !['ASSIGNED', 'RUNNING', 'TESTING'].includes(task.status)) return false;
+    task.leaseDeadline = deadline;
+    task.heartbeatAt = new Date();
+    task.updatedAt = new Date();
+    this.tasks.set(id, task);
+    return true;
   }
 }
 

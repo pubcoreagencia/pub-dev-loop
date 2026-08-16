@@ -1,12 +1,150 @@
-import { randomUUID } from 'node:crypto'; import { Pool } from 'pg'; import type { CreateTask, Task, TaskRepository, TaskStatus } from './domain.js';
-const map = (r: any): Task => ({ ...r, priority:Number(r.priority), result:r.result ?? null, worker:r.worker ?? null, error:r.error ?? null, branch:r.branch ?? null, commitSha:r.commit_sha ?? null, gitStatus:r.git_status ?? null, createdAt:r.created_at, updatedAt:r.updated_at });
+import type { Pool } from 'pg';
+import type { Task, TaskRepository } from './domain.js';
+
+const map = (r: Record<string, unknown>): Task => ({
+  id: r.id as string,
+  project: r.project as string,
+  repository: r.repository as string,
+  objective: r.objective as string,
+  prompt: r.prompt as string,
+  status: r.status as Task['status'],
+  priority: r.priority as number,
+  worker: r.worker as string | null,
+  result: (r.result as Record<string, unknown> | null) ?? null,
+  error: r.error as string | null,
+  branch: r.branch as string | null,
+  commitSha: r.commit_sha as string | null,
+  gitStatus: r.git_status as string | null,
+  createdAt: r.created_at as Date,
+  updatedAt: r.updated_at as Date,
+  leaseOwner: r.lease_owner as string | null,
+  leaseDeadline: r.lease_deadline as Date | null,
+  heartbeatAt: r.heartbeat_at as Date | null,
+  workspacePath: r.workspace_path as string | null,
+});
+
 export class PostgresTaskRepository implements TaskRepository {
-  constructor(private pool: Pool) {}
-  async create(input: CreateTask) { const q = `INSERT INTO tasks (id,project,repository,objective,prompt,priority) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`; return map((await this.pool.query(q,[randomUUID(),input.project,input.repository,input.objective,input.prompt,input.priority ?? 0])).rows[0]); }
-  async list() { return (await this.pool.query('SELECT * FROM tasks ORDER BY priority DESC, created_at ASC')).rows.map(map); }
-  async get(id:string) { const r=await this.pool.query('SELECT * FROM tasks WHERE id=$1',[id]); return r.rows[0] ? map(r.rows[0]) : null; }
-  async claim(worker:string) { const q=`WITH candidate AS (SELECT id FROM tasks WHERE status='QUEUED' ORDER BY priority DESC,created_at ASC FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE tasks SET status='ASSIGNED', worker=$1, updated_at=now() WHERE id=(SELECT id FROM candidate) RETURNING *`; const r=await this.pool.query(q,[worker]); return r.rows[0] ? map(r.rows[0]) : null; }
-  async update(id:string, patch:Partial<Task>) { const allowed: Record<string,string>={ status:'status',worker:'worker',result:'result',error:'error',branch:'branch',commitSha:'commit_sha',gitStatus:'git_status' }; const entries=Object.entries(patch).filter(([k,v])=>allowed[k] && v !== undefined); if(!entries.length)return this.get(id); const set=entries.map(([k],i)=>`${allowed[k]}=$${i+2}`).join(', '); const values=entries.map(([,v])=>v); const r=await this.pool.query(`UPDATE tasks SET ${set}, updated_at=now() WHERE id=$1 RETURNING *`,[id,...values]); return r.rows[0]?map(r.rows[0]):null; }
-  async cancel(id:string) { const r=await this.pool.query(`UPDATE tasks SET status='CANCELLED', updated_at=now() WHERE id=$1 AND status IN ('QUEUED','ASSIGNED') RETURNING *`,[id]); return r.rows[0]?map(r.rows[0]):null; }
-  async retry(id:string) { const r=await this.pool.query(`UPDATE tasks SET status='QUEUED', worker=NULL, result=NULL, error=NULL, branch=NULL, commit_sha=NULL, git_status=NULL, updated_at=now() WHERE id=$1 AND status IN ('FAILED','BLOCKED','CANCELLED','NEEDS_REVIEW') RETURNING *`,[id]); return r.rows[0]?map(r.rows[0]):null; }
+  constructor(private readonly pool: Pool) {}
+
+  async create(input: { project: string; repository: string; objective: string; prompt: string; priority?: number }): Promise<Task> {
+    const q = `INSERT INTO tasks (project, repository, objective, prompt, priority) VALUES ($1, $2, $3, $4, $5) RETURNING *`;
+    const r = await this.pool.query(q, [input.project, input.repository, input.objective, input.prompt, input.priority ?? 0]);
+    return map(r.rows[0]);
+  }
+
+  async list(): Promise<Task[]> {
+    const r = await this.pool.query(`SELECT * FROM tasks ORDER BY priority DESC, created_at ASC`);
+    return r.rows.map(map);
+  }
+
+  async get(id: string): Promise<Task | null> {
+    const r = await this.pool.query(`SELECT * FROM tasks WHERE id = $1`, [id]);
+    return r.rows[0] ? map(r.rows[0]) : null;
+  }
+
+  /**
+   * Claim the next QUEUED task and set lease fields atomically.
+   * Uses FOR UPDATE SKIP LOCKED to prevent double-claim across workers.
+   */
+  async claim(worker: string): Promise<Task | null> {
+    const q = `
+      WITH candidate AS (
+        SELECT id FROM tasks WHERE status = 'QUEUED'
+        ORDER BY priority DESC, created_at ASC
+        FOR UPDATE SKIP LOCKED LIMIT 1
+      )
+      UPDATE tasks SET
+        status = 'ASSIGNED',
+        worker = $1,
+        lease_owner = $1,
+        lease_deadline = now() + interval '30 seconds',
+        heartbeat_at = now(),
+        updated_at = now()
+      WHERE id = (SELECT id FROM candidate)
+      RETURNING *
+    `;
+    const r = await this.pool.query(q, [worker]);
+    return r.rows[0] ? map(r.rows[0]) : null;
+  }
+
+  /**
+   * Reclaim tasks stuck in transient states (ASSIGNED, RUNNING, TESTING)
+   * whose lease has expired. This is safe against double-execution because
+   * the lease_deadline + SKIP LOCKED pattern ensures only one worker
+   * (the one that wins the UPDATE) actually reclaims the task.
+   *
+   * Only tasks in ASSIGNED/RUNNING/TESTING can be reclaimed.
+   * Terminal states (COMPLETED, FAILED, BLOCKED, CANCELLED, NEEDS_REVIEW)
+   * are NEVER reclaimed.
+   */
+  async reclaimStuck(worker: string, leaseWindowMs: number, now: Date): Promise<number> {
+    const q = `
+      UPDATE tasks SET
+        status = 'QUEUED',
+        worker = $1,
+        lease_owner = $1,
+        lease_deadline = now() + interval '30 seconds',
+        heartbeat_at = now(),
+        updated_at = now(),
+        workspace_path = NULL
+      WHERE status IN ('ASSIGNED', 'RUNNING', 'TESTING')
+        AND lease_deadline IS NOT NULL
+        AND lease_deadline < $2
+        AND (updated_at < $2 - interval '5 seconds')
+      RETURNING id
+    `;
+    const r = await this.pool.query(q, [worker, now]);
+    return r.rowCount ?? 0;
+  }
+
+  /**
+   * Heartbeat: refresh the lease deadline while a task is actively executing.
+   * Called periodically by the worker during executeOnce() to prove liveness.
+   */
+  async heartbeat(id: string, deadline: Date): Promise<boolean> {
+    const q = `
+      UPDATE tasks SET
+        lease_deadline = $2,
+        heartbeat_at = now(),
+        updated_at = now()
+      WHERE id = $1
+        AND status IN ('ASSIGNED', 'RUNNING', 'TESTING')
+    `;
+    const r = await this.pool.query(q, [id, deadline]);
+    return r.rowCount !== null ? r.rowCount > 0 : false;
+  }
+
+  async update(id: string, patch: Partial<Task>): Promise<Task | null> {
+    const set: string[] = [];
+    const vals: unknown[] = [];
+    let i = 1;
+    for (const [k, v] of Object.entries(patch)) {
+      const col = k === 'commitSha' ? 'commit_sha'
+               : k === 'gitStatus' ? 'git_status'
+               : k === 'createdAt' ? 'created_at'
+               : k === 'updatedAt' ? 'updated_at'
+               : k === 'leaseOwner' ? 'lease_owner'
+               : k === 'leaseDeadline' ? 'lease_deadline'
+               : k === 'heartbeatAt' ? 'heartbeat_at'
+               : k === 'workspacePath' ? 'workspace_path'
+               : k;
+      set.push(`${col} = $${i}`);
+      vals.push(v);
+      i++;
+    }
+    if (set.length === 0) return this.get(id);
+    set.push(`updated_at = now()`);
+    const q = `UPDATE tasks SET ${set.join(', ')} WHERE id = $${i} RETURNING *`;
+    vals.push(id);
+    const r = await this.pool.query(q, vals);
+    return r.rows[0] ? map(r.rows[0]) : null;
+  }
+
+  async cancel(id: string): Promise<Task | null> {
+    return this.update(id, { status: 'CANCELLED' });
+  }
+
+  async retry(id: string): Promise<Task | null> {
+    return this.update(id, { status: 'QUEUED', worker: null, leaseOwner: null, leaseDeadline: null });
+  }
 }

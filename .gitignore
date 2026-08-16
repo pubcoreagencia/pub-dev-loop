@@ -2,6 +2,9 @@ node_modules/
 dist/
 .env
 .env.local
+.env.staging
+.env.staging.secret
+.env.production
 coverage/
 *.log
 .next/

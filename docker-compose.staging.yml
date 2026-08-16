@@ -1,0 +1,52 @@
+# TASK-000032: Staging deployment override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.staging.yml up --build
+#
+# Staging uses RouterWorker with 9Router provider (TASK-000030 retry/fallback active).
+# Requires real 9Router credentials and a real Git repository with clone access.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pubdevloop
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pubdevloop}
+      POSTGRES_DB: pubdevloop
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pubdevloop -d pubdevloop"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    volumes: [postgres_staging_data:/var/lib/postgresql/data]
+
+  api:
+    build: .
+    command: sh -c "npm run db:migrate && npm run start"
+    ports: ["3000:3000"]
+    env_file: .env.staging
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    command: sh -c "npm run db:migrate && npm run worker"
+    env_file: .env.staging
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "npm", "run", "worker:health"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+    # TMPDIR ensures workspaces go to a known location
+    environment:
+      TMPDIR: /tmp
+
+volumes:
+  postgres_staging_data:
