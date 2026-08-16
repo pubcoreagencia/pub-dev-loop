@@ -1,0 +1,13 @@
+import { mkdtemp, rm } from 'node:fs/promises'; import { tmpdir } from 'node:os'; import { join } from 'node:path'; import { spawn } from 'node:child_process'; import type { CodingAgent } from './agent.js'; import type { TaskRepository } from './domain.js';
+const run = (cmd:string,args:string[],cwd?:string) => new Promise<string>((resolve,reject)=>{const p=spawn(cmd,args,{cwd,shell:false});let o='';let e='';p.stdout.on('data',d=>o+=d);p.stderr.on('data',d=>e+=d);p.on('error',reject);p.on('close',c=>c===0?resolve(o):reject(new Error(`${cmd} failed (${c}): ${e}`)));});
+export interface Worker { executeOnce(): Promise<boolean>; status(): string; cancel(): Promise<void>; }
+export class CodexWorker implements Worker {
+  private state='IDLE'; private active=false;
+  constructor(private tasks:TaskRepository, private agent:CodingAgent, private name='codex') {}
+  status(){ return this.state; } async cancel(){ this.active=false; this.state='CANCELLED'; }
+  async executeOnce() { const task=await this.tasks.claim(this.name); if(!task)return false; this.active=true; let workspace:string|undefined;
+    try { await this.tasks.update(task.id,{status:'RUNNING'}); workspace=await mkdtemp(join(tmpdir(),'pub-dev-loop-')); const repo=join(workspace,'repo'); const branch=`worker/codex/${task.id}`; await run('git',['clone',task.repository,repo]); await run('git',['checkout','-b',branch],repo); const outcome=await this.agent.execute(task,repo); if(!this.active) throw new Error('Worker cancelled'); await this.tasks.update(task.id,{status:'TESTING'}); const gitStatus=(await run('git',['status','--short'],repo)).trim(); const commit=(await run('git',['rev-parse','HEAD'],repo)).trim(); await this.tasks.update(task.id,{status:'COMPLETED',branch,commitSha:commit,gitStatus,result:{summary:outcome.summary}}); this.state='IDLE'; return true;
+    } catch (error) { await this.tasks.update(task.id,{status:'FAILED',error:error instanceof Error ? error.message.slice(0,4000) : 'Unknown worker error'}); this.state='IDLE'; return true;
+    } finally { this.active=false; if(workspace)await rm(workspace,{recursive:true,force:true}); }
+  }
+}
