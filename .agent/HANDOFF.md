@@ -4,15 +4,15 @@
 
 | Field | Value |
 |-------|-------|
-|| **CURRENT_TASK** | TASK-000030 (COMPLETE) |
+|| **CURRENT_TASK** | TASK-000031 (COMPLETE) |
 || **CURRENT_AGENT** | Hermes |
 || **CURRENT_BRANCH** | main |
-|| **LAST_KNOWN_STABLE_COMMIT** | `86850ac` |
-|| **LAST_TESTS_RUN** | 91 passed, 1 failed (CODEX_CLI_UNAVAILABLE, environmental), 8 skipped (+ 13 worker-retry tests, 11 finalizer tests, 23 context tests) |
+|| **LAST_KNOWN_STABLE_COMMIT** | `e0843c0` |
+|| **LAST_TESTS_RUN** | 102 passed, 1 failed (CODEX_CLI_UNAVAILABLE, environmental), 8 skipped (+ 13 worker-retry tests, 11 finalizer tests, 11 worker-tracing tests, 23 context tests) |
 || **BUILD** | ✅ exit 0 |
 || **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE (environmental)<br>2. E2E real requires 9Router credentials (404 "No active credentials")<br>3. GitHub web UI returns 404 (Git remote works) |
-|| **DO_NOT_REPEAT** | RouterWorker: executeWithRetry() creates fresh workspace per attempt, clones repo, captures baseline, executes provider, returns unified AttemptResult. Retry only between RouterProvider instances. Fail-closed HTTP classification. BaseWorker.executeOnce() delegates to executeWithRetry, passes winner workspace+baseline+declaredChangedFiles to TaskFinalizer. CodexWorker: single attempt, no retry. RouterProvider: constructor accepts modelOverride (4th param). finalizer.ts and security.ts UNTOUCHED. |
-|| **NEXT_TASK** | TASK-000031 |
+|| **DO_NOT_REPEAT** | RouterWorker: executeWithRetry() creates fresh workspace per attempt, clones repo, captures baseline, executes provider, returns unified AttemptResult. Retry only between RouterProvider instances. Fail-closed HTTP classification. BaseWorker.executeOnce() delegates to executeWithRetry, passes winner workspace+baseline+declaredChangedFiles to TaskFinalizer. CodexWorker: single attempt, no retry. RouterProvider: constructor accepts modelOverride (4th param). finalizer.ts and security.ts UNTOUCHED. Tracing: AttemptTrace + WorkerExecutionTrace persisted in task.result.trace; no workspace paths persisted; remainingBudget bug in catch block fixed. |
+|| **NEXT_TASK** | TASK-000032 |
 || **OPEN_RISKS** | 1. REAL E2E test requires 9Router credentials (environmental)<br>2. Codex CLI not installed on Windows (environmental) |
 
 ## 4.2 — Before Starting Any Task

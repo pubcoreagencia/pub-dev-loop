@@ -56,6 +56,7 @@ Antes de qualquer task: `git fetch`, verificar HEAD vs origin/main, ler `.agent/
 - **Provider retry/fallback**: IMPLEMENTADO ✅ (TASK-000030) — retry only between RouterProvider instances
 - `executeWithRetry` pattern: subclasses manage attempt lifecycle (workspace, baseline, provider, retry)
 - `AttemptResult`: unified unit (workspace + baselineSnapshot + declaredChangedFiles)
+- `WorkerExecutionTrace`: ✅ IMPLEMENTADO (TASK-000031) — AttemptTrace + WorkerExecutionTrace persisted in `task.result.trace`; remainingBudget bug fixed; no workspace paths persisted
 - `.agent/` é fonte canônica do contexto operacional; Git é fonte canônica do código
 - `CURRENT_STATE.md` uses `LAST_KNOWN_STABLE_COMMIT` (not volatile HEAD) to avoid bootstrap loop
 
@@ -84,6 +85,7 @@ Antes de qualquer task: `git fetch`, verificar HEAD vs origin/main, ler `.agent/
 - `tests/executor.test.ts` — 6 testes (1 environmental: CODEX_CLI_UNAVAILABLE)
 - `tests/context/` — 3 arquivos, 23 testes (context loading, git state, handoff)
 - `tests/worker-retry.test.ts` — 13 testes (NEW: retry/fallback + workspace isolation)
+- `tests/worker-tracing.test.ts` — 11 testes (NEW: execution trace + bug fix)
 - `tests/router-worker.test.ts` — 8 testes (unit)
 - `src/context/cli.ts` — CLI de validação
 
@@ -101,9 +103,10 @@ npx tsx src/context/cli.ts --git-state
 ```
 
 ### Estado Atual
-- Branch: `main` @ `86850ac` (synced with origin)
+- Branch: `main` @ `e0843c0` (synced with origin)
 - Origin: `pubcoreagencia/pub-dev-loop`
 - Build: ✅ exit 0
-- Tests: 91 pass | 1 failed (CODEX_CLI_UNAVAILABLE, environmental) | 8 skipped | 1 fail (REAL E2E: 9Router credentials)
+- Tests: 102 pass | 1 failed (CODEX_CLI_UNAVAILABLE, environmental) | 8 skipped | 1 fail (REAL E2E: 9Router credentials)
 - Context: ✅ bootstrapped + validated (23 unit tests)
 - RouterWorker: ✅ permanente implementado com retry/fallback (TASK-000030)
+- Execution Trace: ✅ AttemptTrace + WorkerExecutionTrace (TASK-000031)

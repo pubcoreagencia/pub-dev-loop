@@ -97,3 +97,15 @@
 - **Tests**: 13/13 worker-retry pass; 91 total pass (1 environmental: CODEX_CLI_UNAVAILABLE) | 8 skipped; REAL E2E fails (environmental: 9Router credentials 404)
 - **Limitations**: REAL E2E requires 9Router credentials (environmental)
 - **Invariant**: finalizer.ts and security.ts UNTOUCHED ✅
+
+## TASK-000031
+- **Objetivo**: Implementar execução estruturada de traces diagnósticos + corrigir bug remainingBudget
+- **Status**: COMPLETE ✅
+- **Commit**: `e0843c0` — feat: structured execution traces with WorkerExecutionTrace
+- **Changes**:
+  1. `src/worker-service.ts` — added AttemptTrace + WorkerExecutionTrace interfaces; AttemptResult.trace field; BaseWorker.executeOnce() persists trace in task.result; CodexWorker.executeWithRetry() includes minimal trace
+  2. `src/router-worker.ts` — RouterWorker.executeWithRetry() collects AttemptTrace per attempt with provider/model/retryReason/httpStatus; builds WorkerExecutionTrace; **fixed remainingBudget scope bug** in catch block (was referencing loop-scoped variable)
+  3. `tests/worker-tracing.test.ts` (NEW, 11 tests) — full trace validation + bug fix test
+- **Tests**: 11/11 worker-tracing pass; 102 total pass (1 environmental: CODEX_CLI_UNAVAILABLE) | 8 skipped
+- **Limitations**: REAL E2E requires 9Router credentials (environmental)
+- **Invariants**: finalizer.ts and security.ts UNTOUCHED ✅; no workspace paths persisted in traces; BUG FIX: remainingBudget scope bug eliminated

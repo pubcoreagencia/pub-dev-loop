@@ -1,7 +1,7 @@
 # Current State
 
 ## Último Commit Estável
-`86850ac` — feat: implement provider retry with workspace isolation
+`e0843c0` — feat: structured execution traces with WorkerExecutionTrace
 
 ## Branch
 main
@@ -18,10 +18,11 @@ npm run build → ✅ exit 0
 npx vitest run tests/context/ → 23 passed (3 files)
 npx vitest run tests/router-worker.test.ts → 8 passed
 npx vitest run tests/finalizer.test.ts → 11 passed
-npx vitest run tests/worker-retry.test.ts → 13 passed (NEW)
+npx vitest run tests/worker-retry.test.ts → 13 passed
+npx vitest run tests/worker-tracing.test.ts → 11 passed (NEW)
 npx vitest run tests/router.test.ts → 6 passed
 RUN_9ROUTER_E2E=1 npx vitest run tests/e2e-real-worker.test.ts → 4 passed | 1 failed (REAL E2E: environmental — 9Router credentials 404)
-npx vitest run → 91 passed | 1 failed (CODEX_CLI_UNAVAILABLE, environmental) | 8 skipped
+npx vitest run → 102 passed | 1 failed (CODEX_CLI_UNAVAILABLE, environmental) | 8 skipped
 npx tsx src/context/cli.ts --validate → ✅ Context valid. Git state consistent.
 ```
 
@@ -55,7 +56,7 @@ npx tsx src/context/cli.ts --validate → ✅ Context valid. Git state consisten
 3. GitHub web UI returns 404 (mas Git remote + push funcionam)
 
 ## Task Atual
-TASK-000030 — COMPLETE ✅ (commit 86850ac)
+TASK-000031 — COMPLETE ✅ (commit e0843c0)
 
 ## Tasks Concluídas
 - TASK-000024 — PASS ✅ (commit f8ac9bb)
@@ -65,6 +66,7 @@ TASK-000030 — COMPLETE ✅ (commit 86850ac)
 - TASK-000028 — PASS ✅ (commit fe37d6c + d94fedc — RouterWorker permanente + production-clean)
 - TASK-000029 — PASS ✅ (commit 1494669 — FAILED_UNEXPECTED_CHANGES workspace validation)
 - TASK-000030 — PASS ✅ (commit 86850ac — provider retry/fallback with workspace isolation)
+- TASK-000031 — PASS ✅ (commit e0843c0 — structured execution traces + remainingBudget bugfix)
 
 ## Próxima Task
-TASK-000031 — (pending definition)
+TASK-000032 — (pending definition)
