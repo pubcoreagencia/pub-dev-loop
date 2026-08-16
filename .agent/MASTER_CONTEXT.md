@@ -58,7 +58,7 @@ Antes de qualquer task: `git fetch`, verificar HEAD vs origin/main, ler `.agent/
 
 ### Limitations Conhecidas
 1. `CODEX_CLI_UNAVAILABLE` — CLI Codex não instalado no Windows
-2. `FAILED_UNEXPECTED_CHANGES` — `allowUnexpectedFiles` não aplicado; `git add -A` cometa tudo
+2. `FAILED_UNEXPECTED_CHANGES` — IMPLEMENTADO ✅ (WorkspaceValidator + baseline); CODEX_CLI_UNAVAILABLE (environmental)
 3. `RouterWorker` permanente — não implementado (a usar `TestRouterWorker`)
 4. Retry, fallback, parallel tasks, auto-push/PR/merge — não implementados
 
