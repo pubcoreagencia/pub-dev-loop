@@ -7,6 +7,7 @@
     "dev": "tsx watch src/api.ts",
     "start": "node dist/api.js",
     "worker": "node dist/worker.js",
+    "worker:health": "node dist/worker-health.js",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "db:migrate": "tsx src/db/migrate.ts"
