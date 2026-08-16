@@ -4,3 +4,15 @@ dist/
 .env.local
 coverage/
 *.log
+.next/
+build/
+out/
+logs/*.log
+workers/**/runtime/
+workers/**/state/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.tmp
+*.temp

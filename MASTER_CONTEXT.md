@@ -21,3 +21,7 @@ Secrets are injected at runtime by the deployment platform's Secret Manager; nev
 ## Evolution
 
 New workers must implement the existing worker/agent interfaces without changing orchestration or the task model. Multiple workers, richer test policies, secret-manager bindings, and cloud deployment are future work once the single-Codex loop is proven.
+
+## Historical direction
+
+The remote history added a broader product vision: GPT plans and reviews, workers execute isolated tasks, Git provides auditability, and human approval remains available for risky changes. That direction is retained, but earlier references to Windows/macOS operational workers, Hermes, and Antigravity are superseded by the current cloud-only MVP scope above. The full original document remains preserved in the merged Git history.

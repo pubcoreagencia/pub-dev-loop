@@ -2,6 +2,8 @@
 
 Cloud-first MVP for a persistent coding-task loop: HTTP API -> PostgreSQL queue -> Codex worker -> Git branch -> persisted result.
 
+PUB DEV LOOP's broader purpose is to let GPT plan and review a controlled engineering loop while workers implement tasks and Git preserves the audit trail. The current operational MVP is deliberately cloud-only with Codex as its sole worker; broader multi-worker ambitions remain future work.
+
 ## Run locally with Docker
 
 1. Copy `.env.example` to `.env` and keep `AGENT_MODE=mock` initially.
