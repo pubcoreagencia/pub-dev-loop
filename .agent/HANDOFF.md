@@ -12,7 +12,7 @@
 | **BUILD** | ✅ exit 0 |
 | **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE (environmental)<br>2. FAILED_UNEXPECTED_CHANGES (not implemented)<br>3. E2E real requires RUN_9ROUTER_E2E=1 + 9Router proxy<br>4. GitHub web UI returns 404 (Git remote works) |
 | **NEXT_TASK** | TASK-000029 |
-| **DO_NOT_REPEAT** | RouterWorker permanente implementado em src/router-worker.ts e validado via REAL E2E (5/5 pass). Test-only observability (finalize capture) movido para RouterWorkerSpy em tests/e2e-real-worker.test.ts — NÃO reintroduzir test fields na classe de produção. Context bootstrap já implementado em src/context/agent-context.ts. |
+| **DO_NOT_REPEAT** | RouterWorker permanente implementado e PRODUCTION-CLEAN em src/router-worker.ts (76 lines). Apenas executeTask() — sem finalize override, sem getters de teste. Test observability isolada em RouterWorkerSpy (tests/e2e-real-worker.test.ts). VALIDADO via REAL E2E 5/5 com 9Router. Context bootstrap já implementado em src/context/agent-context.ts. |
 | **OPEN_RISKS** | 1. E2E real precisa de 9Router proxy (RUN_9ROUTER_E2E=1 + 9Router running)<br>2. Codex CLI não instalado no Windows (environmental) |
 
 ## 4.2 — Before Starting Any Task

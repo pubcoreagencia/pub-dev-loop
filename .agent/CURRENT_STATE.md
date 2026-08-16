@@ -18,29 +18,26 @@ npm run build → ✅ exit 0
 npx vitest run tests/context/ → 23 passed (3 files)
 npx vitest run tests/router-worker.test.ts → 8 passed
 npx vitest run → 78 passed | 1 failed (CODEX_CLI_UNAVAILABLE, environmental) | 8 skipped
-RUN_9ROUTER_E2E=1 npx vitest run tests/e2e-real-worker.test.ts → 5 passed (5 files)
+RUN_9ROUTER_E2E=1 ROUTER_MODEL=ag/gemini-3-flash npx vitest run tests/e2e-real-worker.test.ts → 5 passed
 ```
 
 ## Build
 ✅ exit code 0
 
+## RouterWorker Status
+✅ Permanente — `src/router-worker.ts` (76 lines, production-clean)
+- Extends BaseWorker, uses AgentProvider
+- Only implements executeTask() — no finalize override, no test-only getters
+- Test observability in RouterWorkerSpy (tests/e2e-real-worker.test.ts)
+
 ## Limitations
 1. CODEX_CLI_UNAVAILABLE — CLI Codex não instalado no Windows (environmental)
 2. FAILED_UNEXPECTED_CHANGES — não implementado
-3. E2E real requires RUN_9ROUTER_E2E=1 + 9Router proxy (skipped unless enabled)
+3. E2E real requires RUN_9ROUTER_E2E=1 + 9Router proxy (validado com 9Router ativo)
 4. GitHub web UI returns 404 (mas Git remote + push funcionam)
 
 ## Task Atual
 TASK-000028 — COMPLETE ✅
 
-## Tasks Concluídas
-- TASK-000024 — PASS ✅ (commit f8ac9bb)
-- TASK-000025 — PASS ✅ (commit a3ef616)
-- TASK-000026 — PASS ✅ (commit 41c72e2)
-- TASK-000027 — PASS ✅ (checkpoint sync verified)
-- TASK-000028 — PASS ✅ (commit fe37d6c + d94fedc — RouterWorker permanente + refatorado production-clean)
-
 ## Próxima Task
 TASK-000029 — (pending definition)
-
-Potential next: failed_unexpected_changes security validation, retry/fallback provider, PR/push approval workflow
