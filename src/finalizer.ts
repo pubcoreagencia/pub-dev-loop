@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import { WorkspaceSecurity } from './tools/security.js';
 import type { ToolExecutionContext } from './tools/types.js';
 import { sanitizeCommitMessage } from './tools/runtime.js';
@@ -198,30 +198,27 @@ export class TaskFinalizer {
 
   private async execRaw(command: string, args: string[]): Promise<{ status: string; stdout: string; stderr: string; exitCode: number | null }> {
     return new Promise(resolve => {
-      const proc = spawn(command, args, {
-        cwd: this.security.root,
-        shell: false,
-        timeout: this.ctx.commandTimeoutMs,
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      proc.stdout?.on('data', d => stdout += d);
-      proc.stderr?.on('data', d => stderr += d);
-
-      proc.on('error', () => {
-        resolve({ status: 'START_ERROR', stdout: '', stderr: 'Command not found', exitCode: null });
-      });
-
-      proc.on('close', code => {
-        resolve({
-          status: code === 0 ? 'COMPLETED' : 'FAILED',
-          stdout,
-          stderr,
-          exitCode: code,
+      try {
+        // execSync uses shell:true on Windows automatically for PATH resolution
+        const output = execSync(command + ' ' + args.map(a => '"' + a.replace(/"/g, '\\"') + '"').join(' '), {
+          cwd: this.security.root,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: this.ctx.commandTimeoutMs,
         });
-      });
+        resolve({
+          status: 'COMPLETED',
+          stdout: output.toString(),
+          stderr: '',
+          exitCode: 0,
+        });
+      } catch (error: any) {
+        resolve({
+          status: error.status === 0 ? 'COMPLETED' : 'FAILED',
+          stdout: error.stdout?.toString() || '',
+          stderr: error.stderr?.toString() || error.message || 'Command failed',
+          exitCode: typeof error.status === 'number' ? error.status : null,
+        });
+      }
     });
   }
 

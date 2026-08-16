@@ -33,6 +33,8 @@ function buildSystemPrompt(workspace: string, task: Task): OpenAIChatMessage {
       'You have access to the following tools. Use them to complete the task.',
       'Always resolve file paths within the workspace. Never write outside it.',
       'After writing a file, read it back to verify contents.',
+      'IMPORTANT: Do NOT use git_commit tool — the worker will automatically commit changes after you complete.',
+      'IMPORTANT: Do NOT run git commands (git add, git status, etc.) — the worker handles git operations.',
       'After completing all work, provide a final summary without further tool calls.',
       `Workspace: ${workspace}`,
       `Task ID: ${task.id}`,
@@ -158,6 +160,8 @@ export class RouterProvider implements AgentProvider {
             commit: null,
             errorCode: 'ROUTER_HTTP_ERROR',
             errorMessage: `HTTP ${response.status}: ${errPayload.message || ''}`,
+            toolCalls: totalToolCalls,
+            toolRounds: toolRounds,
           };
         }
 
@@ -203,6 +207,8 @@ export class RouterProvider implements AgentProvider {
               commit: null,
               errorCode: 'TOOL_LOOP_LIMIT',
               errorMessage: `Exceeded max tool calls (${this.maxToolCalls})`,
+              toolCalls: totalToolCalls,
+              toolRounds: toolRounds,
             };
           }
           totalToolCalls++;
@@ -264,6 +270,8 @@ export class RouterProvider implements AgentProvider {
           commit: null,
           errorCode: 'TOOL_LOOP_LIMIT',
           errorMessage: `Exceeded max tool rounds (${this.maxToolRounds})`,
+          toolCalls: totalToolCalls,
+          toolRounds: toolRounds,
         };
       }
 
@@ -279,6 +287,8 @@ export class RouterProvider implements AgentProvider {
         commit: null,
         errorCode: null,
         errorMessage: null,
+        toolCalls: totalToolCalls,
+        toolRounds: toolRounds,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Router request failed';
@@ -296,6 +306,8 @@ export class RouterProvider implements AgentProvider {
         commit: null,
         errorCode: isAbort ? 'ROUTER_TIMEOUT' : 'ROUTER_CONNECTION_ERROR',
         errorMessage: message,
+        toolCalls: totalToolCalls,
+        toolRounds: toolRounds,
       };
     } finally {
       clearTimeout(timer);

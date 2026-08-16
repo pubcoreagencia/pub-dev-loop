@@ -16,6 +16,10 @@ export interface ProviderTaskResult {
   errorCode: string | null;
   errorMessage: string | null;
   execution?: ExecutionResult;
+  toolCalls?: number;
+  toolRounds?: number;
+  commitMessage?: string | null;
+  testsPassed?: boolean | null;
 }
 
 export interface AgentProvider {

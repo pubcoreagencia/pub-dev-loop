@@ -1,22 +1,31 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawn } from 'node:child_process';
+import { execSync } from 'node:child_process';
 import { AgentExecutionError } from './agent.js';
 import type { CodingAgent } from './agent.js';
 import type { TaskRepository, Task } from './domain.js';
 import { TaskFinalizer, type FinalizeResult } from './finalizer.js';
 
-const run = (cmd: string, args: string[], cwd?: string) =>
-  new Promise<string>((resolve, reject) => {
-    const p = spawn(cmd, args, { cwd, shell: false });
-    let o = '';
-    let e = '';
-    p.stdout?.on('data', d => (o += d));
-    p.stderr?.on('data', d => (e += d));
-    p.on('error', reject);
-    p.on('close', c => (c === 0 ? resolve(o) : reject(new Error(`${cmd} failed (${c}): ${e}`))));
+function run(cmd: string, args: string[], cwd?: string): Promise<string> {
+  // Use execSync for cross-platform PATH resolution reliability.
+  // spawn with shell: false doesn't find git on Windows/MSYS,
+  // and spawn with shell: true tries cmd.exe which may not exist.
+  // execSync (spawnSync with shell:true on Windows) handles both.
+  const escaped = args.map(a => '"' + String(a).replace(/"/g, '\\"') + '"').join(' ');
+  return new Promise((resolve, reject) => {
+    try {
+      const output = execSync(cmd + ' ' + escaped, {
+        cwd,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 60000,
+      });
+      resolve(output.toString());
+    } catch (error: any) {
+      reject(new Error(`${cmd} failed (${error.status ?? 'err'}): ${error.stderr || error.message}`));
+    }
   });
+}
 
 export interface Worker {
   executeOnce(): Promise<boolean>;
@@ -49,6 +58,11 @@ export interface WorkerResult {
 export abstract class BaseWorker implements Worker {
   protected state = 'IDLE';
   protected active = false;
+  /**
+   * Tracks whether TaskFinalizer.finalize() was called for the last
+   * executeOnce() cycle. Exposed for testing.
+   */
+  protected lastFinalizeStatus: 'SKIPPED_AGENT_FAILED' | 'COMPLETED' | 'FAILED' | null = null;
 
   constructor(
     protected readonly tasks: TaskRepository,
@@ -57,6 +71,16 @@ export abstract class BaseWorker implements Worker {
 
   status(): string {
     return this.state;
+  }
+
+  /** Whether TaskFinalizer.finalize() was called in the last executeOnce() cycle. */
+  get finalizeWasCalled(): boolean {
+    return this.lastFinalizeStatus !== null && this.lastFinalizeStatus !== 'SKIPPED_AGENT_FAILED';
+  }
+
+  /** The status of the last finalize() call, or 'SKIPPED_AGENT_FAILED' if agent failed. */
+  get lastFinalize(): 'SKIPPED_AGENT_FAILED' | 'COMPLETED' | 'FAILED' | null {
+    return this.lastFinalizeStatus;
   }
 
   async cancel(): Promise<void> {
@@ -69,8 +93,9 @@ export abstract class BaseWorker implements Worker {
    * 1. Claim task
    * 2. Clone repo + create branch
    * 3. Run agent
-   * 4. Finalize (validate + auto-commit)
-   * 5. Update task status
+   * 4. If agent FAILED → mark FAILED (no finalize, no commit)
+   * 5. If agent COMPLETED → finalize (validate + auto-commit)
+   * 6. Update task status
    */
   async executeOnce(): Promise<boolean> {
     const task = await this.tasks.claim(this.name);
@@ -99,10 +124,29 @@ export abstract class BaseWorker implements Worker {
         throw new Error('Worker cancelled');
       }
 
+      // CRITICAL: Do not finalize or commit if the agent failed
+      if (result.status === 'FAILED') {
+        this.lastFinalizeStatus = 'SKIPPED_AGENT_FAILED';
+        await this.tasks.update(task.id, {
+          status: 'FAILED',
+          branch,
+          gitStatus: 'skipped — agent returned FAILED',
+          error: `Agent returned FAILED status. No finalization or commit was performed.`,
+          result: {
+            stdout: result.stdout,
+            stderr: result.stderr,
+            exitCode: result.exitCode,
+            finalize: null,
+          },
+        });
+        return true;
+      }
+
       await this.tasks.update(task.id, { status: 'TESTING' });
 
-      // Finalize: validate + auto-commit
+      // Finalize: validate + auto-commit (only when agent COMPLETED)
       const finalizeResult = await this.finalize(task, repo, result);
+      this.lastFinalizeStatus = finalizeResult.status;
 
       // Update task with final status
       await this.tasks.update(task.id, {
