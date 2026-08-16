@@ -19,6 +19,10 @@ TASK → 9Router → tool calls → agent COMPLETED → BaseWorker.executeOnce()
 7. **Auto-commit** — `git add -A`, `git commit`, SHA retornado
 8. **Working tree clean** — Validado via `git status --short`
 
+### Context Bootstrap
+`src/context/agent-context.ts` — carrega e valida contexto operacional de `.agent/`.
+Antes de qualquer task: `git fetch`, verificar HEAD vs origin/main, ler `.agent/*.md`.
+
 ### Agentes
 - **Hermes** — Agente principal (este)
 - **Codex** — Agente secundário (via CLI, `codex`)
@@ -34,6 +38,7 @@ TASK → 9Router → tool calls → agent COMPLETED → BaseWorker.executeOnce()
 | `BaseWorker` | `src/worker-service.ts` | Worker abstrato: clone → executeTask → finalize |
 | `TaskFinalizer` | `src/finalizer.ts` | Valida + auto-commit (bloca push/reset/clean) |
 | `CodexWorker` | `src/worker-service.ts` | Worker concreto para Codex CLI |
+| `AgentContext` | `src/context/agent-context.ts` | Carrega/valida contexto operacional |
 
 ### Security Policies
 - `git_commit` tool: **modelo NÃO deve chamar** — system prompt instrui "Do NOT use git_commit"
@@ -47,11 +52,12 @@ TASK → 9Router → tool calls → agent COMPLETED → BaseWorker.executeOnce()
   - `FAILED` → não chama finalizer, não comita, preserva error
   - `COMPLETED` → chama `TaskFinalizer.finalize()` → auto-commit
 - `FAILED_UNEXPECTED_CHANGES`: NOT YET IMPLEMENTED (limitation documentada)
+- `.agent/` é fonte canônica do contexto operacional; Git é fonte canônica do código
 
 ### Limitations Conhecidas
 1. `CODEX_CLI_UNAVAILABLE` — CLI Codex não instalado no Windows
 2. `FAILED_UNEXPECTED_CHANGES` — `allowUnexpectedFiles` não aplicado; `git add -A` cometa tudo
-3. RouterWorker permanente — não implementado ainda
+3. `RouterWorker` permanente — não implementado (a usar `TestRouterWorker`)
 4. Retry, fallback, parallel tasks, auto-push/PR/merge — não implementados
 
 ### Testes
@@ -59,7 +65,8 @@ TASK → 9Router → tool calls → agent COMPLETED → BaseWorker.executeOnce()
 - `tests/e2e-real-worker.test.ts` — 5 testes (9Router real)
 - `tests/finalizer.test.ts` — 11 testes (unit)
 - `tests/git-tool.test.ts` — 13 testes (integration)
-- `tests/executor.test.ts` — 6 testes (1 environmental failure: CODEX_CLI_UNAVAILABLE)
+- `tests/executor.test.ts` — 6 testes (1 environmental: CODEX_CLI_UNAVAILABLE)
+- `src/context/agent-context.ts` — testes unitários incluídos em `tests/context/`
 
 ### Comandos Oficiais
 ```bash
@@ -67,11 +74,14 @@ npm run build        # tsc -p tsconfig.json
 npm test             # vitest run
 # E2E real (necessita 9Router proxy rodando):
 RUN_9ROUTER_E2E=1 ROUTER_MODEL=ag/gemini-3-flash npx vitest run tests/e2e-real-worker.test.ts
+# Context validation:
+npx tsx src/context/agent-context.ts --validate
 ```
 
 ### Estado Atual
-- Branch: `main` @ `a3ef616`
+- Branch: `main` @ `ed4142b`
 - Origin: `pubcoreagencia/pub-dev-loop`
 - Build: ✅ exit 0
-- Tests: 47/48 pass (1 environmental)
+- Tests: 70/71 pass (1 environmental)
 - E2E 9Router: ✅ 5/5 pass
+- Context: ✅ bootstrapped + validated (23 unit tests)
