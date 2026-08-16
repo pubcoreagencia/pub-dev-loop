@@ -19,4 +19,6 @@ The PostgreSQL repository claims work using one `UPDATE` statement over a `FOR U
 
 The real adapter detects whether `codex` is executable before task execution. It uses `codex exec --full-auto <prompt>` in the task-specific cloned repository. The official CLI supports `codex exec` for repeatable workflows and pipelines; an authenticated Linux CLI is a deployment prerequisite. No CLI binary or credentials are baked into this repository or Docker image. This is compatible with headless Linux containers, temporary filesystems, and environment-provided authentication.
 
+`Dockerfile.worker` is the dedicated Linux worker runtime. It installs Git and Codex from the official installer, verifies the binary at image build time, then executes as a non-root account. A cloud Secret Manager injects authentication at runtime; `CODEX_AUTH_SECRET_REF` is only an optional non-secret reference for deployment configuration and is never dereferenced by the application. Successful changes are committed on the isolated task branch but are never pushed or merged.
+
 Temporary workspaces are removed in `finally`. Git remote push and merging are intentionally excluded. PostgreSQL is the only persistent queue/result store in this version.

@@ -19,7 +19,9 @@ services:
     environment: { DATABASE_URL: postgres://pubdevloop:pubdevloop@postgres:5432/pubdevloop }
     depends_on: { postgres: { condition: service_healthy } }
   worker:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
     command: sh -c "npm run db:migrate && npm run worker"
     env_file: .env
     environment: { DATABASE_URL: postgres://pubdevloop:pubdevloop@postgres:5432/pubdevloop }
