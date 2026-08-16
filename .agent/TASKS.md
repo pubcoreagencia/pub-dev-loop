@@ -52,3 +52,20 @@
   3. `tests/e2e-real-worker.test.ts` — updated to use RouterWorker (removed TestRouterWorker)
 - **Tests**: 8/8 router-worker unit tests pass; 78 total pass (1 environmental: CODEX_CLI_UNAVAILABLE)
 - **Limitations**: E2E real requires RUN_9ROUTER_E2E=1 + 9Router proxy
+
+
+## TASK-000028
+- **Objetivo**: RouterWorker permanente sobre BaseWorker + RouterProvider + TaskFinalizer
+- **Status**: COMPLETE ✅
+- **Commit**: `fe37d6c` — feat: add permanent RouterWorker
+- **Changes**:
+  1. `src/router-worker.ts` (NEW, 104 lines) — RouterWorker extends BaseWorker, uses AgentProvider. executeTask maps status (TIMED_OUT/START_ERROR/FILED → FAILED). Override finalize() captures FinalizeResult. Expose finalizeCalled/finalizeStatus/lastFinalizeResult getters.
+  2. `tests/router-worker.test.ts` (NEW, 8 tests) — unit tests for status mapping, toolCalls/toolRounds/model/provider/execution propagation
+  3. `tests/e2e-real-worker.test.ts` — replaced TestRouterWorker with permanent RouterWorker, removed duplicate logic
+- **Design**: No duplicated finalization/commit/security logic. BaseWorker + TaskFinalizer fully control commit/FAILED-guard. RouterProvider system prompt blocks git_commit.
+- **Tests**: 8/8 router-worker unit pass; 78 total pass (1 environmental: CODEX_CLI_UNAVAILABLE); 8 skipped (E2E real needs 9Router proxy)
+- **Limitations**: E2E real not run (needs RUN_9ROUTER_E2E=1), FAILED_UNEXPECTED_CHANGES still not implemented
+
+## TASK-000029
+- **Objetivo**: (pending definition)
+- **Status**: PENDING

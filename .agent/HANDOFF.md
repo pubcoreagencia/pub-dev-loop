@@ -12,7 +12,7 @@
 | **BUILD** | ✅ exit 0 |
 | **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE (environmental)<br>2. FAILED_UNEXPECTED_CHANGES (not implemented)<br>3. RouterWorker permanente — IMPLEMENTED (TASK-000028)<br>4. GitHub web UI returns 404 (Git remote works) |
 | **NEXT_TASK** | TASK-000029 |
-| **DO_NOT_REPEAT** | RouterWorker permanente implementado em src/router-worker.ts. Não recriar TestRouterWorker, não duplicar lógica de finalização. BaseWorker + TaskFinalizer já controlam todo commit/security/FAILED-guard. |
+| **DO_NOT_REPEAT** | RouterWorker permanente implementado em src/router-worker.ts. Não recriar TestRouterWorker, não duplicar lógica de finalização. BaseWorker + TaskFinalizer já controlam todo commit/security/FAILED-guard. Context bootstrap já implementado em src/context/agent-context.ts. |
 | **OPEN_RISKS** | 1. E2E real requires RUN_9ROUTER_E2E=1 + 9Router proxy running (not available in current env)<br>2. Codex CLI not installed on Windows (environmental) |
 
 ## 4.2 — Before Starting Any Task

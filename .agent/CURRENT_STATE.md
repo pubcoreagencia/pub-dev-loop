@@ -36,8 +36,8 @@ TASK-000028 — COMPLETE ✅
 - TASK-000024 — PASS ✅ (commit f8ac9bb)
 - TASK-000025 — PASS ✅ (commit a3ef616)
 - TASK-000026 — PASS ✅ (commit 41c72e2)
-- TASK-000027 — PASS ✅ (checkpoint, no code changes, sync verified)
-- TASK-000028 — PASS ✅ (RouterWorker permanente + 8 unit tests)
+- TASK-000027 — PASS ✅ (checkpoint, sync verified at 521c4bd)
+- TASK-000028 — PASS ✅ (commit fe37d6c — RouterWorker permanente + 8 unit tests)
 
 ## Próxima Task
 TASK-000029 — (pending definition)
