@@ -5,7 +5,8 @@ import { execSync } from 'node:child_process';
 import { AgentExecutionError } from './agent.js';
 import type { CodingAgent } from './agent.js';
 import type { TaskRepository, Task } from './domain.js';
-import { TaskFinalizer, type FinalizeResult } from './finalizer.js';
+import { TaskFinalizer, type FinalizeResult, type WorkspaceSnapshot, WorkspaceValidator } from './finalizer.js';
+import { captureWorkspaceSnapshot } from './finalizer.js';
 
 function run(cmd: string, args: string[], cwd?: string): Promise<string> {
   // Use execSync for cross-platform PATH resolution reliability.
@@ -105,6 +106,8 @@ export abstract class BaseWorker implements Worker {
 
     let workspace: string | undefined;
     let branch: string | undefined;
+    /** Workspace baseline snapshot captured BEFORE agent runs. */
+    let baselineSnapshot: WorkspaceSnapshot | undefined;
 
     try {
       await this.tasks.update(task.id, { status: 'RUNNING' });
@@ -116,6 +119,10 @@ export abstract class BaseWorker implements Worker {
       // Clone and create branch
       await run('git', ['clone', task.repository, repo]);
       await run('git', ['checkout', '-b', branch], repo);
+
+      // Capture baseline BEFORE agent runs — this isolates agent changes
+      // from any pre-existing workspace state.
+      baselineSnapshot = captureWorkspaceSnapshot(repo);
 
       // Execute the agent
       const result = await this.executeTask(task, repo);
@@ -145,7 +152,7 @@ export abstract class BaseWorker implements Worker {
       await this.tasks.update(task.id, { status: 'TESTING' });
 
       // Finalize: validate + auto-commit (only when agent COMPLETED)
-      const finalizeResult = await this.finalize(task, repo, result);
+      const finalizeResult = await this.finalize(task, repo, result, baselineSnapshot, result.changedFiles);
       this.lastFinalizeStatus = finalizeResult.status;
 
       // Update task with final status
@@ -207,6 +214,8 @@ export abstract class BaseWorker implements Worker {
     task: Task,
     repo: string,
     result: { stdout: string; stderr: string; status: 'COMPLETED' | 'FAILED' },
+    baselineSnapshot?: WorkspaceSnapshot,
+    declaredChangedFiles?: string[],
   ): Promise<FinalizeResult> {
     const finalizer = new TaskFinalizer(repo, {
       commandTimeoutMs: this.ctx.commandTimeoutMs,
@@ -220,6 +229,8 @@ export abstract class BaseWorker implements Worker {
       commitMessage,
       expectChanges: false,
       allowUnexpectedFiles: false,
+      baselineSnapshot,
+      declaredChangedFiles,
     });
   }
 

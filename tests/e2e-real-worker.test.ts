@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { RouterProvider } from '../src/providers/router.js';
 import { RouterWorker } from '../src/router-worker.js';
 import { BaseWorker } from '../src/worker-service.js';
-import { TaskFinalizer, type FinalizeResult } from '../src/finalizer.js';
+import { TaskFinalizer, type FinalizeResult, type WorkspaceSnapshot } from '../src/finalizer.js';
 import type { Task, TaskRepository } from '../src/domain.js';
 import type { AgentProvider, ProviderTaskResult } from '../src/providers/types.js';
 
@@ -45,8 +45,10 @@ class RouterWorkerSpy extends RouterWorker {
     task: Task,
     repo: string,
     result: { stdout: string; stderr: string; status: 'COMPLETED' | 'FAILED' },
+    baselineSnapshot?: WorkspaceSnapshot,
+    declaredChangedFiles?: string[],
   ): Promise<FinalizeResult> {
-    const fr = await super.finalize(task, repo, result);
+    const fr = await super.finalize(task, repo, result, baselineSnapshot, declaredChangedFiles);
     this.capturedFinalize = fr;
     return fr;
   }

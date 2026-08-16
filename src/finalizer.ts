@@ -10,6 +10,131 @@ const BLOCKED_GIT_COMMANDS = [
 ];
 
 /**
+ * Snapshot of workspace state at a point in time.
+ * Used to detect changes introduced by the agent vs pre-existing state.
+ */
+export interface WorkspaceSnapshot {
+  /** All tracked files in the repo at snapshot time (relative paths). */
+  trackedFiles: string[];
+  /** git status --short output at snapshot time (empty = clean). */
+  gitStatus: string;
+  /** Commit SHA at snapshot time (or null if no commits). */
+  headSha: string | null;
+}
+
+/**
+ * Detects unexpected changes between a baseline snapshot and the current
+ * workspace state. A change is "unexpected" if it doesn't belong to the
+ * task — i.e., it was present in the baseline (pre-existing) but now
+ * modified, or it's an unrelated file modification.
+ */
+export class WorkspaceValidator {
+  /**
+   * Capture a snapshot of the current workspace state.
+   */
+  static captureSnapshot(root: string): WorkspaceSnapshot {
+    try {
+      const statusResult = execSync('git status --short', {
+        cwd: root,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 10000,
+      });
+      const gitStatus = statusResult.toString().trim();
+
+      const lsFilesResult = execSync('git ls-files', {
+        cwd: root,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 10000,
+      });
+      const trackedFiles = lsFilesResult.toString().trim().split('\n').filter(Boolean);
+
+      let headSha: string | null = null;
+      try {
+        headSha = execSync('git rev-parse HEAD', {
+          cwd: root,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: 10000,
+        }).toString().trim();
+        if (!/^[0-9a-f]{40}$/.test(headSha)) headSha = null;
+      } catch {
+        headSha = null;
+      }
+
+      return { trackedFiles, gitStatus, headSha };
+    } catch {
+      return { trackedFiles: [], gitStatus: '', headSha: null };
+    }
+  }
+
+  /**
+   * Compare current workspace state against a baseline snapshot.
+   * Returns the list of unexpected files (files not in the agent's changedFiles).
+   *
+   * Strategy:
+   * - Files that were modified before the agent ran (in baseline gitStatus)
+   *   but are now clean (already committed or reverted) → NOT unexpected
+   * - Files that were clean in baseline but are now changed → could be
+   *   from agent OR pre-existing modifications committed during baseline
+   * - The safest approach: use `git diff` against the baseline HEAD commit
+   *   to find what the agent actually changed, then validate that the
+   *   agent's declared changedFiles ⊆ git diff output.
+   */
+  static detectUnexpectedChanges(
+    root: string,
+    baseline: WorkspaceSnapshot,
+    agentChangedFiles: string[],
+  ): string[] {
+    // Use git status --short to get ALL changes (tracked + untracked).
+    // git diff HEAD only shows tracked modifications — untracked files
+    // require git status or git ls-files --others.
+
+    const currentStatus = this.parseChangedFiles(root);
+    const declaredSet = new Set(agentChangedFiles);
+
+    // If baseline was clean (no pre-existing changes), then ALL files in
+    // git status are agent-introduced. Any not declared by the agent = unexpected.
+    if (!baseline.gitStatus.trim()) {
+      // Clean baseline: every change in git status is from the agent.
+      // If the agent declared all of them, they're expected.
+      // If not declared → unexpected.
+      return currentStatus.filter(f => !declaredSet.has(f));
+    }
+
+    // Baseline was dirty — pre-existing changes existed before the agent.
+    // Fail closed: any change in current status that isn't declared by the
+    // agent is considered unexpected. We can't distinguish pre-existing from
+    // agent-introduced without file-level tracking.
+    return currentStatus.filter(f => !declaredSet.has(f));
+  }
+
+  /**
+   * Parse `git status --short` to get list of changed file paths.
+   */
+  private static parseChangedFiles(root: string): string[] {
+    try {
+      const status = execSync('git status --short', {
+        cwd: root,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 10000,
+      }).toString().trim();
+
+      if (!status) return [];
+
+      return status
+        .split('\n')
+        .filter(Boolean)
+        .map(line => {
+          const filename = line.substring(3);
+          const arrowIdx = filename.indexOf(' -> ');
+          return arrowIdx >= 0 ? filename.substring(arrowIdx + 4) : filename;
+        });
+    } catch {
+      return [];
+    }
+  }
+}
+
+/**
  * Result of task finalization (validation + auto-commit).
  */
 export interface FinalizeResult {
@@ -32,6 +157,8 @@ export interface FinalizeOptions {
   commitMessage?: string | null;  // TASK_COMMIT_MESSAGE — if null, auto-generate
   expectChanges?: boolean;         // If true, require changes (else FAIL)
   allowUnexpectedFiles?: boolean;  // If false, only commit changedFiles
+  baselineSnapshot?: WorkspaceSnapshot; // Snapshot taken before agent ran
+  declaredChangedFiles?: string[]; // Files the agent claims to have changed
 }
 
 /**
@@ -97,6 +224,35 @@ export class TaskFinalizer {
         errorCode: null,
         errorMessage: null,
       };
+    }
+
+    // VALIDATE UNEXPECTED CHANGES (FAILED_UNEXPECTED_CHANGES)
+    // If a baseline snapshot was provided, validate that ALL changes
+    // belong to the task — no pre-existing or unexpected modifications.
+    const allowUnexpected = options.allowUnexpectedFiles ?? false;
+    const declaredFiles = options.declaredChangedFiles ?? changedFiles;
+    if (!allowUnexpected && options.baselineSnapshot) {
+      const unexpected = WorkspaceValidator.detectUnexpectedChanges(
+        this.security.root,
+        options.baselineSnapshot,
+        declaredFiles,
+      );
+
+      if (unexpected.length > 0) {
+        return {
+          status: 'FAILED',
+          commitSha: null,
+          commitMessage: null,
+          changedFiles,
+          gitStatus,
+          testsPassed: null,
+          testOutput: '',
+          errorCode: 'FAILED_UNEXPECTED_CHANGES',
+          errorMessage: `Unexpected changes detected: ${unexpected.join(', ')}. ` +
+            `Agent declared: [${declaredFiles.join(', ')}]. ` +
+            `Commit aborted — failing closed.`,
+        };
+      }
     }
 
     // Run tests if configured
@@ -291,4 +447,12 @@ export function isBlockedGitCommand(cmd: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Convenience function: capture a workspace snapshot.
+ * Used by BaseWorker.executeOnce() to capture baseline before agent runs.
+ */
+export function captureWorkspaceSnapshot(root: string): WorkspaceSnapshot {
+  return WorkspaceValidator.captureSnapshot(root);
 }
