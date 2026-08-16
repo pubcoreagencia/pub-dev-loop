@@ -99,7 +99,7 @@ jobs:
         id: integration
         env:
           RUN_CODEX_INTEGRATION: "1"
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CODEX_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: npm run test:integration
 
       - name: Worker report
