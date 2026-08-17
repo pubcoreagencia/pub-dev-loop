@@ -13,24 +13,26 @@ RUN npm ci
 COPY . .
 RUN npm run build && chown -R codex:codex /app
 
-# TASK-000032 Phase 5: Git identity (belt-and-suspenders with runtime config)
-# This sets the system-wide git identity as a fallback; worker.ts also
-# configures it at runtime for environment-specific identity.
-USER root
-RUN git config --system user.name "PUB DEV LOOP Worker" \
- && git config --system user.email "worker@pub-dev-loop.internal" \
- && git config --system init.defaultBranch main \
- && git config --system --add safe.directory '*'
-
+# Install codex CLI (for AGENT_MODE=codex path)
 USER codex
 ENV HOME=/home/codex
 ENV TMPDIR=/tmp
+RUN curl -fsSL https://chatgpt.com/codex/install.sh | sh
 
-# Install codex CLI (for AGENT_MODE=codex path)
-RUN curl -fsSL https://chatgpt.com/codex/install.sh | sh \
-  && codex_path="$(find /home/codex -type f -name codex -perm -u+x -print -quit)" \
+# Switch to root for system-level config (git identity + codex symlink)
+USER root
+RUN codex_path="$(find /home/codex -type f -name codex -perm -u+x -print -quit)" \
   && test -n "$codex_path" \
   && ln -s "$codex_path" /usr/local/bin/codex \
   && codex --version
 
+# TASK-000032 Phase 5: Git identity (belt-and-suspenders with runtime config)
+# This sets the system-wide git identity as a fallback; worker.ts also
+# configures it at runtime for environment-specific identity.
+RUN git config --system user.name "PUB DEV LOOP Worker" \
+  && git config --system user.email "worker@pub-dev-loop.internal" \
+  && git config --system init.defaultBranch main \
+  && git config --system --add safe.directory '*'
+
+USER codex
 CMD ["npm", "run", "worker"]

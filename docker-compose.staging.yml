@@ -3,6 +3,8 @@
 #
 # Staging uses RouterWorker with 9Router provider (TASK-000030 retry/fallback active).
 # Requires real 9Router credentials and a real Git repository with clone access.
+#
+# Port 3001 is used for the API to avoid conflict with Hermes desktop (port 3000).
 
 services:
   postgres:
@@ -21,8 +23,14 @@ services:
   api:
     build: .
     command: sh -c "npm run db:migrate && npm run start"
-    ports: ["3000:3000"]
-    env_file: .env.staging
+    ports: ["${API_PORT:-3001}:3000"]
+    env_file: [.env, .env.staging]
+    environment:
+      # Explicitly unset AGENT_MODE to force provider path (override .env default)
+      AGENT_MODE: ""
+      PORT: "3000"
+      API_PORT: "3001"
+      DATABASE_URL: postgres://pubdevloop:pubdevloop@postgres:5432/pubdevloop
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
     healthcheck:
@@ -36,7 +44,14 @@ services:
       context: .
       dockerfile: Dockerfile.worker
     command: sh -c "npm run db:migrate && npm run worker"
-    env_file: .env.staging
+    env_file: [.env, .env.staging]
+    environment:
+      # Explicitly unset AGENT_MODE to force provider path (override .env default)
+      AGENT_MODE: ""
+      PORT: "3001"
+      # TMPDIR ensures workspaces go to a known location
+      TMPDIR: /tmp
+      DATABASE_URL: postgres://pubdevloop:pubdevloop@postgres:5432/pubdevloop
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
     healthcheck:
@@ -44,9 +59,6 @@ services:
       interval: 30s
       timeout: 15s
       retries: 3
-    # TMPDIR ensures workspaces go to a known location
-    environment:
-      TMPDIR: /tmp
 
 volumes:
   postgres_staging_data:

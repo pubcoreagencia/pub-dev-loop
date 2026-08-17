@@ -14,7 +14,7 @@ services:
   api:
     build: .
     command: sh -c "npm run db:migrate && npm run start"
-    ports: ["3000:3000"]
+    ports: ["${API_PORT:-3000}:3000"]
     env_file: .env
     environment: { DATABASE_URL: postgres://pubdevloop:pubdevloop@postgres:5432/pubdevloop }
     depends_on: { postgres: { condition: service_healthy } }
