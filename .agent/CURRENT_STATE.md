@@ -1,86 +1,88 @@
 # Current State
 
 ## Último Commit Estável
-`6c21bd9` — feat: TASK-000032 — production execution path unification + crash recovery + git identity
+`2cbd62b` — TASK-000033: fix healthcheck (node-based API check, RouterWorker-aware health script)
 
 ## Branch
 main
 
 ## Git State (runtime)
-- Obtenha HEAD real via: `git rev-parse HEAD`
-- Ou via CLI: `npx tsx src/context/cli.ts --validate`
-- Este arquivo NÃO registra o SHA do commit que o contém (evita bootstrap loop).
-- Ver: DECISIONS.md §10 (Volatile HEAD Bootstrap Loop)
+- HEAD: 2cbd62b7e7d5172358f492f1d57675ba003828ad
+- Local == Remote: YES
+- Worktree: CLEAN
 
 ## Último Teste Validado
 ```
-npm run build → ✅ exit 0
-npx vitest run tests/context/ → 23 passed (3 files)
-npx vitest run tests/router-worker.test.ts → 8 passed
-npx vitest run tests/finalizer.test.ts → 11 passed
-npx vitest run tests/worker-retry.test.ts → 13 passed
-npx vitest run tests/worker-tracing.test.ts → 11 passed (NEW)
-npx vitest run tests/router.test.ts → 6 passed
-RUN_9ROUTER_E2E=1 npx vitest run tests/e2e-real-worker.test.ts → 4 passed | 1 failed (REAL E2E: environmental — 9Router credentials 404)
-npx vitest run → 128 passed | 1 failed (CODEX_CLI_UNAVAILABLE, environmental) | 8 skipped
-npx vitest run tests/production-entrypoint.test.ts → 4 passed (NEW)
-npx vitest run tests/crash-recovery.test.ts → 11 passed (NEW)
-npx vitest run tests/workspace-cleanup.test.ts → 11 passed (NEW)
+npx tsc -p tsconfig.json --noEmit → ✅ exit 0
 npx tsx src/context/cli.ts --validate → ✅ Context valid. Git state consistent.
+npx vitest run → 128 passed | 1 failed (CODEX_CLI_UNAVAILABLE — environmental) | 8 skipped
 ```
 
-## Build
-✅ exit code 0
+## Staging Validation (TASK-000033 — ALL PASSED)
+```
+Containers: postgres (healthy) ✅ | api (healthy) ✅ | worker (healthy) ✅
+9Router: http://host.docker.internal:20128/v1 → HTTP 200 ✅
+Worker type: RouterWorker ✅ (not CodexWorker)
+Git identity: PUB DEV LOOP Worker <worker@pub-dev-loop.internal> ✅
+
+Real E2E Task: 7b3ace93-8615 — COMPLETED, commit=319e451ff3, provider=9router, model=ag/gemini-3-flash
+Retry/Fallback Task: c2ee145e-f3d1 — COMPLETED, 2 attempts, timeout→retry, commit=bf5c61d2bc
+Crash Recovery: task killed during RUNNING → lease expired → reclaimed → COMPLETED
+Unexpected Changes: detected unexpected.txt → FAILED_UNEXPECTED_CHANGES, no commit ✅
+Provider Failure: nonexistent model → 404 → FAILED fast, no finalize, commitSha=null ✅
+Workspace Cleanup: orphan dir removed by startup recovery ✅
+```
+
+## Production Execution Path
+✅ `worker.ts` — `createProductionWorker()` exports RouterWorker when `AGENT_PROVIDER` set
+- AGENT_PROVIDER=9router → RouterWorker with full retry/fallback (TASK-000030)
+- AGENT_PROVIDER not set → CodexWorker (CLI path)
+- `AGENT_MODE=codex` + `AGENT_PROVIDER` set → throws (conflict guard)
 
 ## RouterWorker Status
-✅ Permanente — `src/router-worker.ts` (refactored with retry/isolation/deadline)
-- Extends BaseWorker, uses AgentProvider
-- Implements executeWithRetry() with provider retry/fallback via ROUTER_PROVIDER_CHAIN
+✅ Permanent — `src/router-worker.ts`
+- executeWithRetry() with provider retry/fallback via ROUTER_PROVIDER_CHAIN
 - Each attempt: fresh workspace via mkdtemp, fresh git clone, baseline capture
-- Hard global deadline enforcement (ROUTER_TIMEOUT_TOTAL_MS)
-- Provider timeout = min(ROUTER_TIMEOUT_PER_ATTEMPT_MS, remainingBudget)
-- Backoff capped to remaining deadline
 - HTTP status classification: 429/5xx retryable, 4xx fail-fast, undefined fail-closed
-- RouterProvider constructor accepts optional modelOverride (4th param)
-- getProviderChain() supports only RouterProvider instances (kind === 'router')
 
-## Production Execution Path (TASK-000032 Phase 1)
-✅ worker.ts — AGENT_PROVIDER=9router → RouterWorker (TASK-000030 active)
-- createProductionWorker() exported from src/worker.ts
-- When AGENT_PROVIDER set (e.g. '9router'): RouterWorker with full retry/fallback
-- When AGENT_PROVIDER not set: CodexWorker (Codex CLI path, separate feature)
-- Tests: tests/production-entrypoint.test.ts (4 tests)
+## Crash Recovery (TASK-000032 Phase 3)
+✅ Lease/heartbeat model
+- claim() sets lease_owner, lease_deadline (30s window)
+- heartbeat() refreshes every 10s (WORKER_HEARTBEAT_MS)
+- reclaimStuck() on worker startup reclaims expired leases
+- Confirmed: killed worker → lease expired → task reclaimed → resumed
+
+## Workspace Cleanup (TASK-000032 Phase 4)
+✅ Conservative orphan cleanup
+- Scans tmpdir for pub-dev-loop-* and pu-dev-loop-attempt-* dirs
+- Preserves DB-referenced workspaces
+- Only removes dirs older than 24h
+- Verified: old orphan dir removed, active dirs preserved
+
+## Git Identity (TASK-000032 Phase 5)
+✅ Runtime configuration
+- worker.ts sets `git config user.name/email` from env vars
+- Dockerfile.worker has `--global` fallback
+- Staged file commit verified (SHA persists in PostgreSQL)
 
 ## FAILED_UNEXPECTED_CHANGES Status
-✅ IMPLEMENTADO — `src/finalizer.ts`
-- WorkspaceSnapshot interface + WorkspaceValidator class
-- Baseline captured BEFORE agent runs in BaseWorker.executeOnce()
-- detectUnexpectedChanges: compares git status vs declaredChangedFiles
+✅ Implemented — `src/finalizer.ts`
+- Baseline captured before agent runs
+- detectUnexpectedChanges compares git status vs declaredChangedFiles
 - FAILED_UNEXPECTED_CHANGES → no commit (fail closed)
-- Declared files → COMPLETED + commit
-- 11 unit tests in tests/finalizer.test.ts
+- Verified: agent-created unexpected.txt via shell → detection → FAILED ✅
 
 ## Limitations
-1. CODEX_CLI_UNAVAILABLE — CLI Codex não instalado no Windows (environmental)
-2. E2E real requires RUN_9ROUTER_E2E=1 + 9Router proxy (validado com 9Router ✅)
-3. GitHub web UI returns 404 (mas Git remote + push funcionam)
-4. Crash recovery (lease/heartbeat/reclaim) implemented — requires DB schema migration 002_lease.sql
-5. Git identity configured at runtime via git config + Dockerfile.system fallback
-6. Staging deploy: docker-compose.staging.yml + .env.staging.example ready, requires 9Router credentials
+1. CODEX_CLI_UNAVAILABLE — CLI Codex not installed on Windows host (environmental)
+2. GitHub repo `pubcoreagencia/pub-dev-loop.git` is private — requires GitHub token for full clone
+3. Staging smoke test uses public repo (octocat/Hello-World) for validation
 
-## Task Atual
-TASK-000032 — IMPLEMENTING (commit 6c21bd9)
+## Tasks Completed
+- TASK-000029 — PASS ✅
+- TASK-000030 — PASS ✅ (provider retry/fallback with workspace isolation)
+- TASK-000031 — PASS ✅ (structured execution traces)
+- TASK-000032 — PASS ✅ (production path unification + crash recovery + git identity)
+- TASK-000033 — IN PROGRESS (staging deployment + smoke test)
 
-## Tasks Concluídas
-- TASK-000024 — PASS ✅ (commit f8ac9bb)
-- TASK-000025 — PASS ✅ (commit a3ef616)
-- TASK-000026 — PASS ✅ (commit 41c72e2)
-- TASK-000027 — PASS ✅ (checkpoint sync verified)
-- TASK-000028 — PASS ✅ (commit fe37d6c + d94fedc — RouterWorker permanente + production-clean)
-- TASK-000029 — PASS ✅ (commit 1494669 — FAILED_UNEXPECTED_CHANGES workspace validation)
-- TASK-000030 — PASS ✅ (commit 86850ac — provider retry/fallback with workspace isolation)
-- TASK-000031 — PASS ✅ (commit e0843c0 — structured execution traces + remainingBudget bugfix)
-- TASK-000032 Phase 1-5 — DONE ✅ (commit 6c21bd9 — production path unification + crash recovery + git identity)
-
-## Próxima Task
-TASK-000032 (continuation) — crash recovery + staging deployment
+## Current Task
+TASK-000033 — Real Staging Deployment & Smoke Test
