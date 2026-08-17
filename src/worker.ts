@@ -23,9 +23,9 @@ const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
  * Token is NOT logged or stored in any file other than .netrc.
  */
 function configureGitCredentials(): void {
-  const token = process.env.GIT_TOKEN || process.env.GITHUB_TOKEN;
+  const token = process.env.GITHUB_TOKEN;
   if (!token) {
-    console.log('No GIT_TOKEN/GITHUB_TOKEN set — public repos only.');
+    console.log('No GITHUB_TOKEN set — public repos only.');
     return;
   }
 

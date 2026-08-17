@@ -135,8 +135,8 @@
 - **Status**: COMPLETE ✅
 - **Commit**: `d327c89`
 - **Changes**:
-  1. `src/worker.ts` — configureGitCredentials() cria ~/.netrc (mode 0600) usando GIT_TOKEN ou GITHUB_TOKEN; token nunca no URL ou no código; configureGitIdentity() configura git user.name/email em runtime
-  2. `docker-compose.staging.yml` — GIT_TOKEN: ${GITHUB_TOKEN} interpolado do host env var; DATABASE_URL usa ${POSTGRES_PASSWORD} corretamente; worker recebe GIT_TOKEN via env
+  1. `src/worker.ts` — configureGitCredentials() cria ~/.netrc (mode 0600) usando apenas GITHUB_TOKEN; token nunca no URL ou no código; configureGitIdentity() configura git user.name/email em runtime
+  2. `docker-compose.staging.yml` — GITHUB_TOKEN: ${GITHUB_TOKEN} interpolado do host env var (GIT_TOKEN removido); DATABASE_URL usa ${POSTGRES_PASSWORD} corretamente; worker recebe GITHUB_TOKEN via env
   3. `.agent/CURRENT_STATE.md` — atualizado de BLOCKED para COMPLETE após validação
 - **Tests**: 128 passed | 1 failed (CODEX_CLI_UNAVAILABLE, ambiental) | 8 skipped | Build: exit 0 ✅
 - **Staging**: Containers prontos (postgres, api, worker) — Docker Desktop indisponível neste ambiente Windows; implementação validada via build + testes unitários

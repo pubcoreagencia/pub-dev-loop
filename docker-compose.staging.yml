@@ -55,7 +55,7 @@ services:
       # Git credentials for private repo access — passed from host env at runtime
       # Token is NEVER in code, in .env files, or in repository URLs.
       # Git credential helper reads from ~/.netrc (created at worker startup).
-      GIT_TOKEN: ${GITHUB_TOKEN}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
     healthcheck:
