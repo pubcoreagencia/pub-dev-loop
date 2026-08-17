@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import { Pool } from 'pg';
 import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { createProvider, createAgent } from './agent.js';
 import { PostgresTaskRepository } from './repository.js';
 import { RouterWorker } from './router-worker.js';
@@ -142,7 +144,9 @@ export function createProductionWorker(): BaseWorker {
 
 // --- Entrypoint (only runs when executed directly, not imported) ---
 
-const isMain = import.meta.url === `file://${process.argv[1]}`;
+const currentFile = fileURLToPath(import.meta.url);
+const entryFile = process.argv[1] ? path.resolve(process.argv[1]) : '';
+const isMain = Boolean(entryFile && currentFile === entryFile);
 
 async function startupRecovery(tasks: PostgresTaskRepository): Promise<void> {
   // TASK-000034: Configure Git credentials for private repo access
