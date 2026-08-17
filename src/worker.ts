@@ -1,6 +1,9 @@
 import 'dotenv/config';
 import { Pool } from 'pg';
 import { execSync } from 'node:child_process';
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { createProvider, createAgent } from './agent.js';
 import { PostgresTaskRepository } from './repository.js';
 import { RouterWorker } from './router-worker.js';
@@ -8,6 +11,40 @@ import { CodexWorker, BaseWorker } from './worker-service.js';
 import { cleanupOrphanWorkspaces } from './workspace-cleanup.js';
 
 const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
+
+/**
+ * TASK-000034: Git credential configuration
+ *
+ * Configures Git credentials for private repository access.
+ * Token is NEVER placed in repository URLs — Git's credential helper
+ * reads from ~/.netrc instead.
+ *
+ * The .netrc file is created at runtime with mode 0600 (owner-only).
+ * Token is NOT logged or stored in any file other than .netrc.
+ */
+function configureGitCredentials(): void {
+  const token = process.env.GIT_TOKEN || process.env.GITHUB_TOKEN;
+  if (!token) {
+    console.log('No GIT_TOKEN/GITHUB_TOKEN set — public repos only.');
+    return;
+  }
+
+  try {
+    const netrcPath = join(homedir(), '.netrc');
+    const netrcContent =
+      'machine github.com\n' +
+      'login ' + token + '\n' +
+      'password x-oauth-basic\n';
+    writeFileSync(netrcPath, netrcContent, { mode: 0o600 });
+    console.log('Git credentials configured via .netrc (token not in URL).');
+
+    // Also configure Git to use the credential helper (belt-and-suspenders)
+    execSync('git config --global credential.helper store --file ' + netrcPath, { stdio: 'pipe' });
+  } catch (e) {
+    console.error('Failed to configure git credentials:', (e as Error).message);
+    throw e;
+  }
+}
 
 /**
  * TASK-000032 Phase 5: Git identity configuration
@@ -61,6 +98,8 @@ export function createProductionWorker(): BaseWorker {
 const isMain = import.meta.url === `file://${process.argv[1]}`;
 
 async function startupRecovery(tasks: PostgresTaskRepository): Promise<void> {
+  // TASK-000034: Configure Git credentials for private repo access
+  configureGitCredentials();
   // TASK-000032 Phase 5: Configure Git identity (runtime, not .gitconfig file)
   configureGitIdentity();
 

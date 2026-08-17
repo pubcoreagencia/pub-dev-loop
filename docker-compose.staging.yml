@@ -51,7 +51,11 @@ services:
       PORT: "3001"
       # TMPDIR ensures workspaces go to a known location
       TMPDIR: /tmp
-      DATABASE_URL: postgres://pubdevloop:pubdevloop@postgres:5432/pubdevloop
+      DATABASE_URL: postgres://pubdevloop:***@postgres:5432/pubdevloop
+      # Git credentials for private repo access — passed from host env at runtime
+      # Token is NEVER in code, in .env files, or in repository URLs.
+      # Git credential helper reads from ~/.netrc (created at worker startup).
+      GIT_TOKEN: ${GITHUB_TOKEN}
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
     healthcheck:
