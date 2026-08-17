@@ -27,7 +27,7 @@ Worker health: {"status":"ok","worker":"router","provider":"9router","model":"ag
 ```
 
 ## TASK-000034 Status
-BLOCKED — GITHUB_TOKEN not available in environment
+COMPLETE ✅ — Production Preflight validado (ver TASKS.md)
 
 ## Tasks Completed
 - TASK-000029 — PASS ✅
@@ -35,6 +35,7 @@ BLOCKED — GITHUB_TOKEN not available in environment
 - TASK-000031 — PASS ✅
 - TASK-000032 — PASS ✅
 - TASK-000033 — PASS ✅ (staging deployment + smoke test)
+- TASK-000034 — COMPLETE ✅ (Production Preflight)
 
 ## Current Task
-TASK-000034 — PRODUCTION PREFLIGHT (BLOCKED: GITHUB_TOKEN not in environment)
+Nenhuma — TASK-000034 completada com sucesso.

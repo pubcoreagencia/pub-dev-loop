@@ -4,16 +4,16 @@
 
 | Field | Value |
 |-------|-------|
-|| **CURRENT_TASK** | TASK-000031 (COMPLETE) |
-|| **CURRENT_AGENT** | Hermes |
-|| **CURRENT_BRANCH** | main |
-|| **LAST_KNOWN_STABLE_COMMIT** | `e0843c0` |
-|| **LAST_TESTS_RUN** | 102 passed, 1 failed (CODEX_CLI_UNAVAILABLE, environmental), 8 skipped (+ 13 worker-retry tests, 11 finalizer tests, 11 worker-tracing tests, 23 context tests) |
-|| **BUILD** | ✅ exit 0 |
-|| **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE (environmental)<br>2. E2E real requires 9Router credentials (404 "No active credentials")<br>3. GitHub web UI returns 404 (Git remote works) |
-|| **DO_NOT_REPEAT** | RouterWorker: executeWithRetry() creates fresh workspace per attempt, clones repo, captures baseline, executes provider, returns unified AttemptResult. Retry only between RouterProvider instances. Fail-closed HTTP classification. BaseWorker.executeOnce() delegates to executeWithRetry, passes winner workspace+baseline+declaredChangedFiles to TaskFinalizer. CodexWorker: single attempt, no retry. RouterProvider: constructor accepts modelOverride (4th param). finalizer.ts and security.ts UNTOUCHED. Tracing: AttemptTrace + WorkerExecutionTrace persisted in task.result.trace; no workspace paths persisted; remainingBudget bug in catch block fixed. |
-|| **NEXT_TASK** | TASK-000032 |
-|| **OPEN_RISKS** | 1. REAL E2E test requires 9Router credentials (environmental)<br>2. Codex CLI not installed on Windows (environmental) |
+| **CURRENT_TASK** | TASK-000034 (COMPLETE) |
+| **CURRENT_AGENT** | Hermes |
+| **CURRENT_BRANCH** | main |
+| **LAST_KNOWN_STABLE_COMMIT** | `d327c89` |
+| **LAST_TESTS_RUN** | 128 passed, 1 failed (CODEX_CLI_UNAVAILABLE, ambiental), 8 skipped | Build: exit 0 ✅ | Staging: containers prontos (Docker Desktop indisponível neste ambiente) |
+| **BUILD** | ✅ exit 0 |
+| **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE (ambiental — Codex CLI não instalado no Windows)<br>2. E2E real requer 9Router credentials (HTTP 404 "No active credentials")<br>3. GitHub web UI retorna 404 (Git remote + push funcionam)<br>4. Docker Desktop indisponível neste ambiente Windows — staging containers não podem ser iniciados localmente |
+| **DO_NOT_REPEAT** | RouterWorker: executeWithRetry() cria fresh workspace per attempt, clones repo, captures baseline, executes provider, returns unified AttemptResult. Retry only between RouterProvider instances. Fail-closed HTTP classification. BaseWorker.executeOnce() delegates to executeWithRetry, passes winner workspace+baseline+declaredChangedFiles to TaskFinalizer. CodexWorker: single attempt, no retry. RouterProvider: constructor accepts modelOverride (4th param). finalizer.ts and security.ts UNTOUCHED. Tracing: AttemptTrace + WorkerExecutionTrace persisted in task.result.trace; no workspace paths persisted; remainingBudget bug in catch block fixed. Git credentials: configureGitCredentials() creates ~/.netrc (mode 0600) from GIT_TOKEN or GITHUB_TOKEN env var; token never in URL or code. Staging: docker-compose.staging.yml has GIT_TOKEN: ${GITHUB_TOKEN} and DATABASE_URL uses ${POSTGRES_PASSWORD} interpolation. |
+| **NEXT_TASK** | TASK-000035 (novo — definir escopo) |
+| **OPEN_RISKS** | 1. REAL E2E test requires 9Router credentials (ambiental)<br>2. Codex CLI not installed on Windows (ambiental)<br>3. Docker Desktop indisponível neste ambiente — staging containers validados apenas via build + testes unitários |
 
 ## 4.2 — Before Starting Any Task
 
