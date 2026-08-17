@@ -1,9 +1,6 @@
 import 'dotenv/config';
 import { Pool } from 'pg';
 import { execSync } from 'node:child_process';
-import { writeFileSync, mkdirSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { createProvider, createAgent } from './agent.js';
 import { PostgresTaskRepository } from './repository.js';
 import { RouterWorker } from './router-worker.js';
@@ -12,41 +9,91 @@ import { cleanupOrphanWorkspaces } from './workspace-cleanup.js';
 
 const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
 
-/**
- * TASK-000034: Git credential configuration
+/*
+ * TASK-000034: Git credential configuration (process-scoped, no files)
  *
- * Configures Git credentials for private repository access.
- * Token is NEVER placed in repository URLs — Git's credential helper
- * reads from ~/.netrc instead.
+ * Critérios:
+ * - GITHUB_TOKEN exista somente no ambiente do processo e seja consumido em runtime.
+ * - Não persistir referência em ~/.gitconfig (sem git config --global credential.helper).
+ * - Não usar ~/.netrc.
+ * - Não usar credential.helper persistente via git config --global.
+ * - Implementar via GIT_CONFIG_COUNT/GIT_CONFIG_KEY_n/GIT_CONFIG_VALUE_n (variáveis de ambiente,
+ *   efeito apenas no processo e subprocessos — sem escrever em .gitconfig, .git/config ou qualquer arquivo).
+ * - O helper lê operation/protocol/host/path via stdin no formato key=value do Git.
+ *   O primeiro argumento ($1) NÃO é tratado como hostname — todo o protocolo é via stdin.
+ * - Fornecer credencial somente para operação "get" (git clone/fetch HTTPS).
+ * - O token é lido em runtime via $GITHUB_TOKEN (shell); não é interpolado em tempo de configuração.
  *
- * The .netrc file is created at runtime with mode 0600 (owner-only).
- * Token is NOT logged or stored in any file other than .netrc.
+ * Fluxo:
+ *   GITHUB_TOKEN (env do processo)
+ *     → GIT_CONFIG_COUNT=1, GIT_CONFIG_KEY_0=credential.helper,
+ *       GIT_CONFIG_VALUE_0='<shell helper>' (env vars, process-scoped)
+ *     → helper lê stdin + env var em runtime
+ *     → git clone/fetch usa helper quando precisa autenticar
+ *   Token nunca em URL, arquivo, .env, código, trace, logs, commits ou Git history.
  */
-function configureGitCredentials(): void {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) {
+
+/*
+ * Shell credential helper — lê operation/protocol/host/path via stdin no formato key=value do Git.
+ * O token é lido em runtime via $GITHUB_TOKEN (shell expansion); não é interpolado por JavaScript.
+ * O primeiro argumento ($1) NÃO é tratado como hostname — todo o protocolo é via stdin.
+ * Fornece credencial somente para operação "get" (git clone/fetch HTTPS).
+ *
+ * Nota: a string é montada via concatenação (não template literal) para evitar que o
+ * JavaScript interpole process.env.GITHUB_TOKEN no momento da construção da string.
+ * O helper contém a referência literal $GITHUB_TOKEN para o shell expandir em runtime.
+ */
+function githubCredentialHelper(): string {
+  // Montado com concatenação para evitar interpolação JS do token.
+  const lines = [
+    '!f() {',
+    '  # Git credential helper protocol: stdin is key=value lines',
+    '  # operation=get|store|erase, protocol=https|..., host=..., path=... (optional)',
+    '  local op="" proto="" hst="" path=""',
+    '  while IFS= read -r line; do',
+    '    case "$line" in',
+    '      operation=*) op="${line#operation=}" ;;',
+    '      protocol=*)  proto="${line#protocol=}" ;;',
+    '      host=*)      hst="${line#host=}" ;;',
+    '      path=*)      path="${line#path=}" ;;',
+    '    esac',
+    '  done',
+    '  # Fornecer credencial somente para operação get (clone/fetch HTTPS)',
+    '  if [ "$op" = "get" ] && [ -n "$GITHUB_TOKEN" ]; then',
+    '    echo "protocol=$proto"',
+    '    echo "host=$hst"',
+    '    echo "username=x-access-token"',
+    // Aqui usamos $GITHUB_TOKEN literal — o shell expande em runtime, JS não interpola
+    '    echo "password=$GITHUB_TOKEN"',
+    '  fi',
+    '}; f',
+  ];
+  return lines.join('\n');
+}
+
+export function configureGitCredentials(): void {
+  if (!process.env.GITHUB_TOKEN) {
     console.log('No GITHUB_TOKEN set — public repos only.');
     return;
   }
 
   try {
-    const netrcPath = join(homedir(), '.netrc');
-    const netrcContent =
-      'machine github.com\n' +
-      'login ' + token + '\n' +
-      'password x-oauth-basic\n';
-    writeFileSync(netrcPath, netrcContent, { mode: 0o600 });
-    console.log('Git credentials configured via .netrc (token not in URL).');
+    // GIT_CONFIG_COUNT / GIT_CONFIG_KEY_n / GIT_CONFIG_VALUE_n:
+    // configuram git via variáveis de ambiente, sem escrever em .gitconfig,
+    // .git/config ou qualquer outro arquivo. Efeito apenas no processo atual
+    // e seus subprocessos (process-scoped). Veja git(1) --config-count.
+    process.env.GIT_CONFIG_COUNT = '1';
+    process.env.GIT_CONFIG_KEY_0 = 'credential.helper';
+    process.env.GIT_CONFIG_VALUE_0 = githubCredentialHelper();
 
-    // Also configure Git to use the credential helper (belt-and-suspenders)
-    execSync('git config --global credential.helper store --file ' + netrcPath, { stdio: 'pipe' });
+    console.log('Git credential helper configured (no file, env-based).');
   } catch (e) {
     console.error('Failed to configure git credentials:', (e as Error).message);
     throw e;
   }
 }
 
-/**
+/*
  * TASK-000032 Phase 5: Git identity configuration
  *
  * Configures git user.name and user.email at runtime (NOT via .gitconfig global).
@@ -72,7 +119,7 @@ function configureGitIdentity(): void {
   }
 }
 
-/**
+/*
  * PRODUCTION PATH UNIFICATION (TASK-000032 Phase 1)
  *
  * When AGENT_PROVIDER is set (e.g. '9router'), use RouterWorker which

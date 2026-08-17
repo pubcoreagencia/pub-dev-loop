@@ -53,8 +53,11 @@ services:
       TMPDIR: /tmp
       DATABASE_URL: postgres://pubdevloop:${POSTGRES_PASSWORD:-pubdevloop}@postgres:5432/pubdevloop
       # Git credentials for private repo access — passed from host env at runtime
-      # Token is NEVER in code, in .env files, or in repository URLs.
-      # Git credential helper reads from ~/.netrc (created at worker startup).
+      # Token is NEVER in code, in .env files, repository URLs, logs, traces, or commits.
+      # Git credential helper reads GITHUB_TOKEN from the process environment in runtime
+      # via GIT_CONFIG_COUNT/GIT_CONFIG_KEY_n/GIT_CONFIG_VALUE_n (process-scoped, no file).
+      # Worker entrypoint calls configureGitCredentials() at startup which sets these
+      # env vars so all git subprocesses use them. See references/git-credential-security.md.
       GITHUB_TOKEN: ${GITHUB_TOKEN}
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped

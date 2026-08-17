@@ -21,9 +21,13 @@ git status → ✅ clean
 
 ## Staging Health
 ```
-Containers: postgres (healthy) ✅ | api (healthy) ✅ | worker (healthy) ✅
-Worker health: {"status":"ok","worker":"router","provider":"9router","model":"ag/gemini-3-flash"}
-9Router: http://host.docker.internal:20128/v1 → HTTP 200 ✅
+Containers: docker compose staging iniciado e validado
+  - pubdevloop-postgres-1: Up (healthy) ✅
+  - pubdevloop-worker-1: Up (healthy) ✅
+  - pubdevloop-api-1: Up (healthy) ✅ (HTTP GET /health → { status: 'ok' })
+Docker Desktop engine: disponível (version 29.7.2)
+Worker health: RouterWorker-aware health check e credenciais em runtime validadas
+9Router: não testado com credenciais ativas (requer 9Router proxy)
 ```
 
 ## TASK-000034 Status

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir, rm } from 'node:fs/promises';
 import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { TaskFinalizer } from '../src/finalizer.js';
@@ -17,7 +17,8 @@ function initGitRepo(root: string): void {
 }
 
 function gitCommit(root: string, message: string): void {
-  execSync('git add -A && git commit -m "' + message + '"', { cwd: root, stdio: 'ignore' });
+  execSync('git add -A', { cwd: root, stdio: 'ignore' });
+  execSync('git commit -m "' + message + '"', { cwd: root, stdio: 'ignore' });
 }
 
 describe('E2E: Auto-Commit Cycle (simulates BaseWorker.executeOnce)', () => {
@@ -32,9 +33,9 @@ describe('E2E: Auto-Commit Cycle (simulates BaseWorker.executeOnce)', () => {
     finalizer = new TaskFinalizer(testRoot, { commandTimeoutMs: 10000 });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     try {
-      execSync('rm -rf "' + testRoot + '"', { stdio: 'ignore' });
+      await rm(testRoot, { recursive: true, force: true });
     } catch {
       // ignore
     }
@@ -196,6 +197,6 @@ describe('E2E: Auto-Commit Cycle (simulates BaseWorker.executeOnce)', () => {
 
     // Clean up
     await writeFile(join(testRoot, 'hello.txt'), 'PUB DEV LOOP AUTO COMMIT TEST\n');
-    execSync('rm -f "' + join(testRoot, 'unexpected.txt') + '"', { cwd: testRoot });
+    await rm(join(testRoot, 'unexpected.txt'), { force: true });
   });
 });
