@@ -11,7 +11,7 @@
 | **LAST_TESTS_RUN** | 138 passed, 8 skipped | Build: exit 0 ✅ | Real E2E: 9Router gemini-3.7-flash PASS ✅ |
 | **BUILD** | ✅ exit 0 |
 | **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE (ambiental — Codex CLI não instalado no Windows)<br>2. GitHub web UI retorna 404 para visualização web (Git remote + push funcionam perfeitamente)<br>3. Staging containers locais dependem de Docker Desktop |
-| **DO_NOT_REPEAT** | 9Router fallback implementado com fila [primaryModel, ...fallbackModels], backoff exponencial e suporte a retry-after em HTTP 429. TaskFinalizer cuida do commit automático. Nenhuma chave secreta em disco ou git. |
+| **DO_NOT_REPEAT** | Não recriar RouterWorker. RouterWorker permanente implementado com retry/fallback na fila [primaryModel, ...fallbackModels], backoff exponencial e suporte a retry-after em HTTP 429. TaskFinalizer cuida do commit automático. Nenhuma chave secreta em disco ou git. |
 | **NEXT_TASK** | TASK-000036 (PUB HOLDING REPOSITORY INTEGRATION / UNIFICATION) |
 | **OPEN_RISKS** | Nenhum blocker ativo para o PUB DEV LOOP. |
 
