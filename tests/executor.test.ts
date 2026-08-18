@@ -15,12 +15,12 @@ describe('CodexCliAgent',()=>{
   it('uses the supported codex config overrides before exec',async()=>{
     const calls:Array<{command:string;args:string[];cwd:string;timeoutMs:number}>=[];
     const executor={execute:async(request:{command:string;args:string[];cwd:string;timeoutMs:number})=>{calls.push(request);return{exitCode:0,stdout:'ok\n',stderr:'',durationMs:1,status:'COMPLETED' as const};}} as unknown as AgentExecutor;
-    const agent=new CodexCliAgent(executor,'codex',1000);
+    const agent=new CodexCliAgent(executor,process.execPath,1000);
     const result=await agent.execute(task,cwd);
     expect(result.summary).toContain('ok');
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({
-      command:'codex',
+      command:process.execPath,
       args:['-c','approval_policy=never','-c','sandbox_mode=workspace-write','exec','write hello'],
       cwd,
       timeoutMs:1000

@@ -4,6 +4,7 @@ import { DEFAULT_ROUTER_BASE_URL, normalizeBaseUrl } from './shared.js';
 import { ToolRuntime } from '../tools/runtime.js';
 import { AgentExecutor } from '../executor.js';
 import type { ToolCall, ToolResult, ToolExecutionContext, ToolDefinition } from '../tools/types.js';
+import { loadRouterConfig, type RouterConfig } from './routerConfig.js';
 
 interface OpenAIChatMessage {
   role: string;
@@ -89,8 +90,6 @@ export class RouterProvider implements AgentProvider {
 
   async execute(task: Task, workspace: string): Promise<ProviderTaskResult> {
     const started = Date.now();
-
-    // Build tool execution context
     const ctx: ToolExecutionContext = {
       workspaceRoot: workspace,
       maxRounds: this.maxToolRounds,
@@ -100,203 +99,212 @@ export class RouterProvider implements AgentProvider {
       maxWriteBytes: Number(process.env.ROUTER_MAX_WRITE_BYTES ?? 256 * 1024),
       redactSecrets: true,
     };
-
     const runtime = new ToolRuntime(ctx, new AgentExecutor());
     const toolDefs = runtime.getToolDefinitions();
-
-    // Build initial messages
     const messages: OpenAIChatMessage[] = [
       buildSystemPrompt(workspace, task),
       buildUserPrompt(task),
     ];
-
+    const cfg: RouterConfig = loadRouterConfig();
+    const modelQueue = [cfg.primaryModel, ...cfg.fallbackModels];
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-
-    let modelUsed: string | null = this.model;
+    let modelUsed: string | null = null;
     let totalToolCalls = 0;
     let toolRounds = 0;
     let finalMessage = '';
     let lastResponseText = '';
 
     try {
-      // Tool execution loop
-      let round = 0;
-      // eslint-disable-next-line no-constant-condition
-      while (round < this.maxToolRounds) {
-        round++;
-        toolRounds++;
-
-        // Build request
-        const requestBody: Record<string, unknown> = {
-          model: this.model ?? 'auto',
-          messages: this.messagesToApi(messages),
-          stream: false,
-          tools: toOpenAITools(toolDefs),
-          tool_choice: 'auto',
-        };
-
-        const response = await fetch(`${this.baseUrl}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            ...(this.apiKey ? { authorization: `Bearer ${this.apiKey}` } : {}),
-          },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal,
-        });
-
-        const text = await response.text();
-
-        if (!response.ok) {
-          const errPayload = this.parseError(text);
-          return {
-            status: 'ROUTER_HTTP_ERROR',
-            provider: this.kind,
-            model: modelUsed,
-            httpStatus: response.status,
-            exitCode: response.status,
-            durationMs: Date.now() - started,
-            stdout: lastResponseText || '',
-            stderr: errPayload.message || text,
-            changedFiles: runtime.getChangedFiles(),
-            commit: null,
-            errorCode: 'ROUTER_HTTP_ERROR',
-            errorMessage: `HTTP ${response.status}: ${errPayload.message || ''}`,
-            toolCalls: totalToolCalls,
-            toolRounds: toolRounds,
-          };
-        }
-
-        const payload = JSON.parse(text) as OpenAIChatResponse & {
-          choices?: Array<{ message?: OpenAIChatMessage; finish_reason?: string }>;
-        };
-
-        if (payload.model) {
-          modelUsed = payload.model;
-        }
-
-        const choice = payload.choices?.[0];
-        const message = choice?.message;
-        const finishReason = choice?.finish_reason;
-
-        const messageContent = message?.content ?? '';
-        lastResponseText = messageContent;
-
-        if (messageContent) {
-          finalMessage = messageContent;
-        }
-
-        // Check for tool calls
-        const toolCalls = message?.tool_calls;
-        if (!toolCalls || toolCalls.length === 0) {
-          // No more tool calls — model is done
-          break;
-        }
-
-        // Execute each tool call
-        const toolResults: ToolResult[] = [];
-        for (const tc of toolCalls) {
-          if (totalToolCalls >= this.maxToolCalls) {
-            return {
-              status: 'TOOL_LOOP_LIMIT',
-              provider: this.kind,
-              model: modelUsed,
-              exitCode: null,
-              durationMs: Date.now() - started,
-              stdout: finalMessage,
-              stderr: '',
-              changedFiles: runtime.getChangedFiles(),
-              commit: null,
-              errorCode: 'TOOL_LOOP_LIMIT',
-              errorMessage: `Exceeded max tool calls (${this.maxToolCalls})`,
-              toolCalls: totalToolCalls,
-              toolRounds: toolRounds,
+      while (toolRounds < this.maxToolRounds) {
+        let modelFound = false;
+        for (const model of modelQueue) {
+          let attempt = 0;
+          while (attempt < cfg.maxRetries) {
+            attempt++;
+            const requestBody: Record<string, unknown> = {
+              model,
+              messages: this.messagesToApi(messages),
+              stream: false,
+              tools: toOpenAITools(toolDefs),
+              tool_choice: 'auto',
             };
+
+            try {
+              const response = await fetch(`${this.baseUrl}/chat/completions`, {
+                method: 'POST',
+                headers: {
+                  'content-type': 'application/json',
+                  ...(this.apiKey ? { authorization: `Bearer ${this.apiKey}` } : {}),
+                },
+                body: JSON.stringify(requestBody),
+                signal: controller.signal,
+              });
+
+              const text = await response.text();
+
+              if (!response.ok) {
+                const errPayload = this.parseError(text);
+                if (response.status === 429 && attempt < cfg.maxRetries) {
+                  const retryAfter = response.headers.get('retry-after');
+                  const delayMs = retryAfter ? Number(retryAfter) * 1000 : cfg.baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 100;
+                  await new Promise(r => setTimeout(r, delayMs));
+                  continue;
+                }
+                if (response.status >= 500 && attempt < cfg.maxRetries) {
+                  const delayMs = cfg.baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 100;
+                  await new Promise(r => setTimeout(r, delayMs));
+                  continue;
+                }
+
+                // If this is the last model in the queue, return error
+                const isLastModel = model === modelQueue[modelQueue.length - 1];
+                if (isLastModel) {
+                  clearTimeout(timer);
+                  const hasFallbacks = cfg.fallbackModels && cfg.fallbackModels.length > 0;
+                  return {
+                    status: hasFallbacks ? 'FAILED' : 'ROUTER_HTTP_ERROR',
+                    provider: this.kind,
+                    model: modelUsed ?? model,
+                    exitCode: response.status,
+                    durationMs: Date.now() - started,
+                    stdout: lastResponseText || '',
+                    stderr: errPayload.message || text,
+                    changedFiles: runtime.getChangedFiles(),
+                    commit: null,
+                    errorCode: hasFallbacks ? 'ALL_PROVIDERS_FAILED' : 'ROUTER_HTTP_ERROR',
+                    errorMessage: hasFallbacks
+                      ? `All configured models failed: HTTP ${response.status}: ${errPayload.message || ''}`
+                      : `HTTP ${response.status}: ${errPayload.message || ''}`,
+                    toolCalls: totalToolCalls,
+                    toolRounds: toolRounds,
+                    httpStatus: response.status,
+                  };
+                }
+                break;
+              }
+
+              const payload = JSON.parse(text) as OpenAIChatResponse & {
+                choices?: Array<{ message?: OpenAIChatMessage; finish_reason?: string }>;
+              };
+
+              modelUsed = payload.model ?? model;
+              const choice = payload.choices?.[0];
+              const message = choice?.message;
+              const finishReason = choice?.finish_reason;
+              const messageContent = message?.content ?? '';
+              lastResponseText = messageContent;
+              if (messageContent) finalMessage = messageContent;
+
+              const toolCalls = message?.tool_calls;
+              if (!toolCalls || toolCalls.length === 0) {
+                clearTimeout(timer);
+                return {
+                  status: 'COMPLETED',
+                  provider: this.kind,
+                  model: modelUsed,
+                  exitCode: 0,
+                  durationMs: Date.now() - started,
+                  stdout: finalMessage,
+                  stderr: '',
+                  changedFiles: runtime.getChangedFiles(),
+                  commit: null,
+                  errorCode: null,
+                  errorMessage: null,
+                  toolCalls: totalToolCalls,
+                  toolRounds: toolRounds,
+                };
+              }
+
+              const toolResults: ToolResult[] = [];
+              for (const tc of toolCalls) {
+                if (totalToolCalls >= this.maxToolCalls) {
+                  clearTimeout(timer);
+                  return {
+                    status: 'TOOL_LOOP_LIMIT',
+                    provider: this.kind,
+                    model: modelUsed,
+                    exitCode: null,
+                    durationMs: Date.now() - started,
+                    stdout: finalMessage,
+                    stderr: '',
+                    changedFiles: runtime.getChangedFiles(),
+                    commit: null,
+                    errorCode: 'TOOL_LOOP_LIMIT',
+                    errorMessage: `Exceeded max tool calls (${this.maxToolCalls})`,
+                    toolCalls: totalToolCalls,
+                    toolRounds: toolRounds,
+                  };
+                }
+                totalToolCalls++;
+                let args: Record<string, unknown> = {};
+                try {
+                  args = JSON.parse(tc.function.arguments);
+                } catch {
+                  toolResults.push({ toolCallId: tc.id, toolName: tc.function.name, success: false, content: '', error: 'Failed to parse tool arguments as JSON' });
+                  continue;
+                }
+                toolResults.push(await runtime.executeTool(tc.id, tc.function.name, args));
+              }
+
+              messages.push({ role: 'assistant', content: messageContent || null, tool_calls: toolCalls });
+              for (const tr of toolResults) {
+                messages.push({ role: 'tool', content: tr.success ? tr.content : `Error: ${tr.error}`, tool_call_id: tr.toolCallId });
+              }
+
+              if (finishReason === 'stop') {
+                clearTimeout(timer);
+                return {
+                  status: 'COMPLETED',
+                  provider: this.kind,
+                  model: modelUsed,
+                  exitCode: 0,
+                  durationMs: Date.now() - started,
+                  stdout: finalMessage,
+                  stderr: '',
+                  changedFiles: runtime.getChangedFiles(),
+                  commit: null,
+                  errorCode: null,
+                  errorMessage: null,
+                  toolCalls: totalToolCalls,
+                  toolRounds: toolRounds,
+                };
+              }
+              modelFound = true;
+              toolRounds++;
+              break;
+            } catch (fetchErr: any) {
+              if (attempt < cfg.maxRetries) {
+                await new Promise(r => setTimeout(r, cfg.baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 100));
+                continue;
+              }
+              break;
+            }
           }
-          totalToolCalls++;
-
-          // Parse arguments
-          let args: Record<string, unknown> = {};
-          try {
-            args = JSON.parse(tc.function.arguments);
-          } catch {
-            toolResults.push({
-              toolCallId: tc.id,
-              toolName: tc.function.name,
-              success: false,
-              content: '',
-              error: 'Failed to parse tool arguments as JSON',
-            });
-            continue;
-          }
-
-          // Execute the tool
-          const result = await runtime.executeTool(tc.id, tc.function.name, args);
-          toolResults.push(result);
+          if (modelFound) break;
         }
-
-        // Add assistant message (with tool_calls) to conversation
-        messages.push({
-          role: 'assistant',
-          content: messageContent || null,
-          tool_calls: toolCalls,
-        });
-
-        // Add tool results to conversation
-        for (const tr of toolResults) {
-          const content = tr.success ? tr.content : `Error: ${tr.error}`;
-          messages.push({
-            role: 'tool',
-            content: content,
-            tool_call_id: tr.toolCallId,
-          });
-        }
-
-        // Check finish reason
-        if (finishReason === 'stop') {
-          break;
-        }
+        if (!modelFound) break;
       }
-
-      // Check if we hit the round limit
-      if (round >= this.maxToolRounds && messages.length > 2) {
-        return {
-          status: 'TOOL_LOOP_LIMIT',
-          provider: this.kind,
-          model: modelUsed,
-          exitCode: null,
-          durationMs: Date.now() - started,
-          stdout: finalMessage,
-          stderr: '',
-          changedFiles: runtime.getChangedFiles(),
-          commit: null,
-          errorCode: 'TOOL_LOOP_LIMIT',
-          errorMessage: `Exceeded max tool rounds (${this.maxToolRounds})`,
-          toolCalls: totalToolCalls,
-          toolRounds: toolRounds,
-        };
-      }
-
+      clearTimeout(timer);
       return {
-        status: 'COMPLETED',
+        status: 'FAILED',
         provider: this.kind,
         model: modelUsed,
-        exitCode: 0,
+        exitCode: null,
         durationMs: Date.now() - started,
         stdout: finalMessage,
-        stderr: '',
+        stderr: 'All configured models failed',
         changedFiles: runtime.getChangedFiles(),
         commit: null,
-        errorCode: null,
-        errorMessage: null,
+        errorCode: 'ALL_PROVIDERS_FAILED',
+        errorMessage: 'All configured models failed',
         toolCalls: totalToolCalls,
         toolRounds: toolRounds,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Router request failed';
       const isAbort = message.includes('abort') || (error as any)?.name === 'AbortError';
-
+      clearTimeout(timer);
       return {
         status: isAbort ? 'ROUTER_TIMEOUT' : 'ROUTER_CONNECTION_ERROR',
         provider: this.kind,

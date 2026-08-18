@@ -26,6 +26,7 @@ describe('router provider configuration', () => {
 describe('RouterProvider', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    process.env.ROUTER_MODEL = 'gemini/gemini-3.7-flash';
   });
 
   it('reports connectivity and model metadata without a secret', async () => {

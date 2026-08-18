@@ -1,0 +1,64 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pub-dev-loop-api",
+  "main": "src/api-worker.ts",
+  "compatibility_date": "2026-08-17",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "73070556ffde4aaea7cbbde327387f70"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "WORKER_CONTAINER",
+        "class_name": "PubDevLoopWorkerContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "PubDevLoopWorkerContainer"
+      ]
+    }
+  ],
+  "containers": [
+    {
+      "class_name": "PubDevLoopWorkerContainer",
+      "image": "./Dockerfile.worker",
+      "max_instances": 1
+    }
+  ],
+  "env": {
+    "staging": {
+      "name": "pub-dev-loop-api-staging",
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "73070556ffde4aaea7cbbde327387f70"
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "WORKER_CONTAINER",
+            "class_name": "PubDevLoopWorkerContainer"
+          }
+        ]
+      },
+      "containers": [
+        {
+          "class_name": "PubDevLoopWorkerContainer",
+          "image": "./Dockerfile.worker",
+          "max_instances": 1
+        }
+      ]
+    }
+  }
+}

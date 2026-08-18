@@ -1,5 +1,7 @@
 # Router Gateway Decision
 
+> Historical note: this document reflects an earlier architecture discussion and contains a now-obsolete OpenRouter recommendation. The current authoritative decision is the official 9Router gateway, documented in `docs/PUB_DEV_LOOP_MASTER_CONTEXT.md` and `docs/ARCHITECTURE_DECISIONS.md`.
+
 ## Current State
 
 - **Client Layer (`RouterProvider` & `RouterWorker`)**:
@@ -44,14 +46,6 @@ The LLM Gateway must strictly fulfill the OpenAI Chat Completions API contract e
 - **Tool Support**: Full (passes tool definitions through to native tool-calling models).
 - **Deployment Complexity**: Medium (requires writing, testing, and deploying a new Cloudflare Worker).
 
-### Candidate B: OpenRouter API Directly (`https://openrouter.ai/api/v1`)
-- **Description**: Set `ROUTER_BASE_URL=https://openrouter.ai/api/v1` and `ROUTER_API_KEY=<openrouter_key>` directly in Worker environment / secrets.
-- **Compatibility**: 100% (OpenRouter strictly follows OpenAI Chat Completions API with native tool-calling support for models like `google/gemini-2.5-flash`, `anthropic/claude-3.5-sonnet`, `openai/gpt-4o`).
-- **Cost**: Pay-as-you-go per token via OpenRouter account.
-- **Security**: High (standard HTTPS + API Key authentication).
-- **Tool Support**: Native support across all leading models.
-- **Deployment Complexity**: Low (zero new code or workers needed; configuration-only change via `ROUTER_BASE_URL` and `ROUTER_API_KEY`).
-
 ### Candidate C: Local / Sidecar Proxy Gateway (Port 20128)
 - **Description**: Run a local LiteLLM / Ollama / 9Router proxy daemon on host port 20128 (`http://host.docker.internal:20128/v1`).
 - **Compatibility**: High (if configured with OpenAI compatibility).
@@ -64,12 +58,12 @@ The LLM Gateway must strictly fulfill the OpenAI Chat Completions API contract e
 
 ## Recommended Architecture
 
-### **Primary Recommendation: Direct OpenAI-Compatible Gateway / OpenRouter (Candidate B)**
+### **Primary Recommendation: Deploy Official 9Router Gateway (Candidate A)**
 
 **Rationale**:
-1. **Zero Architectural Drift**: `RouterProvider` was explicitly coded as a universal OpenAI-compatible client. `https://openrouter.ai/api/v1` or an equivalent OpenAI-compatible gateway matches every single line of `src/providers/router.ts` without requiring a single line of new proxy code.
-2. **Immediate Availability & High Reliability**: Removes single point of failure and custom Cloudflare worker maintenance.
-3. **Multi-Model Fallback Support**: `ROUTER_PROVIDER_CHAIN` (e.g. `router:google/gemini-2.5-flash,router:anthropic/claude-3.5-sonnet`) works natively out of the box.
+1. **Alignment with Architecture Decision**: The project documentation mandates using the official 9Router gateway.
+2. **Consistency**: Keeps the system within the defined provider chain without introducing external services.
+3. **Control & Security**: Allows managing secrets and routing within our own infrastructure.
 
 ---
 

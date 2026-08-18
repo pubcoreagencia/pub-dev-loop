@@ -43,3 +43,18 @@ Os componentes de infraestrutura (Durable Objects, `alarm()`, Firecracker MicroV
 - [x] Requisições de Spam: Bloqueadas pelo in-memory bucket limit (429).
 - [x] Injeção de Campos: Omitida e rejeitada pelo parse de chaves permitidas (400).
 - [x] Tarefas Válidas: Executadas sem latência extra via RouterWorker (201).
+
+---
+
+## Validação de Segurança (Produção v1.1.0)
+
+Durante o processo de *Smoke Test* automatizado de subida da versão v1.1.0 em ambiente de Produção, os seguintes resultados reais foram observados:
+
+- [x] **Deploy Status:** SUCCESS (Versão 3c0774d6 promovida para Edge Cloudflare via GitHub).
+- [x] **Health Check (`GET /health`):** HTTP 200 OK.
+- [x] **Auth Enforcement:**
+  - Sem credencial → `HTTP 401 Unauthorized`
+  - Chave inválida → `HTTP 401 Unauthorized`
+  - Chave correta → `HTTP 201 Created`
+- [x] **Rate Limit Enforcement:** Excesso de tráfego foi bloqueado corretamente com `HTTP 429 Too Many Requests`.
+- [!] **Task Lifecycle Continuity:** As tarefas geradas no ambiente de produção ficaram estacionadas no status `QUEUED`. O log de secrets do Worker em Produção (`npx wrangler secret list`) indicou a ausência da variável `ROUTER_BASE_URL`. Embora o código da API Worker (v1.1.0) e proteção de rate-limiting estejam intactos, o *worker container* (Firecracker) não processou a fila no tempo esperado (possível falha no bootstrap ou retenção por falta do secret do provider). Nenhuma quebra da API em si ocorreu.
