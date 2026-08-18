@@ -119,6 +119,7 @@ export class PostgresTaskRepository implements TaskRepository {
     const vals: unknown[] = [];
     let i = 1;
     for (const [k, v] of Object.entries(patch)) {
+      if (v === undefined) continue;
       const col = k === 'commitSha' ? 'commit_sha'
                : k === 'gitStatus' ? 'git_status'
                : k === 'createdAt' ? 'created_at'

@@ -178,9 +178,16 @@ if (isMain) {
   const worker = createProductionWorker();
   const interval = Number(process.env.WORKER_POLL_INTERVAL_MS ?? 3000);
   console.log(`Worker started (${worker.constructor.name})`);
-  setInterval(
-    () => worker.executeOnce().catch(e => console.error('Worker cycle failed', e.message)),
-    interval,
-  );
-  worker.executeOnce().catch(e => console.error('Worker cycle failed', e.message));
+
+  const runCycle = async () => {
+    try {
+      await worker.executeOnce();
+    } catch (e) {
+      console.error('Worker cycle failed', (e as Error).message);
+    } finally {
+      setTimeout(runCycle, interval);
+    }
+  };
+
+  runCycle();
 }
