@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { OfficeScene } from "../scenes/OfficeScene";
 import { SidePanel } from "../components/SidePanel";
+import { TaskModal } from "../components/TaskModal";
 import { useStore } from "../store/useStore";
 
 export const Home: React.FC = () => {
-  const { loadData, selectedAgent, agents, tasks } = useStore();
+  const { loadData, selectedAgent, agents, tasks, openModal } = useStore();
   const [showPanel, setShowPanel] = useState(true);
 
   useEffect(() => {
@@ -38,6 +39,12 @@ export const Home: React.FC = () => {
           <div className="indicator-pill">
             <span>Tarefas Ativas: <strong>{activeTaskCount}</strong></span>
           </div>
+          <button
+            className="btn-create-nav"
+            onClick={() => openModal("CREATE_TASK")}
+          >
+            ➕ Nova Tarefa
+          </button>
           {!showPanel && (
             <button className="toggle-panel-btn" onClick={() => setShowPanel(true)}>
               Abrir Painel 📋
@@ -58,6 +65,9 @@ export const Home: React.FC = () => {
           onClose={() => setShowPanel(false)}
         />
       )}
+
+      {/* Operations Modal (Create, View, Logs, Confirmations) */}
+      <TaskModal />
     </div>
   );
 };

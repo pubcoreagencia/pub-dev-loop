@@ -30,3 +30,11 @@ export interface Task {
   heartbeatAt?: string | null;
   workspacePath?: string | null;
 }
+
+export interface CreateTaskInput {
+  project: string;
+  repository: string;
+  objective: string;
+  prompt: string;
+  priority?: number;
+}

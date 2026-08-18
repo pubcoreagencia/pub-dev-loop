@@ -1,4 +1,4 @@
-import type { Task } from "../types/task";
+import type { Task, CreateTaskInput } from "../types/task";
 import type { Agent } from "../types/agent";
 import { deriveAgentsFromTasks } from "./agentAdapter";
 
@@ -29,6 +29,47 @@ export async function fetchTask(id: string): Promise<Task> {
   const res = await fetch(`${API_BASE}tasks/${id}`);
   if (!res.ok) throw new Error(`Erro ao buscar tarefa ${id}: ${res.status}`);
   if (!isJsonResponse(res)) throw new Error("Resposta da tarefa não é JSON");
+  return (await res.json()) as Task;
+}
+
+export async function createTask(input: CreateTaskInput): Promise<Task> {
+  const res = await fetch(`${API_BASE}tasks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      project: input.project.trim(),
+      repository: input.repository.trim(),
+      objective: input.objective.trim(),
+      prompt: input.prompt.trim(),
+      priority: Number(input.priority ?? 0),
+    }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Erro ao criar tarefa: ${res.status}`);
+  }
+  return (await res.json()) as Task;
+}
+
+export async function cancelTask(id: string): Promise<Task> {
+  const res = await fetch(`${API_BASE}tasks/${id}/cancel`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Erro ao cancelar tarefa: ${res.status}`);
+  }
+  return (await res.json()) as Task;
+}
+
+export async function retryTask(id: string): Promise<Task> {
+  const res = await fetch(`${API_BASE}tasks/${id}/retry`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Erro ao reexecutar tarefa: ${res.status}`);
+  }
   return (await res.json()) as Task;
 }
 

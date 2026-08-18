@@ -10,7 +10,21 @@ interface Props {
 }
 
 export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
-  const { tasks, agents, selectAgent, loading, error } = useStore();
+  const {
+    tasks,
+    agents,
+    selectAgent,
+    selectTask,
+    selectedTask,
+    openModal,
+    loadData,
+    loading,
+    error,
+    successMessage,
+    setSuccessMessage,
+  } = useStore();
+
+  const currentTask = selectedTask || (selectedAgent ? tasks.find((t) => t.id === selectedAgent.taskId) : undefined);
 
   const queuedTasks = tasks.filter((t: Task) => ["QUEUED", "ASSIGNED"].includes(t.status));
   const runningTasks = tasks.filter((t: Task) => ["RUNNING", "TESTING"].includes(t.status));
@@ -18,23 +32,195 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
     ["COMPLETED", "FAILED", "NEEDS_REVIEW", "BLOCKED", "CANCELLED"].includes(t.status)
   );
 
+  const isCancellable = currentTask && ["QUEUED", "ASSIGNED", "RUNNING", "TESTING"].includes(currentTask.status);
+  const isRetriable = currentTask && ["FAILED", "CANCELLED", "BLOCKED", "COMPLETED", "NEEDS_REVIEW"].includes(currentTask.status);
+
   return (
     <aside className="side-panel">
+      {/* Header */}
       <div className="panel-header">
         <div className="panel-title-group">
           <span className="live-dot" />
           <h2>Central de Comando</h2>
         </div>
-        <button className="close-btn" onClick={onClose} title="Fechar painel">
-          ✖
-        </button>
+        <div className="panel-header-actions">
+          <button
+            className="action-btn-sm"
+            onClick={() => {
+              setSuccessMessage(undefined);
+              loadData();
+            }}
+            title="Atualizar dados agora"
+          >
+            🔄 Atualizar
+          </button>
+          <button className="close-btn" onClick={onClose} title="Fechar painel">
+            ✖
+          </button>
+        </div>
       </div>
 
       <div className="panel-content">
+        {/* Success / Notification banner */}
+        {successMessage && (
+          <div className="success-card">
+            <span>{successMessage}</span>
+            <button className="dismiss-btn" onClick={() => setSuccessMessage(undefined)}>✖</button>
+          </div>
+        )}
+
         {loading && <div className="loading-bar">Atualizando dados em tempo real...</div>}
         {error && <div className="error-card">{error}</div>}
 
-        {/* Selected Agent Details (Requisito 9) */}
+        {/* Global Action: New Task */}
+        <div className="primary-action-bar">
+          <button
+            className="btn-create-task"
+            onClick={() => openModal("CREATE_TASK")}
+          >
+            ➕ Nova Tarefa
+          </button>
+        </div>
+
+        {/* CONTROLE DA TAREFA (Requisito 2) */}
+        {currentTask && (
+          <section className="task-control-card">
+            <div className="card-header">
+              <span className="badge-category">Operação</span>
+              <h3>CONTROLE DA TAREFA</h3>
+            </div>
+
+            <div className="details-grid">
+              <div className="detail-item full-width">
+                <span className="detail-label">ID DA TAREFA</span>
+                <span className="detail-value task-id" title={currentTask.id}>{currentTask.id}</span>
+              </div>
+
+              <div className="detail-item">
+                <span className="detail-label">PROJETO</span>
+                <span className="detail-value">{currentTask.project}</span>
+              </div>
+
+              <div className="detail-item">
+                <span className="detail-label">ESTADO</span>
+                <span className={`status-pill status-${currentTask.status.toLowerCase()}`}>
+                  {STATE_LABELS_PT[currentTask.status] ?? currentTask.status}
+                </span>
+              </div>
+
+              <div className="detail-item full-width">
+                <span className="detail-label">OBJETIVO</span>
+                <span className="detail-value">{currentTask.objective}</span>
+              </div>
+
+              <div className="detail-item">
+                <span className="detail-label">AGENTE</span>
+                <span className="detail-value highlight">{currentTask.worker || selectedAgent?.name || "-"}</span>
+              </div>
+
+              <div className="detail-item">
+                <span className="detail-label">PROVEDOR</span>
+                <span className="detail-value provider-badge">
+                  {(currentTask.result as any)?.provider || selectedAgent?.provider || "9Router"}
+                </span>
+              </div>
+
+              <div className="detail-item">
+                <span className="detail-label">MODELO</span>
+                <span className="detail-value model-badge">
+                  {(currentTask.result as any)?.model || selectedAgent?.model || "gemini-3.7-flash"}
+                </span>
+              </div>
+
+              <div className="detail-item">
+                <span className="detail-label">DURAÇÃO</span>
+                <span className="detail-value">
+                  {selectedAgent?.duration || ((currentTask.result as any)?.durationMs ? `${Math.round(Number((currentTask.result as any).durationMs) / 1000)}s` : "-")}
+                </span>
+              </div>
+
+              <div className="detail-item full-width">
+                <span className="detail-label">REPOSITÓRIO</span>
+                <span className="detail-value repo-url" title={currentTask.repository}>
+                  {currentTask.repository}
+                </span>
+              </div>
+
+              <div className="detail-item">
+                <span className="detail-label">COMMIT</span>
+                <span className="detail-value commit-hash">
+                  {currentTask.commitSha ? currentTask.commitSha.slice(0, 10) : "-"}
+                </span>
+              </div>
+
+              {currentTask.error && (
+                <div className="detail-item full-width">
+                  <span className="detail-label error-label">ERRO REGISTRADO</span>
+                  <span className="detail-value error-text">{currentTask.error}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Ações Rápidas da Tarefa */}
+            <div className="task-action-buttons">
+              <button
+                className="btn-action-tool"
+                onClick={() => openModal("VIEW_TASK", currentTask)}
+                title="Ver detalhes completos da tarefa"
+              >
+                📄 Ver Tarefa
+              </button>
+
+              <button
+                className="btn-action-tool"
+                onClick={() => openModal("VIEW_LOGS", currentTask)}
+                title="Ver logs de execução"
+              >
+                📋 Ver Registros
+              </button>
+
+              <button
+                className="btn-action-tool"
+                onClick={() => openModal("VIEW_RESULT", currentTask)}
+                title="Ver resultado da execução"
+              >
+                📊 Ver Resultado
+              </button>
+
+              {currentTask.commitSha && (
+                <button
+                  className="btn-action-tool"
+                  onClick={() => openModal("VIEW_TASK", currentTask)}
+                  title="Ver commit gerado"
+                >
+                  🔗 Ver Commit
+                </button>
+              )}
+
+              {isCancellable && (
+                <button
+                  className="btn-action-danger"
+                  onClick={() => openModal("CONFIRM_CANCEL", currentTask)}
+                  title="Cancelar execução da tarefa"
+                >
+                  🛑 Cancelar Tarefa
+                </button>
+              )}
+
+              {isRetriable && (
+                <button
+                  className="btn-action-primary"
+                  onClick={() => openModal("CONFIRM_RETRY", currentTask)}
+                  title="Reexecutar esta tarefa"
+                >
+                  🔄 Reexecutar Tarefa
+                </button>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Selected Agent Details Card (Requisito 1) */}
         {selectedAgent && (
           <section className="agent-details-card">
             <div className="card-header">
@@ -76,44 +262,8 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
               </div>
 
               <div className="detail-item full-width">
-                <span className="detail-label">TAREFA</span>
-                <span className="detail-value task-id" title={selectedAgent.taskId}>
-                  {selectedAgent.taskId}
-                </span>
-              </div>
-
-              <div className="detail-item">
-                <span className="detail-label">PROJETO</span>
-                <span className="detail-value">{selectedAgent.project}</span>
-              </div>
-
-              <div className="detail-item">
-                <span className="detail-label">REPOSITÓRIO</span>
-                <span className="detail-value repo-url" title={selectedAgent.repository}>
-                  {selectedAgent.repository.split("/").pop() || selectedAgent.repository}
-                </span>
-              </div>
-
-              <div className="detail-item">
-                <span className="detail-label">TEMPO DE EXECUÇÃO</span>
-                <span className="detail-value">{selectedAgent.duration}</span>
-              </div>
-
-              <div className="detail-item">
-                <span className="detail-label">INÍCIO</span>
-                <span className="detail-value text-muted">{selectedAgent.startedAt}</span>
-              </div>
-
-              <div className="detail-item full-width">
                 <span className="detail-label">ÚLTIMO EVENTO</span>
                 <span className="detail-value event-text">{selectedAgent.lastEvent}</span>
-              </div>
-
-              <div className="detail-item full-width">
-                <span className="detail-label">COMMIT</span>
-                <span className="detail-value commit-hash">
-                  {selectedAgent.commitSha ? selectedAgent.commitSha.slice(0, 10) : "-"}
-                </span>
               </div>
             </div>
           </section>
@@ -164,7 +314,11 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
           ) : (
             <ul className="task-list">
               {runningTasks.map((t: Task) => (
-                <li key={t.id} className="task-item">
+                <li
+                  key={t.id}
+                  className={`task-item ${selectedTask?.id === t.id ? "active-task-item" : ""}`}
+                  onClick={() => selectTask(t)}
+                >
                   <div className="task-row">
                     <span className="task-title">{t.objective || t.prompt || t.id}</span>
                     <span className={`status-badge-inline status-${t.status.toLowerCase()}`}>
@@ -188,7 +342,11 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
           ) : (
             <ul className="task-list">
               {queuedTasks.map((t: Task) => (
-                <li key={t.id} className="task-item">
+                <li
+                  key={t.id}
+                  className={`task-item ${selectedTask?.id === t.id ? "active-task-item" : ""}`}
+                  onClick={() => selectTask(t)}
+                >
                   <div className="task-row">
                     <span className="task-title">{t.objective || t.prompt || t.id}</span>
                     <span className="status-badge-inline status-queued">EM FILA</span>
@@ -209,8 +367,12 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
             <p className="empty-text">Nenhuma tarefa finalizada no histórico.</p>
           ) : (
             <ul className="task-list">
-              {finishedTasks.slice(0, 5).map((t: Task) => (
-                <li key={t.id} className="task-item">
+              {finishedTasks.slice(0, 8).map((t: Task) => (
+                <li
+                  key={t.id}
+                  className={`task-item ${selectedTask?.id === t.id ? "active-task-item" : ""}`}
+                  onClick={() => selectTask(t)}
+                >
                   <div className="task-row">
                     <span className="task-title">{t.objective || t.prompt || t.id}</span>
                     <span className={`status-badge-inline status-${t.status.toLowerCase()}`}>
@@ -218,7 +380,7 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
                     </span>
                   </div>
                   <span className="task-sub">
-                    {t.commitSha ? `Commit: ${t.commitSha.slice(0, 7)}` : t.project}
+                    {t.commitSha ? `Commit: ${t.commitSha.slice(0, 7)}` : t.project} • {new Date(t.createdAt).toLocaleDateString("pt-BR")}
                   </span>
                 </li>
               ))}
