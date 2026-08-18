@@ -123,3 +123,47 @@ Fluxo padrão de publicação de novas releases:
    git tag -a v1.1.0 -m "Release v1.1.0"
    git push origin v1.1.0
    ```
+
+---
+
+## 10. Como Criar e Gerenciar API Keys
+O endpoint de criação de tarefas é protegido pela chave de API `PUB_DEV_LOOP_API_KEY`. Para criar ou definir uma chave:
+1. Gere um string seguro e longo.
+2. Defina o segredo de produção via Wrangler:
+   ```bash
+   npx wrangler secret put PUB_DEV_LOOP_API_KEY
+   ```
+3. O Cloudflare exigirá a entrada manual do valor gerado no console interativo.
+
+---
+
+## 11. Como Rotacionar Secrets
+Caso suspeite de vazamento do Token do GitHub, Banco de Dados, Router ou API Key:
+1. Gere a nova credencial nos provedores correspondentes.
+2. Execute o update via Wrangler (ele sobrescreve automaticamente o secret antigo):
+   ```bash
+   npx wrangler secret put [NOME_DO_SECRET]
+   ```
+   *(Ex: `npx wrangler secret put ROUTER_API_KEY`)*
+3. As alterações entram em vigor imediatamente nas novas execuções de workers sem necessidade de deploy.
+
+---
+
+## 12. Como Consumir o Endpoint Público (POST /tasks)
+Para agendar tarefas na fila de execução externa:
+```bash
+curl -s -X POST https://pub-dev-loop-api.contato-pubcore.workers.dev/tasks \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: SUACHAVEAQUI" \
+  -d '{
+    "project": "Meu Projeto",
+    "repository": "https://github.com/exemplo/repo.git",
+    "objective": "Objetivo em português",
+    "prompt": "Instrução detalhada"
+  }'
+```
+
+**Erros Comuns:**
+- `401 Unauthorized`: Header ausente ou chave incorreta.
+- `429 Too Many Requests`: Limite de picos excedido (máx 10/min por IP).
+- `400 Bad Request`: Payload ausente ou com campos não listados permitidos.

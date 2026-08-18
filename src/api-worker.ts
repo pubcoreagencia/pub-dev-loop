@@ -14,6 +14,7 @@ export interface Env {
   GITHUB_TOKEN?: string;
   ROUTER_API_KEY?: string;
   ROUTER_BASE_URL?: string;
+  PUB_DEV_LOOP_API_KEY?: string;
 }
 
 /**
@@ -166,6 +167,44 @@ async function triggerContainerWorker(env: Env): Promise<void> {
   }
 }
 
+// Rate Limiting helper state
+const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+const MAX_REQUESTS_PER_MINUTE = 10;
+const RATE_LIMIT_WINDOW_MS = 60000;
+
+export function checkRateLimit(clientIp: string, maxRequests = MAX_REQUESTS_PER_MINUTE, windowMs = RATE_LIMIT_WINDOW_MS): boolean {
+  const now = Date.now();
+  const record = rateLimitMap.get(clientIp);
+
+  if (!record || (now - record.windowStart) > windowMs) {
+    rateLimitMap.set(clientIp, { count: 1, windowStart: now });
+    return true;
+  }
+
+  if (record.count >= maxRequests) {
+    return false;
+  }
+
+  record.count += 1;
+  return true;
+}
+
+export function resetRateLimitMap(): void {
+  rateLimitMap.clear();
+}
+
+function extractApiKey(request: Request): string | null {
+  const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
+  if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+    return authHeader.slice(7).trim();
+  }
+  const xApiKey = request.headers.get('X-API-Key') || request.headers.get('x-api-key');
+  if (xApiKey) {
+    return xApiKey.trim();
+  }
+  return null;
+}
+
 /**
  * Adaptador de API Gateway para Cloudflare Workers.
  * Implementa requisições HTTP REST usando Web Standard fetch().
@@ -185,41 +224,93 @@ export default {
         });
       }
 
-      const repo = getRepository(env);
-
       // POST /tasks
       if (method === 'POST' && path === '/tasks') {
-        const body = (await request.json().catch(() => ({}))) as {
-          project?: string;
-          repository?: string;
-          objective?: string;
-          prompt?: string;
-          priority?: number;
-        };
+        const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || '127.0.0.1';
 
-        if (!body.project || !body.repository || !body.objective || !body.prompt) {
+        // 1. Rate Limiting Check
+        if (!checkRateLimit(clientIp)) {
+          console.log(JSON.stringify({ event: 'RATE_LIMITED', clientIp, path, timestamp: new Date().toISOString() }));
+          return new Response(JSON.stringify({ error: 'Too Many Requests' }), {
+            status: 429,
+            headers: { 'Content-Type': 'application/json', 'Retry-After': '60' },
+          });
+        }
+
+        // 2. Authentication Validation
+        const expectedApiKey = env.PUB_DEV_LOOP_API_KEY || process.env.PUB_DEV_LOOP_API_KEY;
+        if (expectedApiKey && expectedApiKey.trim()) {
+          const providedApiKey = extractApiKey(request);
+          if (!providedApiKey || providedApiKey !== expectedApiKey.trim()) {
+            console.log(JSON.stringify({ event: 'AUTH_FAILED', clientIp, path, timestamp: new Date().toISOString() }));
+            return new Response(JSON.stringify({ error: 'Unauthorized: Invalid or missing API key' }), {
+              status: 401,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
+        }
+
+        // 3. Payload Validation
+        let body: any;
+        try {
+          body = await request.json();
+        } catch {
+          console.log(JSON.stringify({ event: 'TASK_REQUEST_REJECTED', reason: 'Invalid JSON payload', clientIp, path, timestamp: new Date().toISOString() }));
+          return new Response(JSON.stringify({ error: 'Invalid JSON payload' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+
+        if (
+          !body ||
+          typeof body !== 'object' ||
+          typeof body.project !== 'string' || !body.project.trim() ||
+          typeof body.repository !== 'string' || !body.repository.trim() ||
+          typeof body.objective !== 'string' || !body.objective.trim() ||
+          typeof body.prompt !== 'string' || !body.prompt.trim()
+        ) {
+          console.log(JSON.stringify({ event: 'TASK_REQUEST_REJECTED', reason: 'Missing required fields', clientIp, path, timestamp: new Date().toISOString() }));
           return new Response(
-            JSON.stringify({ error: 'project, repository, objective and prompt are required' }),
+            JSON.stringify({ error: 'project, repository, objective and prompt are required string fields' }),
             { status: 400, headers: { 'Content-Type': 'application/json' } }
           );
         }
 
+        // Reject unknown or dangerous extra fields
+        const allowedFields = new Set(['project', 'repository', 'objective', 'prompt', 'priority']);
+        const unknownFields = Object.keys(body).filter(k => !allowedFields.has(k));
+        if (unknownFields.length > 0) {
+          console.log(JSON.stringify({ event: 'TASK_REQUEST_REJECTED', reason: `Unknown fields: ${unknownFields.join(', ')}`, clientIp, path, timestamp: new Date().toISOString() }));
+          return new Response(
+            JSON.stringify({ error: `Unknown or forbidden fields provided: ${unknownFields.join(', ')}` }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const repo = getRepository(env);
         const task = await repo.create({
-          project: body.project,
-          repository: body.repository,
-          objective: body.objective,
-          prompt: body.prompt,
-          priority: body.priority,
+          project: body.project.trim(),
+          repository: body.repository.trim(),
+          objective: body.objective.trim(),
+          prompt: body.prompt.trim(),
+          priority: typeof body.priority === 'number' ? body.priority : undefined,
         });
 
+        console.log(JSON.stringify({ event: 'TASK_REQUEST_ACCEPTED', taskId: task.id, project: task.project, clientIp, timestamp: new Date().toISOString() }));
+
         // Trigger container startup on new task via start()
-        ctx.waitUntil(triggerContainerWorker(env));
+        if (ctx && typeof ctx.waitUntil === 'function') {
+          ctx.waitUntil(triggerContainerWorker(env));
+        }
 
         return new Response(JSON.stringify(task), {
           status: 201,
           headers: { 'Content-Type': 'application/json' },
         });
       }
+
+      const repo = getRepository(env);
 
       // GET /tasks
       if (method === 'GET' && path === '/tasks') {
