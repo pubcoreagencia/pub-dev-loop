@@ -143,3 +143,15 @@
 - **Validação de GITHUB_TOKEN**: Token detectado no ambiente; configureGitCredentials() configura git credential helper em runtime (sem escrever arquivo, sem persistir token em disco)
 - **Limitações**: Staging containers não podem ser iniciados neste ambiente (Docker Desktop indisponível) — deployment real em infra de produção disponível via docker compose
 - **Invariant**: finalizer.ts e security.ts UNTOUCHED ✅
+
+## TASK-000035
+- **Objetivo**: Implementação e validação completa de resiliência e fallback no RouterProvider + execução E2E real
+- **Status**: COMPLETE ✅
+- **Commit**: `b5d65e8` — feat(router): complete router fallback resilience logic and verify E2E task success
+- **Changes**:
+  1. `src/providers/router.ts` — estruturação completa de retry/fallback loop (`primaryModel` -> `fallbackModels`), backoff exponencial e leitura de `retry-after` header sob HTTP 429.
+  2. `src/providers/routerConfig.ts` — carregamento robusto de `ROUTER_MODEL` e `ROUTER_FALLBACK_MODELS`.
+  3. `tests/router_fallback.test.ts` — suíte completa de 5 testes unitários de fallback e retries cobrindo cenários transitórios e permanentes.
+  4. Validação real E2E com task `82e42e9f-adc9-47e0-ac11-50dddb44543a` finalizada com sucesso pelo modelo primário `gemini-3.7-flash`, gerando o commit `358d0e8f5f30dbf3ff6d0c703364de19c3a19ab0`.
+- **Tests**: 138 passed | 8 skipped | Build: exit 0 ✅
+- **Invariant**: Secrets protegidos, TaskFinalizer com auto-commit limpo.

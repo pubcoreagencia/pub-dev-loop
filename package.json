@@ -14,7 +14,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "vitest run tests/integration/codex-hello.integration.test.ts",
-    "db:migrate": "tsx src/db/migrate.ts"
+    "devloop:resume": "tsx src/context/cli.ts --summary",
+    "devloop:validate": "tsx src/context/cli.ts --validate",
+    "devloop:checkpoint": "tsx src/context/cli.ts --checkpoint"
   },
   "dependencies": {
     "@cloudflare/containers": "^0.3.7",

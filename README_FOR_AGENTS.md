@@ -7,15 +7,17 @@ Se você é um novo agente assumindo este repositório, execute estes passos exa
    ```bash
    git pull origin main
    ```
-2. **Execute o comando de recuperação de sessão** (quando implementado):
+2. **Execute o comando de verificação e resumo do estado de continuidade**:
    ```bash
    npm run devloop:resume
+   npm run devloop:validate
+   npm run devloop:checkpoint
    ```
-3. **Leia a documentação de estado e contexto**:
-   - Ler [PUB_DEV_LOOP_STATE.md](file:///C:/Users/Matheus%20Paes/Documents/ChatGPT/PUB%20DEV%20LOOP/PUB_DEV_LOOP_STATE.md) (Estado das tasks, gates de validação e blockers ativos)
-   - Ler [PUB_DEV_LOOP_HANDOFF.md](file:///C:/Users/Matheus%20Paes/Documents/ChatGPT/PUB%20DEV%20LOOP/PUB_DEV_LOOP_HANDOFF.md) (Resumo da última atividade, falhas encontradas e a próxima ação imediata)
-   - Ler [PUB_DEV_LOOP_CONTEXT.md](file:///C:/Users/Matheus%20Paes/Documents/ChatGPT/PUB%20DEV%20LOOP/PUB_DEV_LOOP_CONTEXT.md) (Arquitetura, fluxos e regras operacionais)
-   - Ler [.agent/MASTER_CONTEXT.md](file:///C:/Users/Matheus%20Paes/Documents/ChatGPT/PUB%20DEV%20LOOP/.agent/MASTER_CONTEXT.md) (Contexto canônico de bootstrap)
+3. **Leia a documentação canônica de estado e contexto**:
+   - [PUB_DEV_LOOP_HANDOFF.md](file:///C:/Users/Matheus%20Paes/Documents/ChatGPT/PUB%20DEV%20LOOP/PUB_DEV_LOOP_HANDOFF.md) (Resumo canônico da última atividade, baseline validado e a próxima ação exata)
+   - [PUB_DEV_LOOP_STATE.md](file:///C:/Users/Matheus%20Paes/Documents/ChatGPT/PUB%20DEV%20LOOP/PUB_DEV_LOOP_STATE.md) (Estado detalhado das tasks, métricas dos gates de validação e blockers)
+   - [PUB_DEV_LOOP_CONTEXT.md](file:///C:/Users/Matheus%20Paes/Documents/ChatGPT/PUB%20DEV%20LOOP/PUB_DEV_LOOP_CONTEXT.md) (Arquitetura, fluxos e regras operacionais)
+   - [.agent/MASTER_CONTEXT.md](file:///C:/Users/Matheus%20Paes/Documents/ChatGPT/PUB%20DEV%20LOOP/.agent/MASTER_CONTEXT.md) (Contexto canônico de bootstrap)
 4. **Verifique o estado do Git**:
    ```bash
    git status --short

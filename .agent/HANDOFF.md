@@ -4,16 +4,16 @@
 
 | Field | Value |
 |-------|-------|
-| **CURRENT_TASK** | TASK-000034 (COMPLETE) |
+| **CURRENT_TASK** | TASK-000035 (COMPLETE) |
 | **CURRENT_AGENT** | Hermes |
 | **CURRENT_BRANCH** | main |
-| **LAST_KNOWN_STABLE_COMMIT** | `d327c89` |
-| **LAST_TESTS_RUN** | 128 passed, 1 failed (CODEX_CLI_UNAVAILABLE, ambiental), 8 skipped | Build: exit 0 ✅ | Staging: containers prontos (Docker Desktop indisponível neste ambiente) |
+| **LAST_KNOWN_STABLE_COMMIT** | `b5d65e8` |
+| **LAST_TESTS_RUN** | 138 passed, 8 skipped | Build: exit 0 ✅ | Real E2E: 9Router gemini-3.7-flash PASS ✅ |
 | **BUILD** | ✅ exit 0 |
-| **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE (ambiental — Codex CLI não instalado no Windows)<br>2. E2E real requer 9Router credentials (HTTP 404 "No active credentials")<br>3. GitHub web UI retorna 404 (Git remote + push funcionam)<br>4. Docker Desktop indisponível neste ambiente Windows — staging containers não podem ser iniciados localmente |
-| **DO_NOT_REPEAT** | RouterWorker: executeWithRetry() cria fresh workspace per attempt, clones repo, captures baseline, executes provider, returns unified AttemptResult. Retry only between RouterProvider instances. Fail-closed HTTP classification. BaseWorker.executeOnce() delegates to executeWithRetry, passes winner workspace+baseline+declaredChangedFiles to TaskFinalizer. CodexWorker: single attempt, no retry. RouterProvider: constructor accepts modelOverride (4th param). finalizer.ts and security.ts UNTOUCHED. Tracing: AttemptTrace + WorkerExecutionTrace persisted in task.result.trace; no workspace paths persisted; remainingBudget bug in catch block fixed. Git credentials: configureGitCredentials() configura git credential helper que lê GITHUB_TOKEN do ambiente em runtime (sem escrever arquivo nenhum — token nunca em URL, .env, código, log, trace ou commit). Staging: docker-compose.staging.yml tem GITHUB_TOKEN: ${GITHUB_TOKEN} interpolado do host (sem valor armazenado no arquivo). |
-| **NEXT_TASK** | TASK-000035 (novo — definir escopo) |
-| **OPEN_RISKS** | 1. REAL E2E test requires 9Router credentials (ambiental)<br>2. Codex CLI not installed on Windows (ambiental)<br>3. Docker Desktop indisponível neste ambiente — staging containers validados apenas via build + testes unitários |
+| **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE (ambiental — Codex CLI não instalado no Windows)<br>2. GitHub web UI retorna 404 para visualização web (Git remote + push funcionam perfeitamente)<br>3. Staging containers locais dependem de Docker Desktop |
+| **DO_NOT_REPEAT** | 9Router fallback implementado com fila [primaryModel, ...fallbackModels], backoff exponencial e suporte a retry-after em HTTP 429. TaskFinalizer cuida do commit automático. Nenhuma chave secreta em disco ou git. |
+| **NEXT_TASK** | TASK-000036 (PUB HOLDING REPOSITORY INTEGRATION / UNIFICATION) |
+| **OPEN_RISKS** | Nenhum blocker ativo para o PUB DEV LOOP. |
 
 ## 4.2 — Before Starting Any Task
 
