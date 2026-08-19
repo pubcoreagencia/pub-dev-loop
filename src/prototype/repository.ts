@@ -49,7 +49,14 @@ export class PostgresPrototypeRepository implements PrototypeRepository {
     if(!set.length)return this.getSession(id); values.push(id);
     const r=await this.pool.query(`UPDATE prototype_sessions SET ${set.join(',')}, updated_at=now() WHERE id=$${values.length} RETURNING *`,values); return r.rows[0]?mapSession(r.rows[0]):null;
   }
-  async incrementPromptCount(id:string):Promise<PrototypeSession|null>{const r=await this.pool.query(`UPDATE prototype_sessions SET prompt_count=prompt_count+1,updated_at=now() WHERE id=$1 RETURNING *`,[id]); return r.rows[0]?mapSession(r.rows[0]):null;}
+  /** Atomically reserves the next prompt slot and transitions the session to BUILDING. */
+  async incrementPromptCount(id:string):Promise<PrototypeSession|null>{
+    const r=await this.pool.query(`UPDATE prototype_sessions
+      SET prompt_count=prompt_count+1,status='BUILDING',updated_at=now()
+      WHERE id=$1 AND status IN ('CREATING','READY')
+      RETURNING *`,[id]);
+    return r.rows[0]?mapSession(r.rows[0]):null;
+  }
   async createCheckpoint(input:Omit<PrototypeCheckpoint,'id'|'createdAt'>):Promise<PrototypeCheckpoint>{const id=randomUUID(); const r=await this.pool.query(`INSERT INTO prototype_checkpoints (id,session_id,prompt_index,prompt,commit_sha,preview_url,build_passed) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,[id,input.sessionId,input.promptIndex,input.prompt,input.commitSha,input.previewUrl,input.buildPassed]); return mapCheckpoint(r.rows[0]);}
   async listCheckpoints(sessionId:string):Promise<PrototypeCheckpoint[]>{const r=await this.pool.query(`SELECT * FROM prototype_checkpoints WHERE session_id=$1 ORDER BY prompt_index DESC`,[sessionId]); return r.rows.map(mapCheckpoint);}
 }
