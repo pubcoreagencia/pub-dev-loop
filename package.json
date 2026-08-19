@@ -13,6 +13,7 @@
     "build:cf": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:prototype": "vitest run tests/prototype-smoke.test.ts",
     "test:integration": "vitest run tests/integration/codex-hello.integration.test.ts",
     "devloop:resume": "tsx src/context/cli.ts --summary",
     "devloop:validate": "tsx src/context/cli.ts --validate",
