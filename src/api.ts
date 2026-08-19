@@ -82,6 +82,81 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
       return res.status(201).json(checkpoint);
     } catch(e){return next(e);}
   });
+
+  app.post('/prototype/sessions/:id/promote', async (req, res, next) => {
+    try {
+      const session = await prototypes.getSession(req.params.id);
+      if (!session) return res.sendStatus(404);
+
+      if (!['READY', 'APPROVED'].includes(session.status)) {
+        return res.status(409).json({ error: `Session in status ${session.status} cannot be promoted. Must be READY or APPROVED.` });
+      }
+
+      if (!session.lastCheckpointSha) {
+        return res.status(409).json({ error: 'Session must have a valid lastCheckpointSha to be promoted' });
+      }
+
+      if (!session.branch || !session.repository) {
+        return res.status(409).json({ error: 'Session must have repository and branch configured' });
+      }
+
+      const updated = await prototypes.promoteSession(session.id);
+      if (!updated) {
+        return res.status(409).json({ error: 'Session already promoted or status conflict' });
+      }
+
+      const promotion = await prototypes.createPromotion({
+        sessionId: updated.id,
+        fromMode: 'PROTOTYPE',
+        toMode: 'DEVELOPMENT',
+        repository: updated.repository,
+        branch: updated.branch,
+        checkpointSha: updated.lastCheckpointSha!,
+        promotedAt: new Date(),
+      });
+
+      const {
+        objective = `Development handoff from Prototype ${updated.project}`,
+        prompt = `Continuar desenvolvimento a partir do protótipo aprovado (${updated.branch} @ ${updated.lastCheckpointSha})`,
+        priority = 0,
+      } = req.body ?? {};
+
+      // Create Development Task with prototypeSessionId = null
+      const devTask = await tasks.create({
+        project: updated.project,
+        repository: updated.repository,
+        objective,
+        prompt,
+        priority,
+      });
+
+      await tasks.update(devTask.id, {
+        branch: updated.branch,
+      });
+
+      prototypeEvents.emit({
+        sessionId: updated.id,
+        type: 'PROMOTED_TO_DEVELOPMENT',
+        payload: {
+          sessionId: updated.id,
+          promotionId: promotion.id,
+          taskId: devTask.id,
+          branch: updated.branch,
+          checkpointSha: updated.lastCheckpointSha,
+          repository: updated.repository,
+        },
+      });
+
+      return res.status(200).json({
+        session: updated,
+        promotion,
+        task: devTask,
+        mode: 'DEVELOPMENT',
+      });
+    } catch (e) {
+      return next(e);
+    }
+  });
   return app;
 };
 

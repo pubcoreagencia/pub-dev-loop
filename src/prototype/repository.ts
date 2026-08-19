@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
-import type { CreatePrototypeSession, PrototypeCheckpoint, PrototypeSession, PrototypeSessionStatus, PrototypeMode } from './domain.js';
+import type { CreatePrototypeSession, PrototypeCheckpoint, PrototypeSession, PrototypeSessionStatus, PrototypeMode, PrototypePromotion } from './domain.js';
 
 const mapSession = (r: Record<string, unknown>): PrototypeSession => ({
   id: r.id as string,
@@ -24,14 +24,28 @@ const mapCheckpoint = (r: Record<string, unknown>): PrototypeCheckpoint => ({
   previewUrl: r.preview_url as string | null, buildPassed: r.build_passed as boolean, createdAt: r.created_at as Date,
 });
 
+const mapPromotion = (r: Record<string, unknown>): PrototypePromotion => ({
+  id: r.id as string,
+  sessionId: r.session_id as string,
+  fromMode: r.from_mode as Extract<PrototypeMode, 'PROTOTYPE'>,
+  toMode: r.to_mode as Extract<PrototypeMode, 'DEVELOPMENT'>,
+  repository: r.repository as string,
+  branch: r.branch as string,
+  checkpointSha: r.checkpoint_sha as string | null,
+  promotedAt: r.promoted_at as Date,
+});
+
 export interface PrototypeRepository {
   createSession(input: CreatePrototypeSession): Promise<PrototypeSession>;
   getSession(id: string): Promise<PrototypeSession | null>;
   listSessions(): Promise<PrototypeSession[]>;
   updateSession(id: string, patch: Partial<Pick<PrototypeSession,'status'|'mode'|'previewUrl'|'previewRuntime'|'workspacePath'|'lastCheckpointSha'>>): Promise<PrototypeSession | null>;
   incrementPromptCount(id: string): Promise<PrototypeSession | null>;
+  promoteSession(id: string): Promise<PrototypeSession | null>;
   createCheckpoint(input: Omit<PrototypeCheckpoint,'id'|'createdAt'>): Promise<PrototypeCheckpoint>;
   listCheckpoints(sessionId: string): Promise<PrototypeCheckpoint[]>;
+  createPromotion(input: Omit<PrototypePromotion, 'id'>): Promise<PrototypePromotion>;
+  getPromotion(sessionId: string): Promise<PrototypePromotion | null>;
 }
 
 export class PostgresPrototypeRepository implements PrototypeRepository {
@@ -57,6 +71,23 @@ export class PostgresPrototypeRepository implements PrototypeRepository {
       RETURNING *`,[id]);
     return r.rows[0]?mapSession(r.rows[0]):null;
   }
+  /** Atomically transitions session from READY/APPROVED to PROMOTED in DEVELOPMENT mode. */
+  async promoteSession(id:string):Promise<PrototypeSession|null>{
+    const r=await this.pool.query(`UPDATE prototype_sessions
+      SET mode='DEVELOPMENT', status='PROMOTED', updated_at=now()
+      WHERE id=$1 AND status IN ('READY','APPROVED') AND last_checkpoint_sha IS NOT NULL
+      RETURNING *`,[id]);
+    return r.rows[0]?mapSession(r.rows[0]):null;
+  }
   async createCheckpoint(input:Omit<PrototypeCheckpoint,'id'|'createdAt'>):Promise<PrototypeCheckpoint>{const id=randomUUID(); const r=await this.pool.query(`INSERT INTO prototype_checkpoints (id,session_id,prompt_index,prompt,commit_sha,preview_url,build_passed) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,[id,input.sessionId,input.promptIndex,input.prompt,input.commitSha,input.previewUrl,input.buildPassed]); return mapCheckpoint(r.rows[0]);}
   async listCheckpoints(sessionId:string):Promise<PrototypeCheckpoint[]>{const r=await this.pool.query(`SELECT * FROM prototype_checkpoints WHERE session_id=$1 ORDER BY prompt_index DESC`,[sessionId]); return r.rows.map(mapCheckpoint);}
+  async createPromotion(input:Omit<PrototypePromotion,'id'>):Promise<PrototypePromotion>{
+    const id=randomUUID();
+    const r=await this.pool.query(`INSERT INTO prototype_promotions (id,session_id,from_mode,to_mode,repository,branch,checkpoint_sha,promoted_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,[id,input.sessionId,input.fromMode,input.toMode,input.repository,input.branch,input.checkpointSha,input.promotedAt || new Date()]);
+    return mapPromotion(r.rows[0]);
+  }
+  async getPromotion(sessionId:string):Promise<PrototypePromotion|null>{
+    const r=await this.pool.query(`SELECT * FROM prototype_promotions WHERE session_id=$1 ORDER BY promoted_at DESC LIMIT 1`,[sessionId]);
+    return r.rows[0]?mapPromotion(r.rows[0]):null;
+  }
 }
