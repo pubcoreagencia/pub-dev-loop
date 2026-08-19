@@ -8,6 +8,7 @@ import { PostgresPrototypeRepository } from './prototype/repository.js';
 import { PrototypeEventStream, PostgresPrototypeEventBridge } from './prototype/events.js';
 import { PrototypeSseBroker } from './prototype/sse.js';
 import { prototypeUiHtml } from './prototype/ui.js';
+import { prototypeHistoryUiScript } from './prototype/history-ui.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const prototypeEvents = new PrototypeEventStream();
@@ -27,7 +28,7 @@ function gitDiff(cwd: string, base: string, head: string): string {
 export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes = new PostgresPrototypeRepository(pool)) => {
   const app = express(); app.use(express.json());
   app.get('/health', (_q,res)=>res.json({status:'ok'}));
-  app.get('/prototype', (_req,res)=>res.status(200).type('html').send(prototypeUiHtml()));
+  app.get('/prototype', (_req,res)=>res.status(200).type('html').send(prototypeUiHtml()+prototypeHistoryUiScript()));
 
   app.post('/tasks', async(req,res,next)=>{ try { const {project,repository,objective,prompt,priority}=req.body??{}; if(!project||!repository||!objective||!prompt)return res.status(400).json({error:'project, repository, objective and prompt are required'}); return res.status(201).json(await tasks.create({project,repository,objective,prompt,priority})); } catch(e){return next(e);} });
   app.get('/tasks',async(_q,res,next)=>{try{return res.json(await tasks.list())}catch(e){return next(e)}});
