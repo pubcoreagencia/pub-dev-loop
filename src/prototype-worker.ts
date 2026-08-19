@@ -8,7 +8,8 @@ import { TaskFinalizer, captureWorkspaceSnapshot } from './finalizer.js';
 import type { PrototypeEventPublisher } from './prototype/events.js';
 import { PostgresPrototypeRepository } from './prototype/repository.js';
 import { LocalPreviewRuntime } from './prototype/local-preview-runtime.js';
-import type { PreviewRuntimeInfo } from './prototype/preview-runtime.js';
+import { PublicPreviewRuntime } from './prototype/public-preview-runtime.js';
+import type { PreviewRuntime, PreviewRuntimeInfo } from './prototype/preview-runtime.js';
 
 const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
 const WORKSPACE_ROOT = process.env.PROTOTYPE_WORKSPACES_ROOT ?? '/tmp/pub-prototype';
@@ -17,6 +18,7 @@ const PREVIEW_COMMAND = process.env.PROTOTYPE_PREVIEW_COMMAND ?? 'npm';
 const PREVIEW_ARGS = (process.env.PROTOTYPE_PREVIEW_ARGS ?? 'run dev -- --host 0.0.0.0 --port {PORT}')
   .split(' ')
   .filter(Boolean);
+const PREVIEW_MODE = process.env.PROTOTYPE_PREVIEW_MODE ?? 'public';
 
 function git(args: string[], cwd?: string): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
@@ -33,7 +35,9 @@ async function directoryExists(dir: string): Promise<boolean> {
 
 export class PrototypeWorker {
   private state = 'IDLE';
-  private readonly preview = new LocalPreviewRuntime();
+  private readonly preview: PreviewRuntime = PREVIEW_MODE === 'local'
+    ? new LocalPreviewRuntime()
+    : new PublicPreviewRuntime();
 
   constructor(
     private readonly tasks: PostgresTaskRepository,
@@ -139,13 +143,25 @@ export class PrototypeWorker {
       if (existing?.status === 'READY') return existing;
     }
 
-    this.events.emit({ sessionId, type: 'PREVIEW_STARTED', payload: { phase: 'runtime_starting' } });
-    const runtime = await this.preview.create({ workspace, command: PREVIEW_COMMAND, args: PREVIEW_ARGS, port: 0,
-      publicBaseUrl: PREVIEW_PUBLIC_BASE_URL, startupTimeoutMs: Number(process.env.PROTOTYPE_PREVIEW_STARTUP_TIMEOUT_MS ?? 60000),
-      environment: { NODE_ENV: 'development' } });
-    const unsubscribe = this.preview.subscribe(runtime.id, event => {
-      if (event.stream === 'stderr') this.events.emit({ sessionId, type: 'ERROR', payload: { runtimeId: event.runtimeId, line: event.line } });
+    this.events.emit({ sessionId, type: 'PREVIEW_STARTED', payload: { phase: 'runtime_starting', mode: PREVIEW_MODE } });
+    const runtime = await this.preview.create({
+      workspace,
+      command: PREVIEW_COMMAND,
+      args: PREVIEW_ARGS,
+      port: 0,
+      publicBaseUrl: PREVIEW_PUBLIC_BASE_URL,
+      startupTimeoutMs: Number(process.env.PROTOTYPE_PREVIEW_STARTUP_TIMEOUT_MS ?? 60000),
+      environment: { NODE_ENV: 'development' },
     });
-    try { return await this.preview.start(runtime.id); } finally { unsubscribe(); }
+    const unsubscribe = this.preview.subscribe(runtime.id, event => {
+      if (event.stream === 'stderr') {
+        this.events.emit({ sessionId, type: 'ERROR', payload: { runtimeId: event.runtimeId, line: event.line } });
+      }
+    });
+    try {
+      return await this.preview.start(runtime.id);
+    } finally {
+      unsubscribe();
+    }
   }
 }
