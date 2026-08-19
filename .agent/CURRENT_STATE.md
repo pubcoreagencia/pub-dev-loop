@@ -1,7 +1,7 @@
 # Current State
 
 ## Último Commit Estável
-`49fc6ce` — chore(agent): update CURRENT_STATE and HANDOFF after 9Router merge/validation
+`537da8d` — chore(agent): update CURRENT_STATE and HANDOFF after 9Router merge/validation
 
 ## Branch
 `feat/pub-prototype-mode`
@@ -15,6 +15,7 @@
 | **REMOTE_HEAD** | `2e9980a` |
 | **SYNC** | NO |
 | **CURRENT_BRANCH** | `feat/pub-prototype-mode` |
+| **MAIN** | `feat/pub-prototype-mode` diverged from `main`; merge origin/main completed at `a778c54` |
 
 ## 9Router Integration Complete ✅
 - **Root Cause**: cx/gpt-* models fail because Codex provider uses ChatGPT free account (not Codex)
