@@ -17,6 +17,7 @@ void prototypeEventBridge.start().catch(error => console.error('Prototype event 
 
 const defaultPrototypeRepository = process.env.PROTOTYPE_TEMPLATE_REPOSITORY ?? 'https://github.com/pubcoreagencia/pub-dev-loop-template.git';
 const prototypeWorkspaceRoot = process.env.PROTOTYPE_WORKSPACES_ROOT ?? '/tmp/pub-prototype';
+const restoreObjective = '__PP_RESTORE_CHECKPOINT__';
 
 export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes = new PostgresPrototypeRepository(pool)) => {
   const app = express(); app.use(express.json());
@@ -62,13 +63,35 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
   app.post('/prototype/sessions/:id/prompts',async(req,res,next)=>{
     try { const session=await prototypes.getSession(req.params.id); if(!session)return res.sendStatus(404); const {objective='Prototype MVP iteration',prompt,priority}=req.body??{};
       if(!prompt)return res.status(400).json({error:'prompt is required'});
-      if(['BUILDING','PREVIEWING'].includes(session.status))return res.status(409).json({error:'Prototype session is already processing a prompt'});
-      const updated=await prototypes.incrementPromptCount(session.id); if(!updated)return res.sendStatus(409);
+      const updated=await prototypes.incrementPromptCount(session.id); if(!updated)return res.status(409).json({error:'Prototype session is already processing a prompt'});
       prototypeEvents.emit({sessionId:updated.id,type:'USER_PROMPT',payload:{prompt,promptIndex:updated.promptCount,objective}});
       const task=await tasks.create({project:updated.project,repository:updated.repository,objective,prompt,priority:priority??0,prototypeSessionId:updated.id});
       await tasks.update(task.id,{branch:updated.branch,workspacePath:path.join(prototypeWorkspaceRoot,updated.id)});
       prototypeEvents.emit({sessionId:updated.id,type:'AGENT_STARTED',payload:{taskId:task.id}});
       return res.status(202).json({session:updated,task,mode:'PROTOTYPE'});
+    } catch(e){return next(e);}
+  });
+
+  app.post('/prototype/sessions/:id/restore/:checkpointId',async(req,res,next)=>{
+    try {
+      const session=await prototypes.getSession(req.params.id); if(!session)return res.sendStatus(404);
+      const checkpoints=await prototypes.listCheckpoints(session.id);
+      const checkpoint=checkpoints.find(item=>item.id===req.params.checkpointId);
+      if(!checkpoint)return res.sendStatus(404);
+      if(!checkpoint.commitSha)return res.status(409).json({error:'Checkpoint has no commit SHA'});
+      const updated=await prototypes.incrementPromptCount(session.id);
+      if(!updated)return res.status(409).json({error:'Prototype session is already processing a change'});
+      const task=await tasks.create({
+        project:updated.project,
+        repository:updated.repository,
+        objective:restoreObjective,
+        prompt:JSON.stringify({checkpointId:checkpoint.id,commitSha:checkpoint.commitSha,prompt:checkpoint.prompt}),
+        priority:100,
+        prototypeSessionId:updated.id,
+      });
+      await tasks.update(task.id,{branch:updated.branch,workspacePath:path.join(prototypeWorkspaceRoot,updated.id)});
+      prototypeEvents.emit({sessionId:updated.id,type:'USER_PROMPT',payload:{prompt:`Restaurar v${checkpoint.promptIndex}`,promptIndex:updated.promptCount,objective:restoreObjective}});
+      return res.status(202).json({session:updated,task,checkpoint,mode:'PROTOTYPE'});
     } catch(e){return next(e);}
   });
 
@@ -78,7 +101,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
       const checkpoint=await prototypes.createCheckpoint({sessionId:session.id,promptIndex,prompt,commitSha:commitSha??null,previewUrl:previewUrl??null,buildPassed:buildPassed===true});
       const updated=await prototypes.updateSession(session.id,{lastCheckpointSha:checkpoint.commitSha,previewUrl:checkpoint.previewUrl,status:checkpoint.buildPassed?'READY':'FAILED'});
       prototypeEvents.emit({sessionId:session.id,type:'CHECKPOINT_CREATED',payload:checkpoint as unknown as Record<string,unknown>});
-      if(updated)prototypeEvents.emit({sessionId:session.id,type:checkpoint.buildPassed?'PREVIEW_READY':'PREVIEW_FAILED',payload:{previewUrl:updated.previewUrl,buildPassed:checkpoint.buildPassed}});
+      if(updated)prototypeEvents.emit({sessionId:session.id,type:checkpoint.buildPassed?'PREVIEW_READY':'PREVIEW_FAILED',payload:{url:updated.previewUrl,previewUrl:updated.previewUrl,buildPassed:checkpoint.buildPassed}});
       return res.status(201).json(checkpoint);
     } catch(e){return next(e);}
   });
