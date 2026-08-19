@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { createServer } from 'node:net';
 
 import type {
   PreviewLogEvent,
@@ -13,7 +14,6 @@ interface RuntimeRecord {
   info: PreviewRuntimeInfo;
   child: ChildProcessWithoutNullStreams | null;
   listeners: Set<(event: PreviewLogEvent) => void>;
-  timer: NodeJS.Timeout | null;
 }
 
 const DEFAULT_STARTUP_TIMEOUT_MS = 30_000;
@@ -43,6 +43,34 @@ function setStatus(record: RuntimeRecord, status: PreviewRuntimeStatus, error: s
   emit(record, 'system', `status:${status}`);
 }
 
+async function allocatePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        server.close();
+        reject(new Error('failed to allocate preview port'));
+        return;
+      }
+      const port = address.port;
+      server.close(error => error ? reject(error) : resolve(port));
+    });
+  });
+}
+
+function resolveUrl(config: PreviewRuntimeConfig, port: number): string {
+  const base = (config.publicBaseUrl ?? `http://127.0.0.1:${port}`).replace(/\/$/, '');
+  if (base.includes('{PORT}')) return base.replaceAll('{PORT}', String(port));
+  if (config.publicBaseUrl) return base;
+  return `http://127.0.0.1:${port}`;
+}
+
+function resolveArgs(args: string[], port: number): string[] {
+  return args.map(arg => arg.replaceAll('{PORT}', String(port)));
+}
+
 async function waitForHttp(url: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastError = 'preview health check did not succeed';
@@ -55,7 +83,6 @@ async function waitForHttp(url: string, timeoutMs: number): Promise<void> {
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
     }
-
     await new Promise(resolve => setTimeout(resolve, HEALTHCHECK_INTERVAL_MS));
   }
 
@@ -68,18 +95,19 @@ export class LocalPreviewRuntime implements PreviewRuntime {
   async create(config: PreviewRuntimeConfig): Promise<PreviewRuntimeInfo> {
     if (!config.workspace) throw new Error('workspace is required');
     if (!config.command) throw new Error('command is required');
-    if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) {
-      throw new Error('port must be an integer between 1 and 65535');
+    if (!Number.isInteger(config.port) || config.port < 0 || config.port > 65535) {
+      throw new Error('port must be 0 or an integer between 1 and 65535');
     }
 
+    const port = config.port === 0 ? await allocatePort() : config.port;
     const id = createId();
     const record: RuntimeRecord = {
-      config: { ...config },
+      config: { ...config, port },
       info: {
         id,
         status: 'CREATING',
-        url: `http://127.0.0.1:${config.port}`,
-        port: config.port,
+        url: resolveUrl(config, port),
+        port,
         pid: null,
         startedAt: null,
         stoppedAt: null,
@@ -87,11 +115,10 @@ export class LocalPreviewRuntime implements PreviewRuntime {
       },
       child: null,
       listeners: new Set(),
-      timer: null,
     };
 
     this.runtimes.set(id, record);
-    emit(record, 'system', 'runtime:created');
+    emit(record, 'system', `runtime:created port=${port}`);
     return { ...record.info };
   }
 
@@ -103,8 +130,8 @@ export class LocalPreviewRuntime implements PreviewRuntime {
 
     setStatus(record, 'STARTING', null);
 
-    const env = { ...process.env, ...(record.config.environment ?? {}) };
-    const child = spawn(record.config.command, record.config.args, {
+    const env = { ...process.env, ...(record.config.environment ?? {}), PORT: String(record.config.port) };
+    const child = spawn(record.config.command, resolveArgs(record.config.args, record.config.port), {
       cwd: record.config.workspace,
       env,
       shell: false,
@@ -115,12 +142,10 @@ export class LocalPreviewRuntime implements PreviewRuntime {
     record.info = { ...record.info, pid: child.pid ?? null, startedAt: new Date(), error: null };
 
     child.stdout.on('data', chunk => {
-      const text = chunk.toString();
-      for (const line of text.split(/\r?\n/).filter(Boolean)) emit(record, 'stdout', line);
+      for (const line of chunk.toString().split(/\r?\n/).filter(Boolean)) emit(record, 'stdout', line);
     });
     child.stderr.on('data', chunk => {
-      const text = chunk.toString();
-      for (const line of text.split(/\r?\n/).filter(Boolean)) emit(record, 'stderr', line);
+      for (const line of chunk.toString().split(/\r?\n/).filter(Boolean)) emit(record, 'stderr', line);
     });
 
     const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
@@ -128,20 +153,15 @@ export class LocalPreviewRuntime implements PreviewRuntime {
         setStatus(record, 'STOPPED', null);
         return;
       }
-      if (code === 0) {
-        setStatus(record, 'STOPPED', null);
-      } else {
-        setStatus(record, 'FAILED', `preview process exited with code=${String(code)} signal=${String(signal)}`);
-      }
+      setStatus(record, code === 0 ? 'STOPPED' : 'FAILED', code === 0 ? null : `preview process exited with code=${String(code)} signal=${String(signal)}`);
     };
 
     child.on('exit', onExit);
-    child.on('error', error => {
-      setStatus(record, 'FAILED', error.message);
-    });
+    child.on('error', error => setStatus(record, 'FAILED', error.message));
 
     try {
-      await waitForHttp(record.info.url!, record.config.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS);
+      const healthUrl = `http://127.0.0.1:${record.config.port}`;
+      await waitForHttp(healthUrl, record.config.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS);
       if (record.info.status === 'FAILED') throw new Error(record.info.error ?? 'preview process failed');
       setStatus(record, 'READY', null);
       return { ...record.info };
@@ -169,11 +189,8 @@ export class LocalPreviewRuntime implements PreviewRuntime {
     setStatus(record, 'STOPPING', null);
     const child = record.child;
     try {
-      if (child.pid) {
-        process.kill(-child.pid, 'SIGTERM');
-      } else {
-        child.kill('SIGTERM');
-      }
+      if (child.pid) process.kill(-child.pid, 'SIGTERM');
+      else child.kill('SIGTERM');
     } catch {
       child.kill('SIGTERM');
     }
@@ -188,11 +205,7 @@ export class LocalPreviewRuntime implements PreviewRuntime {
         }
         resolve();
       }, 1_500);
-
-      child.once('exit', () => {
-        clearTimeout(timeout);
-        resolve();
-      });
+      child.once('exit', () => { clearTimeout(timeout); resolve(); });
     });
 
     record.child = null;
@@ -203,8 +216,6 @@ export class LocalPreviewRuntime implements PreviewRuntime {
 
   async destroy(runtimeId: string): Promise<void> {
     await this.stop(runtimeId);
-    const record = this.runtimes.get(runtimeId);
-    if (record?.timer) clearTimeout(record.timer);
     this.runtimes.delete(runtimeId);
   }
 
