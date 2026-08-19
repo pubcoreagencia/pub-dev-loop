@@ -10,5 +10,7 @@ describe('Prototype UI', () => {
     expect(html).toContain('/prototype/sessions/');
     expect(html).toContain('iframe');
     expect(html).toContain('Monte um sistema para gerenciamento de uma barbearia');
+    expect(html).toContain('Promover para PDL');
+    expect(html).toContain('Este MVP será entregue ao PDL para desenvolvimento contínuo.');
   });
 });
