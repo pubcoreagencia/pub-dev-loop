@@ -15,7 +15,6 @@ export interface PrototypeEventPublisher {
   subscribe(listener: (event: PrototypeEvent) => void): () => void;
 }
 
-/** Local fan-out used by the API and worker for in-process listeners. */
 export class PrototypeEventStream implements PrototypeEventPublisher {
   private sequence = 0;
   private readonly listeners = new Set<(event: PrototypeEvent) => void>();
@@ -31,9 +30,14 @@ export class PrototypeEventStream implements PrototypeEventPublisher {
       timestamp: new Date(),
       payload: input.payload ?? ({} as TPayload),
     };
-
-    for (const listener of this.listeners) listener(event);
+    this.receive(event);
     return event;
+  }
+
+  /** Inject an event received from another process/transport. */
+  receive(event: PrototypeEvent): void {
+    this.sequence = Math.max(this.sequence, event.sequence);
+    for (const listener of this.listeners) listener(event);
   }
 
   subscribe(listener: (event: PrototypeEvent) => void): () => void {
@@ -43,9 +47,8 @@ export class PrototypeEventStream implements PrototypeEventPublisher {
 }
 
 /**
- * Cross-process publisher/bridge.
- * Events are persisted and broadcast through PostgreSQL NOTIFY so API and
- * worker processes do not need to share memory.
+ * Worker-side publisher. Persists events and broadcasts them via PostgreSQL
+ * NOTIFY so a separate API process can fan them out to SSE clients.
  */
 export class PostgresPrototypeEventPublisher implements PrototypeEventPublisher {
   private sequence = 0;
@@ -67,9 +70,6 @@ export class PostgresPrototypeEventPublisher implements PrototypeEventPublisher 
     };
 
     for (const listener of this.listeners) listener(event);
-
-    // Persistence/broadcast is intentionally fire-and-forget so the worker's
-    // task execution path does not block on the event transport.
     void this.pool.query(
       `INSERT INTO prototype_events (id, session_id, type, sequence, payload, created_at)
        VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
@@ -86,10 +86,7 @@ export class PostgresPrototypeEventPublisher implements PrototypeEventPublisher 
   }
 }
 
-/**
- * API-side listener for worker events. Uses a dedicated client because a
- * PostgreSQL connection subscribed to LISTEN should not be used for queries.
- */
+/** API-side bridge from PostgreSQL NOTIFY into the local SSE event stream. */
 export class PostgresPrototypeEventBridge {
   private client: import('pg').PoolClient | null = null;
 
@@ -104,7 +101,7 @@ export class PostgresPrototypeEventBridge {
       try {
         this.target.receive(JSON.parse(msg.payload) as PrototypeEvent);
       } catch {
-        // Ignore malformed external events; the request path remains healthy.
+        // Ignore malformed external events.
       }
     });
     client.on('error', () => {
@@ -121,11 +118,3 @@ export class PostgresPrototypeEventBridge {
     client.release();
   }
 }
-
-// Allow the bridge to inject events into a local stream without exposing that
-// method as part of the normal emitter API.
-(PrototypeEventStream.prototype as PrototypeEventStream & {
-  receive?: (event: PrototypeEvent) => void;
-}).receive = function receive(event: PrototypeEvent): void {
-  for (const listener of (this as PrototypeEventStream).listeners ?? []) listener(event);
-};
