@@ -221,7 +221,7 @@ export class RouterWorker extends BaseWorker {
       // 2. CREATE FRESH WORKSPACE FOR THIS ATTEMPT
       const attemptWS = await mkdtemp(join(tmpdir(), 'pu-dev-loop-attempt-'));
       const repo = join(attemptWS, 'repo');
-      const branch = 'worker/' + this.name + '/' + task.id + '-attempt-' + attempt;
+      const branch = task.branch ?? ('worker/' + this.name + '/' + task.id + '-attempt-' + attempt);
 
       let attemptBaseline: WorkspaceSnapshot | undefined;
       let workspaceCleaned = false;
@@ -236,7 +236,12 @@ export class RouterWorker extends BaseWorker {
         }
 
         await run('git', ['clone', repository, repo]);
-        await run('git', ['checkout', '-b', branch], repo);
+        if (task.branch) {
+          await run('git', ['fetch', 'origin', task.branch], repo);
+          await run('git', ['checkout', '-B', task.branch, `origin/${task.branch}`], repo);
+        } else {
+          await run('git', ['checkout', '-b', branch], repo);
+        }
 
         // 4. CAPTURE BASELINE (of THIS attempt's workspace)
         attemptBaseline = captureWorkspaceSnapshot(repo);
