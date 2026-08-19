@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import path from 'node:path';
 import { Pool } from 'pg';
 import { PostgresTaskRepository } from './repository.js';
 import { PostgresPrototypeRepository } from './prototype/repository.js';
@@ -13,6 +14,7 @@ const prototypeSse = new PrototypeSseBroker();
 prototypeEvents.subscribe(event => prototypeSse.publish(event));
 
 const defaultPrototypeRepository = process.env.PROTOTYPE_TEMPLATE_REPOSITORY ?? 'https://github.com/pubcoreagencia/pub-dev-loop-template.git';
+const prototypeWorkspaceRoot = process.env.PROTOTYPE_WORKSPACES_ROOT ?? '/tmp/pub-prototype';
 
 export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes = new PostgresPrototypeRepository(pool)) => {
   const app = express(); app.use(express.json());
@@ -45,7 +47,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
   });
 
   app.patch('/prototype/sessions/:id',async(req,res,next)=>{
-    try { const allowed=['status','mode','previewUrl','previewRuntime','workspacePath','lastCheckpointSha'] as const;
+    try { const allowed=['status','mode','previewUrl','previewRuntime','lastCheckpointSha'] as const;
       const patch=Object.fromEntries(allowed.filter(k=>req.body?.[k]!==undefined).map(k=>[k,req.body[k]]));
       const session=await prototypes.updateSession(req.params.id,patch); if(!session)return res.sendStatus(404);
       const eventType=patch.status==='READY'?'PREVIEW_READY':patch.status==='FAILED'?'ERROR':null;
@@ -57,9 +59,11 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
   app.post('/prototype/sessions/:id/prompts',async(req,res,next)=>{
     try { const session=await prototypes.getSession(req.params.id); if(!session)return res.sendStatus(404); const {objective='Prototype MVP iteration',prompt,priority}=req.body??{};
       if(!prompt)return res.status(400).json({error:'prompt is required'});
+      if(session.status==='BUILDING')return res.status(409).json({error:'Prototype session is already processing a prompt'});
       const updated=await prototypes.incrementPromptCount(session.id); if(!updated)return res.sendStatus(409);
       prototypeEvents.emit({sessionId:updated.id,type:'USER_PROMPT',payload:{prompt,promptIndex:updated.promptCount,objective}});
       const task=await tasks.create({project:updated.project,repository:updated.repository,objective,prompt,priority:priority??0,prototypeSessionId:updated.id});
+      await tasks.update(task.id,{branch:updated.branch,workspacePath:path.join(prototypeWorkspaceRoot,updated.id)});
       prototypeEvents.emit({sessionId:updated.id,type:'AGENT_STARTED',payload:{taskId:task.id}});
       return res.status(202).json({session:updated,task,mode:'PROTOTYPE'});
     } catch(e){return next(e);}
