@@ -5,7 +5,6 @@ import { PostgresTaskRepository } from './repository.js';
 import { PostgresPrototypeRepository } from './prototype/repository.js';
 import { PrototypeEventStream } from './prototype/events.js';
 import { PrototypeWorker } from './prototype-worker.js';
-import { PrototypeSseBroker } from './prototype/sse.js';
 
 export class ModeAwareWorker {
   private readonly prototype: PrototypeWorker;
@@ -17,11 +16,9 @@ export class ModeAwareWorker {
     prototypes: PostgresPrototypeRepository,
     provider: AgentProvider,
     events: PrototypeEventStream,
-    sse: PrototypeSseBroker,
   ) {
     this.prototype = new PrototypeWorker(tasks, prototypes, provider, events);
     this.development = new RouterWorker(tasks, provider, 'router');
-    events.subscribe(event => sse.publish(event));
   }
 
   status(): string { return this.state; }
