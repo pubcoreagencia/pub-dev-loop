@@ -9,6 +9,9 @@ import { PrototypeEventStream, PostgresPrototypeEventBridge } from './prototype/
 import { PrototypeSseBroker } from './prototype/sse.js';
 import { prototypeUiHtml } from './prototype/ui.js';
 import { prototypeHistoryUiScript } from './prototype/history-ui.js';
+import { PrototypeComparisonPreviewManager } from './prototype/comparison-preview.js';
+import { LocalPreviewRuntime } from './prototype/local-preview-runtime.js';
+import { PublicPreviewRuntime } from './prototype/public-preview-runtime.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const prototypeEvents = new PrototypeEventStream();
@@ -19,6 +22,14 @@ void prototypeEventBridge.start().catch(error => console.error('Prototype event 
 
 const defaultPrototypeRepository = process.env.PROTOTYPE_TEMPLATE_REPOSITORY ?? 'https://github.com/pubcoreagencia/pub-dev-loop-template.git';
 const prototypeWorkspaceRoot = process.env.PROTOTYPE_WORKSPACES_ROOT ?? '/tmp/pub-prototype';
+const comparisonRuntime = (process.env.PROTOTYPE_PREVIEW_MODE ?? 'public') === 'local'
+  ? new LocalPreviewRuntime()
+  : new PublicPreviewRuntime();
+const comparisonPreviews = new PrototypeComparisonPreviewManager(comparisonRuntime);
+const previewCommand = process.env.PROTOTYPE_PREVIEW_COMMAND ?? 'npm';
+const previewArgs = (process.env.PROTOTYPE_PREVIEW_ARGS ?? 'run dev -- --host 0.0.0.0 --port {PORT}')
+  .split(' ').filter(Boolean);
+const previewPublicBaseUrl = process.env.PROTOTYPE_PREVIEW_BASE_URL || undefined;
 
 const repoPath = (sessionId: string) => path.join(prototypeWorkspaceRoot, sessionId);
 function gitDiff(cwd: string, base: string, head: string): string {
@@ -51,7 +62,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
   app.get('/prototype/sessions/:id/events',async(req,res,next)=>{
     try { const session=await prototypes.getSession(req.params.id); if(!session)return res.sendStatus(404);
       res.status(200); res.setHeader('Content-Type','text/event-stream'); res.setHeader('Cache-Control','no-cache, no-transform'); res.setHeader('Connection','keep-alive'); res.flushHeaders?.();
-      const unsubscribe=prototypeSse.subscribe(session.id,res); const heartbeat=setInterval(()=>prototypeSse.heartbeat(session.id),15000); req.on('close',()=>{clearInterval(heartbeat);unsubscribe();}); res.write(': connected\n\n');
+      const unsubscribe=prototypeSse.subscribe(session.id,res); const heartbeat=setInterval(()=>prototypeSse.heartbeat(session.id),15000); req.on('close',()=>{clearInterval(heartbeat);unsubscribe();}); res.write(': connected\\n\\n');
     } catch(e){return next(e);}
   });
 
@@ -94,6 +105,35 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     } catch(e){return next(e);}
   });
 
+  app.post('/prototype/sessions/:id/comparison-previews',async(req,res,next)=>{
+    try {
+      const session=await prototypes.getSession(req.params.id); if(!session)return res.sendStatus(404);
+      const checkpointId=String(req.body?.checkpointId ?? '');
+      const checkpoint=(await prototypes.listCheckpoints(session.id)).find(c=>c.id===checkpointId);
+      if(!checkpoint||!checkpoint.commitSha)return res.status(400).json({error:'checkpointId must reference a committed checkpoint from this session'});
+      if(!session.workspacePath)return res.status(409).json({error:'Prototype workspace is not available'});
+      const comparison=await comparisonPreviews.create({
+        sessionId:session.id,
+        checkpointId:checkpoint.id,
+        repositoryWorkspace:session.workspacePath,
+        commitSha:checkpoint.commitSha,
+        command:previewCommand,
+        args:previewArgs,
+        publicBaseUrl:previewPublicBaseUrl,
+      });
+      prototypeEvents.emit({sessionId:session.id,type:'PREVIEW_READY',payload:{kind:'comparison',checkpointId:checkpoint.id,url:comparison.info.url,runtimeId:comparison.runtimeId,comparisonId:comparison.id}});
+      return res.status(201).json(comparison);
+    } catch(e){return next(e);}
+  });
+
+  app.get('/prototype/sessions/:id/comparison-previews/:previewId',async(req,res,next)=>{
+    try { const comparison=await comparisonPreviews.get(req.params.previewId); if(!comparison||comparison.sessionId!==req.params.id)return res.sendStatus(404); return res.json(comparison); } catch(e){return next(e); }
+  });
+
+  app.delete('/prototype/sessions/:id/comparison-previews/:previewId',async(req,res,next)=>{
+    try { const session=await prototypes.getSession(req.params.id); if(!session)return res.sendStatus(404); const comparison=await comparisonPreviews.get(req.params.previewId); if(!comparison||comparison.sessionId!==session.id)return res.sendStatus(404); await comparisonPreviews.destroy(comparison.id,session.workspacePath ?? repoPath(session.id)); return res.sendStatus(204); } catch(e){return next(e); }
+  });
+
   app.post('/prototype/sessions/:id/checkpoints',async(req,res,next)=>{
     try { const session=await prototypes.getSession(req.params.id); if(!session)return res.sendStatus(404); const {promptIndex,prompt,commitSha,previewUrl,buildPassed}=req.body??{};
       if(!Number.isInteger(promptIndex)||promptIndex<1||typeof prompt!=='string')return res.status(400).json({error:'promptIndex and prompt are required'});
@@ -102,7 +142,8 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
       prototypeEvents.emit({sessionId:session.id,type:'CHECKPOINT_CREATED',payload:checkpoint as unknown as Record<string,unknown>});
       if(updated)prototypeEvents.emit({sessionId:session.id,type:checkpoint.buildPassed?'PREVIEW_READY':'PREVIEW_FAILED',payload:{previewUrl:updated.previewUrl,buildPassed:checkpoint.buildPassed}});
       return res.status(201).json(checkpoint);
-    } catch(e){return next(e);}
+    } catch(e){return next(e);
+    }
   });
   return app;
 };
