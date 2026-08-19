@@ -35,9 +35,7 @@ async function directoryExists(dir: string): Promise<boolean> {
 
 export class PrototypeWorker {
   private state = 'IDLE';
-  private readonly preview: PreviewRuntime = PREVIEW_MODE === 'local'
-    ? new LocalPreviewRuntime()
-    : new PublicPreviewRuntime();
+  private readonly preview: PreviewRuntime;
 
   constructor(
     private readonly tasks: PostgresTaskRepository,
@@ -45,7 +43,14 @@ export class PrototypeWorker {
     private readonly provider: AgentProvider,
     private readonly events: PrototypeEventPublisher,
     private readonly name = 'prototype',
-  ) {}
+    previewRuntime?: PreviewRuntime,
+  ) {
+    this.preview = previewRuntime ?? (
+      (process.env.PROTOTYPE_PREVIEW_MODE ?? 'public') === 'local'
+        ? new LocalPreviewRuntime()
+        : new PublicPreviewRuntime()
+    );
+  }
 
   status(): string { return this.state; }
 
@@ -143,13 +148,20 @@ export class PrototypeWorker {
       if (existing?.status === 'READY') return existing;
     }
 
-    this.events.emit({ sessionId, type: 'PREVIEW_STARTED', payload: { phase: 'runtime_starting', mode: PREVIEW_MODE } });
+    const previewCommand = process.env.PROTOTYPE_PREVIEW_COMMAND ?? PREVIEW_COMMAND;
+    const previewArgs = process.env.PROTOTYPE_PREVIEW_ARGS
+      ? process.env.PROTOTYPE_PREVIEW_ARGS.split(' ').filter(Boolean)
+      : PREVIEW_ARGS;
+    const previewMode = process.env.PROTOTYPE_PREVIEW_MODE ?? PREVIEW_MODE;
+    const publicBaseUrl = process.env.PROTOTYPE_PREVIEW_BASE_URL || PREVIEW_PUBLIC_BASE_URL;
+
+    this.events.emit({ sessionId, type: 'PREVIEW_STARTED', payload: { phase: 'runtime_starting', mode: previewMode } });
     const runtime = await this.preview.create({
       workspace,
-      command: PREVIEW_COMMAND,
-      args: PREVIEW_ARGS,
+      command: previewCommand,
+      args: previewArgs,
       port: 0,
-      publicBaseUrl: PREVIEW_PUBLIC_BASE_URL,
+      publicBaseUrl,
       startupTimeoutMs: Number(process.env.PROTOTYPE_PREVIEW_STARTUP_TIMEOUT_MS ?? 60000),
       environment: { NODE_ENV: 'development' },
     });

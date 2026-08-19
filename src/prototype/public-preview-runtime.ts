@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 
 import type {
   PreviewLogEvent,
@@ -13,7 +13,7 @@ const QUICK_TUNNEL_RE = /https:\/\/[-a-z0-9]+\.trycloudflare\.com/i;
 
 interface PublicRecord {
   localRuntimeId: string;
-  tunnel: ChildProcessWithoutNullStreams | null;
+  tunnel: ChildProcess | null;
   info: PreviewRuntimeInfo;
   listeners: Set<(event: PreviewLogEvent) => void>;
 }
@@ -83,8 +83,8 @@ export class PublicPreviewRuntime implements PreviewRuntime {
         if (buffer.length > 16_384) buffer = buffer.slice(-8_192);
       };
 
-      tunnel.stdout.on('data', chunk => handleChunk('stdout', chunk));
-      tunnel.stderr.on('data', chunk => handleChunk('stderr', chunk));
+      tunnel.stdout?.on('data', chunk => handleChunk('stdout', chunk));
+      tunnel.stderr?.on('data', chunk => handleChunk('stderr', chunk));
       tunnel.once('error', error => void fail(error));
       tunnel.once('exit', (code, signal) => {
         if (!settled) {
@@ -108,7 +108,16 @@ export class PublicPreviewRuntime implements PreviewRuntime {
     const record = this.records.get(runtimeId);
     if (!record) return null;
     const local = await this.local.get(record.localRuntimeId);
-    if (local) record.info = { ...record.info, ...local, url: record.info.url };
+    if (local) {
+      const isFailed = record.info.status === 'FAILED';
+      record.info = {
+        ...record.info,
+        ...local,
+        status: isFailed ? 'FAILED' : local.status,
+        error: isFailed ? record.info.error : local.error,
+        url: record.info.url,
+      };
+    }
     return { ...record.info };
   }
 
@@ -121,8 +130,14 @@ export class PublicPreviewRuntime implements PreviewRuntime {
       record.tunnel = null;
     }
 
+    const isFailed = record.info.status === 'FAILED';
     const local = await this.local.stop(record.localRuntimeId);
-    record.info = { ...(local ?? record.info), url: record.info.url };
+    record.info = {
+      ...(local ?? record.info),
+      status: isFailed ? 'FAILED' : (local?.status ?? record.info.status),
+      error: isFailed ? record.info.error : (local?.error ?? record.info.error),
+      url: record.info.url,
+    };
     return { ...record.info };
   }
 

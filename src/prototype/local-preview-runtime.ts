@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 
 import type {
@@ -12,7 +12,7 @@ import type {
 interface RuntimeRecord {
   config: PreviewRuntimeConfig;
   info: PreviewRuntimeInfo;
-  child: ChildProcessWithoutNullStreams | null;
+  child: ChildProcess | null;
   listeners: Set<(event: PreviewLogEvent) => void>;
 }
 
@@ -141,10 +141,10 @@ export class LocalPreviewRuntime implements PreviewRuntime {
     record.child = child;
     record.info = { ...record.info, pid: child.pid ?? null, startedAt: new Date(), error: null };
 
-    child.stdout.on('data', chunk => {
+    child.stdout?.on('data', chunk => {
       for (const line of chunk.toString().split(/\r?\n/).filter(Boolean)) emit(record, 'stdout', line);
     });
-    child.stderr.on('data', chunk => {
+    child.stderr?.on('data', chunk => {
       for (const line of chunk.toString().split(/\r?\n/).filter(Boolean)) emit(record, 'stderr', line);
     });
 

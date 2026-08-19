@@ -7,8 +7,8 @@ import type { PrototypeEventPublisher } from './prototype/events.js';
 import { PrototypeWorker } from './prototype-worker.js';
 
 export class ModeAwareWorker {
-  private readonly prototype: PrototypeWorker;
-  private readonly development: BaseWorker;
+  readonly prototype: PrototypeWorker;
+  readonly development: RouterWorker;
   private state = 'IDLE';
 
   constructor(
