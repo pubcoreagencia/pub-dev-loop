@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { LocalPreviewRuntime } from '../src/prototype/local-preview-runtime.js';
 
-const PORT = 34671;
 const runningRuntimes: Array<{ runtime: LocalPreviewRuntime; id: string }> = [];
 
 async function makeWorkspace(): Promise<string> {
@@ -26,8 +25,8 @@ describe('LocalPreviewRuntime', () => {
     const info = await runtime.create({
       workspace,
       command: process.execPath,
-      args: ['-e', `require('http').createServer((req,res)=>{res.writeHead(200,{'content-type':'text/plain'});res.end('PUB PREVIEW OK')}).listen(${PORT},'127.0.0.1'); console.log('PREVIEW_STARTED')`],
-      port: PORT,
+      args: ['-e', `require('http').createServer((req,res)=>{res.writeHead(200,{'content-type':'text/plain'});res.end('PUB PREVIEW OK')}).listen(Number(process.env.PORT),'127.0.0.1'); console.log('PREVIEW_STARTED')`],
+      port: 0,
       startupTimeoutMs: 5_000,
     });
     runningRuntimes.push({ runtime, id: info.id });
@@ -37,7 +36,7 @@ describe('LocalPreviewRuntime', () => {
 
     const ready = await runtime.start(info.id);
     expect(ready.status).toBe('READY');
-    expect(ready.url).toBe(`http://127.0.0.1:${PORT}`);
+    expect(ready.url).toBe(`http://127.0.0.1:${info.port}`);
 
     const response = await fetch(ready.url!);
     expect(await response.text()).toBe('PUB PREVIEW OK');
