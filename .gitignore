@@ -19,3 +19,7 @@ Thumbs.db
 .idea/
 *.tmp
 *.temp
+pub-leads/
+temp_clone_publeads/
+template_repo/
+pub-dev-loop/
