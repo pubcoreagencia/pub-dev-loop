@@ -6,8 +6,7 @@ import path from 'node:path';
 import { createProvider, createAgent } from './agent.js';
 import { PostgresTaskRepository } from './repository.js';
 import { PostgresPrototypeRepository } from './prototype/repository.js';
-import { PrototypeEventStream } from './prototype/events.js';
-import { RouterWorker } from './router-worker.js';
+import { PostgresPrototypeEventPublisher } from './prototype/events.js';
 import { CodexWorker, BaseWorker } from './worker-service.js';
 import { ModeAwareWorker } from './mode-aware-worker.js';
 import { cleanupOrphanWorkspaces } from './workspace-cleanup.js';
@@ -71,7 +70,7 @@ export function createProductionWorker(): BaseWorker | ModeAwareWorker {
   if (providerName) {
     const provider = createProvider(providerName);
     const prototypes = new PostgresPrototypeRepository(pool);
-    const events = new PrototypeEventStream();
+    const events = new PostgresPrototypeEventPublisher(pool);
     return new ModeAwareWorker(tasks, prototypes, provider, events);
   }
 
