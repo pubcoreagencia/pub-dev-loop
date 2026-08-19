@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import type { Task, TaskRepository } from './domain.js';
+import type { Task, TaskRepository, CreateTask } from './domain.js';
 
 const map = (r: Record<string, unknown>): Task => ({
   id: r.id as string,
@@ -21,14 +21,24 @@ const map = (r: Record<string, unknown>): Task => ({
   leaseDeadline: r.lease_deadline as Date | null,
   heartbeatAt: r.heartbeat_at as Date | null,
   workspacePath: r.workspace_path as string | null,
+  prototypeSessionId: r.prototype_session_id as string | null,
 });
+
+const toColumn = (key: string): string => ({
+  commitSha: 'commit_sha', gitStatus: 'git_status', createdAt: 'created_at', updatedAt: 'updated_at',
+  leaseOwner: 'lease_owner', leaseDeadline: 'lease_deadline', heartbeatAt: 'heartbeat_at',
+  workspacePath: 'workspace_path', prototypeSessionId: 'prototype_session_id',
+}[key] ?? key);
 
 export class PostgresTaskRepository implements TaskRepository {
   constructor(private readonly pool: Pool) {}
 
-  async create(input: { project: string; repository: string; objective: string; prompt: string; priority?: number }): Promise<Task> {
-    const q = `INSERT INTO tasks (project, repository, objective, prompt, priority) VALUES ($1, $2, $3, $4, $5) RETURNING *`;
-    const r = await this.pool.query(q, [input.project, input.repository, input.objective, input.prompt, input.priority ?? 0]);
+  async create(input: CreateTask): Promise<Task> {
+    const r = await this.pool.query(
+      `INSERT INTO tasks (project, repository, objective, prompt, priority, prototype_session_id)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [input.project, input.repository, input.objective, input.prompt, input.priority ?? 0, input.prototypeSessionId ?? null],
+    );
     return map(r.rows[0]);
   }
 
@@ -42,76 +52,31 @@ export class PostgresTaskRepository implements TaskRepository {
     return r.rows[0] ? map(r.rows[0]) : null;
   }
 
-  /**
-   * Claim the next QUEUED task and set lease fields atomically.
-   * Uses FOR UPDATE SKIP LOCKED to prevent double-claim across workers.
-   */
   async claim(worker: string): Promise<Task | null> {
-    const q = `
+    const r = await this.pool.query(`
       WITH candidate AS (
         SELECT id FROM tasks WHERE status = 'QUEUED'
         ORDER BY priority DESC, created_at ASC
         FOR UPDATE SKIP LOCKED LIMIT 1
       )
-      UPDATE tasks SET
-        status = 'ASSIGNED',
-        worker = $1,
-        lease_owner = $1,
-        lease_deadline = now() + interval '30 seconds',
-        heartbeat_at = now(),
-        updated_at = now()
-      WHERE id = (SELECT id FROM candidate)
-      RETURNING *
-    `;
-    const r = await this.pool.query(q, [worker]);
+      UPDATE tasks SET status='ASSIGNED', worker=$1, lease_owner=$1,
+        lease_deadline=now()+interval '30 seconds', heartbeat_at=now(), updated_at=now()
+      WHERE id=(SELECT id FROM candidate) RETURNING *`, [worker]);
     return r.rows[0] ? map(r.rows[0]) : null;
   }
 
-  /**
-   * Reclaim tasks stuck in transient states (ASSIGNED, RUNNING, TESTING)
-   * whose lease has expired. This is safe against double-execution because
-   * the lease_deadline + SKIP LOCKED pattern ensures only one worker
-   * (the one that wins the UPDATE) actually reclaims the task.
-   *
-   * Only tasks in ASSIGNED/RUNNING/TESTING can be reclaimed.
-   * Terminal states (COMPLETED, FAILED, BLOCKED, CANCELLED, NEEDS_REVIEW)
-   * are NEVER reclaimed.
-   */
-  async reclaimStuck(worker: string, leaseWindowMs: number, now: Date): Promise<number> {
-    const q = `
-      UPDATE tasks SET
-        status = 'QUEUED',
-        worker = $1,
-        lease_owner = $1,
-        lease_deadline = now() + interval '30 seconds',
-        heartbeat_at = now(),
-        updated_at = now(),
-        workspace_path = NULL
-      WHERE status IN ('ASSIGNED', 'RUNNING', 'TESTING')
-        AND lease_deadline IS NOT NULL
-        AND lease_deadline < $2
-        AND (updated_at < $2 - interval '5 seconds')
-      RETURNING id
-    `;
-    const r = await this.pool.query(q, [worker, now]);
+  async reclaimStuck(worker: string, _leaseWindowMs: number, now: Date): Promise<number> {
+    const r = await this.pool.query(`UPDATE tasks SET status='QUEUED', worker=$1, lease_owner=$1,
+      lease_deadline=now()+interval '30 seconds', heartbeat_at=now(), updated_at=now(), workspace_path=NULL
+      WHERE status IN ('ASSIGNED','RUNNING','TESTING') AND lease_deadline IS NOT NULL
+      AND lease_deadline < $2 AND updated_at < $2 - interval '5 seconds' RETURNING id`, [worker, now]);
     return r.rowCount ?? 0;
   }
 
-  /**
-   * Heartbeat: refresh the lease deadline while a task is actively executing.
-   * Called periodically by the worker during executeOnce() to prove liveness.
-   */
   async heartbeat(id: string, deadline: Date): Promise<boolean> {
-    const q = `
-      UPDATE tasks SET
-        lease_deadline = $2,
-        heartbeat_at = now(),
-        updated_at = now()
-      WHERE id = $1
-        AND status IN ('ASSIGNED', 'RUNNING', 'TESTING')
-    `;
-    const r = await this.pool.query(q, [id, deadline]);
-    return r.rowCount !== null ? r.rowCount > 0 : false;
+    const r = await this.pool.query(`UPDATE tasks SET lease_deadline=$2, heartbeat_at=now(), updated_at=now()
+      WHERE id=$1 AND status IN ('ASSIGNED','RUNNING','TESTING')`, [id, deadline]);
+    return (r.rowCount ?? 0) > 0;
   }
 
   async update(id: string, patch: Partial<Task>): Promise<Task | null> {
@@ -120,32 +85,19 @@ export class PostgresTaskRepository implements TaskRepository {
     let i = 1;
     for (const [k, v] of Object.entries(patch)) {
       if (v === undefined) continue;
-      const col = k === 'commitSha' ? 'commit_sha'
-               : k === 'gitStatus' ? 'git_status'
-               : k === 'createdAt' ? 'created_at'
-               : k === 'updatedAt' ? 'updated_at'
-               : k === 'leaseOwner' ? 'lease_owner'
-               : k === 'leaseDeadline' ? 'lease_deadline'
-               : k === 'heartbeatAt' ? 'heartbeat_at'
-               : k === 'workspacePath' ? 'workspace_path'
-               : k;
-      set.push(`${col} = $${i}`);
+      set.push(`${toColumn(k)}=$${i}`);
       vals.push(v);
       i++;
     }
-    if (set.length === 0) return this.get(id);
-    set.push(`updated_at = now()`);
-    const q = `UPDATE tasks SET ${set.join(', ')} WHERE id = $${i} RETURNING *`;
+    if (!set.length) return this.get(id);
+    set.push('updated_at=now()');
     vals.push(id);
-    const r = await this.pool.query(q, vals);
+    const r = await this.pool.query(`UPDATE tasks SET ${set.join(', ')} WHERE id=$${i} RETURNING *`, vals);
     return r.rows[0] ? map(r.rows[0]) : null;
   }
 
-  async cancel(id: string): Promise<Task | null> {
-    return this.update(id, { status: 'CANCELLED' });
-  }
-
+  async cancel(id: string): Promise<Task | null> { return this.update(id, { status:'CANCELLED' }); }
   async retry(id: string): Promise<Task | null> {
-    return this.update(id, { status: 'QUEUED', worker: null, leaseOwner: null, leaseDeadline: null });
+    return this.update(id, { status:'QUEUED', worker:null, leaseOwner:null, leaseDeadline:null });
   }
 }
