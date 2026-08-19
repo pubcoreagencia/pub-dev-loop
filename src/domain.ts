@@ -21,8 +21,10 @@ export interface Task {
   leaseDeadline: Date | null;
   heartbeatAt: Date | null;
   workspacePath: string | null;
+  /** Non-null only for Prototype Mode tasks that must reuse the same session workspace. */
+  prototypeSessionId: string | null;
 }
-export type CreateTask = Pick<Task, 'project'|'repository'|'objective'|'prompt'> & Partial<Pick<Task,'priority'>>;
+export type CreateTask = Pick<Task, 'project'|'repository'|'objective'|'prompt'> & Partial<Pick<Task,'priority'|'prototypeSessionId'>>;
 export interface TaskRepository {
   create(input: CreateTask): Promise<Task>;
   list(): Promise<Task[]>;
