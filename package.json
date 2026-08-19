@@ -17,7 +17,8 @@
     "test:integration": "vitest run tests/integration/codex-hello.integration.test.ts",
     "devloop:resume": "tsx src/context/cli.ts --summary",
     "devloop:validate": "tsx src/context/cli.ts --validate",
-    "devloop:checkpoint": "tsx src/context/cli.ts --checkpoint"
+    "devloop:checkpoint": "tsx src/context/cli.ts --checkpoint",
+    "db:migrate": "tsx src/db/migrate.ts"
   },
   "dependencies": {
     "@cloudflare/containers": "^0.3.7",
