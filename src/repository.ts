@@ -55,7 +55,23 @@ export class PostgresTaskRepository implements TaskRepository {
   async claim(worker: string): Promise<Task | null> {
     const r = await this.pool.query(`
       WITH candidate AS (
-        SELECT id FROM tasks WHERE status = 'QUEUED'
+        SELECT id FROM tasks
+        WHERE status = 'QUEUED' AND prototype_session_id IS NULL
+        ORDER BY priority DESC, created_at ASC
+        FOR UPDATE SKIP LOCKED LIMIT 1
+      )
+      UPDATE tasks SET status='ASSIGNED', worker=$1, lease_owner=$1,
+        lease_deadline=now()+interval '30 seconds', heartbeat_at=now(), updated_at=now()
+      WHERE id=(SELECT id FROM candidate) RETURNING *`, [worker]);
+    return r.rows[0] ? map(r.rows[0]) : null;
+  }
+
+  /** Claim only Prototype Mode tasks. Kept concrete so legacy TaskRepository mocks remain unchanged. */
+  async claimPrototype(worker: string): Promise<Task | null> {
+    const r = await this.pool.query(`
+      WITH candidate AS (
+        SELECT id FROM tasks
+        WHERE status = 'QUEUED' AND prototype_session_id IS NOT NULL
         ORDER BY priority DESC, created_at ASC
         FOR UPDATE SKIP LOCKED LIMIT 1
       )
