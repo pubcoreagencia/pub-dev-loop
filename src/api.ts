@@ -4,14 +4,16 @@ import path from 'node:path';
 import { Pool } from 'pg';
 import { PostgresTaskRepository } from './repository.js';
 import { PostgresPrototypeRepository } from './prototype/repository.js';
-import { PrototypeEventStream } from './prototype/events.js';
+import { PrototypeEventStream, PostgresPrototypeEventBridge } from './prototype/events.js';
 import { PrototypeSseBroker } from './prototype/sse.js';
 import { prototypeUiHtml } from './prototype/ui.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const prototypeEvents = new PrototypeEventStream();
+const prototypeEventBridge = new PostgresPrototypeEventBridge(pool, prototypeEvents);
 const prototypeSse = new PrototypeSseBroker();
 prototypeEvents.subscribe(event => prototypeSse.publish(event));
+void prototypeEventBridge.start().catch(error => console.error('Prototype event bridge failed:', error));
 
 const defaultPrototypeRepository = process.env.PROTOTYPE_TEMPLATE_REPOSITORY ?? 'https://github.com/pubcoreagencia/pub-dev-loop-template.git';
 const prototypeWorkspaceRoot = process.env.PROTOTYPE_WORKSPACES_ROOT ?? '/tmp/pub-prototype';
@@ -47,19 +49,20 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
   });
 
   app.patch('/prototype/sessions/:id',async(req,res,next)=>{
-    try { const allowed=['status','mode','previewUrl','previewRuntime','lastCheckpointSha'] as const;
+    try { const allowed=['status','mode','previewUrl','previewRuntime','workspacePath','lastCheckpointSha'] as const;
       const patch=Object.fromEntries(allowed.filter(k=>req.body?.[k]!==undefined).map(k=>[k,req.body[k]]));
       const session=await prototypes.updateSession(req.params.id,patch); if(!session)return res.sendStatus(404);
       const eventType=patch.status==='READY'?'PREVIEW_READY':patch.status==='FAILED'?'ERROR':null;
       if(eventType)prototypeEvents.emit({sessionId:session.id,type:eventType,payload:{status:session.status,previewUrl:session.previewUrl}});
       return res.json(session);
-    } catch(e){return next(e);}
+    } catch(e){return next(e);
+    }
   });
 
   app.post('/prototype/sessions/:id/prompts',async(req,res,next)=>{
     try { const session=await prototypes.getSession(req.params.id); if(!session)return res.sendStatus(404); const {objective='Prototype MVP iteration',prompt,priority}=req.body??{};
       if(!prompt)return res.status(400).json({error:'prompt is required'});
-      if(session.status==='BUILDING')return res.status(409).json({error:'Prototype session is already processing a prompt'});
+      if(['BUILDING','PREVIEWING'].includes(session.status))return res.status(409).json({error:'Prototype session is already processing a prompt'});
       const updated=await prototypes.incrementPromptCount(session.id); if(!updated)return res.sendStatus(409);
       prototypeEvents.emit({sessionId:updated.id,type:'USER_PROMPT',payload:{prompt,promptIndex:updated.promptCount,objective}});
       const task=await tasks.create({project:updated.project,repository:updated.repository,objective,prompt,priority:priority??0,prototypeSessionId:updated.id});
