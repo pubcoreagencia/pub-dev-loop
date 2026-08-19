@@ -12,7 +12,10 @@ export interface PreviewRuntimeConfig {
   workspace: string;
   command: string;
   args: string[];
+  /** Use 0 for an automatically allocated free TCP port. */
   port: number;
+  /** Publicly reachable origin used to expose the runtime URL. */
+  publicBaseUrl?: string;
   startupTimeoutMs?: number;
   environment?: NodeJS.ProcessEnv;
 }
