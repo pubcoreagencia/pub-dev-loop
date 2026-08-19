@@ -5,6 +5,7 @@ import { PostgresTaskRepository } from './repository.js';
 import { PostgresPrototypeRepository } from './prototype/repository.js';
 import { PrototypeEventStream } from './prototype/events.js';
 import { PrototypeSseBroker } from './prototype/sse.js';
+import { prototypeUiHtml } from './prototype/ui.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -21,6 +22,10 @@ export const createApp = (
   app.use(express.json());
 
   app.get('/health', (_q, res) => res.json({ status: 'ok' }));
+
+  app.get('/prototype', (_req, res) => {
+    res.status(200).type('html').send(prototypeUiHtml());
+  });
 
   app.post('/tasks', async (req, res, next) => {
     try {
