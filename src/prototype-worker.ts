@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import type { AgentProvider, ProviderTaskResult } from './providers/types.js';
+import type { AgentProvider } from './providers/types.js';
 import type { Task } from './domain.js';
 import { PostgresTaskRepository } from './repository.js';
 import { TaskFinalizer, captureWorkspaceSnapshot } from './finalizer.js';
@@ -29,9 +29,8 @@ export class PrototypeWorker {
     private readonly name = 'prototype',
   ) {}
 
-  status(): string { return this.state; }
-
   private state = 'IDLE';
+  status(): string { return this.state; }
 
   async executeOnce(): Promise<boolean> {
     const task = await this.tasks.claimPrototype(this.name);
@@ -50,7 +49,7 @@ export class PrototypeWorker {
     try {
       await this.tasks.update(task.id, { status: 'RUNNING', workspacePath: workspace, branch });
       await this.prototypes.updateSession(sessionId, { status: 'BUILDING' });
-      this.events.emit({ sessionId, type: 'AGENT_STARTED', payload: { taskId: task.id, promptIndex: task.prompt } });
+      this.events.emit({ sessionId, type: 'AGENT_STARTED', payload: { taskId: task.id, promptIndex: 0 } });
 
       await mkdir(WORKSPACE_ROOT, { recursive: true });
       if (!await this.hasGitRepo(workspace)) {
@@ -67,12 +66,9 @@ export class PrototypeWorker {
       if (result.status !== 'COMPLETED') {
         const message = result.errorMessage ?? result.stderr ?? 'Prototype agent failed';
         await this.tasks.update(task.id, {
-          status: 'FAILED',
-          error: message.slice(0, 4000),
+          status: 'FAILED', error: message.slice(0, 4000), workspacePath: workspace,
           result: { provider: result.provider, model: result.model, stdout: result.stdout, stderr: result.stderr, durationMs },
-          leaseOwner: null,
-          leaseDeadline: null,
-          workspacePath: workspace,
+          leaseOwner: null, leaseDeadline: null,
         });
         await this.prototypes.updateSession(sessionId, { status: 'FAILED' });
         this.events.emit({ sessionId, type: 'ERROR', payload: { message, taskId: task.id } });
@@ -99,14 +95,10 @@ export class PrototypeWorker {
 
       if (finalize.status !== 'COMPLETED') {
         await this.tasks.update(task.id, {
-          status: 'FAILED',
-          branch,
-          workspacePath: workspace,
-          gitStatus: finalize.gitStatus,
+          status: 'FAILED', branch, workspacePath: workspace, gitStatus: finalize.gitStatus,
           error: finalize.errorMessage ?? 'Prototype finalization failed',
           result: { finalize, provider: result.provider, model: result.model, durationMs },
-          leaseOwner: null,
-          leaseDeadline: null,
+          leaseOwner: null, leaseDeadline: null,
         });
         await this.prototypes.updateSession(sessionId, { status: 'FAILED' });
         this.events.emit({ sessionId, type: 'BUILD_FAILED', payload: { message: finalize.errorMessage ?? 'Finalization failed' } });
@@ -114,56 +106,26 @@ export class PrototypeWorker {
       }
 
       await this.tasks.update(task.id, {
-        status: 'COMPLETED',
-        branch,
-        commitSha: finalize.commitSha,
-        gitStatus: finalize.gitStatus,
-        workspacePath: workspace,
-        leaseOwner: null,
-        leaseDeadline: null,
+        status: 'COMPLETED', branch, commitSha: finalize.commitSha, gitStatus: finalize.gitStatus,
+        workspacePath: workspace, leaseOwner: null, leaseDeadline: null,
         result: { finalize, provider: result.provider, model: result.model, durationMs },
       });
 
-      await this.prototypes.updateSession(sessionId, {
-        status: 'READY',
-        lastCheckpointSha: finalize.commitSha,
-      });
+      await this.prototypes.updateSession(sessionId, { status: 'READY', lastCheckpointSha: finalize.commitSha });
 
+      const promptIndex = (await this.prototypes.getSession(sessionId))?.promptCount ?? 1;
       const checkpoint = await this.prototypes.createCheckpoint({
-        sessionId,
-        promptIndex: (await this.prototypes.getSession(sessionId))?.promptCount ?? 1,
-        prompt: task.prompt,
-        commitSha: finalize.commitSha,
-        previewUrl: null,
-        buildPassed: true,
+        sessionId, promptIndex, prompt: task.prompt, commitSha: finalize.commitSha,
+        previewUrl: null, buildPassed: true,
       });
 
-      this.events.emit({
-        sessionId,
-        type: 'CHECKPOINT_CREATED',
-        payload: checkpoint as unknown as Record<string, unknown>,
-      });
-      this.events.emit({
-        sessionId,
-        type: 'BUILD_PASSED',
-        payload: { commitSha: finalize.commitSha, taskId: task.id },
-      });
-      this.events.emit({
-        sessionId,
-        type: 'PREVIEW_STARTED',
-        payload: { phase: 'runtime_pending', workspace },
-      });
-
+      this.events.emit({ sessionId, type: 'CHECKPOINT_CREATED', payload: checkpoint as unknown as Record<string, unknown> });
+      this.events.emit({ sessionId, type: 'BUILD_PASSED', payload: { commitSha: finalize.commitSha, taskId: task.id } });
+      this.events.emit({ sessionId, type: 'PREVIEW_STARTED', payload: { phase: 'runtime_pending', workspace } });
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await this.tasks.update(task.id, {
-        status: 'FAILED',
-        error: message.slice(0, 4000),
-        workspacePath: workspace,
-        leaseOwner: null,
-        leaseDeadline: null,
-      });
+      await this.tasks.update(task.id, { status: 'FAILED', error: message.slice(0, 4000), workspacePath: workspace, leaseOwner: null, leaseDeadline: null });
       await this.prototypes.updateSession(sessionId, { status: 'FAILED' });
       this.events.emit({ sessionId, type: 'ERROR', payload: { message, taskId: task.id } });
       return true;
@@ -174,11 +136,6 @@ export class PrototypeWorker {
   }
 
   private async hasGitRepo(workspace: string): Promise<boolean> {
-    try {
-      git(['rev-parse', '--git-dir'], workspace);
-      return true;
-    } catch {
-      return false;
-    }
+    try { git(['rev-parse', '--git-dir'], workspace); return true; } catch { return false; }
   }
 }
