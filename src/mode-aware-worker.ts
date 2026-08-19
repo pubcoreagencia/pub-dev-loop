@@ -3,7 +3,7 @@ import type { BaseWorker } from './worker-service.js';
 import { RouterWorker } from './router-worker.js';
 import { PostgresTaskRepository } from './repository.js';
 import { PostgresPrototypeRepository } from './prototype/repository.js';
-import { PrototypeEventStream } from './prototype/events.js';
+import type { PrototypeEventPublisher } from './prototype/events.js';
 import { PrototypeWorker } from './prototype-worker.js';
 
 export class ModeAwareWorker {
@@ -15,7 +15,7 @@ export class ModeAwareWorker {
     tasks: PostgresTaskRepository,
     prototypes: PostgresPrototypeRepository,
     provider: AgentProvider,
-    events: PrototypeEventStream,
+    events: PrototypeEventPublisher,
   ) {
     this.prototype = new PrototypeWorker(tasks, prototypes, provider, events);
     this.development = new RouterWorker(tasks, provider, 'router');
