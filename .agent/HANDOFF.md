@@ -5,6 +5,7 @@
 | **NEXT_TASK** | TASK-000036 |
 | **BRANCH** | `main` |
 | **HEAD** | `7c548d6` |
+| **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE — CLI Codex não instalado no Windows; testes de integração pulados<br>2. FAILED_UNEXPECTED_CHANGES — implementado e validado via WorkspaceValidator<br>3. GitHub web UI retorna 404 localmente; push/pull funcionam<br>4. REAL E2E com 9Router proxy requer credenciais/ambiente adicional |
 
 ## Status
 PUB Prototype Mode foi consolidado, publicado e merged em `main` (PR #1). CI, build e testes estão verdes. 9Router + Laguna S 2.1 já validados E2E.
@@ -39,12 +40,6 @@ PUB Prototype Mode foi consolidado, publicado e merged em `main` (PR #1). CI, bu
 
 ## Próximo bloco técnico sugerido
 TASK-000036 — Feature de produto real baseada no código consolidado do Prototype em `main`. Não inventar tarefa antes de validar o roadmap do produto.
-
-## Known Limitations
-1. CODEX_CLI_UNAVAILABLE — CLI Codex não instalado no Windows; testes de integração Codex pulados
-2. FAILED_UNEXPECTED_CHANGES — implementado e validado via WorkspaceValidator + baseline snapshot
-3. GitHub web UI retorna 404 localmente; push/pull funcionam corretamente
-4. REAL E2E com 9Router proxy requer credenciais/ambiente adicional; núcleo validado via staging + smoke tasks
 
 ## DO_NOT_REPEAT
 - Não re-executar a investigação completa de providers/modelos do 9Router; mapping já validado
