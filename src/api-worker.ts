@@ -257,7 +257,7 @@ async function triggerContainerWorker(env: Env): Promise<void> {
   try {
     const container = getContainer(env.WORKER_CONTAINER, 'main');
     const containerEnv: Record<string, string> = {
-      DATABASE_URL: env.DATABASE_URL || env.HYPERDRIVE?.connectionString || '',
+      DATABASE_URL: env.DATABASE_URL || '',
       GITHUB_TOKEN: env.GITHUB_TOKEN || '',
       PRIMARY_GATEWAY: env.PRIMARY_GATEWAY || 'openrouter',
       FALLBACK_GATEWAY: env.FALLBACK_GATEWAY || '9router',
@@ -270,10 +270,19 @@ async function triggerContainerWorker(env: Env): Promise<void> {
       ROUTER_MODEL: env.ROUTER_MODEL || '',
       ROUTER_FALLBACK_MODELS: env.ROUTER_FALLBACK_MODELS || '',
       AGENT_PROVIDER: env.AGENT_PROVIDER || 'gateway',
-      WORKER_POLL_INTERVAL_MS: '5000',
+      WORKER_POLL_INTERVAL_MS: '3000',
       WORKER_LEASE_TIMEOUT_MS: '30000',
       WORKER_HEARTBEAT_MS: '10000',
     };
+
+    console.log(JSON.stringify({
+      event: 'CONTAINER_DISPATCH',
+      databaseConfigured: Boolean(env.DATABASE_URL && env.DATABASE_URL.trim().length > 0),
+      openrouterConfigured: Boolean(env.OPENROUTER_API_KEY && env.OPENROUTER_API_KEY.trim().length > 0),
+      primaryGateway: env.PRIMARY_GATEWAY || 'openrouter',
+      fallbackGateway: env.FALLBACK_GATEWAY || '9router',
+      timestamp: new Date().toISOString(),
+    }));
 
     await container.start({ envVars: containerEnv });
     console.log('[API Worker] Triggered container worker instance "main" with OpenRouter -> 9Router gateway policy.');
@@ -328,7 +337,16 @@ export default {
     try {
       // 1. GET /health
       if (method === 'GET' && path === '/health') {
-        return new Response(JSON.stringify({ status: 'ok', runtime: 'cloudflare-worker' }), {
+        return new Response(JSON.stringify({
+          status: 'ok',
+          runtime: 'cloudflare-worker',
+          databaseConfigured: Boolean(env.DATABASE_URL && env.DATABASE_URL.trim().length > 0),
+          hyperdriveConfigured: Boolean(env.HYPERDRIVE?.connectionString),
+          openrouterConfigured: Boolean(env.OPENROUTER_API_KEY && env.OPENROUTER_API_KEY.trim().length > 0),
+          primaryGateway: env.PRIMARY_GATEWAY || 'openrouter',
+          fallbackGateway: env.FALLBACK_GATEWAY || '9router',
+          agentProvider: env.AGENT_PROVIDER || 'gateway',
+        }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         });

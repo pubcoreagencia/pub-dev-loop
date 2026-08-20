@@ -69,12 +69,29 @@ export class PrototypeWorker {
     const workspace = workspaceFor(task);
     const branch = task.branch ?? `prototype/${task.project}/${sessionId}`;
     this.state = 'RUNNING';
+
+    console.log(JSON.stringify({
+      event: 'TASK_LEASED',
+      taskId: task.id,
+      sessionId,
+      worker: this.name,
+      timestamp: new Date().toISOString(),
+    }));
+
     const heartbeat = setInterval(() => {
       this.tasks.heartbeat(task.id, new Date(Date.now() + LEASE_TIMEOUT_MS)).catch(() => undefined);
     }, Number(process.env.WORKER_HEARTBEAT_MS ?? 10000));
     heartbeat.unref();
 
     try {
+      console.log(JSON.stringify({
+        event: 'TASK_EXECUTION_STARTED',
+        taskId: task.id,
+        sessionId,
+        objective: task.objective,
+        timestamp: new Date().toISOString(),
+      }));
+
       await this.tasks.update(task.id, { status: 'RUNNING', workspacePath: workspace, branch });
       await this.prototypes.updateSession(sessionId, { status: 'BUILDING', workspacePath: workspace });
       this.events.emit({ sessionId, type: 'AGENT_STARTED', payload: { taskId: task.id } });
@@ -92,8 +109,29 @@ export class PrototypeWorker {
 
       const baseline = captureWorkspaceSnapshot(workspace);
       const started = Date.now();
+
+      console.log(JSON.stringify({
+        event: 'PROVIDER_EXECUTION_STARTED',
+        taskId: task.id,
+        sessionId,
+        timestamp: new Date().toISOString(),
+      }));
+
       const result = await this.provider.execute(task, workspace);
       const durationMs = Date.now() - started;
+
+      console.log(JSON.stringify({
+        event: 'TASK_EXECUTION_COMPLETED',
+        taskId: task.id,
+        sessionId,
+        status: result.status,
+        provider: result.provider,
+        model: result.model,
+        changedFilesCount: result.changedFiles?.length ?? 0,
+        toolCalls: result.toolCalls ?? 0,
+        durationMs,
+        timestamp: new Date().toISOString(),
+      }));
 
       if (result.status !== 'COMPLETED') {
         const message = result.errorMessage ?? result.stderr ?? 'Prototype agent failed';
@@ -125,6 +163,15 @@ export class PrototypeWorker {
         return true;
       }
 
+      console.log(JSON.stringify({
+        event: 'TASK_FINALIZED',
+        taskId: task.id,
+        sessionId,
+        commitSha: finalize.commitSha,
+        status: finalize.status,
+        timestamp: new Date().toISOString(),
+      }));
+
       await this.tasks.update(task.id, { status: 'COMPLETED', branch, commitSha: finalize.commitSha, gitStatus: finalize.gitStatus,
         workspacePath: workspace, leaseOwner: null, leaseDeadline: null,
         result: { finalize, provider: result.provider, model: result.model, durationMs } });
@@ -137,6 +184,15 @@ export class PrototypeWorker {
       const session = await this.prototypes.getSession(sessionId);
       const checkpoint = await this.prototypes.createCheckpoint({ sessionId, promptIndex: session?.promptCount ?? 1, prompt: task.prompt,
         commitSha: finalize.commitSha, previewUrl: preview.url, buildPassed: true });
+
+      console.log(JSON.stringify({
+        event: 'CHECKPOINT_CREATED',
+        checkpointId: checkpoint.id,
+        sessionId,
+        commitSha: checkpoint.commitSha,
+        timestamp: new Date().toISOString(),
+      }));
+
       await this.tasks.update(task.id, { status: 'COMPLETED' });
       this.events.emit({ sessionId, type: 'CHECKPOINT_CREATED', payload: checkpoint as unknown as Record<string, unknown> });
       this.events.emit({ sessionId, type: 'PREVIEW_READY', payload: { url: preview.url, runtimeId: preview.id, port: preview.port } });

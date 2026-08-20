@@ -63,7 +63,12 @@ function configureGitIdentity(): void {
 }
 
 export function createProductionWorker(): BaseWorker | ModeAwareWorker {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error('DATABASE_URL is not configured in worker environment');
+  }
+
+  const pool = new Pool({ connectionString });
   const tasks = new PostgresTaskRepository(pool);
   const providerName = process.env.AGENT_PROVIDER;
 
@@ -80,6 +85,7 @@ export function createProductionWorker(): BaseWorker | ModeAwareWorker {
 const currentFile = fileURLToPath(import.meta.url);
 const entryFile = process.argv[1] ? path.resolve(process.argv[1]) : '';
 const isMain = Boolean(entryFile && currentFile === entryFile);
+const shouldRunWorker = isMain || (!process.env.VITEST && process.env.NODE_ENV !== 'test');
 
 async function startupRecovery(tasks: PostgresTaskRepository): Promise<void> {
   configureGitCredentials();
@@ -100,24 +106,59 @@ async function startupRecovery(tasks: PostgresTaskRepository): Promise<void> {
   }
 }
 
-if (isMain) {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  const tasks = new PostgresTaskRepository(pool);
-  startupRecovery(tasks).catch(e => console.error('Startup recovery failed:', e.message));
+if (shouldRunWorker) {
+  const dbUrl = process.env.DATABASE_URL;
+  const isDbConfigured = Boolean(dbUrl && dbUrl.trim().length > 0);
+  const isOpenRouterConfigured = Boolean(process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY.trim().length > 0);
 
-  const worker = createProductionWorker();
-  const interval = Number(process.env.WORKER_POLL_INTERVAL_MS ?? 3000);
-  console.log(`Worker started (${worker.constructor.name})`);
+  console.log(JSON.stringify({
+    event: 'CONTAINER_START',
+    timestamp: new Date().toISOString(),
+    databaseConfigured: isDbConfigured,
+    openrouterConfigured: isOpenRouterConfigured,
+    primaryGateway: process.env.PRIMARY_GATEWAY || 'openrouter',
+    fallbackGateway: process.env.FALLBACK_GATEWAY || '9router',
+    agentProvider: process.env.AGENT_PROVIDER || 'gateway',
+  }));
 
-  const runCycle = async () => {
+  if (!isDbConfigured) {
+    console.error('[Worker Container] FATAL: DATABASE_URL is not configured in container environment. Worker cannot start.');
+  } else {
     try {
-      await worker.executeOnce();
-    } catch (e) {
-      console.error('Worker cycle failed', (e as Error).message);
-    } finally {
-      setTimeout(runCycle, interval);
-    }
-  };
+      const pool = new Pool({ connectionString: dbUrl });
+      const tasks = new PostgresTaskRepository(pool);
 
-  runCycle();
+      console.log(JSON.stringify({
+        event: 'DATABASE_CONFIGURED',
+        timestamp: new Date().toISOString(),
+        databaseConfigured: true,
+      }));
+
+      startupRecovery(tasks).catch(e => console.error('[Worker Container] Startup recovery notice:', e.message));
+
+      const worker = createProductionWorker();
+      const interval = Number(process.env.WORKER_POLL_INTERVAL_MS ?? 3000);
+
+      console.log(JSON.stringify({
+        event: 'WORKER_LOOP_STARTED',
+        timestamp: new Date().toISOString(),
+        workerClass: worker.constructor.name,
+        intervalMs: interval,
+      }));
+
+      const runCycle = async () => {
+        try {
+          await worker.executeOnce();
+        } catch (e) {
+          console.error('[Worker Container] Worker cycle error:', (e as Error).message);
+        } finally {
+          setTimeout(runCycle, interval);
+        }
+      };
+
+      runCycle();
+    } catch (err) {
+      console.error('[Worker Container] Initialization error:', (err as Error).message);
+    }
+  }
 }
