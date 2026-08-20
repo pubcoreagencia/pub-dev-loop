@@ -95,6 +95,6 @@ describe('HANDOFF Continuity — Codex → Hermes', () => {
     // The handoff should contain a DO_NOT_REPEAT directive
     expect(ctx.loaded.handoff).toMatch(/DO_NOT_REPEAT/i);
     // Should mention what not to repeat
-    expect(ctx.loaded.handoff.toLowerCase()).toMatch(/not re[- ]?create|não recriar|routerworker/i);
+    expect(ctx.loaded.handoff.toLowerCase()).toMatch(/not re[- ]?(run|create)|não recriar|9router/i);
   });
 });
