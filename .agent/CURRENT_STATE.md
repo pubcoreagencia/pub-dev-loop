@@ -1,4 +1,4 @@
-﻿# CURRENT_STATE
+# CURRENT_STATE
 
 | **REPOSITORY** | C:/Users/Matheus Paes/Documents/ChatGPT/PUB DEV LOOP |
 | **CURRENT_BRANCH** | main |
@@ -9,10 +9,10 @@
 | **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE — CLI do Codex não disponível neste ambiente; 2. 9Router OpenCode provider retorna conteúdo vazio para oc/laguna-s-2.1-free apesar de HTTP 200; 3. Hermes desktop não recarrega config.yaml automaticamente; requer restart manual para troca de routing/modelo |
 
 ## Task Status
-| **CURRENT_TASK** | TASK-000038 — Hardening do Dual Gateway (Partial Execution & Mutation Guard) |
-| **NEXT_TASK** | TASK-000039 |
-| **LAST_COMPLETE** | TASK-000038 |
-| **LAST_COMMIT_STABLE** | `a4b5577` |
+| **CURRENT_TASK** | TASK-000039 — Validar Dual Gateway em Ambiente Real |
+| **NEXT_TASK** | TASK-000040 |
+| **LAST_COMPLETE** | TASK-000039 |
+| **LAST_COMMIT_STABLE** | `5dfbcb6` |
 
 ## Validation
 | **TYPECHECK** | PASS |

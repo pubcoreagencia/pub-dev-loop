@@ -181,10 +181,21 @@
 ## TASK-000038
 - **Objetivo**: Hardening do Dual Gateway para impedir fallback automático após execução parcial com mutações no workspace
 - **Status**: COMPLETE ✅
-- **Commit**: (pending)
+- **Commit**: `5dfbcb6` — fix(providers): harden dual gateway against fallback on partially mutated workspaces
 - **Changes**:
   1. `src/providers/gateway.ts` — implementação do guard `hasMutableEffects` (checando `changedFiles`, `toolCalls`, `toolRounds`) e retorno de `PARTIAL_EXECUTION_REQUIRES_REVIEW` quando o primary gateway falhar após alterar o workspace
   2. `tests/gateway.test.ts` — 10 testes cobrindo permissão pré-mutação, bloqueio pós-mutação e observabilidade
   3. `tests/gateway-e2e.test.ts` — 2 testes E2E realistas simulando filesystem e ToolRuntime
   4. `tests/integration/openrouter-e2e.integration.test.ts` — teste condicional de completion real
+- **Tests**: 187 passed | 10 skipped | Build: exit 0 ✅
+
+## TASK-000039
+- **Objetivo**: Validar Dual Gateway (9Router <-> OpenRouter) em ambiente real com chamadas de rede e fallback
+- **Status**: COMPLETE ✅
+- **Commit**: (pending)
+- **Changes**:
+  1. Validação real de fallback 9Router -> OpenRouter (com 9Router offline, fallback ativado sem mutações no workspace, OpenRouter consultado via HTTPS em 706ms)
+  2. Validação real de fallback OpenRouter -> 9Router (com OpenRouter falhando pré-tool em endpoint inválido, fallback roteado para 9Router em 586ms)
+  3. Validação real de catálogo OpenRouter (/models) com 414 modelos catalogados e modelos free identificados
+  4. `src/providers/routerConfig.ts` & `src/providers/router.ts` — suporte a `modelOverride` em `loadRouterConfig`
 - **Tests**: 187 passed | 10 skipped | Build: exit 0 ✅
