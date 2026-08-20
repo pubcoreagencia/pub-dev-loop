@@ -1,4 +1,4 @@
-﻿import type { Task } from '../domain.js';
+import type { Task } from '../domain.js';
 import type { AgentProvider, ProviderKind, ProviderTaskResult } from './types.js';
 
 export interface DualGatewayConfig {
@@ -17,6 +17,19 @@ export class DualGatewayProvider implements AgentProvider {
     this.fallback = fallback;
     this.kind = primary.kind;
     this.model = primary.model;
+  }
+
+  private hasMutableEffects(result: ProviderTaskResult): boolean {
+    if (result.changedFiles && result.changedFiles.length > 0) {
+      return true;
+    }
+    if (typeof result.toolCalls === 'number' && result.toolCalls > 0) {
+      return true;
+    }
+    if (typeof result.toolRounds === 'number' && result.toolRounds > 0) {
+      return true;
+    }
+    return false;
   }
 
   private isRetryableGatewayFailure(result: ProviderTaskResult): boolean {
@@ -50,11 +63,30 @@ export class DualGatewayProvider implements AgentProvider {
   async execute(task: Task, workspace: string): Promise<ProviderTaskResult> {
     const primaryResult = await this.primary.execute(task, workspace);
 
-    if (primaryResult.status === 'COMPLETED' || !this.isRetryableGatewayFailure(primaryResult)) {
+    if (primaryResult.status === 'COMPLETED') {
       return primaryResult;
     }
 
-    // Attempt fallback gateway
+    // Safety rule: if primary failed AFTER producing mutable effects or tool calls,
+    // block automatic fallback to prevent executing another model on a partially altered workspace.
+    if (this.hasMutableEffects(primaryResult)) {
+      const changedList = primaryResult.changedFiles?.length ? ` [${primaryResult.changedFiles.join(', ')}]` : '';
+      return {
+        ...primaryResult,
+        status: 'FAILED',
+        errorCode: 'PARTIAL_EXECUTION_REQUIRES_REVIEW',
+        errorMessage: `Partial execution detected on primary gateway (${this.primary.kind}/${primaryResult.model ?? 'unknown'}) with ${primaryResult.toolCalls ?? 0} tool call(s) and ${primaryResult.changedFiles?.length ?? 0} changed file(s)${changedList}. Automatic gateway fallback blocked to prevent workspace corruption.`,
+        stderr: primaryResult.stderr
+          ? `${primaryResult.stderr}\n[DualGateway] Blocked fallback: PARTIAL_EXECUTION_REQUIRES_REVIEW (${this.primary.kind} executed tool calls/mutations before failure)`
+          : `[DualGateway] Blocked fallback: PARTIAL_EXECUTION_REQUIRES_REVIEW (${this.primary.kind} executed tool calls/mutations before failure)`,
+      };
+    }
+
+    if (!this.isRetryableGatewayFailure(primaryResult)) {
+      return primaryResult;
+    }
+
+    // Attempt fallback gateway (safe: 0 tool calls, 0 changed files)
     try {
       const fallbackResult = await this.fallback.execute(task, workspace);
       return fallbackResult;

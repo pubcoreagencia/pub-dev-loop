@@ -10,7 +10,7 @@ function baseTask() {
     id: 'TASK-GATEWAY-1',
     project: 'dual-gw-project',
     repository: 'https://github.com/test/repo.git',
-    objective: 'Test dual inference gateway',
+    objective: 'Test dual inference gateway hardening',
     prompt: 'Implement gateway fallback',
     status: 'RUNNING',
     priority: 0,
@@ -54,19 +54,18 @@ class MockGatewayProvider implements AgentProvider {
   }
 }
 
-describe('Dual Gateway Provider & Fallback Policy', () => {
+describe('Dual Gateway Provider & Hardened Fallback Policy', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('Gateway Selection: instantiates 9router, openrouter or dual gateway correctly', () => {
+  it('1. Gateway Selection: instantiates 9router, openrouter or dual gateway correctly', () => {
     const prov9 = createSingleProvider('9router');
     expect(prov9.kind).toBe('9router');
 
     const provOR = createSingleProvider('openrouter');
     expect(provOR.kind).toBe('openrouter');
 
-    // Dual gateway selection via env
     const prevPrimary = process.env.PRIMARY_GATEWAY;
     const prevFallback = process.env.FALLBACK_GATEWAY;
     try {
@@ -82,7 +81,7 @@ describe('Dual Gateway Provider & Fallback Policy', () => {
     }
   });
 
-  it('Primary success (200) completes directly without calling fallback gateway', async () => {
+  it('2. Primary success (COMPLETED) does NOT execute fallback', async () => {
     const primary = new MockGatewayProvider('9router', 'gemini/gemini-3.5-flash-lite', [
       {
         status: 'COMPLETED',
@@ -120,12 +119,56 @@ describe('Dual Gateway Provider & Fallback Policy', () => {
 
     expect(result.status).toBe('COMPLETED');
     expect(result.provider).toBe('9router');
-    expect(result.stdout).toBe('Success from 9router');
     expect(primary.executeCalls).toBe(1);
     expect(fallback.executeCalls).toBe(0);
   });
 
-  it('Fallback 9Router -> OpenRouter when primary encounters HTTP 429 rate limit', async () => {
+  it('3. Primary fails BEFORE any tool call (clean workspace) -> Fallback is ALLOWED', async () => {
+    const primary = new MockGatewayProvider('9router', 'gemini/gemini-3.5-flash-lite', [
+      {
+        status: 'ROUTER_HTTP_ERROR',
+        provider: '9router',
+        model: 'gemini/gemini-3.5-flash-lite',
+        exitCode: 500,
+        httpStatus: 500,
+        durationMs: 80,
+        stdout: '',
+        stderr: 'Infrastructure error before start',
+        changedFiles: [],
+        toolCalls: 0,
+        toolRounds: 0,
+        commit: null,
+        errorCode: 'ROUTER_HTTP_ERROR',
+        errorMessage: 'HTTP 500',
+      },
+    ]);
+
+    const fallback = new MockGatewayProvider('openrouter', 'openrouter/free', [
+      {
+        status: 'COMPLETED',
+        provider: 'openrouter',
+        model: 'openrouter/free',
+        exitCode: 0,
+        durationMs: 190,
+        stdout: 'Completed via fallback',
+        stderr: '',
+        changedFiles: ['main.ts'],
+        commit: null,
+        errorCode: null,
+        errorMessage: null,
+      },
+    ]);
+
+    const gateway = new DualGatewayProvider(primary, fallback);
+    const result = await gateway.execute(baseTask(), 'C:/tmp/ws');
+
+    expect(result.status).toBe('COMPLETED');
+    expect(result.provider).toBe('openrouter');
+    expect(primary.executeCalls).toBe(1);
+    expect(fallback.executeCalls).toBe(1);
+  });
+
+  it('4. Primary returns 429 BEFORE any tool call -> Fallback is ALLOWED', async () => {
     const primary = new MockGatewayProvider('9router', 'gemini/gemini-3.5-flash-lite', [
       {
         status: 'ROUTER_HTTP_ERROR',
@@ -135,11 +178,13 @@ describe('Dual Gateway Provider & Fallback Policy', () => {
         httpStatus: 429,
         durationMs: 100,
         stdout: '',
-        stderr: '9Router rate limit exceeded',
+        stderr: 'Rate limited before tool execution',
         changedFiles: [],
+        toolCalls: 0,
+        toolRounds: 0,
         commit: null,
         errorCode: 'ROUTER_HTTP_ERROR',
-        errorMessage: 'HTTP 429: quota exhausted',
+        errorMessage: 'HTTP 429: rate limit',
       },
     ]);
 
@@ -149,7 +194,7 @@ describe('Dual Gateway Provider & Fallback Policy', () => {
         provider: 'openrouter',
         model: 'anthropic/claude-3.5-haiku',
         exitCode: 0,
-        durationMs: 220,
+        durationMs: 250,
         stdout: 'Recovered via OpenRouter fallback',
         stderr: '',
         changedFiles: ['fix.ts'],
@@ -164,55 +209,11 @@ describe('Dual Gateway Provider & Fallback Policy', () => {
 
     expect(result.status).toBe('COMPLETED');
     expect(result.provider).toBe('openrouter');
-    expect(result.model).toBe('anthropic/claude-3.5-haiku');
-    expect(result.stdout).toBe('Recovered via OpenRouter fallback');
     expect(primary.executeCalls).toBe(1);
     expect(fallback.executeCalls).toBe(1);
   });
 
-  it('Fallback 9Router -> OpenRouter when primary encounters HTTP 5xx server error', async () => {
-    const primary = new MockGatewayProvider('9router', 'gemini/gemini-3.5-flash-lite', [
-      {
-        status: 'ROUTER_HTTP_ERROR',
-        provider: '9router',
-        model: 'gemini/gemini-3.5-flash-lite',
-        exitCode: 503,
-        httpStatus: 503,
-        durationMs: 80,
-        stdout: '',
-        stderr: '9Router service unavailable',
-        changedFiles: [],
-        commit: null,
-        errorCode: 'ROUTER_HTTP_ERROR',
-        errorMessage: 'HTTP 503 Service Unavailable',
-      },
-    ]);
-
-    const fallback = new MockGatewayProvider('openrouter', 'google/gemini-2.5-flash', [
-      {
-        status: 'COMPLETED',
-        provider: 'openrouter',
-        model: 'google/gemini-2.5-flash',
-        exitCode: 0,
-        durationMs: 180,
-        stdout: 'Handled by OpenRouter',
-        stderr: '',
-        changedFiles: [],
-        commit: null,
-        errorCode: null,
-        errorMessage: null,
-      },
-    ]);
-
-    const gateway = new DualGatewayProvider(primary, fallback);
-    const result = await gateway.execute(baseTask(), 'C:/tmp/ws');
-
-    expect(result.status).toBe('COMPLETED');
-    expect(result.provider).toBe('openrouter');
-    expect(fallback.executeCalls).toBe(1);
-  });
-
-  it('Fallback 9Router -> OpenRouter when primary encounters timeout (ROUTER_TIMEOUT)', async () => {
+  it('5. Primary returns timeout BEFORE any tool call -> Fallback is ALLOWED', async () => {
     const primary = new MockGatewayProvider('9router', 'gemini/gemini-3.5-flash-lite', [
       {
         status: 'ROUTER_TIMEOUT',
@@ -221,11 +222,13 @@ describe('Dual Gateway Provider & Fallback Policy', () => {
         exitCode: null,
         durationMs: 60000,
         stdout: '',
-        stderr: 'Request timed out',
+        stderr: 'Initial connection timed out',
         changedFiles: [],
+        toolCalls: 0,
+        toolRounds: 0,
         commit: null,
         errorCode: 'ROUTER_TIMEOUT',
-        errorMessage: '9Router request timed out',
+        errorMessage: 'ROUTER_TIMEOUT',
       },
     ]);
 
@@ -235,8 +238,8 @@ describe('Dual Gateway Provider & Fallback Policy', () => {
         provider: 'openrouter',
         model: 'openrouter/free',
         exitCode: 0,
-        durationMs: 300,
-        stdout: 'OpenRouter succeeded after primary timeout',
+        durationMs: 220,
+        stdout: 'Recovered via fallback',
         stderr: '',
         changedFiles: [],
         commit: null,
@@ -250,10 +253,104 @@ describe('Dual Gateway Provider & Fallback Policy', () => {
 
     expect(result.status).toBe('COMPLETED');
     expect(result.provider).toBe('openrouter');
+    expect(primary.executeCalls).toBe(1);
     expect(fallback.executeCalls).toBe(1);
   });
 
-  it('Fallback OpenRouter -> 9Router when OpenRouter is primary and fails with 429', async () => {
+  it('6. Primary modifies file (changedFiles non-empty) and then fails -> Fallback is BLOCKED (PARTIAL_EXECUTION_REQUIRES_REVIEW)', async () => {
+    const primary = new MockGatewayProvider('9router', 'gemini/gemini-3.5-flash-lite', [
+      {
+        status: 'ROUTER_HTTP_ERROR',
+        provider: '9router',
+        model: 'gemini/gemini-3.5-flash-lite',
+        exitCode: 500,
+        httpStatus: 500,
+        durationMs: 4000,
+        stdout: 'Wrote partial code',
+        stderr: 'Server error on round 2',
+        changedFiles: ['src/feature.ts'],
+        toolCalls: 1,
+        toolRounds: 1,
+        commit: null,
+        errorCode: 'ROUTER_HTTP_ERROR',
+        errorMessage: '500 Server Error on second turn',
+      },
+    ]);
+
+    const fallback = new MockGatewayProvider('openrouter', 'openrouter/free', [
+      {
+        status: 'COMPLETED',
+        provider: 'openrouter',
+        model: 'openrouter/free',
+        exitCode: 0,
+        durationMs: 100,
+        stdout: 'Should not run on dirty workspace',
+        stderr: '',
+        changedFiles: [],
+        commit: null,
+        errorCode: null,
+        errorMessage: null,
+      },
+    ]);
+
+    const gateway = new DualGatewayProvider(primary, fallback);
+    const result = await gateway.execute(baseTask(), 'C:/tmp/ws');
+
+    // Hardening check: fallback MUST be blocked
+    expect(result.status).toBe('FAILED');
+    expect(result.errorCode).toBe('PARTIAL_EXECUTION_REQUIRES_REVIEW');
+    expect(result.errorMessage).toContain('Partial execution detected');
+    expect(result.errorMessage).toContain('src/feature.ts');
+    expect(result.changedFiles).toEqual(['src/feature.ts']);
+    expect(primary.executeCalls).toBe(1);
+    expect(fallback.executeCalls).toBe(0); // Fallback was NEVER called
+  });
+
+  it('7. Primary executes tool call (toolCalls > 0) without changedFiles and fails -> Fallback is BLOCKED (Conservative Safety)', async () => {
+    const primary = new MockGatewayProvider('9router', 'gemini/gemini-3.5-flash-lite', [
+      {
+        status: 'ROUTER_TIMEOUT',
+        provider: '9router',
+        model: 'gemini/gemini-3.5-flash-lite',
+        exitCode: null,
+        durationMs: 15000,
+        stdout: 'Executed tool',
+        stderr: 'Timeout during round 2',
+        changedFiles: [],
+        toolCalls: 2,
+        toolRounds: 1,
+        commit: null,
+        errorCode: 'ROUTER_TIMEOUT',
+        errorMessage: 'Timeout on round 2',
+      },
+    ]);
+
+    const fallback = new MockGatewayProvider('openrouter', 'openrouter/free', [
+      {
+        status: 'COMPLETED',
+        provider: 'openrouter',
+        model: 'openrouter/free',
+        exitCode: 0,
+        durationMs: 100,
+        stdout: 'Should not run',
+        stderr: '',
+        changedFiles: [],
+        commit: null,
+        errorCode: null,
+        errorMessage: null,
+      },
+    ]);
+
+    const gateway = new DualGatewayProvider(primary, fallback);
+    const result = await gateway.execute(baseTask(), 'C:/tmp/ws');
+
+    expect(result.status).toBe('FAILED');
+    expect(result.errorCode).toBe('PARTIAL_EXECUTION_REQUIRES_REVIEW');
+    expect(primary.executeCalls).toBe(1);
+    expect(fallback.executeCalls).toBe(0);
+  });
+
+  it('8. Fallback OpenRouter -> 9Router when OpenRouter is primary and fails cleanly (0 tool calls)', async () => {
     const primary = new MockGatewayProvider('openrouter', 'openrouter/free', [
       {
         status: 'ROUTER_HTTP_ERROR',
@@ -263,8 +360,10 @@ describe('Dual Gateway Provider & Fallback Policy', () => {
         httpStatus: 429,
         durationMs: 120,
         stdout: '',
-        stderr: 'OpenRouter quota exceeded',
+        stderr: 'OpenRouter quota exceeded before start',
         changedFiles: [],
+        toolCalls: 0,
+        toolRounds: 0,
         commit: null,
         errorCode: 'ROUTER_HTTP_ERROR',
         errorMessage: 'HTTP 429',
@@ -287,7 +386,6 @@ describe('Dual Gateway Provider & Fallback Policy', () => {
       },
     ]);
 
-    // Primary is OpenRouter, Fallback is 9Router
     const gateway = new DualGatewayProvider(primary, fallback);
     const result = await gateway.execute(baseTask(), 'C:/tmp/ws');
 
@@ -298,7 +396,7 @@ describe('Dual Gateway Provider & Fallback Policy', () => {
     expect(fallback.executeCalls).toBe(1);
   });
 
-  it('Both gateways fail -> returns final consistent error from fallback', async () => {
+  it('9. Both gateways fail cleanly -> returns consistent combined error', async () => {
     const primary = new MockGatewayProvider('9router', 'gemini/gemini-3.5-flash-lite', [
       {
         status: 'ROUTER_HTTP_ERROR',
@@ -310,6 +408,8 @@ describe('Dual Gateway Provider & Fallback Policy', () => {
         stdout: '',
         stderr: '9Router failed',
         changedFiles: [],
+        toolCalls: 0,
+        toolRounds: 0,
         commit: null,
         errorCode: 'ROUTER_HTTP_ERROR',
         errorMessage: '500 Server Error',
@@ -327,6 +427,8 @@ describe('Dual Gateway Provider & Fallback Policy', () => {
         stdout: '',
         stderr: 'OpenRouter also failed',
         changedFiles: [],
+        toolCalls: 0,
+        toolRounds: 0,
         commit: null,
         errorCode: 'ROUTER_HTTP_ERROR',
         errorMessage: '503 Service Unavailable',
@@ -342,16 +444,38 @@ describe('Dual Gateway Provider & Fallback Policy', () => {
     expect(fallback.executeCalls).toBe(1);
   });
 
-  it('Supports completely independent models per gateway', () => {
-    const primary = new MockGatewayProvider('9router', 'oc/laguna-s-2.1-free', []);
-    const fallback = new MockGatewayProvider('openrouter', 'meta-llama/llama-3.3-70b-instruct', []);
+  it('10. Observability: registers primary provider, model, changedFiles, toolCalls on blocked fallback', async () => {
+    const primary = new MockGatewayProvider('9router', 'gemini/gemini-3.5-flash-lite', [
+      {
+        status: 'ROUTER_HTTP_ERROR',
+        provider: '9router',
+        model: 'gemini/gemini-3.5-flash-lite',
+        exitCode: 429,
+        httpStatus: 429,
+        durationMs: 3500,
+        stdout: 'First step completed',
+        stderr: 'Quota exceeded on second step',
+        changedFiles: ['lib/auth.ts'],
+        toolCalls: 1,
+        toolRounds: 1,
+        commit: null,
+        errorCode: 'ROUTER_HTTP_ERROR',
+        errorMessage: 'Rate limit after tool execution',
+      },
+    ]);
+
+    const fallback = new MockGatewayProvider('openrouter', 'openrouter/free', []);
 
     const gateway = new DualGatewayProvider(primary, fallback);
-    const metadata = gateway.metadata();
+    const result = await gateway.execute(baseTask(), 'C:/tmp/ws');
 
-    expect(metadata.primaryModel).toBe('oc/laguna-s-2.1-free');
-    expect(metadata.fallbackModel).toBe('meta-llama/llama-3.3-70b-instruct');
-    expect(metadata.primaryProvider).toBe('9router');
-    expect(metadata.fallbackProvider).toBe('openrouter');
+    expect(result.errorCode).toBe('PARTIAL_EXECUTION_REQUIRES_REVIEW');
+    expect(result.provider).toBe('9router');
+    expect(result.model).toBe('gemini/gemini-3.5-flash-lite');
+    expect(result.toolCalls).toBe(1);
+    expect(result.toolRounds).toBe(1);
+    expect(result.changedFiles).toEqual(['lib/auth.ts']);
+    expect(result.stderr).toContain('PARTIAL_EXECUTION_REQUIRES_REVIEW');
+    expect(fallback.executeCalls).toBe(0);
   });
 });

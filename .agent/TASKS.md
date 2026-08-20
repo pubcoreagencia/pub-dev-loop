@@ -155,3 +155,36 @@
   4. Validação real E2E com task `82e42e9f-adc9-47e0-ac11-50dddb44543a` finalizada com sucesso pelo modelo primário `gemini-3.7-flash`, gerando o commit `358d0e8f5f30dbf3ff6d0c703364de19c3a19ab0`.
 - **Tests**: 138 passed | 8 skipped | Build: exit 0 ✅
 - **Invariant**: Secrets protegidos, TaskFinalizer com auto-commit limpo.
+
+## TASK-000036
+- **Objetivo**: Promover sessão Prototype READY/APPROVED em Task Development real via API
+- **Status**: COMPLETE ✅
+- **Commit**: `009bd38` — feat(prototype): add canonical handoff service and promotion API
+- **Changes**:
+  1. `src/prototype/handoff.ts` — PrototypeHandoffService com validação atômica de lastCheckpointSha, branch e criação da Development Task
+  2. `src/api.ts` — integração com endpoint POST /prototype/sessions/:id/promote
+  3. `tests/prototype-handoff.test.ts` — 5 testes de handoff e guards
+- **Tests**: 156 passed | 8 skipped | Build: exit 0 ✅
+
+## TASK-000037
+- **Objetivo**: Implementar Dual Inference Gateway independente (9Router + OpenRouter) com seleção dinâmica e fallback entre gateways
+- **Status**: COMPLETE ✅
+- **Commit**: `a4b5577` — feat(providers): implement dual inference gateway (9Router + OpenRouter) with fallback policy
+- **Changes**:
+  1. `src/providers/openrouter.ts` & `src/providers/openrouterConfig.ts` — OpenRouterProvider com suporte a tools e OpenAI chat completions
+  2. `src/providers/gateway.ts` — DualGatewayProvider com seleção e fallback configurável
+  3. `src/agent.ts` — integração das fábricas createProvider e createSingleProvider
+  4. `src/router-worker.ts` — suporte a openrouter: e 9router: em ROUTER_PROVIDER_CHAIN
+  5. `tests/openrouter.test.ts` & `tests/gateway.test.ts` — 19 testes dedicados
+- **Tests**: 183 passed | 9 skipped | Build: exit 0 ✅
+
+## TASK-000038
+- **Objetivo**: Hardening do Dual Gateway para impedir fallback automático após execução parcial com mutações no workspace
+- **Status**: COMPLETE ✅
+- **Commit**: (pending)
+- **Changes**:
+  1. `src/providers/gateway.ts` — implementação do guard `hasMutableEffects` (checando `changedFiles`, `toolCalls`, `toolRounds`) e retorno de `PARTIAL_EXECUTION_REQUIRES_REVIEW` quando o primary gateway falhar após alterar o workspace
+  2. `tests/gateway.test.ts` — 10 testes cobrindo permissão pré-mutação, bloqueio pós-mutação e observabilidade
+  3. `tests/gateway-e2e.test.ts` — 2 testes E2E realistas simulando filesystem e ToolRuntime
+  4. `tests/integration/openrouter-e2e.integration.test.ts` — teste condicional de completion real
+- **Tests**: 187 passed | 10 skipped | Build: exit 0 ✅
