@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "pub-dev-loop-api",
   "main": "src/api-worker.ts",
-  "compatibility_date": "2026-08-17",
+  "compatibility_date": "2026-08-20",
   "compatibility_flags": [
     "nodejs_compat"
   ],
@@ -17,6 +17,10 @@
       {
         "name": "WORKER_CONTAINER",
         "class_name": "PubDevLoopWorkerContainer"
+      },
+      {
+        "name": "PROTOTYPE_API_CONTAINER",
+        "class_name": "PubDevLoopApiContainer"
       }
     ]
   },
@@ -26,11 +30,22 @@
       "new_sqlite_classes": [
         "PubDevLoopWorkerContainer"
       ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "PubDevLoopApiContainer"
+      ]
     }
   ],
   "containers": [
     {
       "class_name": "PubDevLoopWorkerContainer",
+      "image": "./Dockerfile.worker",
+      "max_instances": 1
+    },
+    {
+      "class_name": "PubDevLoopApiContainer",
       "image": "./Dockerfile.worker",
       "max_instances": 1
     }
@@ -49,12 +64,21 @@
           {
             "name": "WORKER_CONTAINER",
             "class_name": "PubDevLoopWorkerContainer"
+          },
+          {
+            "name": "PROTOTYPE_API_CONTAINER",
+            "class_name": "PubDevLoopApiContainer"
           }
         ]
       },
       "containers": [
         {
           "class_name": "PubDevLoopWorkerContainer",
+          "image": "./Dockerfile.worker",
+          "max_instances": 1
+        },
+        {
+          "class_name": "PubDevLoopApiContainer",
           "image": "./Dockerfile.worker",
           "max_instances": 1
         }
