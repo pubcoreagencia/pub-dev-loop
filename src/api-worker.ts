@@ -2,6 +2,11 @@ import { Container, getContainer } from '@cloudflare/containers';
 import pkg from 'pg';
 const { Pool } = pkg;
 import { PostgresTaskRepository } from './repository.js';
+import { PostgresPrototypeRepository } from './prototype/repository.js';
+import { PrototypeHandoffService, type PrototypeHandoffInput } from './prototype/handoff.js';
+import { PrototypeEventStream } from './prototype/events.js';
+import { prototypeUiHtml } from './prototype/ui.js';
+import { prototypeHistoryUiScript } from './prototype/history-ui.js';
 
 export interface HyperdriveBinding {
   connectionString: string;
@@ -22,7 +27,9 @@ export interface Env {
   OPENROUTER_FALLBACK_MODELS?: string;
   PRIMARY_GATEWAY?: string;
   FALLBACK_GATEWAY?: string;
+  AGENT_PROVIDER?: string;
   PUB_DEV_LOOP_API_KEY?: string;
+  PROTOTYPE_TEMPLATE_REPOSITORY?: string;
 }
 
 export class PubDevLoopWorkerContainer extends Container<Env> {
@@ -58,6 +65,7 @@ export class PubDevLoopWorkerContainer extends Container<Env> {
         const pool = new Pool({ connectionString });
         const repo = new PostgresTaskRepository(pool);
 
+        // Reclaim stale tasks after crash (30s lease timeout * 2)
         const reclaimed = await repo.reclaimStuck('worker-alarm', 60000, new Date());
         if (reclaimed > 0) {
           console.log(`[PubDevLoopWorkerContainer] Alarm reclaimed ${reclaimed} stale task(s).`);
@@ -129,15 +137,121 @@ export class PubDevLoopWorkerContainer extends Container<Env> {
   }
 }
 
-function getRepository(env: Env): PostgresTaskRepository {
+const SCHEMA_MIGRATIONS = [
+  `CREATE TABLE IF NOT EXISTS tasks (
+    id UUID PRIMARY KEY,
+    project TEXT NOT NULL,
+    repository TEXT NOT NULL,
+    objective TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    branch TEXT,
+    workspace_path TEXT,
+    priority INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'QUEUED',
+    worker_id TEXT,
+    lease_expires_at TIMESTAMPTZ,
+    heartbeat_at TIMESTAMPTZ,
+    result JSONB,
+    error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );`,
+  `CREATE INDEX IF NOT EXISTS tasks_status_idx ON tasks (status, priority DESC, created_at ASC);`,
+  `CREATE TABLE IF NOT EXISTS prototype_sessions (
+    id UUID PRIMARY KEY,
+    project TEXT NOT NULL,
+    repository TEXT NOT NULL,
+    branch TEXT NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'PROTOTYPE' CHECK (mode IN ('PROTOTYPE','DEVELOPMENT')),
+    status TEXT NOT NULL DEFAULT 'CREATING' CHECK (status IN ('CREATING','READY','BUILDING','PREVIEWING','FAILED','APPROVED','PROMOTED','ARCHIVED')),
+    preview_url TEXT,
+    preview_runtime TEXT,
+    workspace_path TEXT,
+    last_checkpoint_sha TEXT,
+    prompt_count INTEGER NOT NULL DEFAULT 0 CHECK (prompt_count >= 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );`,
+  `CREATE INDEX IF NOT EXISTS prototype_sessions_status_idx ON prototype_sessions (status, updated_at DESC);`,
+  `CREATE TABLE IF NOT EXISTS prototype_checkpoints (
+    id UUID PRIMARY KEY,
+    session_id UUID NOT NULL REFERENCES prototype_sessions(id) ON DELETE CASCADE,
+    prompt_index INTEGER NOT NULL CHECK (prompt_index > 0),
+    prompt TEXT NOT NULL,
+    commit_sha TEXT,
+    preview_url TEXT,
+    build_passed BOOLEAN NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );`,
+  `CREATE INDEX IF NOT EXISTS prototype_checkpoints_session_idx ON prototype_checkpoints (session_id, prompt_index DESC);`,
+  `ALTER TABLE prototype_sessions ADD COLUMN IF NOT EXISTS workspace_path TEXT;`,
+  `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS prototype_session_id UUID REFERENCES prototype_sessions(id) ON DELETE SET NULL;`,
+  `CREATE INDEX IF NOT EXISTS tasks_prototype_session_idx ON tasks (prototype_session_id, created_at ASC) WHERE prototype_session_id IS NOT NULL;`,
+  `CREATE TABLE IF NOT EXISTS prototype_events (
+    id UUID PRIMARY KEY,
+    session_id UUID NOT NULL REFERENCES prototype_sessions(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    sequence BIGINT NOT NULL,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );`,
+  `CREATE INDEX IF NOT EXISTS prototype_events_session_idx ON prototype_events (session_id, created_at ASC, sequence ASC);`,
+  `CREATE TABLE IF NOT EXISTS prototype_promotions (
+    id UUID PRIMARY KEY,
+    session_id UUID NOT NULL REFERENCES prototype_sessions(id) ON DELETE CASCADE,
+    from_mode TEXT NOT NULL DEFAULT 'PROTOTYPE' CHECK (from_mode = 'PROTOTYPE'),
+    to_mode TEXT NOT NULL DEFAULT 'DEVELOPMENT' CHECK (to_mode = 'DEVELOPMENT'),
+    repository TEXT NOT NULL,
+    branch TEXT NOT NULL,
+    checkpoint_sha TEXT NOT NULL,
+    promoted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );`,
+  `CREATE INDEX IF NOT EXISTS prototype_promotions_session_idx ON prototype_promotions (session_id, promoted_at DESC);`
+];
+
+let migrationsChecked = false;
+async function ensureMigrations(pool: InstanceType<typeof Pool>): Promise<void> {
+  if (migrationsChecked) return;
+  try {
+    for (const sql of SCHEMA_MIGRATIONS) {
+      await pool.query(sql).catch(err => {
+        console.error('[API Worker] Migration statement notice:', (err as Error).message);
+      });
+    }
+    migrationsChecked = true;
+  } catch (err) {
+    console.error('[API Worker] Ensure migrations error:', (err as Error).message);
+  }
+}
+
+/**
+ * Cria ou obtém a instância do PostgresTaskRepository para o Worker API.
+ * Prioriza a connectionString do Cloudflare Hyperdrive quando disponível.
+ */
+function getPool(env: Env): InstanceType<typeof Pool> {
   const connectionString = env.HYPERDRIVE?.connectionString || env.DATABASE_URL || process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error('Missing DATABASE_URL or HYPERDRIVE binding connection string');
   }
-  const pool = new Pool({ connectionString });
+  return new Pool({ connectionString });
+}
+
+function getRepository(env: Env): PostgresTaskRepository {
+  const pool = getPool(env);
+  void ensureMigrations(pool);
   return new PostgresTaskRepository(pool);
 }
 
+function getPrototypesRepository(env: Env): PostgresPrototypeRepository {
+  const pool = getPool(env);
+  void ensureMigrations(pool);
+  return new PostgresPrototypeRepository(pool);
+}
+
+/**
+ * Sinaliza a inicialização/reutilização da instância do container Linux (singleton "main")
+ * injetando as variáveis de ambiente necessárias para o worker.ts no container via SDK oficial.
+ */
 async function triggerContainerWorker(env: Env): Promise<void> {
   if (!env.WORKER_CONTAINER) return;
   try {
@@ -155,9 +269,10 @@ async function triggerContainerWorker(env: Env): Promise<void> {
       ROUTER_BASE_URL: env.ROUTER_BASE_URL || '',
       ROUTER_MODEL: env.ROUTER_MODEL || '',
       ROUTER_FALLBACK_MODELS: env.ROUTER_FALLBACK_MODELS || '',
+      AGENT_PROVIDER: env.AGENT_PROVIDER || 'gateway',
       WORKER_POLL_INTERVAL_MS: '5000',
       WORKER_LEASE_TIMEOUT_MS: '30000',
-      WORKER_HEARTBEAT_MS: '10000'
+      WORKER_HEARTBEAT_MS: '10000',
     };
 
     await container.start({ envVars: containerEnv });
@@ -211,6 +326,7 @@ export default {
     const method = request.method;
 
     try {
+      // 1. GET /health
       if (method === 'GET' && path === '/health') {
         return new Response(JSON.stringify({ status: 'ok', runtime: 'cloudflare-worker' }), {
           status: 200,
@@ -218,6 +334,286 @@ export default {
         });
       }
 
+      // POST /migrate (Synchronously run schema migrations)
+      if (method === 'POST' && path === '/migrate') {
+        const pool = getPool(env);
+        migrationsChecked = false;
+        await ensureMigrations(pool);
+        return new Response(JSON.stringify({ status: 'ok', message: 'Schema migrations applied successfully' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      // 2. GET /prototype (Serve Full Prototype Web UI)
+      if (method === 'GET' && (path === '/prototype' || path === '/prototype/')) {
+        const html = prototypeUiHtml() + prototypeHistoryUiScript();
+        return new Response(html, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-cache',
+          },
+        });
+      }
+
+      // 3. POST /prototype/sessions (Create Prototype Session)
+      if (method === 'POST' && path === '/prototype/sessions') {
+        let body: any;
+        try {
+          body = await request.json();
+        } catch {
+          return new Response(JSON.stringify({ error: 'Invalid JSON payload' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+        }
+        const { project, repository, branch } = body ?? {};
+        if (!project || typeof project !== 'string' || !project.trim()) {
+          return new Response(JSON.stringify({ error: 'project is required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+        }
+        const prototypes = getPrototypesRepository(env);
+        const defaultRepo = env.PROTOTYPE_TEMPLATE_REPOSITORY || 'https://github.com/pubcoreagencia/pub-dev-loop-template.git';
+        const session = await prototypes.createSession({
+          project: project.trim(),
+          repository: (typeof repository === 'string' && repository.trim()) ? repository.trim() : defaultRepo,
+          branch: (typeof branch === 'string' && branch.trim()) ? branch.trim() : undefined,
+        });
+        return new Response(JSON.stringify(session), { status: 201, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      // 4. GET /prototype/sessions (List Prototype Sessions)
+      if (method === 'GET' && path === '/prototype/sessions') {
+        const prototypes = getPrototypesRepository(env);
+        const sessions = await prototypes.listSessions();
+        return new Response(JSON.stringify(sessions), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      // 5. Prototype Single Session Routes (/prototype/sessions/:id, /events, /prompts, /checkpoints, /promote)
+      const sessionEventsMatch = path.match(/^\/prototype\/sessions\/([^\/]+)\/events$/);
+      if (sessionEventsMatch && method === 'GET') {
+        const id = sessionEventsMatch[1];
+        const prototypes = getPrototypesRepository(env);
+        const session = await prototypes.getSession(id);
+        if (!session) {
+          return new Response(JSON.stringify({ error: 'Session not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        // Web Standard SSE Stream for Cloudflare Workers
+        const { readable, writable } = new TransformStream();
+        const writer = writable.getWriter();
+        const encoder = new TextEncoder();
+
+        // Write initial connection frame
+        await writer.write(encoder.encode(': connected\n\n'));
+
+        // Background heartbeat and event broadcaster
+        if (ctx && typeof ctx.waitUntil === 'function') {
+          ctx.waitUntil((async () => {
+            const pool = getPool(env);
+            let active = true;
+            let lastSequence = 0;
+
+            // Send periodic heartbeats and check for new persisted events
+            for (let i = 0; i < 30 && active; i++) {
+              await new Promise(r => setTimeout(r, 5000));
+              try {
+                // Query any events for this session
+                const res = await pool.query(
+                  `SELECT * FROM prototype_events WHERE session_id = $1 AND sequence > $2 ORDER BY sequence ASC LIMIT 50`,
+                  [id, lastSequence]
+                ).catch(() => ({ rows: [] }));
+
+                for (const row of res.rows) {
+                  lastSequence = Math.max(lastSequence, Number(row.sequence));
+                  const sseFrame = `event: ${row.type}\ndata: ${JSON.stringify({ payload: row.payload, sequence: row.sequence })}\n\n`;
+                  await writer.write(encoder.encode(sseFrame));
+                }
+
+                // Heartbeat comment
+                await writer.write(encoder.encode(': heartbeat\n\n'));
+              } catch {
+                active = false;
+              }
+            }
+            try { await pool.end(); } catch {}
+            try { await writer.close(); } catch {}
+          })());
+        }
+
+        return new Response(readable, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache, no-transform',
+            'Connection': 'keep-alive',
+          },
+        });
+      }
+
+      const sessionPromptsMatch = path.match(/^\/prototype\/sessions\/([^\/]+)\/prompts$/);
+      if (sessionPromptsMatch && method === 'POST') {
+        const id = sessionPromptsMatch[1];
+        let body: any;
+        try {
+          body = await request.json();
+        } catch {
+          return new Response(JSON.stringify({ error: 'Invalid JSON payload' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+        }
+        const { prompt, objective = 'Prototype MVP iteration', priority = 0 } = body ?? {};
+        if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+          return new Response(JSON.stringify({ error: 'prompt is required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        const prototypes = getPrototypesRepository(env);
+        const tasks = getRepository(env);
+        const session = await prototypes.getSession(id);
+        if (!session) {
+          return new Response(JSON.stringify({ error: 'Session not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        if (['BUILDING', 'PREVIEWING'].includes(session.status)) {
+          return new Response(JSON.stringify({ error: 'Prototype session is already processing a prompt' }), { status: 409, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        const updated = await prototypes.incrementPromptCount(session.id);
+        if (!updated) {
+          return new Response(JSON.stringify({ error: 'Session conflict or invalid state' }), { status: 409, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        const task = await tasks.create({
+          project: updated.project,
+          repository: updated.repository,
+          objective,
+          prompt: prompt.trim(),
+          priority: typeof priority === 'number' ? priority : 0,
+          prototypeSessionId: updated.id,
+        });
+
+        await tasks.update(task.id, {
+          branch: updated.branch,
+          workspacePath: `/tmp/pub-prototype/${updated.id}`,
+        });
+
+        if (ctx && typeof ctx.waitUntil === 'function') {
+          ctx.waitUntil(triggerContainerWorker(env));
+        }
+
+        return new Response(JSON.stringify({ session: updated, task, mode: 'PROTOTYPE' }), {
+          status: 202,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      const sessionPromoteMatch = path.match(/^\/prototype\/sessions\/([^\/]+)\/promote$/);
+      if (sessionPromoteMatch && method === 'POST') {
+        const id = sessionPromoteMatch[1];
+        let body: any = {};
+        try {
+          body = await request.json();
+        } catch {
+          body = {};
+        }
+
+        const prototypes = getPrototypesRepository(env);
+        const tasks = getRepository(env);
+        const events = new PrototypeEventStream();
+        const handoff = new PrototypeHandoffService(tasks, prototypes, events);
+
+        try {
+          const result = await handoff.execute({
+            sessionId: id,
+            objective: body?.objective,
+            prompt: body?.prompt,
+            priority: body?.priority,
+          });
+
+          if (ctx && typeof ctx.waitUntil === 'function') {
+            ctx.waitUntil(triggerContainerWorker(env));
+          }
+
+          return new Response(JSON.stringify({
+            session: result.session,
+            promotion: result.promotion,
+            task: result.task,
+            mode: result.mode,
+          }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          if (message.startsWith('NOT_FOUND:')) {
+            return new Response(JSON.stringify({ error: 'Session not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+          }
+          if (message.startsWith('CONFLICT:')) {
+            return new Response(JSON.stringify({ error: message.replace(/^CONFLICT:\s*/, '') }), { status: 409, headers: { 'Content-Type': 'application/json' } });
+          }
+          return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+        }
+      }
+
+      const sessionCheckpointsMatch = path.match(/^\/prototype\/sessions\/([^\/]+)\/checkpoints$/);
+      if (sessionCheckpointsMatch) {
+        const id = sessionCheckpointsMatch[1];
+        if (method === 'GET') {
+          const prototypes = getPrototypesRepository(env);
+          const checkpoints = await prototypes.listCheckpoints(id);
+          return new Response(JSON.stringify(checkpoints), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        if (method === 'POST') {
+          let body: any;
+          try {
+            body = await request.json();
+          } catch {
+            return new Response(JSON.stringify({ error: 'Invalid JSON payload' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+          }
+          const { promptIndex, prompt, commitSha, previewUrl, buildPassed } = body ?? {};
+          if (!Number.isInteger(promptIndex) || promptIndex < 1 || typeof prompt !== 'string' || !prompt.trim()) {
+            return new Response(JSON.stringify({ error: 'promptIndex and prompt are required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+          }
+          const prototypes = getPrototypesRepository(env);
+          const checkpoint = await prototypes.createCheckpoint({
+            sessionId: id,
+            promptIndex,
+            prompt: prompt.trim(),
+            commitSha: commitSha ?? null,
+            previewUrl: previewUrl ?? null,
+            buildPassed: buildPassed === true,
+          });
+          const updated = await prototypes.updateSession(id, {
+            lastCheckpointSha: checkpoint.commitSha,
+            previewUrl: checkpoint.previewUrl,
+            status: checkpoint.buildPassed ? 'READY' : 'FAILED',
+          });
+          return new Response(JSON.stringify(checkpoint), { status: 201, headers: { 'Content-Type': 'application/json' } });
+        }
+      }
+
+      const sessionItemMatch = path.match(/^\/prototype\/sessions\/([^\/]+)$/);
+      if (sessionItemMatch) {
+        const id = sessionItemMatch[1];
+        const prototypes = getPrototypesRepository(env);
+
+        if (method === 'GET') {
+          const session = await prototypes.getSession(id);
+          if (!session) {
+            return new Response(JSON.stringify({ error: 'Session not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+          }
+          const checkpoints = await prototypes.listCheckpoints(session.id);
+          return new Response(JSON.stringify({ session, checkpoints }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        if (method === 'PATCH') {
+          const body = await request.json() as any;
+          const allowed = ['status', 'mode', 'previewUrl', 'previewRuntime', 'workspacePath', 'lastCheckpointSha'] as const;
+          const patch = Object.fromEntries(allowed.filter(k => body?.[k] !== undefined).map(k => [k, body[k]]));
+          const session = await prototypes.updateSession(id, patch);
+          if (!session) {
+            return new Response(JSON.stringify({ error: 'Session not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+          }
+          return new Response(JSON.stringify(session), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+      }
+
+      // POST /tasks
       if (method === 'POST' && path === '/tasks') {
         const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || '127.0.0.1';
 
@@ -349,7 +745,9 @@ export default {
               headers: { 'Content-Type': 'application/json' },
             });
           }
-          ctx.waitUntil(triggerContainerWorker(env));
+          if (ctx && typeof ctx.waitUntil === 'function') {
+            ctx.waitUntil(triggerContainerWorker(env));
+          }
           return new Response(JSON.stringify(task), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },

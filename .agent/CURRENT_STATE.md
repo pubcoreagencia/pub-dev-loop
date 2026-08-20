@@ -9,16 +9,17 @@
 | **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE — CLI do Codex não disponível neste ambiente; 2. 9Router OpenCode provider retorna conteúdo vazio para oc/laguna-s-2.1-free apesar de HTTP 200; 3. Hermes desktop não recarrega config.yaml automaticamente; requer restart manual para troca de routing/modelo |
 
 ## Task Status
-| **CURRENT_TASK** | TASK-000041 — OpenRouter Primary / 9Router Secondary Two-Tier Fallback Gateway |
-| **NEXT_TASK** | TASK-000042 |
-| **LAST_COMPLETE** | TASK-000041 |
-| **LAST_COMMIT_STABLE** | `9cb2be1` |
+| **CURRENT_TASK** | TASK-000042 — Deploy do PP (PUB Prototype) no Cloudflare em Produção |
+| **NEXT_TASK** | TASK-000043 |
+| **LAST_COMPLETE** | TASK-000042 |
+| **LAST_COMMIT_STABLE** | `a472fd9` |
 
 ## Validation
 | **TYPECHECK** | PASS |
 | **BUILD** | PASS |
-| **GATEWAY_HARDENING_TESTS** | 16 passed (14 unit + 2 E2E simulation) |
-| **FULL_TESTS** | 191 passed, 10 skipped, 0 failed |
+| **CLOUDFLARE_WORKER_TESTS** | 10 passed (10/10) |
+| **FULL_TESTS** | 195 passed, 10 skipped, 0 failed |
+| **CLOUDFLARE_PRODUCTION_VALIDATION** | PASS (GET /health, GET /prototype UI, POST /prototype/sessions, POST /prompts, POST /checkpoints, POST /promote, GET /tasks) |
 | **DEVLOOP_VALIDATE** | PASS |
 
 ## Inference Gateways & Two-Tier Fallback

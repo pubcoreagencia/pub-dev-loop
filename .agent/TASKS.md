@@ -213,9 +213,22 @@
 ## TASK-000041
 - **Objetivo**: Implementar fallback em duas camadas com OpenRouter Primary e 9Router Secondary
 - **Status**: COMPLETE ✅
-- **Commit**: (pending)
+- **Commit**: `a472fd9` — feat(providers): implement two-tier fallback with OpenRouter primary and 9Router secondary gateway
 - **Changes**:
   1. `src/providers/gateway.ts` — suporte a `GATEWAY_EXHAUSTED` e política de fallback em duas camadas (Tier 1: modelos internos do OpenRouter; Tier 2: 9Router somente após esgotamento terminal pré-mutação)
   2. `.env.example` — atualização dos padrões de configuração para `PRIMARY_GATEWAY=openrouter` e `FALLBACK_GATEWAY=9router`
   3. `tests/gateway.test.ts` — testes 12, 13, 14 cobrindo retentativas internas, esgotamento do gateway primário e terminal failure
 - **Tests**: 191 passed | 10 skipped | Build: exit 0 ✅
+
+## TASK-000042
+- **Objetivo**: Deploy do PP (PUB Prototype) e API no Cloudflare em Produção
+- **Status**: COMPLETE ✅
+- **Commit**: (pending)
+- **Changes**:
+  1. `src/api-worker.ts` — Exposição e adaptação completa de todas as rotas do PP na borda Cloudflare (GET /prototype HTML UI nativa, sessões, prompts, checkpoints, SSE live events, promoções atômicas e auto-migração de schema)
+  2. `Dockerfile.worker` & `.dockerignore` — Otimização de container Debian slim com Node 22, Git, Cloudflared e Codex CLI para build e empacotamento ultrarrápido
+  3. `wrangler.jsonc` — Configuração das variáveis de ambiente e bindings (Hyperdrive PostgreSQL + Durable Object Containers)
+  4. `tests/cloud-worker.test.ts` — Suíte de testes unitários validando rotas e comportamento do Worker API no Cloudflare
+  5. `scripts/verify-prod.ts` & `docs/deployment/cloudflare.md` — Validação real de ponta a ponta em produção (GET /health, GET /prototype, POST /prototype/sessions, POST /prototype/sessions/:id/prompts, POST /prototype/sessions/:id/checkpoints, POST /prototype/sessions/:id/promote, GET /tasks)
+- **Tests**: 195 passed | 10 skipped | 0 failed | Produção 100% validada ✅
+

@@ -50,9 +50,29 @@
       "max_instances": 1
     }
   ],
+  "vars": {
+    "PRIMARY_GATEWAY": "openrouter",
+    "FALLBACK_GATEWAY": "9router",
+    "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
+    "OPENROUTER_MODEL": "openrouter/free",
+    "ROUTER_BASE_URL": "http://127.0.0.1:20128/v1",
+    "ROUTER_MODEL": "gemini/gemini-3.7-flash",
+    "AGENT_PROVIDER": "gateway",
+    "PROTOTYPE_TEMPLATE_REPOSITORY": "https://github.com/pubcoreagencia/pub-dev-loop-template.git"
+  },
   "env": {
     "staging": {
       "name": "pub-dev-loop-api-staging",
+      "vars": {
+        "PRIMARY_GATEWAY": "openrouter",
+        "FALLBACK_GATEWAY": "9router",
+        "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
+        "OPENROUTER_MODEL": "openrouter/free",
+        "ROUTER_BASE_URL": "http://127.0.0.1:20128/v1",
+        "ROUTER_MODEL": "gemini/gemini-3.7-flash",
+        "AGENT_PROVIDER": "gateway",
+        "PROTOTYPE_TEMPLATE_REPOSITORY": "https://github.com/pubcoreagencia/pub-dev-loop-template.git"
+      },
       "hyperdrive": [
         {
           "binding": "HYPERDRIVE",

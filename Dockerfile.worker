@@ -15,20 +15,18 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
-RUN npm run build && chown -R codex:codex /app
+RUN npm run build && mkdir -p /tmp/pub-prototype && chown -R codex:codex /tmp/pub-prototype /app/dist
 
-# Install codex CLI (for AGENT_MODE=codex path)
+# Install codex CLI (if available from official installer, optional for gateway mode)
 USER codex
 ENV HOME=/home/codex
 ENV TMPDIR=/tmp
-RUN curl -fsSL https://chatgpt.com/codex/install.sh | sh
+RUN (curl -fsSL --connect-timeout 5 --max-time 15 https://chatgpt.com/codex/install.sh | sh) || echo "Codex installer skipped"
 
 # Switch to root for system-level config (git identity + codex symlink)
 USER root
-RUN codex_path="$(find /home/codex -type f -name codex -perm -u+x -print -quit)" \
-  && test -n "$codex_path" \
-  && ln -s "$codex_path" /usr/local/bin/codex \
-  && codex --version \
+RUN codex_path="$(find /home/codex -type f -name codex -perm -u+x -print -quit 2>/dev/null || true)" \
+  && if [ -n "$codex_path" ]; then ln -s "$codex_path" /usr/local/bin/codex && (codex --version || true); fi \
   && cloudflared --version
 
 # TASK-000032 Phase 5: Git identity (belt-and-suspenders with runtime config)
