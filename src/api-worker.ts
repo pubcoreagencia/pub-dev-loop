@@ -14,14 +14,17 @@ export interface Env {
   GITHUB_TOKEN?: string;
   ROUTER_API_KEY?: string;
   ROUTER_BASE_URL?: string;
+  ROUTER_MODEL?: string;
+  ROUTER_FALLBACK_MODELS?: string;
+  OPENROUTER_API_KEY?: string;
+  OPENROUTER_BASE_URL?: string;
+  OPENROUTER_MODEL?: string;
+  OPENROUTER_FALLBACK_MODELS?: string;
+  PRIMARY_GATEWAY?: string;
+  FALLBACK_GATEWAY?: string;
   PUB_DEV_LOOP_API_KEY?: string;
 }
 
-/**
- * Cloudflare Container Class Wrapper oficial do SDK @cloudflare/containers.
- * Herda nativamente de Container (que estende DurableObject).
- * Daemon sem servidor HTTP — utiliza a semântica nativa de Container.start().
- */
 export class PubDevLoopWorkerContainer extends Container<Env> {
   private activityInterval?: ReturnType<typeof setInterval>;
 
@@ -31,7 +34,7 @@ export class PubDevLoopWorkerContainer extends Container<Env> {
     await this.scheduleAlarm();
   }
 
-  override async onStop(params: any): Promise<void> {
+  override async onStop(_params: any): Promise<void> {
     console.log('[PubDevLoopWorkerContainer] Container instance stopping.');
     this.stopActivityRenewal();
   }
@@ -54,8 +57,7 @@ export class PubDevLoopWorkerContainer extends Container<Env> {
       if (connectionString) {
         const pool = new Pool({ connectionString });
         const repo = new PostgresTaskRepository(pool);
-        
-        // Reclaim stale tasks after crash (30s lease timeout * 2)
+
         const reclaimed = await repo.reclaimStuck('worker-alarm', 60000, new Date());
         if (reclaimed > 0) {
           console.log(`[PubDevLoopWorkerContainer] Alarm reclaimed ${reclaimed} stale task(s).`);
@@ -111,13 +113,12 @@ export class PubDevLoopWorkerContainer extends Container<Env> {
         if (hasActiveWork) {
           this.renewActivityTimeout();
         } else {
-          // Fila vazia: interrompe renovação periódica para permitir sleepAfter
           this.stopActivityRenewal();
         }
       } catch (err) {
         console.error('[PubDevLoopWorkerContainer] Activity check error:', (err as Error).message);
       }
-    }, 20000); // Checa a cada 20 segundos
+    }, 20000);
   }
 
   private stopActivityRenewal(): void {
@@ -128,10 +129,6 @@ export class PubDevLoopWorkerContainer extends Container<Env> {
   }
 }
 
-/**
- * Cria ou obtém a instância do PostgresTaskRepository para o Worker API.
- * Prioriza a connectionString do Cloudflare Hyperdrive quando disponível.
- */
 function getRepository(env: Env): PostgresTaskRepository {
   const connectionString = env.HYPERDRIVE?.connectionString || env.DATABASE_URL || process.env.DATABASE_URL;
   if (!connectionString) {
@@ -141,10 +138,6 @@ function getRepository(env: Env): PostgresTaskRepository {
   return new PostgresTaskRepository(pool);
 }
 
-/**
- * Sinaliza a inicialização/reutilização da instância do container Linux (singleton "main")
- * injetando as variáveis de ambiente necessárias para o worker.ts no container via SDK oficial.
- */
 async function triggerContainerWorker(env: Env): Promise<void> {
   if (!env.WORKER_CONTAINER) return;
   try {
@@ -152,22 +145,28 @@ async function triggerContainerWorker(env: Env): Promise<void> {
     const containerEnv: Record<string, string> = {
       DATABASE_URL: env.DATABASE_URL || env.HYPERDRIVE?.connectionString || '',
       GITHUB_TOKEN: env.GITHUB_TOKEN || '',
+      PRIMARY_GATEWAY: env.PRIMARY_GATEWAY || 'openrouter',
+      FALLBACK_GATEWAY: env.FALLBACK_GATEWAY || '9router',
+      OPENROUTER_API_KEY: env.OPENROUTER_API_KEY || '',
+      OPENROUTER_BASE_URL: env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+      OPENROUTER_MODEL: env.OPENROUTER_MODEL || 'openrouter/free',
+      OPENROUTER_FALLBACK_MODELS: env.OPENROUTER_FALLBACK_MODELS || '',
       ROUTER_API_KEY: env.ROUTER_API_KEY || '',
       ROUTER_BASE_URL: env.ROUTER_BASE_URL || '',
-      AGENT_PROVIDER: '9router',
+      ROUTER_MODEL: env.ROUTER_MODEL || '',
+      ROUTER_FALLBACK_MODELS: env.ROUTER_FALLBACK_MODELS || '',
       WORKER_POLL_INTERVAL_MS: '5000',
       WORKER_LEASE_TIMEOUT_MS: '30000',
       WORKER_HEARTBEAT_MS: '10000'
     };
 
     await container.start({ envVars: containerEnv });
-    console.log('[API Worker] Triggered container worker instance "main" via getContainer().start() with envVars.');
+    console.log('[API Worker] Triggered container worker instance "main" with OpenRouter -> 9Router gateway policy.');
   } catch (err) {
     console.error('[API Worker] Error triggering container worker:', (err as Error).message);
   }
 }
 
-// Rate Limiting helper state
 const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
 const MAX_REQUESTS_PER_MINUTE = 10;
 const RATE_LIMIT_WINDOW_MS = 60000;
@@ -205,10 +204,6 @@ function extractApiKey(request: Request): string | null {
   return null;
 }
 
-/**
- * Adaptador de API Gateway para Cloudflare Workers.
- * Implementa requisições HTTP REST usando Web Standard fetch().
- */
 export default {
   async fetch(request: Request, env: Env, ctx: any): Promise<Response> {
     const url = new URL(request.url);
@@ -216,7 +211,6 @@ export default {
     const method = request.method;
 
     try {
-      // GET /health
       if (method === 'GET' && path === '/health') {
         return new Response(JSON.stringify({ status: 'ok', runtime: 'cloudflare-worker' }), {
           status: 200,
@@ -224,11 +218,9 @@ export default {
         });
       }
 
-      // POST /tasks
       if (method === 'POST' && path === '/tasks') {
         const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || '127.0.0.1';
 
-        // 1. Rate Limiting Check
         if (!checkRateLimit(clientIp)) {
           console.log(JSON.stringify({ event: 'RATE_LIMITED', clientIp, path, timestamp: new Date().toISOString() }));
           return new Response(JSON.stringify({ error: 'Too Many Requests' }), {
@@ -237,7 +229,6 @@ export default {
           });
         }
 
-        // 2. Authentication Validation
         const expectedApiKey = env.PUB_DEV_LOOP_API_KEY || process.env.PUB_DEV_LOOP_API_KEY;
         if (expectedApiKey && expectedApiKey.trim()) {
           const providedApiKey = extractApiKey(request);
@@ -250,7 +241,6 @@ export default {
           }
         }
 
-        // 3. Payload Validation
         let body: any;
         try {
           body = await request.json();
@@ -277,7 +267,6 @@ export default {
           );
         }
 
-        // Reject unknown or dangerous extra fields
         const allowedFields = new Set(['project', 'repository', 'objective', 'prompt', 'priority']);
         const unknownFields = Object.keys(body).filter(k => !allowedFields.has(k));
         if (unknownFields.length > 0) {
@@ -299,7 +288,6 @@ export default {
 
         console.log(JSON.stringify({ event: 'TASK_REQUEST_ACCEPTED', taskId: task.id, project: task.project, clientIp, timestamp: new Date().toISOString() }));
 
-        // Trigger container startup on new task via start()
         if (ctx && typeof ctx.waitUntil === 'function') {
           ctx.waitUntil(triggerContainerWorker(env));
         }
@@ -312,7 +300,6 @@ export default {
 
       const repo = getRepository(env);
 
-      // GET /tasks
       if (method === 'GET' && path === '/tasks') {
         const tasks = await repo.list();
         return new Response(JSON.stringify(tasks), {
@@ -321,7 +308,6 @@ export default {
         });
       }
 
-      // Match /tasks/:id or /tasks/:id/cancel or /tasks/:id/retry
       const taskMatch = path.match(/^\/tasks\/([^\/]+)(?:\/(cancel|retry))?$/);
       if (taskMatch) {
         const id = taskMatch[1];
