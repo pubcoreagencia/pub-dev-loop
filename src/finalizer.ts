@@ -112,22 +112,27 @@ export class WorkspaceValidator {
    */
   private static parseChangedFiles(root: string): string[] {
     try {
-      const status = execSync('git status --short', {
+      const output = execSync('git status --short', {
         cwd: root,
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 10000,
-      }).toString().trim();
+      }).toString();
 
-      if (!status) return [];
-
-      return status
-        .split('\n')
-        .filter(Boolean)
+      return output
+        .split(/\r?\n/)
+        .filter(line => line.length >= 4)
         .map(line => {
-          const filename = line.substring(3);
+          let filename = line.length >= 4 && line[2] === ' '
+            ? line.substring(3).trim()
+            : line.trimStart().replace(/^[^\s]+\s+/, '').trim();
+
+          if (filename.startsWith('"') && filename.endsWith('"')) {
+            filename = filename.slice(1, -1);
+          }
           const arrowIdx = filename.indexOf(' -> ');
-          return arrowIdx >= 0 ? filename.substring(arrowIdx + 4) : filename;
-        });
+          return arrowIdx >= 0 ? filename.substring(arrowIdx + 4).trim() : filename;
+        })
+        .filter(Boolean);
     } catch {
       return [];
     }

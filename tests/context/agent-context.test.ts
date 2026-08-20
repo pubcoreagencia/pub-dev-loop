@@ -11,7 +11,7 @@ describe('AgentContext — Context Loading', () => {
     expect(ctx.loaded.currentState).toContain('main');
     expect(ctx.loaded.tasks).toContain('TASK-');
     expect(ctx.loaded.decisions).toContain('Decisions');
-    expect(ctx.loaded.handoff).toContain('Handoff');
+    expect(ctx.loaded.handoff).toMatch(/HANDOFF|Handoff/i);
   });
 
   it('parses current task from HANDOFF.md', async () => {

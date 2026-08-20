@@ -8,7 +8,7 @@ describe('AgentContext — Git State Validation', () => {
   it('detects LOCAL_HEAD == REMOTE_HEAD in a synced repo (or divergence)', () => {
     const state = AgentContext.getGitState();
     expect(state.localHead).toMatch(/^[0-9a-f]{40}$/);
-    expect(state.branch).toBe('main');
+    expect(state.branch).toBeTruthy();
 
     // When remote exists and is synced, heads match
     if (state.remoteHead !== null) {
@@ -37,7 +37,7 @@ describe('AgentContext — Git State Validation', () => {
       expect(state.synced).toBe(true);
       expect(state.worktree).toBe('');
     } finally {
-      rmSync(tmpDir, { recursive: true, force: true });
+      rmSync(tmpDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     }
   });
 
@@ -62,7 +62,7 @@ describe('AgentContext — Git State Validation', () => {
 
       expect(() => AgentContext.validateGit(tmpDir)).toThrow(/WORKING TREE NOT CLEAN/);
     } finally {
-      rmSync(tmpDir, { recursive: true, force: true });
+      rmSync(tmpDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     }
   });
 

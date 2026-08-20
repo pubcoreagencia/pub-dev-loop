@@ -1,0 +1,120 @@
+import { randomUUID } from 'node:crypto';
+import type { Pool } from 'pg';
+import type { PrototypeEvent, PrototypeEventType } from './domain.js';
+
+export interface PrototypeEventInput<TPayload extends Record<string, unknown> = Record<string, unknown>> {
+  sessionId: string;
+  type: PrototypeEventType;
+  payload?: TPayload;
+}
+
+export interface PrototypeEventPublisher {
+  emit<TPayload extends Record<string, unknown>>(
+    input: PrototypeEventInput<TPayload>,
+  ): PrototypeEvent<TPayload>;
+  subscribe(listener: (event: PrototypeEvent) => void): () => void;
+}
+
+export class PrototypeEventStream implements PrototypeEventPublisher {
+  private sequence = 0;
+  private readonly listeners = new Set<(event: PrototypeEvent) => void>();
+
+  emit<TPayload extends Record<string, unknown>>(
+    input: PrototypeEventInput<TPayload>,
+  ): PrototypeEvent<TPayload> {
+    const event: PrototypeEvent<TPayload> = {
+      id: `pe_${randomUUID()}`,
+      sessionId: input.sessionId,
+      type: input.type,
+      sequence: ++this.sequence,
+      timestamp: new Date(),
+      payload: input.payload ?? ({} as TPayload),
+    };
+    this.receive(event);
+    return event;
+  }
+
+  /** Inject an event received from another process/transport. */
+  receive(event: PrototypeEvent): void {
+    this.sequence = Math.max(this.sequence, event.sequence);
+    for (const listener of this.listeners) listener(event);
+  }
+
+  subscribe(listener: (event: PrototypeEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+}
+
+/**
+ * Worker-side publisher. Persists events and broadcasts them via PostgreSQL
+ * NOTIFY so a separate API process can fan them out to SSE clients.
+ */
+export class PostgresPrototypeEventPublisher implements PrototypeEventPublisher {
+  private sequence = 0;
+  private readonly listeners = new Set<(event: PrototypeEvent) => void>();
+  private readonly channel = 'prototype_events';
+
+  constructor(private readonly pool: Pool) {}
+
+  emit<TPayload extends Record<string, unknown>>(
+    input: PrototypeEventInput<TPayload>,
+  ): PrototypeEvent<TPayload> {
+    const event: PrototypeEvent<TPayload> = {
+      id: `pe_${randomUUID()}`,
+      sessionId: input.sessionId,
+      type: input.type,
+      sequence: ++this.sequence,
+      timestamp: new Date(),
+      payload: input.payload ?? ({} as TPayload),
+    };
+
+    for (const listener of this.listeners) listener(event);
+    void this.pool.query(
+      `INSERT INTO prototype_events (id, session_id, type, sequence, payload, created_at)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
+      [event.id, event.sessionId, event.type, event.sequence, JSON.stringify(event.payload), event.timestamp],
+    ).then(() => this.pool.query(`SELECT pg_notify($1, $2)`, [this.channel, JSON.stringify(event)]))
+      .catch(() => undefined);
+
+    return event;
+  }
+
+  subscribe(listener: (event: PrototypeEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+}
+
+/** API-side bridge from PostgreSQL NOTIFY into the local SSE event stream. */
+export class PostgresPrototypeEventBridge {
+  private client: import('pg').PoolClient | null = null;
+
+  constructor(private readonly pool: Pool, private readonly target: PrototypeEventStream) {}
+
+  async start(): Promise<void> {
+    if (this.client) return;
+    const client = await this.pool.connect();
+    this.client = client;
+    client.on('notification', msg => {
+      if (!msg.payload) return;
+      try {
+        this.target.receive(JSON.parse(msg.payload) as PrototypeEvent);
+      } catch {
+        // Ignore malformed external events.
+      }
+    });
+    client.on('error', () => {
+      this.client = null;
+    });
+    await client.query('LISTEN prototype_events');
+  }
+
+  async stop(): Promise<void> {
+    const client = this.client;
+    this.client = null;
+    if (!client) return;
+    await client.query('UNLISTEN prototype_events').catch(() => undefined);
+    client.release();
+  }
+}

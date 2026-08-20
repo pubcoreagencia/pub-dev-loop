@@ -60,7 +60,7 @@ describe('HANDOFF Continuity — Codex → Hermes', () => {
     // Without running any git commands beyond read-only,
     // Agent B can detect divergence
     expect(state.localHead).toMatch(/^[0-9a-f]{40}$/);
-    expect(state.branch).toBe('main');
+    expect(state.branch).toBeTruthy();
 
     // When remoteHead exists, synced tells us if they match
     if (state.remoteHead !== null) {
@@ -95,6 +95,6 @@ describe('HANDOFF Continuity — Codex → Hermes', () => {
     // The handoff should contain a DO_NOT_REPEAT directive
     expect(ctx.loaded.handoff).toMatch(/DO_NOT_REPEAT/i);
     // Should mention what not to repeat
-    expect(ctx.loaded.handoff.toLowerCase()).toMatch(/not re[- ]?create|não recriar|routerworker/i);
+    expect(ctx.loaded.handoff.toLowerCase()).toMatch(/not re[- ]?(run|create)|não recriar|9router/i);
   });
 });

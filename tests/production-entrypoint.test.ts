@@ -1,13 +1,14 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { RouterWorker } from '../src/router-worker.js';
 import { CodexWorker, BaseWorker } from '../src/worker-service.js';
+import { ModeAwareWorker } from '../src/mode-aware-worker.js';
 import { execSync } from 'node:child_process';
 
 /**
  * PHASE 2: TESTS PROVING REAL PRODUCTION ENTRYPOINT USES TASK-000030 FEATURES
  *
  * Critically: prove that worker.ts → createProductionWorker()
- * returns a RouterWorker (with TASK-000030 retry/fallback) when
+ * returns a ModeAwareWorker (with development=RouterWorker containing TASK-000030 retry/fallback) when
  * AGENT_PROVIDER is set, NOT CodexWorker (which lacks retry).
  *
  * TASK-000030 protection coverage = COMPLETE only when the real entrypoint
@@ -42,7 +43,7 @@ describe('PRODUCTION ENTRYPOINT — worker.ts createProductionWorker()', () => {
     vi.restoreAllMocks();
   });
 
-  it('test1: AGENT_PROVIDER=9router → RouterWorker (TASK-000030 active)', async () => {
+  it('test1: AGENT_PROVIDER=9router → ModeAwareWorker with RouterWorker (TASK-000030 active)', async () => {
     process.env.AGENT_PROVIDER = '9router';
     process.env.DATABASE_URL = 'postgres://test:test@localhost:5432/test';
 
@@ -50,18 +51,17 @@ describe('PRODUCTION ENTRYPOINT — worker.ts createProductionWorker()', () => {
     const mod = await import('../src/worker.js');
     const w = mod.createProductionWorker();
 
-    // CRITICAL ASSERTION: must be RouterWorker, not CodexWorker
-    expect(w).toBeInstanceOf(RouterWorker);
+    // CRITICAL ASSERTION: must be ModeAwareWorker wrapping RouterWorker, not CodexWorker
+    expect(w).toBeInstanceOf(ModeAwareWorker);
     expect(w).not.toBeInstanceOf(CodexWorker);
 
-    // PROVE TASK-000030 features are present on the production worker
-    // RouterWorker overrides executeWithRetry with retry/fallback logic
-    const proto = Object.getPrototypeOf(w);
-    expect(proto.constructor.name).toBe('RouterWorker');
-
-    // The RouterWorker class has its own executeWithRetry (not the BaseWorker default)
-    // BaseWorker.executeWithRetry is the "single attempt default" — RouterWorker overrides it
-    expect(proto.executeWithRetry).not.toBe(BaseWorker.prototype.executeWithRetry);
+    if (w instanceof ModeAwareWorker) {
+      expect(w.development).toBeInstanceOf(RouterWorker);
+      // PROVE TASK-000030 features are present on the production development worker
+      const proto = Object.getPrototypeOf(w.development);
+      expect(proto.constructor.name).toBe('RouterWorker');
+      expect(proto.executeWithRetry).not.toBe(BaseWorker.prototype.executeWithRetry);
+    }
   });
 
   it('test2: no AGENT_PROVIDER → CodexWorker (mock/codex path)', async () => {
@@ -73,29 +73,36 @@ describe('PRODUCTION ENTRYPOINT — worker.ts createProductionWorker()', () => {
     const w = mod.createProductionWorker();
 
     expect(w).toBeInstanceOf(CodexWorker);
+    expect(w).not.toBeInstanceOf(ModeAwareWorker);
     expect(w).not.toBeInstanceOf(RouterWorker);
   });
 
-  it('test3: AGENT_PROVIDER=codex-api → RouterWorker (provider path, not CLI)', async () => {
+  it('test3: AGENT_PROVIDER=codex-api → ModeAwareWorker with RouterWorker (provider path, not CLI)', async () => {
     process.env.AGENT_PROVIDER = 'codex-api';
     process.env.DATABASE_URL = 'postgres://test:test@localhost:5432/test';
 
     const mod = await import('../src/worker.js');
     const w = mod.createProductionWorker();
 
-    // codex-api is a provider → should use RouterWorker (TASK-000030 active)
-    expect(w).toBeInstanceOf(RouterWorker);
+    // codex-api is a provider → should use ModeAwareWorker with RouterWorker (TASK-000030 active)
+    expect(w).toBeInstanceOf(ModeAwareWorker);
+    if (w instanceof ModeAwareWorker) {
+      expect(w.development).toBeInstanceOf(RouterWorker);
+    }
   });
 
-  it('test4: AGENT_PROVIDER=mock → RouterWorker (mock provider, but still TASK-000030 path)', async () => {
+  it('test4: AGENT_PROVIDER=mock → ModeAwareWorker with RouterWorker (mock provider, but still TASK-000030 path)', async () => {
     process.env.AGENT_PROVIDER = 'mock';
     process.env.DATABASE_URL = 'postgres://test:test@localhost:5432/test';
 
     const mod = await import('../src/worker.js');
     const w = mod.createProductionWorker();
 
-    // Even mock provider goes through RouterWorker — same code path as production
-    expect(w).toBeInstanceOf(RouterWorker);
+    // Even mock provider goes through ModeAwareWorker with RouterWorker — same code path as production
+    expect(w).toBeInstanceOf(ModeAwareWorker);
     expect(w).not.toBeInstanceOf(CodexWorker);
+    if (w instanceof ModeAwareWorker) {
+      expect(w.development).toBeInstanceOf(RouterWorker);
+    }
   });
 });

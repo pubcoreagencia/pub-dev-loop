@@ -334,7 +334,7 @@ export abstract class BaseWorker implements Worker {
         return true;
       }
 
-      branch = `worker/${this.name}/${task.id}`;
+      branch = task.branch ?? `worker/${this.name}/${task.id}`;
 
       // Refresh lease when transitioning to TESTING
       await this.tasks.update(task.id, {
@@ -431,10 +431,15 @@ export abstract class BaseWorker implements Worker {
     // Default: single attempt, single workspace — current behavior
     const ws = await mkdtemp(join(tmpdir(), 'pub-dev-loop-'));
     const repo = join(ws, 'repo');
-    const branch = `worker/${this.name}/${task.id}`;
+    const branch = task.branch ?? `worker/${this.name}/${task.id}`;
 
     await run('git', ['clone', repository, repo]);
-    await run('git', ['checkout', '-b', branch], repo);
+    if (task.branch) {
+      await run('git', ['fetch', 'origin', task.branch], repo);
+      await run('git', ['checkout', '-B', task.branch, `origin/${task.branch}`], repo);
+    } else {
+      await run('git', ['checkout', '-b', branch], repo);
+    }
 
     const baseline = captureWorkspaceSnapshot(repo);
 
