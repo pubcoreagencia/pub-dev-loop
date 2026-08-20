@@ -4,6 +4,8 @@ import { AgentExecutor, type ExecutionResult } from './executor.js';
 import type { Task } from './domain.js';
 import { CodexApiProvider } from './providers/codex-api.js';
 import { RouterProvider } from './providers/router.js';
+import { OpenRouterProvider } from './providers/openrouter.js';
+import { DualGatewayProvider } from './providers/gateway.js';
 import type { AgentProvider, ProviderTaskResult } from './providers/types.js';
 
 export interface AgentOutcome {
@@ -126,25 +128,56 @@ class ProviderCodingAgent implements CodingAgent {
   }
 }
 
-export function createProvider(provider = process.env.AGENT_PROVIDER ?? 'mock'): AgentProvider {
-  if (provider === 'mock') {
+export function createSingleProvider(providerName: string, modelOverride?: string): AgentProvider {
+  if (providerName === 'mock') {
     return new MockProvider();
   }
 
-  if (provider === 'codex-api') {
+  if (providerName === 'codex-api') {
     return new CodexApiProvider(new AgentExecutor());
   }
 
-  if (provider === '9router') {
-    return new RouterProvider();
+  if (providerName === '9router' || providerName === 'router') {
+    return new RouterProvider(undefined, undefined, undefined, modelOverride);
+  }
+
+  if (providerName === 'openrouter') {
+    return new OpenRouterProvider(undefined, undefined, undefined, modelOverride);
   }
 
   return new MockProvider();
 }
 
+export function createProvider(
+  provider?: string,
+): AgentProvider {
+  const primaryGateway = process.env.PRIMARY_GATEWAY?.trim();
+  const fallbackGateway = process.env.FALLBACK_GATEWAY?.trim();
+
+  // If dual gateway configuration is explicitly active and no specific single override is forced:
+  if (
+    (!provider || provider === 'gateway' || provider === 'dual') &&
+    primaryGateway &&
+    fallbackGateway &&
+    primaryGateway !== fallbackGateway
+  ) {
+    const primary = createSingleProvider(primaryGateway);
+    const fallback = createSingleProvider(fallbackGateway);
+    return new DualGatewayProvider(primary, fallback);
+  }
+
+  const selected = provider ?? process.env.AGENT_PROVIDER ?? process.env.INFERENCE_GATEWAY ?? 'mock';
+  return createSingleProvider(selected);
+}
+
 export function createAgent(): CodingAgent {
-  if (process.env.AGENT_PROVIDER) {
-    return new ProviderCodingAgent(createProvider(process.env.AGENT_PROVIDER));
+  const configuredProvider =
+    (process.env.PRIMARY_GATEWAY && process.env.FALLBACK_GATEWAY)
+      ? 'gateway'
+      : (process.env.AGENT_PROVIDER ?? process.env.INFERENCE_GATEWAY);
+
+  if (configuredProvider) {
+    return new ProviderCodingAgent(createProvider(configuredProvider));
   }
 
   return process.env.AGENT_MODE === 'codex' ? new CodexCliAgent() : new MockCodingAgent();

@@ -2,3 +2,7 @@ export * from './types.js';
 export * from './shared.js';
 export * from './codex-api.js';
 export * from './router.js';
+export * from './routerConfig.js';
+export * from './openrouter.js';
+export * from './openrouterConfig.js';
+export * from './gateway.js';

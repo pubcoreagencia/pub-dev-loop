@@ -4,6 +4,7 @@ import { BaseWorker, type AttemptResult, type AttemptTrace, type WorkerExecution
 import type { WorkspaceSnapshot } from './finalizer.js';
 import { captureWorkspaceSnapshot } from './finalizer.js';
 import { RouterProvider } from './providers/router.js';
+import { OpenRouterProvider } from './providers/openrouter.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -131,7 +132,7 @@ export class RouterWorker extends BaseWorker {
       const [kind, ...rest] = spec.split(':');
       const modelOverride = rest.join(':');
 
-      if (kind === 'router') {
+      if (kind === 'router' || kind === '9router') {
         providers.push(
           new RouterProvider(
             process.env.ROUTER_BASE_URL,
@@ -140,8 +141,16 @@ export class RouterWorker extends BaseWorker {
             modelOverride || undefined,
           )
         );
+      } else if (kind === 'openrouter') {
+        providers.push(
+          new OpenRouterProvider(
+            process.env.OPENROUTER_BASE_URL,
+            process.env.OPENROUTER_API_KEY,
+            Number(process.env.OPENROUTER_TIMEOUT_MS ?? 900000),
+            modelOverride || undefined,
+          )
+        );
       }
-      // Only 'router' kind supported — no other provider types in chain
     }
 
     return providers.length > 0 ? providers : [this.provider];

@@ -1,7 +1,7 @@
 import type { Task } from '../domain.js';
 import type { ExecutionResult } from '../executor.js';
 
-export type ProviderKind = 'mock' | 'codex-api' | '9router';
+export type ProviderKind = 'mock' | 'codex-api' | '9router' | 'openrouter';
 
 export type ProviderResultStatus =
   | 'COMPLETED'

@@ -1,48 +1,23 @@
-# TASK-000035 — HANDOFF
+# HANDOFF
 
-| **CURRENT_TASK** | TASK-000035 |
-|---|---|
-| **NEXT_TASK** | TASK-000036 |
-| **BRANCH** | `main` |
-| **HEAD** | `7c548d6` |
-| **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE — CLI Codex não instalado no Windows; testes de integração pulados<br>2. FAILED_UNEXPECTED_CHANGES — implementado e validado via WorkspaceValidator<br>3. GitHub web UI retorna 404 localmente; push/pull funcionam<br>4. REAL E2E com 9Router proxy requer credenciais/ambiente adicional |
+| **CURRENT_TASK** | TASK-000037 — Dual Gateway de Inferência Independente: 9Router + OpenRouter |
+| **NEXT_TASK** | TASK-000038 |
+| **CURRENT_AGENT** | Hermes |
+| **BRANCH** | main |
+| **LOCAL HEAD** | `009bd38` |
+| **REMOTE_HEAD** | `eb8c8fe` |
+| **SYNC** | NO |
+| **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE — CLI do Codex não disponível neste ambiente; 2. 9Router OpenCode provider retorna conteúdo vazio para oc/laguna-s-2.1-free apesar de HTTP 200; 3. Hermes desktop não recarrega config.yaml automaticamente; requer restart manual para troca de routing/modelo; 4. devloop:validate falha quando LOCAL HEAD != REMOTE HEAD |
 
-## Status
-PUB Prototype Mode foi consolidado, publicado e merged em `main` (PR #1). CI, build e testes estão verdes. 9Router + Laguna S 2.1 já validados E2E.
-
-## O que foi resolvido
-1. ✅ Consolidação local + merge de `origin/main` em `feat/pub-prototype-mode`
-2. ✅ Conflito `src/prototype/ui.ts` resolvido preservando trabalho remoto + local
-3. ✅ Testes atualizados para o formato consolidado dos arquivos `.agent`
-4. ✅ PR #1 convertida para READY FOR REVIEW
-5. ✅ CI corrigido: etapa `Configure Git identity` adicionada
-6. ✅ PR #1 merged em `main` como merge normal (sem squash, sem force push)
-
-## Estado atual do repositório
-- Branch principal: `main`
-- HEAD: `7c548d6`
-- CI: SUCCESS
-- Build: PASS
-- Testes: 159 passed / 8 skipped / 0 failed
-- Prototype: consolidado e publicado
-- 9Router + Laguna S 2.1: validados E2E
-
-## Bloqueadores reais
-- `GITHUB_TOKEN` não configurado no ambiente atual — impede validação de clone de repo privado
-- GitHub web UI retorna 404 localmente, mas operações Git funcionam
-
-## Regras para continuação
-- NÃO reabrir investigação 9Router/provider/model mapping
-- NÃO alterar `finalizer.ts` ou `security.ts`
-- NÃO trocar modelo atual
-- NÃO fazer force push ou reset
-- Continuar em `main` a partir de `7c548d6`
-
-## Próximo bloco técnico sugerido
-TASK-000036 — Feature de produto real baseada no código consolidado do Prototype em `main`. Não inventar tarefa antes de validar o roadmap do produto.
+## State
+- Dual Inference Gateway implementado: 9Router (Gateway A) e OpenRouter (Gateway B) operando como gateways irmãos independentes
+- `OpenRouterProvider` com suporte a OpenAI tools chat completions e modelos customizáveis (`OPENROUTER_MODEL`)
+- `DualGatewayProvider` com política bidirecional de fallback (`PRIMARY_GATEWAY` e `FALLBACK_GATEWAY`)
+- 183 testes passando sem falhas (incluindo testes unitários e de integração de gateway)
 
 ## DO_NOT_REPEAT
-- Não re-executar a investigação completa de providers/modelos do 9Router; mapping já validado
-- Não trocar `oc/laguna-s-2.1-free` ou `gemini/gemini-3.5-flash-lite` sem novo benchmark
-- Não fazer force push, reset hard ou descarte de histórico em `main`
-- Não alterar `src/finalizer.ts` ou `src/tools/security.ts` sem causa concreta
+- Não colocar OpenRouter dentro do 9Router nem 9Router dentro do OpenRouter
+- Não recriar mapeamento provider/alias do 9Router sem confirmação de source oficial
+- Não repetir diagnóstico OpenCode/oc sem nova evidência
+- Não forçar merge/reset/rebase para resolver divergência Git
+- Nunca commitar API keys ou credenciais
