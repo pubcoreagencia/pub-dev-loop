@@ -18,7 +18,8 @@
     "devloop:resume": "tsx src/context/cli.ts --summary",
     "devloop:validate": "tsx src/context/cli.ts --validate",
     "devloop:checkpoint": "tsx src/context/cli.ts --checkpoint",
-    "db:migrate": "tsx src/db/migrate.ts"
+    "db:migrate": "tsx src/db/migrate.ts",
+    "deploy:cf": "npx wrangler@4.123.0 deploy"
   },
   "dependencies": {
     "@cloudflare/containers": "^0.3.7",
