@@ -1,10 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import { access, mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import type { AgentProvider } from './providers/types.js';
 import type { Task } from './domain.js';
 import { PostgresTaskRepository } from './repository.js';
 import { TaskFinalizer, captureWorkspaceSnapshot } from './finalizer.js';
+import type { AgentProvider } from './providers/types.js';
 import type { PrototypeEventPublisher } from './prototype/events.js';
 import { PostgresPrototypeRepository } from './prototype/repository.js';
 import { LocalPreviewRuntime } from './prototype/local-preview-runtime.js';
@@ -19,6 +19,7 @@ const PREVIEW_ARGS = (process.env.PROTOTYPE_PREVIEW_ARGS ?? 'run dev -- --host 0
   .split(' ')
   .filter(Boolean);
 const PREVIEW_MODE = process.env.PROTOTYPE_PREVIEW_MODE ?? 'public';
+const RESTORE_OBJECTIVE = '__PP_RESTORE_CHECKPOINT__';
 
 function git(args: string[], cwd?: string): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
@@ -31,6 +32,12 @@ function workspaceFor(task: Task): string {
 
 async function directoryExists(dir: string): Promise<boolean> {
   try { await access(dir); return true; } catch { return false; }
+}
+
+function parseRestore(prompt: string): { commitSha: string; checkpointId: string } {
+  const value = JSON.parse(prompt) as { commitSha?: string; checkpointId?: string };
+  if (!value.commitSha || !value.checkpointId) throw new Error('Invalid restore payload');
+  return { commitSha: value.commitSha, checkpointId: value.checkpointId };
 }
 
 export class PrototypeWorker {
@@ -79,6 +86,10 @@ export class PrototypeWorker {
       }
       git(['checkout', '-B', branch], workspace);
 
+      if (task.objective === RESTORE_OBJECTIVE) {
+        return await this.restoreCheckpoint(task, workspace, branch);
+      }
+
       const baseline = captureWorkspaceSnapshot(workspace);
       const started = Date.now();
       const result = await this.provider.execute(task, workspace);
@@ -126,6 +137,7 @@ export class PrototypeWorker {
       const session = await this.prototypes.getSession(sessionId);
       const checkpoint = await this.prototypes.createCheckpoint({ sessionId, promptIndex: session?.promptCount ?? 1, prompt: task.prompt,
         commitSha: finalize.commitSha, previewUrl: preview.url, buildPassed: true });
+      await this.tasks.update(task.id, { status: 'COMPLETED' });
       this.events.emit({ sessionId, type: 'CHECKPOINT_CREATED', payload: checkpoint as unknown as Record<string, unknown> });
       this.events.emit({ sessionId, type: 'PREVIEW_READY', payload: { url: preview.url, runtimeId: preview.id, port: preview.port } });
       return true;
@@ -139,6 +151,49 @@ export class PrototypeWorker {
       clearInterval(heartbeat);
       this.state = 'IDLE';
     }
+  }
+
+  private async restoreCheckpoint(task: Task, workspace: string, branch: string): Promise<boolean> {
+    const sessionId = task.prototypeSessionId!;
+    const { commitSha, checkpointId } = parseRestore(task.prompt);
+    const currentSha = git(['rev-parse', 'HEAD'], workspace).trim();
+    if (currentSha === commitSha) {
+      await this.tasks.update(task.id, { status: 'COMPLETED', branch, workspacePath: workspace, commitSha: currentSha, leaseOwner: null, leaseDeadline: null });
+      await this.prototypes.updateSession(sessionId, { status: 'READY', workspacePath: workspace, lastCheckpointSha: currentSha });
+      this.events.emit({ sessionId, type: 'PREVIEW_READY', payload: { url: (await this.prototypes.getSession(sessionId))?.previewUrl, restoredFrom: checkpointId, unchanged: true } });
+      return true;
+    }
+
+    this.events.emit({ sessionId, type: 'BUILD_STARTED', payload: { phase: 'restore', checkpointId, targetSha: commitSha } });
+    git(['read-tree', '-m', '-u', commitSha], workspace);
+    git(['add', '-A'], workspace);
+    const commitMessage = `prototype(${task.project}): restore checkpoint ${checkpointId}`;
+    git(['commit', '--allow-empty', '-m', commitMessage], workspace);
+    const restoredSha = git(['rev-parse', 'HEAD'], workspace).trim();
+
+    const preview = await this.ensurePreview(sessionId, workspace);
+    await this.prototypes.updateSession(sessionId, {
+      status: 'READY', workspacePath: workspace, previewRuntime: preview.id,
+      previewUrl: preview.url, lastCheckpointSha: restoredSha,
+    });
+    await this.tasks.update(task.id, {
+      status: 'COMPLETED', branch, workspacePath: workspace, commitSha: restoredSha,
+      leaseOwner: null, leaseDeadline: null, result: { restoredFrom: checkpointId, targetSha: commitSha, restoredSha },
+    });
+
+    const session = await this.prototypes.getSession(sessionId);
+    const checkpoint = await this.prototypes.createCheckpoint({
+      sessionId,
+      promptIndex: session?.promptCount ?? 1,
+      prompt: `Restore checkpoint ${checkpointId}`,
+      commitSha: restoredSha,
+      previewUrl: preview.url,
+      buildPassed: true,
+    });
+    this.events.emit({ sessionId, type: 'BUILD_PASSED', payload: { commitSha: restoredSha, restoredFrom: checkpointId, targetSha: commitSha } });
+    this.events.emit({ sessionId, type: 'CHECKPOINT_CREATED', payload: checkpoint as unknown as Record<string, unknown> });
+    this.events.emit({ sessionId, type: 'PREVIEW_READY', payload: { url: preview.url, runtimeId: preview.id, port: preview.port, restoredFrom: checkpointId } });
+    return true;
   }
 
   private async ensurePreview(sessionId: string, workspace: string): Promise<PreviewRuntimeInfo> {
