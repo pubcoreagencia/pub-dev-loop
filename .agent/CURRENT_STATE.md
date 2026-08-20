@@ -1,35 +1,33 @@
 # Current State
 
 ## Último Commit Estável
-`537da8d` — chore(agent): update CURRENT_STATE and HANDOFF after 9Router merge/validation
+`7c548d6` — Merge PR #1: feat/pub-prototype-mode
 
-## Branch
-`feat/pub-prototype-mode`
+## Branch Principal
+`main`
 
 ## Remote
-`origin/main` = `2e9980a` (ahead 7, behind 3)
+`origin/main` = `7c548d6` (sincronizado)
 
 ## Git State
-| **LOCAL_HEAD** | `a778c54` |
+| Campo | Valor |
 |---|---|
-| **REMOTE_HEAD** | `2e9980a` |
-| **SYNC** | NO |
-| **CURRENT_BRANCH** | `feat/pub-prototype-mode` |
-| **MAIN** | `feat/pub-prototype-mode` diverged from `main`; merge origin/main completed at `a778c54` |
+| LOCAL_HEAD | `7c548d6` |
+| REMOTE_HEAD | `7c548d6` |
+| SYNC | YES |
+| CURRENT_BRANCH | `main` |
 
-## 9Router Integration Complete ✅
-- **Root Cause**: cx/gpt-* models fail because Codex provider uses ChatGPT free account (not Codex)
-- **Available Models**: `oc/laguna-s-2.1-free`, `gemini/gemini-3.5-flash-lite`, `gemini/gemini-3.6-flash`
-- **Broken Models**: `cx/*` (codex auth issue), `nvidia/*` (410), `kimi/*` (402), `ag/*` (token expired/empty responses)
-- **Fix Applied**: `.env.staging` updated to use `oc/laguna-s-2.1-free` (Laguna S 2.1)
-- **E2E Validated**: Task `c267e2b1` COMPLETED — model: laguna-s-2.1-free, provider: 9router, 9610ms, commit 3dc24302
+## Estado do Produto
+- **PUB Prototype Mode**: ✅ merged em `main` (PR #1)
+- **CI**: ✅ verde no GitHub Actions
+- **Build**: ✅ `npm run build` — exit 0
+- **Testes**: ✅ 159 passed / 8 skipped / 0 failed
+- **9Router**: ✅ validado E2E com `oc/laguna-s-2.1-free`; NÃO reabrir investigação
+- **Docker staging**: implementado e validado via build + testes
+- **Auto-commit**: ✅ implementado e validado
+- **Provider retry/fallback**: ✅ implementado
 
-## Git State (runtime)
-- Working directory: C:\Users\Matheus Paes\Documents\ChatGPT\PUB DEV LOOP
-- Worktree: clean (on feat/pub-prototype-mode branch)
-- Base branch for consolidation: main
-
-## Docker Status
-- postgres: healthy
-- api: healthy (port 3000)
-- worker: healthy (RouterWorker, model: oc/laguna-s-2.1-free)
+## Bloqueadores Reais
+- Nenhum bloqueador de consolidação
+- `GITHUB_TOKEN` não configurado no ambiente atual — impede validação de clone de repo privado
+- GitHub web UI retorna 404 localmente, mas push/pull funcionam

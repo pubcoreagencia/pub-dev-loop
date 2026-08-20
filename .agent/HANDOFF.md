@@ -1,43 +1,41 @@
-# TASK-000034 — HANDOFF
+# TASK-000035 — HANDOFF
 
-| **CURRENT_TASK** | TASK-000034 |
+| **CURRENT_TASK** | TASK-000035 |
 |---|---|
-| **NEXT_TASK** | TASK-000035 |
-| **STATUS** | CONSOLIDATED — merge origin/main into feat/pub-prototype-mode completed |
+| **NEXT_TASK** | TASK-000036 |
+| **BRANCH** | `main` |
+| **HEAD** | `7c548d6` |
 
-## What was resolved:
-1. ✅ Investigated all 5 9Router providers (antigravity, codex, nvidia, kimi, gemini)
-2. ✅ Root-caused cx/gpt-* failures (Codex provider uses ChatGPT free account, not Codex)
-3. ✅ Identified working models (oc/laguna-s-2.1-free, gemini/gemini-3.5-flash-lite)
-4. ✅ Updated .env.staging to use oc/laguna-s-2.1-free (Laguna S 2.1)
-5. ✅ Updated package.json (added db:migrate script)
-6. ✅ Rebuilt and restarted all Docker containers
-7. ✅ Validated end-to-end: task c267e2b1 COMPLETED with oc/laguna-s-2.1-free
-8. ✅ Merged origin/main into feat/pub-prototype-mode (conflict resolved in src/prototype/index.ts)
-9. ✅ Updated agent context files for continuity
+## Status
+PUB Prototype Mode foi consolidado, publicado e merged em `main` (PR #1). CI, build e testes estão verdes. 9Router + Laguna S 2.1 já validados E2E.
 
-## Known Limitations
-1. CODEX_CLI_UNAVAILABLE — codex CLI not installed on host; integration tests skipped
-2. GITHUB_TOKEN not set in environment — cannot validate private repo clone
-3. cx/gpt-* models still broken — upstream Codex auth issue, not 9Router config
-4. nvidia/* and kimi/* models still unavailable — 410/402 upstream errors
-5. ag/* models return empty/403 responses — antigravity OAuth token expired
+## O que foi resolvido
+1. ✅ Consolidação local + merge de `origin/main` em `feat/pub-prototype-mode`
+2. ✅ Conflito `src/prototype/ui.ts` resolvido preservando trabalho remoto + local
+3. ✅ Testes atualizados para o formato consolidado dos arquivos `.agent`
+4. ✅ PR #1 convertida para READY FOR REVIEW
+5. ✅ CI corrigido: etapa `Configure Git identity` adicionada
+6. ✅ PR #1 merged em `main` como merge normal (sem squash, sem force push)
 
-## What remains BLOCKED:
-- GITHUB_TOKEN not set in environment — cannot validate private repo clone
-- cx/gpt-* models still broken (upstream Codex auth issue, not 9Router config)
-- nvidia/* and kimi/* models still unavailable (410/402 upstream errors)
+## Estado atual do repositório
+- Branch principal: `main`
+- HEAD: `7c548d6`
+- CI: SUCCESS
+- Build: PASS
+- Testes: 159 passed / 8 skipped / 0 failed
+- Prototype: consolidado e publicado
+- 9Router + Laguna S 2.1: validados E2E
 
-## Next Steps (require user action):
-1. Set `GITHUB_TOKEN=***` in environment
-2. Restart worker: `GITHUB_TOKEN=*** docker compose -f docker-compose.yml -f docker-compose.staging.yml up --build --force-recreate -d`
-3. Run retry_revalidate, crash_revalidate, secret_scan
-4. Merge feat/pub-prototype-mode into main after validation
+## Bloqueadores reais
+- `GITHUB_TOKEN` não configurado no ambiente atual — impede validação de clone de repo privado
+- GitHub web UI retorna 404 localmente, mas operações Git funcionam
 
-## Notes:
-- oc/laguna-s-2.1-free is the recommended model for Hermes (complete responses, 0 cost)
-- ag/gemini-3-flash returns empty responses (antigravity OAuth token issue)
-- Provider chain: router:oc/laguna-s-2.1-free,router:gemini/gemini-3.5-flash-lite (fallback)
-- DO NOT re-run 9Router investigation; provider/model mapping already validated
-- DO NOT reset hard or force push; preserve prototype, worker, router, and finalizer work
-- DO_NOT_REPEAT: do not re-run completed 9Router investigation; do not change model without validation; do not reset/force push
+## Regras para continuação
+- NÃO reabrir investigação 9Router/provider/model mapping
+- NÃO alterar `finalizer.ts` ou `security.ts`
+- NÃO trocar modelo atual
+- NÃO fazer force push ou reset
+- Continuar em `main` a partir de `7c548d6`
+
+## Próximo bloco técnico sugerido
+TASK-000036 — Feature de produto real baseada no código consolidado do Prototype em `main`. Não inventar tarefa antes de validar o roadmap do produto.
