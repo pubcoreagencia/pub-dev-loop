@@ -12,6 +12,7 @@ import { prototypeHistoryUiScript } from './prototype/history-ui.js';
 import { PrototypeComparisonPreviewManager } from './prototype/comparison-preview.js';
 import { LocalPreviewRuntime } from './prototype/local-preview-runtime.js';
 import { PublicPreviewRuntime } from './prototype/public-preview-runtime.js';
+import { PrototypeHandoffService, type PrototypeHandoffInput } from './prototype/handoff.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const prototypeEvents = new PrototypeEventStream();
@@ -28,7 +29,8 @@ const comparisonRuntime = (process.env.PROTOTYPE_PREVIEW_MODE ?? 'public') === '
 const comparisonPreviews = new PrototypeComparisonPreviewManager(comparisonRuntime);
 const previewCommand = process.env.PROTOTYPE_PREVIEW_COMMAND ?? 'npm';
 const previewArgs = (process.env.PROTOTYPE_PREVIEW_ARGS ?? 'run dev -- --host 0.0.0.0 --port {PORT}')
-  .split(' ').filter(Boolean);
+  .split(' ')
+  .filter(Boolean);
 const previewPublicBaseUrl = process.env.PROTOTYPE_PREVIEW_BASE_URL || undefined;
 
 const repoPath = (sessionId: string) => path.join(prototypeWorkspaceRoot, sessionId);
@@ -38,6 +40,8 @@ function gitDiff(cwd: string, base: string, head: string): string {
 
 export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes = new PostgresPrototypeRepository(pool)) => {
   const app = express(); app.use(express.json());
+  const handoff = new PrototypeHandoffService(tasks, prototypes, prototypeEvents);
+
   app.get('/health', (_q,res)=>res.json({status:'ok'}));
   app.get('/prototype', (_req,res)=>res.status(200).type('html').send(prototypeUiHtml()+prototypeHistoryUiScript()));
 
@@ -148,75 +152,28 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
 
   app.post('/prototype/sessions/:id/promote', async (req, res, next) => {
     try {
-      const session = await prototypes.getSession(req.params.id);
-      if (!session) return res.sendStatus(404);
+      const input: PrototypeHandoffInput = {
+        sessionId: req.params.id,
+        objective: req.body?.objective,
+        prompt: req.body?.prompt,
+        priority: req.body?.priority,
+      };
 
-      if (!['READY', 'APPROVED'].includes(session.status)) {
-        return res.status(409).json({ error: `Session in status ${session.status} cannot be promoted. Must be READY or APPROVED.` });
-      }
-
-      if (!session.lastCheckpointSha) {
-        return res.status(409).json({ error: 'Session must have a valid lastCheckpointSha to be promoted' });
-      }
-
-      if (!session.branch || !session.repository) {
-        return res.status(409).json({ error: 'Session must have repository and branch configured' });
-      }
-
-      const updated = await prototypes.promoteSession(session.id);
-      if (!updated) {
-        return res.status(409).json({ error: 'Session already promoted or status conflict' });
-      }
-
-      const promotion = await prototypes.createPromotion({
-        sessionId: updated.id,
-        fromMode: 'PROTOTYPE',
-        toMode: 'DEVELOPMENT',
-        repository: updated.repository,
-        branch: updated.branch,
-        checkpointSha: updated.lastCheckpointSha!,
-        promotedAt: new Date(),
-      });
-
-      const {
-        objective = `Development handoff from Prototype ${updated.project}`,
-        prompt = `Continuar desenvolvimento a partir do protótipo aprovado (${updated.branch} @ ${updated.lastCheckpointSha})`,
-        priority = 0,
-      } = req.body ?? {};
-
-      // Create Development Task with prototypeSessionId = null
-      const devTask = await tasks.create({
-        project: updated.project,
-        repository: updated.repository,
-        objective,
-        prompt,
-        priority,
-      });
-
-      await tasks.update(devTask.id, {
-        branch: updated.branch,
-      });
-
-      prototypeEvents.emit({
-        sessionId: updated.id,
-        type: 'PROMOTED_TO_DEVELOPMENT',
-        payload: {
-          sessionId: updated.id,
-          promotionId: promotion.id,
-          taskId: devTask.id,
-          branch: updated.branch,
-          checkpointSha: updated.lastCheckpointSha,
-          repository: updated.repository,
-        },
-      });
-
+      const result = await handoff.execute(input);
       return res.status(200).json({
-        session: updated,
-        promotion,
-        task: devTask,
-        mode: 'DEVELOPMENT',
+        session: result.session,
+        promotion: result.promotion,
+        task: result.task,
+        mode: result.mode,
       });
     } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (message.startsWith('NOT_FOUND:')) {
+        return res.sendStatus(404);
+      }
+      if (message.startsWith('CONFLICT:')) {
+        return res.status(409).json({ error: message.replace(/^CONFLICT:\s*/, '') });
+      }
       return next(e);
     }
   });
