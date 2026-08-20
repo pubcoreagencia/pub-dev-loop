@@ -1,19 +1,19 @@
 # Current State
 
-## Último Commit Estável
+## LAST_KNOWN_STABLE_COMMIT
 `7c548d6` — Merge PR #1: feat/pub-prototype-mode
 
 ## Branch Principal
 `main`
 
 ## Remote
-`origin/main` = `7c548d6` (sincronizado)
+`origin/main` = `486c9a9` (sincronizado após commit de contexto)
 
 ## Git State
 | Campo | Valor |
 |---|---|
-| LOCAL_HEAD | `7c548d6` |
-| REMOTE_HEAD | `7c548d6` |
+| LOCAL_HEAD | `486c9a9` |
+| REMOTE_HEAD | `486c9a9` |
 | SYNC | YES |
 | CURRENT_BRANCH | `main` |
 
