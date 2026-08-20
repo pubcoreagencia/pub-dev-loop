@@ -53,7 +53,12 @@ export class DualGatewayProvider implements AgentProvider {
       }
     }
 
-    if (result.errorCode === 'EMPTY_RESPONSE' || result.errorCode === 'INVALID_RESPONSE' || result.errorCode === 'ALL_PROVIDERS_FAILED') {
+    if (
+      result.errorCode === 'EMPTY_RESPONSE' ||
+      result.errorCode === 'INVALID_RESPONSE' ||
+      result.errorCode === 'ALL_PROVIDERS_FAILED' ||
+      result.errorCode === 'GATEWAY_EXHAUSTED'
+    ) {
       return true;
     }
 
