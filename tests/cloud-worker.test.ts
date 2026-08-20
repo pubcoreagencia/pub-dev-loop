@@ -107,7 +107,7 @@ describe('Cloudflare Worker API Adapter (src/api-worker.ts)', () => {
       blockConcurrencyWhile: async (fn: any) => fn(),
     };
     const container = new PubDevLoopWorkerContainer(mockCtx as any, {});
-    expect(container.defaultPort).toBeUndefined();
+    expect(container.defaultPort).toBe(3000);
     expect(typeof container.start).toBe('function');
     expect(typeof container.renewActivityTimeout).toBe('function');
     expect(typeof container.onStart).toBe('function');

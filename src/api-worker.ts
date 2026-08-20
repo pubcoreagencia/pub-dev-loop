@@ -33,6 +33,10 @@ export interface Env {
 }
 
 export class PubDevLoopWorkerContainer extends Container<Env> {
+  override defaultPort = 3000;
+  override enableInternet = true;
+  override sleepAfter = '1h';
+  override entrypoint = ['npm', 'run', 'worker'];
   private activityInterval?: ReturnType<typeof setInterval>;
 
   override async onStart(): Promise<void> {
@@ -255,7 +259,7 @@ function getPrototypesRepository(env: Env): PostgresPrototypeRepository {
 async function triggerContainerWorker(env: Env): Promise<void> {
   if (!env.WORKER_CONTAINER) return;
   try {
-    const container = getContainer(env.WORKER_CONTAINER, 'main');
+    const container = getContainer(env.WORKER_CONTAINER);
     const containerEnv: Record<string, string> = {
       DATABASE_URL: env.DATABASE_URL || '',
       GITHUB_TOKEN: env.GITHUB_TOKEN || '',
@@ -284,7 +288,15 @@ async function triggerContainerWorker(env: Env): Promise<void> {
       timestamp: new Date().toISOString(),
     }));
 
-    await container.start({ envVars: containerEnv });
+    await container.startAndWaitForPorts({
+      ports: [3000],
+      startOptions: {
+        envVars: containerEnv,
+        enableInternet: true,
+        entrypoint: ['npm', 'run', 'worker'],
+      },
+      cancellationOptions: { portReadyTimeoutMS: 30000 },
+    });
     console.log('[API Worker] Triggered container worker instance "main" with OpenRouter -> 9Router gateway policy.');
   } catch (err) {
     console.error('[API Worker] Error triggering container worker:', (err as Error).message);
@@ -363,6 +375,60 @@ export default {
         });
       }
 
+      // POST /debug/trigger-worker
+      if (method === 'POST' && path === '/debug/trigger-worker') {
+        try {
+          if (!env.WORKER_CONTAINER) {
+            return new Response(JSON.stringify({ error: 'WORKER_CONTAINER binding missing' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+          }
+          const container = getContainer(env.WORKER_CONTAINER);
+          const containerEnv: Record<string, string> = {
+            DATABASE_URL: env.DATABASE_URL || '',
+            GITHUB_TOKEN: env.GITHUB_TOKEN || '',
+            PRIMARY_GATEWAY: env.PRIMARY_GATEWAY || 'openrouter',
+            FALLBACK_GATEWAY: env.FALLBACK_GATEWAY || '9router',
+            OPENROUTER_API_KEY: env.OPENROUTER_API_KEY || '',
+            OPENROUTER_BASE_URL: env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+            OPENROUTER_MODEL: env.OPENROUTER_MODEL || 'openrouter/free',
+            OPENROUTER_FALLBACK_MODELS: env.OPENROUTER_FALLBACK_MODELS || '',
+            ROUTER_API_KEY: env.ROUTER_API_KEY || '',
+            ROUTER_BASE_URL: env.ROUTER_BASE_URL || '',
+            ROUTER_MODEL: env.ROUTER_MODEL || '',
+            ROUTER_FALLBACK_MODELS: env.ROUTER_FALLBACK_MODELS || '',
+            AGENT_PROVIDER: env.AGENT_PROVIDER || 'gateway',
+            WORKER_POLL_INTERVAL_MS: '3000',
+            WORKER_LEASE_TIMEOUT_MS: '30000',
+            WORKER_HEARTBEAT_MS: '10000',
+          };
+
+          await container.startAndWaitForPorts({
+            ports: [3000],
+            startOptions: {
+              envVars: containerEnv,
+              enableInternet: true,
+              entrypoint: ['npm', 'run', 'worker'],
+            },
+            cancellationOptions: { portReadyTimeoutMS: 30000 },
+          });
+
+          const res = await container.fetch(new Request('http://localhost:3000/'));
+          const containerHealth = await res.json().catch(() => null);
+
+          return new Response(JSON.stringify({
+            status: 'ok',
+            containerTriggered: true,
+            containerHealth,
+            databaseConfigured: Boolean(env.DATABASE_URL && env.DATABASE_URL.trim().length > 0),
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        } catch (err) {
+          return new Response(JSON.stringify({
+            status: 'error',
+            error: (err as Error).message,
+            stack: (err as Error).stack,
+          }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+        }
+      }
+
       // 2. GET /prototype (Serve Full Prototype Web UI)
       if (method === 'GET' && (path === '/prototype' || path === '/prototype/')) {
         const html = prototypeUiHtml() + prototypeHistoryUiScript();
@@ -414,49 +480,40 @@ export default {
           return new Response(JSON.stringify({ error: 'Session not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
         }
 
-        // Web Standard SSE Stream for Cloudflare Workers
-        const { readable, writable } = new TransformStream();
-        const writer = writable.getWriter();
         const encoder = new TextEncoder();
+        let intervalId: any;
+        const stream = new ReadableStream({
+          async start(controller) {
+            try {
+              controller.enqueue(encoder.encode(': connected\n\n'));
+              const pool = getPool(env);
+              let lastSequence = 0;
 
-        // Write initial connection frame
-        await writer.write(encoder.encode(': connected\n\n'));
-
-        // Background heartbeat and event broadcaster
-        if (ctx && typeof ctx.waitUntil === 'function') {
-          ctx.waitUntil((async () => {
-            const pool = getPool(env);
-            let active = true;
-            let lastSequence = 0;
-
-            // Send periodic heartbeats and check for new persisted events
-            for (let i = 0; i < 30 && active; i++) {
-              await new Promise(r => setTimeout(r, 5000));
-              try {
-                // Query any events for this session
-                const res = await pool.query(
-                  `SELECT * FROM prototype_events WHERE session_id = $1 AND sequence > $2 ORDER BY sequence ASC LIMIT 50`,
-                  [id, lastSequence]
-                ).catch(() => ({ rows: [] }));
-
-                for (const row of res.rows) {
-                  lastSequence = Math.max(lastSequence, Number(row.sequence));
-                  const sseFrame = `event: ${row.type}\ndata: ${JSON.stringify({ payload: row.payload, sequence: row.sequence })}\n\n`;
-                  await writer.write(encoder.encode(sseFrame));
+              intervalId = setInterval(async () => {
+                try {
+                  const res = await pool.query(
+                    `SELECT * FROM prototype_events WHERE session_id = $1 AND sequence > $2 ORDER BY sequence ASC LIMIT 50`,
+                    [id, lastSequence]
+                  );
+                  for (const row of res.rows) {
+                    lastSequence = Math.max(lastSequence, Number(row.sequence));
+                    controller.enqueue(encoder.encode(`event: ${row.type}\ndata: ${JSON.stringify({ payload: row.payload, sequence: row.sequence })}\n\n`));
+                  }
+                  controller.enqueue(encoder.encode(': heartbeat\n\n'));
+                } catch {
+                  // Keep interval alive
                 }
-
-                // Heartbeat comment
-                await writer.write(encoder.encode(': heartbeat\n\n'));
-              } catch {
-                active = false;
-              }
+              }, 2000);
+            } catch {
+              try { controller.close(); } catch {}
             }
-            try { await pool.end(); } catch {}
-            try { await writer.close(); } catch {}
-          })());
-        }
+          },
+          cancel() {
+            if (intervalId) clearInterval(intervalId);
+          },
+        });
 
-        return new Response(readable, {
+        return new Response(stream, {
           status: 200,
           headers: {
             'Content-Type': 'text/event-stream',

@@ -1,3 +1,4 @@
+import { Container } from '@cloudflare/containers';
 import apiWorker, { type Env as ApiEnv, PubDevLoopWorkerContainer } from './api-worker.js';
 
 export interface Env extends ApiEnv {
@@ -11,6 +12,8 @@ export interface Env extends ApiEnv {
   PROTOTYPE_TUNNEL_STARTUP_TIMEOUT_MS?: string;
   CLOUDFLARED_COMMAND?: string;
 }
+
+export class PubDevLoopApiContainer extends Container<Env> {}
 
 export { PubDevLoopWorkerContainer };
 

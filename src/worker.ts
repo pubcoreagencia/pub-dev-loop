@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import http from 'node:http';
 import { Pool } from 'pg';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -84,8 +85,7 @@ export function createProductionWorker(): BaseWorker | ModeAwareWorker {
 
 const currentFile = fileURLToPath(import.meta.url);
 const entryFile = process.argv[1] ? path.resolve(process.argv[1]) : '';
-const isMain = Boolean(entryFile && currentFile === entryFile);
-const shouldRunWorker = isMain || (!process.env.VITEST && process.env.NODE_ENV !== 'test');
+const isMain = Boolean(entryFile && currentFile === entryFile) || process.env.RUN_WORKER_LOOP === 'true';
 
 async function startupRecovery(tasks: PostgresTaskRepository): Promise<void> {
   configureGitCredentials();
@@ -106,7 +106,31 @@ async function startupRecovery(tasks: PostgresTaskRepository): Promise<void> {
   }
 }
 
-if (shouldRunWorker) {
+function startHealthServer(port = Number(process.env.PORT ?? 3000)): http.Server {
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      status: 'ok',
+      worker: 'PubDevLoopWorker',
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+    }));
+  });
+
+  server.on('error', (err: any) => {
+    console.warn(`[Worker Container] Health server warning on port ${port}:`, err.message);
+  });
+
+  server.listen(port, () => {
+    console.log(`[Worker Container] Health server listening on port ${port}`);
+  });
+
+  return server;
+}
+
+if (isMain) {
+  startHealthServer();
+
   const dbUrl = process.env.DATABASE_URL;
   const isDbConfigured = Boolean(dbUrl && dbUrl.trim().length > 0);
   const isOpenRouterConfigured = Boolean(process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY.trim().length > 0);

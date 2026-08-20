@@ -43,11 +43,6 @@
       "class_name": "PubDevLoopWorkerContainer",
       "image": "./Dockerfile.worker",
       "max_instances": 1
-    },
-    {
-      "class_name": "PubDevLoopApiContainer",
-      "image": "./Dockerfile.worker",
-      "max_instances": 1
     }
   ],
   "vars": {
@@ -94,11 +89,6 @@
       "containers": [
         {
           "class_name": "PubDevLoopWorkerContainer",
-          "image": "./Dockerfile.worker",
-          "max_instances": 1
-        },
-        {
-          "class_name": "PubDevLoopApiContainer",
           "image": "./Dockerfile.worker",
           "max_instances": 1
         }
