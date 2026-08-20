@@ -93,8 +93,19 @@ export class DualGatewayProvider implements AgentProvider {
     } catch (fallbackError) {
       const message = fallbackError instanceof Error ? fallbackError.message : 'Fallback gateway failed';
       return {
-        ...primaryResult,
-        stderr: `${primaryResult.stderr}\nFallback gateway error: ${message}`,
+        status: 'FAILED',
+        provider: this.fallback.kind,
+        model: this.fallback.model,
+        exitCode: null,
+        durationMs: primaryResult.durationMs,
+        stdout: primaryResult.stdout,
+        stderr: `${primaryResult.stderr}\nFallback gateway error (${this.fallback.kind}): ${message}`.trim(),
+        changedFiles: primaryResult.changedFiles ?? [],
+        commit: null,
+        errorCode: 'ALL_PROVIDERS_FAILED',
+        errorMessage: `Primary gateway (${this.primary.kind}) failed: ${primaryResult.errorMessage || primaryResult.stderr || 'unknown'}; Fallback (${this.fallback.kind}) error: ${message}`,
+        toolCalls: primaryResult.toolCalls ?? 0,
+        toolRounds: primaryResult.toolRounds ?? 0,
       };
     }
   }

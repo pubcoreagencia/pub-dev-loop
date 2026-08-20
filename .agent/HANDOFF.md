@@ -1,11 +1,11 @@
 # HANDOFF
 
-| **CURRENT_TASK** | TASK-000039 — Validar Dual Gateway em Ambiente Real |
-| **NEXT_TASK** | TASK-000040 |
+| **CURRENT_TASK** | TASK-000040 — Hardening Final do Dual Gateway & Result Fidelity |
+| **NEXT_TASK** | TASK-000041 |
 | **CURRENT_AGENT** | Hermes |
 | **BRANCH** | main |
-| **LOCAL HEAD** | `5dfbcb6` |
-| **REMOTE_HEAD** | `5dfbcb6` |
+| **LOCAL HEAD** | `a307ea1` |
+| **REMOTE_HEAD** | `a307ea1` |
 | **SYNC** | YES |
 | **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE — CLI do Codex não disponível neste ambiente; 2. 9Router OpenCode provider retorna conteúdo vazio para oc/laguna-s-2.1-free apesar de HTTP 200; 3. Hermes desktop não recarrega config.yaml automaticamente; requer restart manual para troca de routing/modelo |
 

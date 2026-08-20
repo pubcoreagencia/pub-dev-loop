@@ -2,23 +2,23 @@
 
 | **REPOSITORY** | C:/Users/Matheus Paes/Documents/ChatGPT/PUB DEV LOOP |
 | **CURRENT_BRANCH** | main |
-| **LOCAL HEAD** | `a4b5577bbde0202cae78b954ee00df6b9073aa2a` |
-| **REMOTE HEAD** | `a4b5577bbde0202cae78b954ee00df6b9073aa2a` |
+| **LOCAL HEAD** | `a307ea1f4ed6dd0edd3603e70f1ece28169437b1` |
+| **REMOTE HEAD** | `a307ea1f4ed6dd0edd3603e70f1ece28169437b1` |
 | **SYNC** | YES |
 | **WORKTREE** | clean |
 | **KNOWN_LIMITATIONS** | 1. CODEX_CLI_UNAVAILABLE — CLI do Codex não disponível neste ambiente; 2. 9Router OpenCode provider retorna conteúdo vazio para oc/laguna-s-2.1-free apesar de HTTP 200; 3. Hermes desktop não recarrega config.yaml automaticamente; requer restart manual para troca de routing/modelo |
 
 ## Task Status
-| **CURRENT_TASK** | TASK-000039 — Validar Dual Gateway em Ambiente Real |
-| **NEXT_TASK** | TASK-000040 |
-| **LAST_COMPLETE** | TASK-000039 |
-| **LAST_COMMIT_STABLE** | `5dfbcb6` |
+| **CURRENT_TASK** | TASK-000040 — Hardening Final do Dual Gateway & Result Fidelity |
+| **NEXT_TASK** | TASK-000041 |
+| **LAST_COMPLETE** | TASK-000040 |
+| **LAST_COMMIT_STABLE** | `a307ea1` |
 
 ## Validation
 | **TYPECHECK** | PASS |
 | **BUILD** | PASS |
-| **GATEWAY_HARDENING_TESTS** | 12 passed (10 unit + 2 E2E simulation) |
-| **FULL_TESTS** | 187 passed, 10 skipped, 0 failed |
+| **GATEWAY_HARDENING_TESTS** | 13 passed (11 unit + 2 E2E simulation) |
+| **FULL_TESTS** | 188 passed, 10 skipped, 0 failed |
 | **DEVLOOP_VALIDATE** | PASS |
 
 ## Inference Gateways & Hardening

@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DualGatewayProvider } from '../src/providers/gateway.js';
 import { RouterProvider } from '../src/providers/router.js';
 import { OpenRouterProvider } from '../src/providers/openrouter.js';
@@ -477,5 +477,58 @@ describe('Dual Gateway Provider & Hardened Fallback Policy', () => {
     expect(result.changedFiles).toEqual(['lib/auth.ts']);
     expect(result.stderr).toContain('PARTIAL_EXECUTION_REQUIRES_REVIEW');
     expect(fallback.executeCalls).toBe(0);
+  });
+
+  it('11. Fallback result fidelity: preserves all fields from fallback provider when fallback executes', async () => {
+    const primary = new MockGatewayProvider('9router', 'gemini/gemini-3.5-flash-lite', [
+      {
+        status: 'ROUTER_HTTP_ERROR',
+        provider: '9router',
+        model: 'gemini/gemini-3.5-flash-lite',
+        exitCode: 429,
+        httpStatus: 429,
+        durationMs: 50,
+        stdout: '',
+        stderr: 'Initial 429',
+        changedFiles: [],
+        toolCalls: 0,
+        toolRounds: 0,
+        commit: null,
+        errorCode: 'ROUTER_HTTP_ERROR',
+        errorMessage: 'Initial rate limit',
+      },
+    ]);
+
+    const fallback = new MockGatewayProvider('openrouter', 'poolside/laguna-s-2.1:free', [
+      {
+        status: 'COMPLETED',
+        provider: 'openrouter',
+        model: 'poolside/laguna-s-2.1:free',
+        exitCode: 0,
+        durationMs: 450,
+        stdout: 'Generated full response',
+        stderr: 'no error',
+        changedFiles: ['src/app.ts', 'src/types.ts'],
+        toolCalls: 2,
+        toolRounds: 2,
+        commit: null,
+        errorCode: null,
+        errorMessage: null,
+        httpStatus: 200,
+      },
+    ]);
+
+    const gateway = new DualGatewayProvider(primary, fallback);
+    const result = await gateway.execute(baseTask(), 'C:/tmp/ws');
+
+    expect(result.status).toBe('COMPLETED');
+    expect(result.provider).toBe('openrouter');
+    expect(result.model).toBe('poolside/laguna-s-2.1:free');
+    expect(result.stdout).toBe('Generated full response');
+    expect(result.stderr).toBe('no error');
+    expect(result.changedFiles).toEqual(['src/app.ts', 'src/types.ts']);
+    expect(result.toolCalls).toBe(2);
+    expect(result.toolRounds).toBe(2);
+    expect(result.httpStatus).toBe(200);
   });
 });
