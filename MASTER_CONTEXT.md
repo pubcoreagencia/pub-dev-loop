@@ -22,6 +22,22 @@ Secrets are injected at runtime by the deployment platform's Secret Manager; nev
 
 New workers must implement the existing worker/agent interfaces without changing orchestration or the task model. Multiple workers, richer test policies, secret-manager bindings, and cloud deployment are future work once the single-Codex loop is proven. Provider selection now goes through `AGENT_PROVIDER`, with `mock`, `codex-api`, and `9router` as initial options.
 
+## Persistence-First Continuity
+
+GitHub is not only the source of truth for source code; it is the durable continuity layer for project evolution. Conversations, AI memory, local machines, sessions, accounts, and specific model providers are temporary working environments and must not be required to resume development.
+
+Every AI or worker that makes meaningful project evolution must, when repository write access is available, materialize the resulting state in Git. This includes code and tests plus relevant architecture, decisions, business rules, contracts, security constraints, phase/status, blockers, and handoff/resume instructions.
+
+The required lifecycle is:
+
+```text
+READ CONTEXT -> IMPLEMENT -> VALIDATE -> UPDATE CONTEXT -> COMMIT -> PUSH/PR -> VERIFY PERSISTENCE
+```
+
+A task is not considered fully complete merely because code works in an ephemeral workspace. The next AI or developer must be able to continue from the repository without relying on the previous conversation. If persistence is blocked by permissions or connectivity, the blocker must be explicit and the work must remain recoverable; it must never be represented as persisted when it is not.
+
+Project-specific continuity guidance should live in version control alongside the project. See the PUB Neural OS AI Continuity & Persistence Protocol for the organization-wide policy.
+
 ## Historical direction
 
 The remote history added a broader product vision: GPT plans and reviews, workers execute isolated tasks, Git provides auditability, and human approval remains available for risky changes. That direction is retained, but earlier references to Windows/macOS operational workers, Hermes, and Antigravity are superseded by the current cloud-only MVP scope above. The full original document remains preserved in the merged Git history.
