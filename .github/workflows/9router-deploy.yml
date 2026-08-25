@@ -1,0 +1,107 @@
+name: Deploy 9Router to Fly.io
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/9router-deploy.yml'
+      - 'fly.toml'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - name: Checkout official 9Router v0.5.55
+        uses: actions/checkout@v4
+        with:
+          repository: decolua/9router
+          ref: v0.5.55
+          path: 9router
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Authenticate Fly.io (whoami)
+        run: flyctl auth whoami
+
+      - name: Authenticate Docker with Fly.io registry
+        run: flyctl auth docker
+
+      - name: Build official 9Router container
+        working-directory: 9router
+        run: docker build -t registry.fly.io/pub-dev-loop-9router:latest .
+
+      - name: Push image to Fly.io registry
+        run: docker push registry.fly.io/pub-dev-loop-9router:latest
+
+      - name: Ensure Fly.io app exists
+        run: |
+          if ! flyctl apps list --json | jq -e '.[] | select(.Name=="pub-dev-loop-9router")' >/dev/null; then
+            flyctl apps create pub-dev-loop-9router --org personal --region iad
+          fi
+
+      - name: Ensure persistent volume exists
+        run: |
+          if ! flyctl volumes list --app pub-dev-loop-9router --json | jq -e '.[] | select(.Name=="9router_data")' >/dev/null; then
+            flyctl volumes create 9router_data \
+              --app pub-dev-loop-9router \
+              --region iad \
+              --size 1
+          fi
+
+      - name: Deploy 9Router
+        run: |
+          flyctl deploy \
+            --app pub-dev-loop-9router \
+            --config ./fly.toml \
+            --strategy immediate
+
+      - name: Capture deployed image digest
+        id: digest
+        run: |
+          RELEASE_JSON="$(flyctl releases list --app pub-dev-loop-9router --json)"
+          DIGEST="$(echo "$RELEASE_JSON" | jq -r '.[0].Image // .[0].image // empty')"
+
+          if [ -z "$DIGEST" ]; then
+            echo "ERROR: Could not determine deployed image digest"
+            exit 1
+          fi
+
+          echo "image-digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "Deployed image digest: $DIGEST"
+
+      - name: Smoke test /v1/models
+        run: |
+          curl --fail --silent --show-error https://pub-dev-loop-9router.fly.dev/v1/models
+
+      - name: Smoke test chat completion
+        run: |
+          curl --fail --silent --show-error -X POST https://pub-dev-loop-9router.fly.dev/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -d '{"model":"gpt-3.5-turbo","messages":[{"role":"user","content":"ping"}]}'
+
+      - name: Smoke test streaming
+        run: |
+          curl --fail --silent --show-error -N -X POST https://pub-dev-loop-9router.fly.dev/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -d '{"model":"gpt-3.5-turbo","stream":true,"messages":[{"role":"user","content":"stream test"}]}'
+
+      - name: Deployment summary
+        run: |
+          echo "=========================================="
+          echo "9Router deployment completed"
+          echo "App: pub-dev-loop-9router"
+          echo "Region: iad"
+          echo "Version: v0.5.55"
+          echo "URL: https://pub-dev-loop-9router.fly.dev/v1"
+          echo "Volume: 9router_data -> /app/data"
+          echo "Image digest: ${{ steps.digest.outputs.image-digest }}"
+          echo "OpenRouter: PRIMARY"
+          echo "9Router: FALLBACK"
+          echo "=========================================="
