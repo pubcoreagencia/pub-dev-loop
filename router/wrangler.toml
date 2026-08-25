@@ -1,0 +1,8 @@
+name = "9router"
+compatibility_date = "2026-08-20"
+compatibility_flags = ["nodejs_compat"]
+main = "src/index.ts"
+[vars]
+# No plain vars, secrets are injected via GitHub Secrets
+[env.production]
+# No additional env-specific settings

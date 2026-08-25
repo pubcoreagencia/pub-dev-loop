@@ -1,4 +1,4 @@
-﻿name: Build & Deploy — Cloudflare Container
+name: Build & Deploy — Cloudflare Container
 
 # Dispara em push para feat/pub-prototype-mode e via workflow_dispatch.
 # O runner ubuntu-latest tem Docker Engine nativo (sem Docker Desktop).
@@ -93,6 +93,13 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+      - name: Deploy 9router Worker
+        id: router_deploy
+        run: |
+          cd router
+          npm ci
+          npx wrangler publish --env production
+
 
       - name: Validate Cloudflare secrets
         run: |

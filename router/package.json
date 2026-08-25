@@ -1,0 +1,14 @@
+{
+  "name": "router",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "publish": "npx wrangler publish --env production"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240820.0",
+    "typescript": "^5.5.0"
+  }
+}
