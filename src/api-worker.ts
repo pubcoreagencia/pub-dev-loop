@@ -15,6 +15,11 @@ export interface Env {
   GITHUB_TOKEN?: string;
   ROUTER_API_KEY?: string;
   ROUTER_BASE_URL?: string;
+  OPENROUTER_API_KEY?: string;
+  OPENROUTER_BASE_URL?: string;
+  OPENROUTER_MODEL?: string;
+  AGENT_PROVIDER?: string;
+  AGENT_PROVIDER_FALLBACK?: string;
   PUB_DEV_LOOP_API_KEY?: string;
   PROTOTYPE_TEMPLATE_REPOSITORY?: string;
   PROTOTYPE_WORKSPACES_ROOT?: string;
@@ -145,6 +150,10 @@ function containerEnv(env: Env): Record<string, string> {
       GITHUB_TOKEN: env.GITHUB_TOKEN,
       ROUTER_API_KEY: env.ROUTER_API_KEY,
       ROUTER_BASE_URL: env.ROUTER_BASE_URL,
+      OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
+      OPENROUTER_BASE_URL: env.OPENROUTER_BASE_URL,
+      OPENROUTER_MODEL: env.OPENROUTER_MODEL,
+      AGENT_PROVIDER_FALLBACK: env.AGENT_PROVIDER_FALLBACK,
       PUB_DEV_LOOP_API_KEY: env.PUB_DEV_LOOP_API_KEY,
       PROTOTYPE_TEMPLATE_REPOSITORY: env.PROTOTYPE_TEMPLATE_REPOSITORY,
       PROTOTYPE_WORKSPACES_ROOT: env.PROTOTYPE_WORKSPACES_ROOT,
@@ -164,8 +173,9 @@ async function triggerContainerWorker(env: Env): Promise<void> {
   if (!env.WORKER_CONTAINER) return;
   try {
     const container = getContainer(env.WORKER_CONTAINER, 'main');
-    await container.start({ envVars: { ...containerEnv(env), AGENT_PROVIDER: '9router', WORKER_POLL_INTERVAL_MS: '5000', WORKER_LEASE_TIMEOUT_MS: '30000', WORKER_HEARTBEAT_MS: '10000' } });
-    console.log('[API Worker] Triggered worker container instance "main".');
+    const provider = env.AGENT_PROVIDER || (env.OPENROUTER_API_KEY ? 'openrouter' : (env.ROUTER_API_KEY ? '9router' : 'openrouter'));
+    await container.start({ envVars: { ...containerEnv(env), AGENT_PROVIDER: provider, WORKER_POLL_INTERVAL_MS: '5000', WORKER_LEASE_TIMEOUT_MS: '30000', WORKER_HEARTBEAT_MS: '10000' } });
+    console.log(`[API Worker] Triggered worker container instance "main" with AGENT_PROVIDER=${provider}.`);
   } catch (err) {
     console.error('[API Worker] Error triggering worker container:', (err as Error).message);
   }

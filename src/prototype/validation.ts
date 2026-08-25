@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Input validation for PUB Prototype API.
  *
  * All values that originate from the client (session IDs, branch names,
@@ -13,6 +13,8 @@
  *  - Prompts: free-text, max 32 000 chars (prevents payload bloat).
  *  - Project names: alphanumeric + dash/underscore/dot, max 100 chars.
  */
+
+import path from 'node:path';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -114,3 +116,19 @@ export function validateProjectName(value: unknown, field = 'project'): string {
   }
   return value;
 }
+
+export function validateWorkspacePath(workspacePath: string, rootDir: string): string {
+  if (!workspacePath || typeof workspacePath !== 'string') {
+    throw new ValidationError('Invalid workspacePath: must be a non-empty string');
+  }
+  const resolvedRoot = path.resolve(rootDir);
+  const resolvedPath = path.resolve(workspacePath);
+
+  // Must start with resolved root directory path followed by separator or exact match
+  const relative = path.relative(resolvedRoot, resolvedPath);
+  if (relative.startsWith('..') || path.isAbsolute(relative) || relative === '..') {
+    throw new ValidationError(`Path traversal detected: workspacePath must be inside ${resolvedRoot}`);
+  }
+  return resolvedPath;
+}
+

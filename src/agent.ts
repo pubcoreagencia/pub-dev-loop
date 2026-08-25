@@ -4,6 +4,7 @@ import { AgentExecutor, type ExecutionResult } from './executor.js';
 import type { Task } from './domain.js';
 import { CodexApiProvider } from './providers/codex-api.js';
 import { RouterProvider } from './providers/router.js';
+import { DualGatewayProvider } from './providers/gateway.js';
 import type { AgentProvider, ProviderTaskResult } from './providers/types.js';
 
 export interface AgentOutcome {
@@ -127,19 +128,46 @@ class ProviderCodingAgent implements CodingAgent {
 }
 
 export function createProvider(provider = process.env.AGENT_PROVIDER ?? 'mock'): AgentProvider {
+  let primaryProvider: AgentProvider;
+
   if (provider === 'mock') {
-    return new MockProvider();
+    primaryProvider = new MockProvider();
+  } else if (provider === 'codex-api') {
+    primaryProvider = new CodexApiProvider(new AgentExecutor());
+  } else if (provider === '9router') {
+    primaryProvider = new RouterProvider();
+  } else if (provider === 'openrouter') {
+    const openRouterBaseUrl = process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1';
+    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+    const openRouterModel = process.env.OPENROUTER_MODEL;
+    primaryProvider = new RouterProvider(openRouterBaseUrl, openRouterApiKey, undefined, openRouterModel);
+  } else {
+    primaryProvider = new MockProvider();
   }
 
-  if (provider === 'codex-api') {
-    return new CodexApiProvider(new AgentExecutor());
+  // Fallback gateway configuration:
+  // If explicitly configured via AGENT_PROVIDER_FALLBACK or if OPENROUTER_API_KEY is provided alongside a primary 9router
+  const fallbackName = process.env.AGENT_PROVIDER_FALLBACK || (process.env.OPENROUTER_API_KEY && provider === '9router' ? 'openrouter' : undefined);
+
+  if (fallbackName && fallbackName !== provider) {
+    let fallbackProvider: AgentProvider | null = null;
+    if (fallbackName === 'openrouter') {
+      const openRouterBaseUrl = process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1';
+      const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+      const openRouterModel = process.env.OPENROUTER_MODEL;
+      fallbackProvider = new RouterProvider(openRouterBaseUrl, openRouterApiKey, undefined, openRouterModel);
+    } else if (fallbackName === '9router') {
+      fallbackProvider = new RouterProvider();
+    } else if (fallbackName === 'mock') {
+      fallbackProvider = new MockProvider();
+    }
+
+    if (fallbackProvider) {
+      return new DualGatewayProvider(primaryProvider, fallbackProvider);
+    }
   }
 
-  if (provider === '9router') {
-    return new RouterProvider();
-  }
-
-  return new MockProvider();
+  return primaryProvider;
 }
 
 export function createAgent(): CodingAgent {
@@ -149,3 +177,4 @@ export function createAgent(): CodingAgent {
 
   return process.env.AGENT_MODE === 'codex' ? new CodexCliAgent() : new MockCodingAgent();
 }
+
