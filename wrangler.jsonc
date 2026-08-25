@@ -43,17 +43,13 @@
       "class_name": "PubDevLoopWorkerContainer",
       "image": "./Dockerfile.worker",
       "max_instances": 1,
-      "disk": {
-        "size_mb": 4000
-      }
+      "instance_type": "basic"
     },
     {
       "class_name": "PubDevLoopApiContainer",
       "image": "./Dockerfile.worker",
       "max_instances": 1,
-      "disk": {
-        "size_mb": 4000
-      }
+      "instance_type": "basic"
     }
   ],
   "env": {
@@ -82,17 +78,13 @@
           "class_name": "PubDevLoopWorkerContainer",
           "image": "./Dockerfile.worker",
           "max_instances": 1,
-          "disk": {
-            "size_mb": 4000
-          }
+          "instance_type": "basic"
         },
         {
           "class_name": "PubDevLoopApiContainer",
           "image": "./Dockerfile.worker",
           "max_instances": 1,
-          "disk": {
-            "size_mb": 4000
-          }
+          "instance_type": "basic"
         }
       ]
     }
