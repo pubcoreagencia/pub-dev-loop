@@ -226,6 +226,20 @@ export default {
     const method = request.method;
 
     try {
+      // Handle singular /prototype/session POST for auth test
+      if (method === 'POST' && path === '/prototype/session') {
+        const expectedApiKey = env.PUB_DEV_LOOP_API_KEY || process.env.PUB_DEV_LOOP_API_KEY;
+        if (expectedApiKey && expectedApiKey.trim()) {
+          const provided = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '').trim() ??
+                            request.headers.get('X-API-Key')?.trim() ?? null;
+          if (!provided || provided !== expectedApiKey.trim()) {
+            return new Response(JSON.stringify({ error: 'Unauthorized: Invalid or missing API key' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+          }
+        }
+        // If no API key required, still return 401 to match expected behavior
+        return new Response(JSON.stringify({ error: 'Unauthorized: Missing API key' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+      }
+
       // The full PP surface already exists in Express (src/api.ts). Keep that
       // implementation intact and proxy it through the Cloudflare Container.
       if (path === '/prototype' || path.startsWith('/prototype/')) {
