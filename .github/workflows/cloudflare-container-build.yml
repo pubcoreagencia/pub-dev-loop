@@ -1,0 +1,197 @@
+﻿name: Build & Deploy — Cloudflare Container
+
+# Runs on every push to feat/pub-prototype-mode (and manually via workflow_dispatch).
+# The ubuntu-latest runner has Docker Engine installed natively — no Docker Desktop needed.
+# Flow: checkout → CI → wrangler deploy --containers-rollout=immediate
+#   → Wrangler builds Dockerfile.worker on the runner
+#   → pushes image to registry.cloudflare.com (Cloudflare Managed Registry)
+#   → rolls out PubDevLoopWorkerContainer with instance_type: basic (4 GB)
+
+on:
+  push:
+    branches:
+      - feat/pub-prototype-mode
+  workflow_dispatch:
+    inputs:
+      rollout_strategy:
+        description: "Container rollout strategy"
+        required: false
+        default: "immediate"
+        type: choice
+        options:
+          - immediate
+          - none
+
+permissions:
+  contents: read
+
+env:
+  # Wrangler reads these automatically — no need for --account-id flag.
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+jobs:
+  # --- Job 1: CI validation ---------------------------------------------------
+  ci:
+    name: CI — typecheck / build / test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure Git identity
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@pub-dev-loop.internal"
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Build CF Worker
+        run: npm run build:cf
+
+      - name: Unit tests
+        run: npm test
+
+  # --- Job 2: Docker build → Cloudflare Registry → Container rollout ----------
+  deploy:
+    name: Deploy — Cloudflare Container
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify Docker Engine (native on ubuntu-latest)
+        run: |
+          docker version
+          docker info
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Validate Cloudflare secrets
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "${CF_TOKEN}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN secret is not configured."
+            exit 1
+          fi
+          if [ -z "${CF_ACCOUNT}" ]; then
+            echo "::error::CLOUDFLARE_ACCOUNT_ID secret is not configured."
+            exit 1
+          fi
+          echo "Cloudflare secrets present."
+
+      - name: Resolve rollout strategy
+        id: rollout
+        run: |
+          STRATEGY="${{ github.event.inputs.rollout_strategy }}"
+          STRATEGY="${STRATEGY:-immediate}"
+          echo "strategy=${STRATEGY}" >> "$GITHUB_OUTPUT"
+          echo "Rollout strategy: ${STRATEGY}"
+
+      - name: Deploy Worker + build/push Container image
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          echo "Deploying pub-dev-loop-api"
+          echo "Branch: $GITHUB_REF_NAME"
+          echo "Commit: $GITHUB_SHA"
+          npx wrangler deploy --containers-rollout="${{ steps.rollout.outputs.strategy }}" --env=""
+
+      - name: List containers (post-deploy state)
+        if: always()
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler containers list
+
+      - name: Inspect PubDevLoopWorkerContainer
+        if: always()
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler containers info a0324901-4a8d-414a-a42c-a48461f52621 || true
+
+      - name: List images in Cloudflare Registry
+        if: always()
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler containers images list
+
+      - name: Smoke test /health
+        id: smoke_health
+        run: |
+          set -euo pipefail
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            https://pub-dev-loop-api.contato-pubcore.workers.dev/health)
+          echo "GET /health → HTTP $HTTP_STATUS"
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "::error::/health returned $HTTP_STATUS (expected 200)"
+            exit 1
+          fi
+          echo "/health → 200 OK"
+
+      - name: Smoke test /prototype auth (expect 401)
+        id: smoke_auth
+        run: |
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            https://pub-dev-loop-api.contato-pubcore.workers.dev/prototype/session \
+            -X POST -H "Content-Type: application/json" -d '{}')
+          echo "POST /prototype/session (no API key) → HTTP $HTTP_STATUS"
+          if [ "$HTTP_STATUS" != "401" ]; then
+            echo "::warning::/prototype/session returned $HTTP_STATUS (expected 401)"
+          else
+            echo "Auth enforcement confirmed → 401 Unauthorized"
+          fi
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          {
+            echo "## Cloudflare Container Deploy"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Branch | \\\eat/pub-prototype-mode\\\ |"
+            echo "| Commit | \\\\$GITHUB_SHA\\\ |"
+            echo "| Worker | pub-dev-loop-api |"
+            echo "| Container | PubDevLoopWorkerContainer |"
+            echo "| Instance type | basic (4 GB disk, 1 GiB RAM) |"
+            echo "| Gateway | OpenRouter (primary) |"
+            echo "| Deploy outcome | ${{ steps.deploy.outcome }} |"
+            echo "| /health | ${{ steps.smoke_health.outcome }} |"
+            echo "| /prototype auth | ${{ steps.smoke_auth.outcome }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
