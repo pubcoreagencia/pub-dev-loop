@@ -1,0 +1,89 @@
+name: Temporary E2E fallback validation
+on:
+  workflow_dispatch:
+    inputs: {}
+jobs:
+  run-fallback-test:
+    runs-on: ubuntu-latest
+    env:
+      AGENT_PROVIDER: openrouter
+      AGENT_PROVIDER_FALLBACK: 9router
+      OPENROUTER_API_KEY: dummy-key
+      OPENROUTER_BASE_URL: http://10.255.255.1:12345
+      ROUTER_BASE_URL: https://pub-dev-loop-9router.fly.dev/v1
+      ROUTER_MODEL: gpt-3.5-turbo
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: repo
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: |
+          cd repo
+          npm ci
+      - name: Create E2E test script
+        run: |
+          cat > repo/e2e_fallback_test.ts <<'EOS'
+          import { createProvider } from './src/agent';
+          import { RouterProvider } from './src/providers/router';
+          import { DualGatewayProvider } from './src/providers/gateway';
+          const task: any = {
+            id: 'e2e-fallback-test',
+            prompt: 'ping',
+            status: 'QUEUED',
+            priority: 1,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            workspacePath: null,
+          };
+          console.log('[1] PRIMARY CONFIGURED');
+          const provider = createProvider();
+          console.log('Provider type:', provider.constructor.name);
+          if ((provider as any).primary && (provider as any).fallback) {
+            const primary = (provider as any).primary as RouterProvider;
+            const fallback = (provider as any).fallback as RouterProvider;
+            console.log('PRIMARY baseUrl =', primary.baseUrl);
+            console.log('PRIMARY apiKey  =', primary.apiKey);
+            console.log('PRIMARY model   =', primary.model ?? '(none)');
+            console.log('FALLBACK baseUrl =', fallback.baseUrl);
+            console.log('FALLBACK apiKey  =', fallback.apiKey ?? '(none)');
+            console.log('FALLBACK model   =', fallback.model ?? '(none)');
+          }
+          console.log('[2] PRIMARY REQUEST STARTED');
+          const result = await provider.execute(task, process.cwd());
+          console.log('[8] FINAL STATUS');
+          console.log('Result status   =', result.status);
+          console.log('Result errorCode =', result.errorCode);
+          console.log('Result model    =', (result as any).model);
+          console.log('Result stdout   =', result.stdout?.slice(0,200));
+          EOS
+      - name: Run E2E fallback test
+        id: run_fallback
+        run: |
+          cd repo
+          npx tsx e2e_fallback_test.ts > fallback_output.txt 2>&1 || true
+          cat fallback_output.txt
+      - name: Streaming HTTP test
+        id: streaming_test
+        run: |
+          curl -s -N -H "Content-Type: application/json" -d '{"model":"gpt-3.5-turbo","stream":true,"messages":[{"role":"user","content":"stream test"}]}' https://pub-dev-loop-9router.fly.dev/v1/chat/completions > streaming_output.txt 2>&1 || true
+          echo "--- streaming raw output ---"
+          head -n 20 streaming_output.txt
+          echo "--- end streaming output ---"
+      - name: Upload logs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-fallback-logs
+          path: |
+            repo/fallback_output.txt
+            repo/streaming_output.txt
+      - name: Cleanup temporary files and workflow
+        if: always()
+        run: |
+          rm -f repo/e2e_fallback_test.ts
+          rm -f .github/workflows/_e2e-fallback-temp.yml
+          echo "Cleanup completed"
