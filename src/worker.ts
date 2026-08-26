@@ -63,13 +63,21 @@ function configureGitIdentity(): void {
   }
 }
 
+function createPgPool(connectionString: string): Pool {
+  const isLocal = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
+  return new Pool({
+    connectionString,
+    ssl: isLocal ? false : { rejectUnauthorized: false },
+  });
+}
+
 export function createProductionWorker(): BaseWorker | ModeAwareWorker {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error('DATABASE_URL is not configured in worker environment');
   }
 
-  const pool = new Pool({ connectionString });
+  const pool = createPgPool(connectionString);
   const tasks = new PostgresTaskRepository(pool);
   const providerName = process.env.AGENT_PROVIDER;
 
@@ -149,7 +157,7 @@ if (isMain) {
     console.error('[Worker Container] FATAL: DATABASE_URL is not configured in container environment. Worker cannot start.');
   } else {
     try {
-      const pool = new Pool({ connectionString: dbUrl });
+      const pool = createPgPool(dbUrl!);
       const tasks = new PostgresTaskRepository(pool);
 
       console.log(JSON.stringify({
