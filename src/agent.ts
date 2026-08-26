@@ -154,7 +154,7 @@ export function createProvider(
   const primaryGateway = process.env.PRIMARY_GATEWAY?.trim();
   const fallbackGateway = process.env.FALLBACK_GATEWAY?.trim();
 
-  // If dual gateway configuration is explicitly active and no specific single override is forced:
+  // If dual gateway configuration is explicitly active and gateways are different:
   if (
     (!provider || provider === 'gateway' || provider === 'dual') &&
     primaryGateway &&
@@ -164,6 +164,11 @@ export function createProvider(
     const primary = createSingleProvider(primaryGateway);
     const fallback = createSingleProvider(fallbackGateway);
     return new DualGatewayProvider(primary, fallback);
+  }
+
+  // If gateway was requested and primaryGateway is configured:
+  if ((!provider || provider === 'gateway' || provider === 'dual') && primaryGateway) {
+    return createSingleProvider(primaryGateway);
   }
 
   const selected = provider ?? process.env.AGENT_PROVIDER ?? process.env.INFERENCE_GATEWAY ?? 'mock';
