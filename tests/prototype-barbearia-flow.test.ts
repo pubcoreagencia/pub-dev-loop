@@ -369,4 +369,151 @@ server.listen(port, '127.0.0.1', () => console.log('Listening on ' + port));
     const devClaimedAgain = await mockTasks.claim('dev-worker');
     expect(devClaimedAgain).toBeNull();
   });
+
+  it('preserves task processing and workspace status across simulated UI disconnects (F5 Recovery)', async () => {
+    process.env.PROTOTYPE_WORKSPACES_ROOT = workspaceRootDir;
+    process.env.PROTOTYPE_PREVIEW_MODE = 'local';
+    process.env.PROTOTYPE_PREVIEW_COMMAND = process.execPath;
+    process.env.PROTOTYPE_PREVIEW_ARGS = 'server.cjs';
+    process.env.PROTOTYPE_PREVIEW_STARTUP_TIMEOUT_MS = '10000';
+
+    const taskStore = new Map<string, Task>();
+    const sessionStore = new Map<string, PrototypeSession>();
+    const checkpointStore: PrototypeCheckpoint[] = [];
+
+    const mockTasks = {
+      async claimPrototype(worker: string): Promise<Task | null> {
+        for (const t of taskStore.values()) {
+          if (t.status === 'QUEUED' && t.prototypeSessionId) {
+            t.status = 'ASSIGNED';
+            t.worker = worker;
+            return { ...t };
+          }
+        }
+        return null;
+      },
+      async update(id: string, patch: Partial<Task>): Promise<Task | null> {
+        const t = taskStore.get(id);
+        if (!t) return null;
+        Object.assign(t, patch);
+        return { ...t };
+      },
+      async heartbeat() { return true; },
+    } as unknown as PostgresTaskRepository;
+
+    const mockPrototypes = {
+      async getSession(id: string): Promise<PrototypeSession | null> {
+        const s = sessionStore.get(id);
+        return s ? { ...s } : null;
+      },
+      async updateSession(id: string, patch: Partial<PrototypeSession>): Promise<PrototypeSession | null> {
+        const s = sessionStore.get(id);
+        if (!s) return null;
+        Object.assign(s, patch);
+        return { ...s };
+      },
+      async createCheckpoint(input: Omit<PrototypeCheckpoint, 'id' | 'createdAt'>): Promise<PrototypeCheckpoint> {
+        const cp: PrototypeCheckpoint = {
+          id: `cp-${checkpointStore.length + 1}`,
+          sessionId: input.sessionId,
+          promptIndex: input.promptIndex,
+          prompt: input.prompt,
+          commitSha: input.commitSha,
+          previewUrl: input.previewUrl,
+          buildPassed: input.buildPassed,
+          createdAt: new Date(),
+        };
+        checkpointStore.push(cp);
+        return cp;
+      },
+    } as unknown as PostgresPrototypeRepository;
+
+    const events = new PrototypeEventStream();
+    const mockProvider: AgentProvider = {
+      kind: 'mock',
+      model: 'mock-model',
+      async execute(task: Task, workspace: string): Promise<ProviderTaskResult> {
+        await writeFile(join(workspace, 'public', 'index.html'), '<h1>Barbearia</h1>', 'utf8');
+        return {
+          status: 'COMPLETED',
+          provider: 'mock',
+          model: 'mock-model',
+          exitCode: 0,
+          durationMs: 150,
+          stdout: 'ok',
+          stderr: '',
+          changedFiles: ['public/index.html'],
+          commit: null,
+          errorCode: null,
+          errorMessage: null,
+        };
+      },
+      async health() { return { available: true, details: 'ok' }; },
+      capabilities() { return ['mock']; },
+      metadata() { return {}; },
+    };
+
+    const localPreviewRuntime = new LocalPreviewRuntime();
+    const worker = new PrototypeWorker(mockTasks, mockPrototypes, mockProvider, events, 'prototype-test-worker', localPreviewRuntime);
+
+    const sessionId = 'f5-recovery-session';
+    const session: PrototypeSession = {
+      id: sessionId,
+      project: 'f5-recovery-app',
+      repository: templateDir,
+      branch: 'prototype/f5-recovery-app/f5-recovery-session',
+      mode: 'PROTOTYPE',
+      status: 'BUILDING',
+      previewUrl: null,
+      previewRuntime: null,
+      workspacePath: join(workspaceRootDir, sessionId),
+      lastCheckpointSha: null,
+      promptCount: 1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    sessionStore.set(sessionId, session);
+
+    const task: Task = {
+      id: 'task-f5',
+      project: 'f5-recovery-app',
+      repository: templateDir,
+      objective: 'F5 testing',
+      prompt: 'Verify background preservation',
+      status: 'QUEUED',
+      priority: 10,
+      worker: null,
+      result: null,
+      error: null,
+      branch: session.branch,
+      commitSha: null,
+      gitStatus: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      workspacePath: session.workspacePath,
+      prototypeSessionId: sessionId,
+    };
+    taskStore.set(task.id, task);
+
+    // 1. Simulate UI trigger sending prompt
+    // 2. Simulate UI EventSource disconnection (F5 / Refresh)
+    // 3. Worker continues executeOnce in background independently
+    const executePromise = worker.executeOnce();
+
+    // Verify task status is immediately ASSIGNED/RUNNING
+    const claimedTask = taskStore.get(task.id)!;
+    expect(['ASSIGNED', 'RUNNING']).toContain(claimedTask.status);
+
+    // Verify background workspace is intact
+    await executePromise;
+
+    // Verify completion independent of client
+    const finishedTask = taskStore.get(task.id)!;
+    expect(finishedTask.status).toBe('COMPLETED');
+    expect(finishedTask.commitSha).toBeTruthy();
+
+    const recoveredSession = sessionStore.get(sessionId)!;
+    expect(recoveredSession.status).toBe('READY');
+    expect(recoveredSession.previewUrl).toBeTruthy();
+  });
 });

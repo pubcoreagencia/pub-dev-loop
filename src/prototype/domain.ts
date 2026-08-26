@@ -27,3 +27,13 @@ export interface CreatePrototypeSession { project: string; repository: string; b
 export interface PrototypeCheckpoint { id:string; sessionId:string; promptIndex:number; prompt:string; commitSha:string|null; previewUrl:string|null; buildPassed:boolean; createdAt:Date; }
 export interface PrototypeEvent<TPayload extends Record<string, unknown> = Record<string, unknown>> { id:string; sessionId:string; type:PrototypeEventType; sequence:number; timestamp:Date; payload:TPayload; }
 export interface PrototypePromotion { id?: string; sessionId:string; fromMode:Extract<PrototypeMode,'PROTOTYPE'>; toMode:Extract<PrototypeMode,'DEVELOPMENT'>; repository:string; branch:string; checkpointSha:string|null; promotedAt:Date; }
+
+export interface PrototypeMessage {
+  id: string;
+  sessionId: string;
+  taskId?: string;
+  role: 'user' | 'assistant' | 'system' | 'tool' | 'progress';
+  content: string;
+  createdAt: Date;
+  order: number;
+}

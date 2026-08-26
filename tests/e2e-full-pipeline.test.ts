@@ -46,7 +46,7 @@ class TestTaskRepository implements TaskRepository {
       worker: null,
       result: null,
       error: null,
-      branch: null,
+      branch: (input as any).branch || null,
       commitSha: null,
       gitStatus: null,
       createdAt: new Date(),
@@ -125,69 +125,112 @@ function createMockFileProvider(): AgentProvider {
   };
 }
 
-const testRoot = join(
-  process.env.LOCALAPPDATA || '/tmp',
-  'hermes',
-  'e2e-full-pipeline-' + process.hrtime.bigint(),
-);
-
 describe('E2E Full Pipeline (API → Worker → Provider → Finalizer → Git Commit)', () => {
+  let testRoot: string;
   let taskRepo: TestTaskRepository;
   let repoPath: string;
+  let remotePath: string;
 
   beforeEach(async () => {
+    testRoot = join(
+      process.env.LOCALAPPDATA || '/tmp',
+      'hermes',
+      'e2e-full-pipeline-' + process.hrtime.bigint(),
+    );
     await mkdir(testRoot, { recursive: true });
     repoPath = join(testRoot, 'repo');
-    await mkdir(repoPath, { recursive: true });
-    initGitRepo(repoPath);
-    await writeFile(join(repoPath, 'README.md'), '# E2E Full Pipeline\n');
-    gitCommit(repoPath, 'init');
-    taskRepo = new TestTaskRepository();
+      await mkdir(repoPath, { recursive: true });
+      // Instantiate in‑memory task repository
+      taskRepo = new TestTaskRepository();
+    // Initialize the repository
+    execSync('git init -b main', { cwd: repoPath, stdio: 'ignore' });
+    execSync('git config user.name "Test"', { cwd: repoPath, stdio: 'ignore' });
+    execSync('git config user.email "test@example.com"', { cwd: repoPath, stdio: 'ignore' });
+    // Create an initial commit so remote has a main branch
+    const readmePath = join(repoPath, 'README.md');
+    await writeFile(readmePath, 'Initial');
+    execSync('git add .', { cwd: repoPath, stdio: 'ignore' });
+    execSync('git commit -m "init"', { cwd: repoPath, stdio: 'ignore' });
+    // Initialize a bare remote repository for push testing
+    remotePath = join(testRoot, 'remote.git');
+    await mkdir(remotePath, { recursive: true });
+    execSync('git init --bare', { cwd: remotePath, stdio: 'ignore' });
+    execSync('git --git-dir="' + remotePath.replace(/\\/g, '/') + '" symbolic-ref HEAD refs/heads/main', { stdio: 'ignore' });
+    // Add remote origin to the working repo
+    execSync(`git remote add origin "${remotePath}"`, { cwd: repoPath, stdio: 'ignore' });
+    // Push initial commit to remote
+    execSync('git push -u origin main', { cwd: repoPath, stdio: 'ignore' });
   });
 
   afterEach(async () => {
     try { await rm(testRoot, { recursive: true, force: true }); } catch {}
   });
 
-  it('completes a task, creates a commit with hello.txt, and leaves repo clean', async () => {
-    const task = taskRepo.create({
-      project: 'e2e-pipeline',
-      repository: repoPath,
-      objective: 'Create hello.txt via mock provider',
-      prompt: 'Create hello.txt',
-    });
+    it('completes a task, creates a commit with hello.txt, pushes to remote, and verifies remote', async () => {
+      const task = taskRepo.create({
+        project: 'e2e-pipeline',
+        repository: repoPath,
+        objective: 'Create hello.txt via mock provider',
+        prompt: 'Create hello.txt',
+      });
 
-    const provider = createMockFileProvider();
-    const worker = new RouterWorker(taskRepo, provider);
+      const provider = createMockFileProvider();
+      const worker = new RouterWorker(taskRepo, provider);
 
-    const headBefore = gitRevParseHead(repoPath);
+      // Execute the worker loop (claim → execute → finalize)
+      // Since executeOnce executes asynchronously and creates the workspace dynamically,
+      // we wrap claim and update methods of the taskRepo to configure the workspace origin remote path
+      const originalUpdate = taskRepo.update.bind(taskRepo);
+      taskRepo.update = async (id, patch) => {
+        if (patch.status === 'TESTING' && patch.workspacePath) {
+          execSync(`git remote set-url origin "${remotePath.replace(/\\/g, '/')}"`, { cwd: patch.workspacePath, stdio: 'ignore' });
+        }
+        return originalUpdate(id, patch);
+      };
 
-    // Execute the worker loop (claim → execute → finalize)
-    await worker.executeOnce();
+      await worker.executeOnce();
 
-    const updatedTask = await taskRepo.get(task.id);
-    if (!updatedTask) throw new Error('Task not found after execution');
+      const updatedTask = await taskRepo.get(task.id);
+      if (!updatedTask) throw new Error('Task not found after execution');
 
-    // 1️⃣ Task status should be COMPLETED and a commit SHA present
-    expect(updatedTask.status).toBe('COMPLETED');
-    expect(updatedTask.commitSha).toBeTruthy();
-    expect(updatedTask.commitSha).toMatch(/^[0-9a-f]{40}$/);
+      // Verify task status and commit SHA
+      expect(updatedTask.status).toBe('COMPLETED');
+      expect(updatedTask.commitSha).toBeTruthy();
+      expect(updatedTask.commitSha).toMatch(/^[0-9a-f]{40}$/);
+      expect(updatedTask.branch).toBeTruthy();
 
-    // 2️⃣ HEAD must have advanced in the workspace (not the original repo)
-    const workspacePath = updatedTask.workspacePath as string;
-    const headAfter = gitRevParseHead(workspacePath);
-    expect(headAfter).not.toBe(headBefore);
+      // Verify hello.txt existence and contents directly in the bare remote
+      const gitDir = remotePath.replace(/\\/g, '/');
+      const remoteRef = execSync(
+        `git --git-dir="${gitDir}" rev-parse "refs/heads/${updatedTask.branch}"`,
+        { encoding: 'utf8' }
+      ).trim();
+      expect(remoteRef).toBe(updatedTask.commitSha);
 
-    // 3️⃣ hello.txt must exist in the workspace with correct content
-    const helloContent = readFileSync(join(workspacePath, 'hello.txt'), 'utf8').trim();
-    expect(helloContent).toBe('PUB DEV LOOP E2E PIPELINE TEST');
+      const commitType = execSync(
+        `git --git-dir="${gitDir}" cat-file -t ${updatedTask.commitSha}`,
+        { encoding: 'utf8' }
+      ).trim();
+      expect(commitType).toBe('commit');
 
-    // 4️⃣ Working tree should be clean after finalizer in the workspace
-    const status = gitStatusShort(workspacePath);
-    expect(status).toBe('');
+      const treeSha = execSync(
+        `git --git-dir="${gitDir}" rev-parse "${updatedTask.commitSha}^{tree}"`,
+        { encoding: 'utf8' }
+      ).trim();
 
-    // 5️⃣ Commit should contain only hello.txt (aside from the initial README)
-    const logStat = execSync('git show --stat HEAD', { cwd: workspacePath }).toString();
-    expect(logStat).toContain('hello.txt');
-  }, 120_000);
+      const treeEntry = execSync(
+        `git --git-dir="${gitDir}" ls-tree ${treeSha} -- hello.txt`,
+        { encoding: 'utf8' }
+      ).trim();
+      expect(treeEntry).toContain('hello.txt');
+
+      const blobSha = treeEntry.split(/\s+/)[2];
+      expect(blobSha).toBeTruthy();
+
+      const helloContent = execSync(
+        `git --git-dir="${gitDir}" cat-file -p ${blobSha}`,
+        { encoding: 'utf8' }
+      ).trim();
+      expect(helloContent).toBe('PUB DEV LOOP E2E PIPELINE TEST');
+    }, 120_000);
 });

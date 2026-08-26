@@ -43,7 +43,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
   const handoff = new PrototypeHandoffService(tasks, prototypes, prototypeEvents);
 
   app.get('/health', (_q,res)=>res.json({status:'ok'}));
-  app.get('/prototype', (_req,res)=>res.status(200).type('html').send(prototypeUiHtml()+prototypeHistoryUiScript()));
+  app.get(['/prototype', '/prototype/sessions/:id/view'], (_req,res)=>res.status(200).type('html').send(prototypeUiHtml()+prototypeHistoryUiScript()));
 
   app.post('/tasks', async(req,res,next)=>{ try { const {project,repository,objective,prompt,priority}=req.body??{}; if(!project||!repository||!objective||!prompt)return res.status(400).json({error:'project, repository, objective and prompt are required'}); return res.status(201).json(await tasks.create({project,repository,objective,prompt,priority})); } catch(e){return next(e);} });
   app.get('/tasks',async(_q,res,next)=>{try{return res.json(await tasks.list())}catch(e){return next(e)}});
@@ -62,7 +62,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
   });
 
   app.get('/prototype/sessions',async(_req,res,next)=>{try{return res.json(await prototypes.listSessions())}catch(e){return next(e)}});
-  app.get('/prototype/sessions/:id',async(req,res,next)=>{try{const session=await prototypes.getSession(req.params.id);if(!session)return res.sendStatus(404);return res.json({session,checkpoints:await prototypes.listCheckpoints(session.id)})}catch(e){return next(e)}});
+  app.get('/prototype/sessions/:id',async(req,res,next)=>{try{const session=await prototypes.getSession(req.params.id);if(!session)return res.sendStatus(404);const allTasks = await tasks.list();const filtered = allTasks.filter(t => t.prototypeSessionId === session.id);return res.json({session,checkpoints:await prototypes.listCheckpoints(session.id),tasks:filtered})}catch(e){return next(e)}});
   app.get('/prototype/sessions/:id/events',async(req,res,next)=>{
     try { const session=await prototypes.getSession(req.params.id); if(!session)return res.sendStatus(404);
       res.status(200); res.setHeader('Content-Type','text/event-stream'); res.setHeader('Cache-Control','no-cache, no-transform'); res.setHeader('Connection','keep-alive'); res.flushHeaders?.();

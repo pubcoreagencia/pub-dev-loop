@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
-import type { CreatePrototypeSession, PrototypeCheckpoint, PrototypeSession, PrototypeSessionStatus, PrototypeMode, PrototypePromotion } from './domain.js';
+import type { CreatePrototypeSession, PrototypeCheckpoint, PrototypeSession, PrototypeSessionStatus, PrototypeMode, PrototypePromotion, PrototypeMessage } from './domain.js';
 
 const mapSession = (r: Record<string, unknown>): PrototypeSession => ({
   id: r.id as string,
@@ -35,6 +35,16 @@ const mapPromotion = (r: Record<string, unknown>): PrototypePromotion => ({
   promotedAt: r.promoted_at as Date,
 });
 
+const mapMessage = (r: Record<string, unknown>): PrototypeMessage => ({
+  id: r.id as string,
+  sessionId: r.session_id as string,
+  taskId: r.task_id as string | undefined,
+  role: r.role as any,
+  content: r.content as string,
+  createdAt: r.created_at as Date,
+  order: Number(r.order),
+});
+
 export interface PrototypeRepository {
   createSession(input: CreatePrototypeSession): Promise<PrototypeSession>;
   getSession(id: string): Promise<PrototypeSession | null>;
@@ -46,12 +56,18 @@ export interface PrototypeRepository {
   listCheckpoints(sessionId: string): Promise<PrototypeCheckpoint[]>;
   createPromotion(input: Omit<PrototypePromotion, 'id'>): Promise<PrototypePromotion>;
   getPromotion(sessionId: string): Promise<PrototypePromotion | null>;
+  addMessage(msg: PrototypeMessage): Promise<PrototypeMessage>;
+  listMessages(sessionId: string): Promise<PrototypeMessage[]>;
+  nextMessageOrder(sessionId: string): Promise<number>;
+
 }
 
 export class PostgresPrototypeRepository implements PrototypeRepository {
   constructor(private readonly pool: Pool) {}
   async createSession(input: CreatePrototypeSession): Promise<PrototypeSession> {
-    const id = randomUUID(); const branch = input.branch ?? `prototype/${input.project}/${id}`;
+    const id = randomUUID();
+    const sanitizedProject = input.project.replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    const branch = input.branch ?? `prototype/${sanitizedProject || 'untitled'}/${id}`;
     const result = await this.pool.query(`INSERT INTO prototype_sessions (id, project, repository, branch) VALUES ($1,$2,$3,$4) RETURNING *`, [id,input.project,input.repository,branch]);
     return mapSession(result.rows[0]);
   }
@@ -67,7 +83,7 @@ export class PostgresPrototypeRepository implements PrototypeRepository {
   async incrementPromptCount(id:string):Promise<PrototypeSession|null>{
     const r=await this.pool.query(`UPDATE prototype_sessions
       SET prompt_count=prompt_count+1,status='BUILDING',updated_at=now()
-      WHERE id=$1 AND status IN ('CREATING','READY')
+      WHERE id=$1 AND status IN ('CREATING','READY','FAILED')
       RETURNING *`,[id]);
     return r.rows[0]?mapSession(r.rows[0]):null;
   }
@@ -90,4 +106,64 @@ export class PostgresPrototypeRepository implements PrototypeRepository {
     const r=await this.pool.query(`SELECT * FROM prototype_promotions WHERE session_id=$1 ORDER BY promoted_at DESC LIMIT 1`,[sessionId]);
     return r.rows[0]?mapPromotion(r.rows[0]):null;
   }
+  async nextMessageOrder(sessionId: string): Promise<number> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Lock the session row to serialize MAX("order") computation securely
+      await client.query('SELECT 1 FROM prototype_sessions WHERE id=$1 FOR UPDATE', [sessionId]);
+      const r = await client.query(
+        `SELECT COALESCE(MAX("order"),0)+1 AS next FROM prototype_messages WHERE session_id=$1`,
+        [sessionId]
+      );
+      await client.query('COMMIT');
+      return Number(r.rows[0].next);
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  async addMessage(msg: PrototypeMessage): Promise<PrototypeMessage> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      let order = msg.order;
+      if (!order || order <= 0) {
+        // Lock session to prevent concurrent order calculation races
+        await client.query('SELECT 1 FROM prototype_sessions WHERE id=$1 FOR UPDATE', [msg.sessionId]);
+        const r = await client.query(
+          `SELECT COALESCE(MAX("order"),0)+1 AS next FROM prototype_messages WHERE session_id=$1`,
+          [msg.sessionId]
+        );
+        order = Number(r.rows[0].next);
+      }
+      const id = (msg as any).id ?? (await import('node:crypto')).randomUUID();
+      const r = await client.query(
+        `INSERT INTO prototype_messages (id, session_id, task_id, role, content, "order")
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (session_id, "order") DO UPDATE SET content=EXCLUDED.content
+         RETURNING *`,
+         [id, msg.sessionId, msg.taskId ?? null, msg.role, msg.content, order]
+      );
+      await client.query('COMMIT');
+      return mapMessage(r.rows[0]);
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  async listMessages(sessionId: string): Promise<PrototypeMessage[]> {
+    const r = await this.pool.query(
+      `SELECT * FROM prototype_messages WHERE session_id=$1 ORDER BY "order" ASC`,
+      [sessionId]
+    );
+    return r.rows.map(mapMessage);
+  }
 }
+

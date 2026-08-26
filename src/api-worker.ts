@@ -210,7 +210,18 @@ const SCHEMA_MIGRATIONS = [
     checkpoint_sha TEXT NOT NULL,
     promoted_at TIMESTAMPTZ NOT NULL DEFAULT now()
   );`,
-  `CREATE INDEX IF NOT EXISTS prototype_promotions_session_idx ON prototype_promotions (session_id, promoted_at DESC);`
+  `CREATE INDEX IF NOT EXISTS prototype_promotions_session_idx ON prototype_promotions (session_id, promoted_at DESC);`,
+  `CREATE TABLE IF NOT EXISTS prototype_messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id UUID NOT NULL REFERENCES prototype_sessions(id) ON DELETE CASCADE,
+    task_id UUID NULL REFERENCES tasks(id) ON DELETE SET NULL,
+    role TEXT NOT NULL CHECK (role IN ('user','assistant','system','tool','progress')),
+    content TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "order" BIGINT NOT NULL
+  );`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS prototype_messages_session_order_idx ON prototype_messages (session_id, "order" ASC);`,
+  `CREATE INDEX IF NOT EXISTS prototype_messages_session_idx ON prototype_messages (session_id, "order" ASC);`
 ];
 
 let migrationsChecked = false;
@@ -430,7 +441,7 @@ export default {
       }
 
       // 2. GET /prototype (Serve Full Prototype Web UI)
-      if (method === 'GET' && (path === '/prototype' || path === '/prototype/')) {
+      if (method === 'GET' && (path === '/prototype' || path === '/prototype/' || path.match(/^\/prototype\/sessions\/([^\/]+)\/view$/))) {
         const html = prototypeUiHtml() + prototypeHistoryUiScript();
         return new Response(html, {
           status: 200,
@@ -469,8 +480,52 @@ export default {
         const sessions = await prototypes.listSessions();
         return new Response(JSON.stringify(sessions), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+      // 4b. POST /prototype/sessions/:id/messages
+      const sessionMessagesMatch = path.match(/^\/prototype\/sessions\/([^\/]+)\/messages$/);
+      if (sessionMessagesMatch && method === 'POST') {
+        const id = sessionMessagesMatch[1];
+        let body: any;
+        try {
+          body = await request.json();
+        } catch {
+          return new Response(JSON.stringify({ error: 'Invalid JSON payload' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+        }
+        const { role, content, task_id } = body ?? {};
+        const allowedRoles = ['user', 'assistant', 'system', 'tool', 'progress'];
+        if (!role || !allowedRoles.includes(role)) {
+          return new Response(JSON.stringify({ error: `role must be one of: ${allowedRoles.join(', ')}` }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+        }
+        if (!content || typeof content !== 'string' || !content.trim()) {
+          return new Response(JSON.stringify({ error: 'content is required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+        }
+        const prototypes = getPrototypesRepository(env);
+        const session = await prototypes.getSession(id);
+        if (!session) {
+          return new Response(JSON.stringify({ error: 'Session not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+        }
+        // Validate task_id if provided
+        if (task_id) {
+          const tasksRepo = getRepository(env);
+          const t = await tasksRepo.get(task_id);
+          if (!t || t.prototypeSessionId !== session.id) {
+            return new Response(JSON.stringify({ error: 'task_id does not belong to this session' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+          }
+        }
+        const { randomUUID } = await import('node:crypto');
+        const msg = await prototypes.addMessage({
+          id: randomUUID(),
+          sessionId: session.id,
+          role: role as any,
+          content: content.trim(),
+          taskId: task_id,
+          order: 0, // auto-computed inside addMessage
+          createdAt: new Date(),
+        });
+        return new Response(JSON.stringify(msg), { status: 201, headers: { 'Content-Type': 'application/json' } });
+      }
 
       // 5. Prototype Single Session Routes (/prototype/sessions/:id, /events, /prompts, /checkpoints, /promote)
+
       const sessionEventsMatch = path.match(/^\/prototype\/sessions\/([^\/]+)\/events$/);
       if (sessionEventsMatch && method === 'GET') {
         const id = sessionEventsMatch[1];
@@ -480,6 +535,10 @@ export default {
           return new Response(JSON.stringify({ error: 'Session not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
         }
 
+        // Support SSE reconnection via Last-Event-ID header to avoid duplicate events
+        const lastEventIdHeader = request.headers.get('Last-Event-ID') || request.headers.get('last-event-id');
+        const initialSequence = lastEventIdHeader ? (parseInt(lastEventIdHeader, 10) || 0) : 0;
+
         const encoder = new TextEncoder();
         let intervalId: any;
         const stream = new ReadableStream({
@@ -487,7 +546,7 @@ export default {
             try {
               controller.enqueue(encoder.encode(': connected\n\n'));
               const pool = getPool(env);
-              let lastSequence = 0;
+              let lastSequence = initialSequence;
 
               intervalId = setInterval(async () => {
                 try {
@@ -497,7 +556,8 @@ export default {
                   );
                   for (const row of res.rows) {
                     lastSequence = Math.max(lastSequence, Number(row.sequence));
-                    controller.enqueue(encoder.encode(`event: ${row.type}\ndata: ${JSON.stringify({ payload: row.payload, sequence: row.sequence })}\n\n`));
+                    // Include id field so browser sets Last-Event-ID automatically
+                    controller.enqueue(encoder.encode(`id: ${row.sequence}\nevent: ${row.type}\ndata: ${JSON.stringify({ payload: row.payload, sequence: row.sequence })}\n\n`));
                   }
                   controller.enqueue(encoder.encode(': heartbeat\n\n'));
                 } catch {
@@ -523,6 +583,7 @@ export default {
         });
       }
 
+
       const sessionPromptsMatch = path.match(/^\/prototype\/sessions\/([^\/]+)\/prompts$/);
       if (sessionPromptsMatch && method === 'POST') {
         const id = sessionPromptsMatch[1];
@@ -546,6 +607,21 @@ export default {
 
         if (['BUILDING', 'PREVIEWING'].includes(session.status)) {
           return new Response(JSON.stringify({ error: 'Prototype session is already processing a prompt' }), { status: 409, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        // Persist user message BEFORE acquiring the lock and creating the task
+        try {
+          await prototypes.addMessage({
+            id: (await import('node:crypto')).randomUUID(),
+            sessionId: session.id,
+            role: 'user',
+            content: prompt.trim(),
+            order: 0, // Will be auto-computed inside addMessage transaction
+            createdAt: new Date(),
+          });
+        } catch (msgErr) {
+          console.error('[API Worker] Failed to persist user message:', (msgErr as Error).message);
+          // Non-fatal: continue with prompt processing
         }
 
         const updated = await prototypes.incrementPromptCount(session.id);
@@ -576,6 +652,7 @@ export default {
           headers: { 'Content-Type': 'application/json' },
         });
       }
+
 
       const sessionPromoteMatch = path.match(/^\/prototype\/sessions\/([^\/]+)\/promote$/);
       if (sessionPromoteMatch && method === 'POST') {
@@ -673,7 +750,11 @@ export default {
             return new Response(JSON.stringify({ error: 'Session not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
           }
           const checkpoints = await prototypes.listCheckpoints(session.id);
-          return new Response(JSON.stringify({ session, checkpoints }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          const tasksRepo = getRepository(env);
+          const allTasks = await tasksRepo.list();
+          const tasks = allTasks.filter((t: any) => t.prototypeSessionId === session.id);
+          const messages = await prototypes.listMessages(session.id);
+          return new Response(JSON.stringify({ session, checkpoints, tasks, messages }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
 
         if (method === 'PATCH') {

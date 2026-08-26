@@ -61,3 +61,5 @@ export function initTestDom(html: string) {
   // Dispatch load event so window.onload / window.addEventListener('load') runs
   window.dispatchEvent(new Event('load'));
 }
+process.env.ROUTER_PROVIDER_CHAIN = 'mock';
+process.env.PROTOTYPE_PROVIDER_CHAIN = 'mock';

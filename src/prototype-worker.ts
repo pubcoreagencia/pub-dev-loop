@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { access, mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { Task } from './domain.js';
 import { PostgresTaskRepository } from './repository.js';
 import { TaskFinalizer, captureWorkspaceSnapshot } from './finalizer.js';
@@ -180,6 +181,23 @@ export class PrototypeWorker {
       const preview = await this.ensurePreview(sessionId, workspace);
       await this.prototypes.updateSession(sessionId, { status: 'READY', workspacePath: workspace, previewRuntime: preview.id,
         previewUrl: preview.url, lastCheckpointSha: finalize.commitSha });
+
+      // Save assistant message to the chat history linked to the task_id
+      try {
+        if (typeof this.prototypes.addMessage === 'function') {
+          await this.prototypes.addMessage({
+            id: randomUUID(),
+            sessionId,
+            role: 'assistant',
+            content: result.stdout || 'Protótipo atualizado com sucesso.',
+            taskId: task.id,
+            order: 0,
+            createdAt: new Date(),
+          });
+        }
+      } catch (msgErr) {
+        console.error('[Prototype Worker] Failed to persist assistant message:', (msgErr as Error).message);
+      }
 
       const session = await this.prototypes.getSession(sessionId);
       const checkpoint = await this.prototypes.createCheckpoint({ sessionId, promptIndex: session?.promptCount ?? 1, prompt: task.prompt,

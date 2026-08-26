@@ -8,5 +8,6 @@ export default defineConfig({
     alias: {
       'cloudflare:workers': path.resolve(__dirname, './tests/mocks/cloudflare-workers.ts'),
     },
+    setupFiles: ['./tests/setup.ts'],
   },
 });
