@@ -53,6 +53,7 @@ export class PrototypeComparisonPreviewManager {
         publicBaseUrl: input.publicBaseUrl,
         startupTimeoutMs: Number(process.env.PROTOTYPE_PREVIEW_STARTUP_TIMEOUT_MS ?? 60000),
         environment: { NODE_ENV: 'development' },
+        workspaceKind: 'node',
       });
       const started = await this.runtime.start(created.id);
       const comparison: ComparisonPreview = {

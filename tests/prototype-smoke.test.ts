@@ -42,6 +42,7 @@ describe('PUB Prototype deterministic smoke flow', () => {
       args: ['server.cjs'],
       port,
       startupTimeoutMs: 5_000,
+      workspaceKind: 'node',
     });
     running.push({ runtime, id: created.id, workspace });
 

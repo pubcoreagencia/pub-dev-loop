@@ -1,5 +1,9 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
+import { existsSync } from 'node:fs';
+import { stat, readFile } from 'node:fs/promises';
+import http from 'node:http';
+import path from 'node:path';
 
 import type {
   PreviewLogEvent,
@@ -9,11 +13,27 @@ import type {
   PreviewRuntimeStatus,
 } from './preview-runtime.js';
 
+type WorkspaceKind = 'node' | 'static';
+
+function detectWorkspaceKind(workspace: string): WorkspaceKind {
+  const packageJsonPath = path.join(workspace, 'package.json');
+  const hasPackageJson = existsSync(packageJsonPath);
+
+  if (hasPackageJson) return 'node';
+
+  const hasIndexHtml = existsSync(path.join(workspace, 'index.html'));
+  if (hasIndexHtml) return 'static';
+
+  return 'node';
+}
+
 interface RuntimeRecord {
   config: PreviewRuntimeConfig;
   info: PreviewRuntimeInfo;
   child: ChildProcess | null;
+  server: http.Server | null;
   listeners: Set<(event: PreviewLogEvent) => void>;
+  stderrLines: string[];
 }
 
 const DEFAULT_STARTUP_TIMEOUT_MS = 30_000;
@@ -61,7 +81,7 @@ async function allocatePort(): Promise<number> {
 }
 
 function resolveUrl(config: PreviewRuntimeConfig, port: number): string {
-  const base = (config.publicBaseUrl ?? `http://127.0.0.1:${port}`).replace(/\/$/, '');
+  const base = (config.publicBaseUrl ?? `http://127.0.0.1:${port}`).replace(/\/+$/, '');
   if (base.includes('{PORT}')) return base.replaceAll('{PORT}', String(port));
   if (config.publicBaseUrl) return base;
   return `http://127.0.0.1:${port}`;
@@ -71,11 +91,14 @@ function resolveArgs(args: string[], port: number): string[] {
   return args.map(arg => arg.replaceAll('{PORT}', String(port)));
 }
 
-async function waitForHttp(url: string, timeoutMs: number): Promise<void> {
+async function waitForHttp(url: string, timeoutMs: number, record?: RuntimeRecord): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastError = 'preview health check did not succeed';
 
   while (Date.now() < deadline) {
+    if (record?.info.status === 'FAILED') {
+      throw new Error(record.info.error ?? 'preview process failed');
+    }
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(Math.min(1000, Math.max(100, deadline - Date.now()))) });
       if (response.ok || response.status < 500) return;
@@ -92,17 +115,11 @@ async function waitForHttp(url: string, timeoutMs: number): Promise<void> {
 export class LocalPreviewRuntime implements PreviewRuntime {
   private readonly runtimes = new Map<string, RuntimeRecord>();
 
-  async create(config: PreviewRuntimeConfig): Promise<PreviewRuntimeInfo> {
-    if (!config.workspace) throw new Error('workspace is required');
-    if (!config.command) throw new Error('command is required');
-    if (!Number.isInteger(config.port) || config.port < 0 || config.port > 65535) {
-      throw new Error('port must be 0 or an integer between 1 and 65535');
-    }
-
+  private async createStaticRecord(config: PreviewRuntimeConfig): Promise<{ record: RuntimeRecord; id: string; port: number }> {
     const port = config.port === 0 ? await allocatePort() : config.port;
     const id = createId();
     const record: RuntimeRecord = {
-      config: { ...config, port },
+      config: { ...config, port, workspaceKind: 'static' },
       info: {
         id,
         status: 'CREATING',
@@ -114,11 +131,57 @@ export class LocalPreviewRuntime implements PreviewRuntime {
         error: null,
       },
       child: null,
+      server: null,
       listeners: new Set(),
+      stderrLines: [],
     };
-
     this.runtimes.set(id, record);
     emit(record, 'system', `runtime:created port=${port}`);
+    return { record, id, port };
+  }
+
+  private async createNodeRecord(config: PreviewRuntimeConfig, port: number): Promise<{ record: RuntimeRecord; id: string }> {
+    const id = createId();
+    const record: RuntimeRecord = {
+      config: { ...config, port, workspaceKind: 'node' },
+      info: {
+        id,
+        status: 'CREATING',
+        url: resolveUrl(config, port),
+        port,
+        pid: null,
+        startedAt: null,
+        stoppedAt: null,
+        error: null,
+      },
+      child: null,
+      server: null,
+      listeners: new Set(),
+      stderrLines: [],
+    };
+    this.runtimes.set(id, record);
+    emit(record, 'system', `runtime:created port=${port}`);
+    return { record, id };
+  }
+
+  async create(config: PreviewRuntimeConfig): Promise<PreviewRuntimeInfo> {
+    if (!config.workspace) throw new Error('workspace is required');
+    if (!Number.isInteger(config.port) || config.port < 0 || config.port > 65535) {
+      throw new Error('port must be 0 or an integer between 1 and 65535');
+    }
+
+    const kind = detectWorkspaceKind(config.workspace);
+    if (kind === 'node' && !config.command) {
+      throw new Error('command is required for node preview workspaces');
+    }
+
+    if (kind === 'static') {
+      const { record } = await this.createStaticRecord(config);
+      return { ...record.info };
+    }
+
+    const port = config.port === 0 ? await allocatePort() : config.port;
+    const { record } = await this.createNodeRecord(config, port);
     return { ...record.info };
   }
 
@@ -129,6 +192,10 @@ export class LocalPreviewRuntime implements PreviewRuntime {
     if (record.info.status === 'STOPPING') throw new Error('preview runtime is stopping');
 
     setStatus(record, 'STARTING', null);
+
+    if (record.config.workspaceKind === 'static') {
+      return this.startStaticServer(record);
+    }
 
     const env = { ...process.env, ...(record.config.environment ?? {}), PORT: String(record.config.port) };
     const child = spawn(record.config.command, resolveArgs(record.config.args, record.config.port), {
@@ -145,7 +212,11 @@ export class LocalPreviewRuntime implements PreviewRuntime {
       for (const line of chunk.toString().split(/\r?\n/).filter(Boolean)) emit(record, 'stdout', line);
     });
     child.stderr?.on('data', chunk => {
-      for (const line of chunk.toString().split(/\r?\n/).filter(Boolean)) emit(record, 'stderr', line);
+      const lines = chunk.toString().split(/\r?\n/).filter(Boolean);
+      for (const line of lines) {
+        record.stderrLines.push(line);
+        emit(record, 'stderr', line);
+      }
     });
 
     const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
@@ -153,7 +224,11 @@ export class LocalPreviewRuntime implements PreviewRuntime {
         setStatus(record, 'STOPPED', null);
         return;
       }
-      setStatus(record, code === 0 ? 'STOPPED' : 'FAILED', code === 0 ? null : `preview process exited with code=${String(code)} signal=${String(signal)}`);
+      const stderrSummary = record.stderrLines.length
+        ? record.stderrLines.slice(-3).join(' | ')
+        : '';
+      const errorMessage = [code === 0 ? null : `preview process exited with code=${String(code)}`, stderrSummary ? `stderr: ${stderrSummary}` : null].filter(Boolean).join(': ') || null;
+      setStatus(record, code === 0 ? 'STOPPED' : 'FAILED', errorMessage);
     };
 
     child.on('exit', onExit);
@@ -161,16 +236,138 @@ export class LocalPreviewRuntime implements PreviewRuntime {
 
     try {
       const healthUrl = `http://127.0.0.1:${record.config.port}`;
-      await waitForHttp(healthUrl, record.config.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS);
+      await waitForHttp(healthUrl, record.config.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS, record);
       if (record.info.status === 'FAILED') throw new Error(record.info.error ?? 'preview process failed');
       setStatus(record, 'READY', null);
       return { ...record.info };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await this.stop(runtimeId).catch(() => undefined);
-      setStatus(record, 'FAILED', message);
-      throw new Error(`preview failed to become ready: ${message}`);
+      const finalMessage = record.info.error ?? message;
+      setStatus(record, 'FAILED', finalMessage);
+      throw new Error(`preview failed to become ready: ${finalMessage}`);
     }
+  }
+
+  private async startStaticServer(record: RuntimeRecord): Promise<PreviewRuntimeInfo> {
+    return new Promise((resolve, reject) => {
+      const workspace = record.config.workspace;
+      const port = record.config.port;
+
+      const requestListener = (req: http.IncomingMessage, res: http.ServerResponse) => {
+        if (res.headersSent) return;
+
+        const finish = (status: number, body: string, contentType = 'text/plain; charset=utf-8') => {
+          if (res.headersSent) return;
+          res.writeHead(status, { 'content-type': contentType });
+          res.end(body);
+        };
+
+        let requestPath: string;
+        try {
+          if (!req.url) throw new Error('no url');
+          const rawPath = req.url.split('?')[0];
+          if (!rawPath || !rawPath.startsWith('/')) throw new Error('invalid path');
+
+          if (rawPath.includes('%2e') || rawPath.includes('%2E')) {
+            throw new Error('encoded path traversal');
+          }
+
+          requestPath = decodeURIComponent(rawPath);
+
+          const rawSegments = requestPath.split('/');
+          for (const seg of rawSegments) {
+            if (seg === '..') {
+              throw new Error('path traversal');
+            }
+          }
+        } catch {
+          finish(400, 'invalid request url');
+          return;
+        }
+
+        const segments = requestPath.split('/').filter(Boolean);
+
+        const safePath = path.posix.normalize('/' + segments.join('/')).replace(/^\/+/, '');
+
+        if (safePath.startsWith('..') || safePath.includes('/..')) {
+          finish(400, 'invalid request url');
+          return;
+        }
+
+        const workspaceReal = path.resolve(workspace);
+        const resolvedReal = path.resolve(workspaceReal, safePath);
+
+        if (resolvedReal !== workspaceReal && !resolvedReal.startsWith(workspaceReal + path.sep)) {
+          finish(400, 'invalid request url');
+          return;
+        }
+
+        const serveFile = async () => {
+          let targetPath = resolvedReal;
+          if (targetPath === workspaceReal) {
+            targetPath = path.join(workspace, 'index.html');
+          } else {
+            try {
+              const fileStats = await stat(resolvedReal);
+              if (fileStats.isDirectory()) targetPath = path.join(resolvedReal, 'index.html');
+            } catch {
+              targetPath = resolvedReal;
+            }
+          }
+
+          let contentType = 'application/octet-stream';
+          const lower = targetPath.toLowerCase();
+          if (lower.endsWith('.html')) contentType = 'text/html; charset=utf-8';
+          else if (lower.endsWith('.css')) contentType = 'text/css; charset=utf-8';
+          else if (lower.endsWith('.js')) contentType = 'application/javascript; charset=utf-8';
+          else if (lower.endsWith('.json')) contentType = 'application/json; charset=utf-8';
+          else if (lower.endsWith('.png')) contentType = 'image/png';
+          else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) contentType = 'image/jpeg';
+          else if (lower.endsWith('.svg')) contentType = 'image/svg+xml';
+          else if (lower.endsWith('.ico')) contentType = 'image/x-icon';
+
+          try {
+            const content = await readFile(targetPath);
+            res.writeHead(200, { 'content-type': contentType });
+            res.end(content);
+          } catch {
+            res.writeHead(404);
+            res.end('not found');
+          }
+        };
+
+        serveFile().catch(() => {
+          if (!res.headersSent) {
+            finish(500, 'internal server error');
+          }
+        });
+      };
+
+      const server = http.createServer(requestListener);
+      server.maxConnections = 50;
+      server.listen(port, '0.0.0.0', async () => {
+        const healthUrl = `http://127.0.0.1:${port}`;
+        try {
+          await waitForHttp(healthUrl, record.config.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS);
+          record.server = server;
+          record.info = { ...record.info, startedAt: new Date(), error: null };
+          setStatus(record, 'READY', null);
+          resolve({ ...record.info });
+        } catch (error) {
+          server.close();
+          const message = error instanceof Error ? error.message : String(error);
+          setStatus(record, 'FAILED', message);
+          reject(new Error(`preview failed to become ready: ${message}`));
+        }
+      });
+
+      server.on('error', (error: Error) => {
+        server.close();
+        setStatus(record, 'FAILED', error.message);
+        reject(new Error(`preview failed to become ready: ${error.message}`));
+      });
+    });
   }
 
   async get(runtimeId: string): Promise<PreviewRuntimeInfo | null> {
@@ -181,6 +378,12 @@ export class LocalPreviewRuntime implements PreviewRuntime {
   async stop(runtimeId: string): Promise<PreviewRuntimeInfo | null> {
     const record = this.runtimes.get(runtimeId);
     if (!record) return null;
+
+    if (record.server) {
+      record.server.close();
+      record.server = null;
+    }
+
     if (!record.child || record.info.status === 'STOPPED' || record.info.status === 'FAILED') {
       if (record.info.status !== 'FAILED') setStatus(record, 'STOPPED', null);
       return { ...record.info };

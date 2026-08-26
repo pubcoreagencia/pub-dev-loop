@@ -18,6 +18,7 @@ export interface PreviewRuntimeConfig {
   publicBaseUrl?: string;
   startupTimeoutMs?: number;
   environment?: NodeJS.ProcessEnv;
+  workspaceKind?: 'node' | 'static';
 }
 
 export interface PreviewRuntimeInfo {
