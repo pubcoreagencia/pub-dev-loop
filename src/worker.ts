@@ -121,8 +121,8 @@ function startHealthServer(port = Number(process.env.PORT ?? 3000)): http.Server
     console.warn(`[Worker Container] Health server warning on port ${port}:`, err.message);
   });
 
-  server.listen(port, () => {
-    console.log(`[Worker Container] Health server listening on port ${port}`);
+  server.listen(port, '0.0.0.0', () => {
+    console.log(`[Worker Container] Health server listening on 0.0.0.0:${port}`);
   });
 
   return server;
