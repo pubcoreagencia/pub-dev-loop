@@ -355,6 +355,20 @@ export abstract class BaseWorker implements Worker {
       );
       this.lastFinalizeStatus = finalizeResult.status;
 
+      if (finalizeResult.status === 'COMPLETED' && !task.prototypeSessionId && finalizeResult.commitSha) {
+        try {
+          console.log(`[Worker] Pushing branch ${branch} to remote...`);
+          await run('git', ['push', 'origin', `HEAD:${branch}`], winningAttempt.workspace);
+          console.log(`[Worker] Successfully pushed branch ${branch} to remote.`);
+        } catch (pushError: any) {
+          console.error(`[Worker] GITHUB_PUSH_FAILED:`, pushError.message);
+          finalizeResult.status = 'FAILED';
+          finalizeResult.errorCode = 'GITHUB_PUSH_FAILED';
+          finalizeResult.errorMessage = `GitHub push failed: ${pushError.message}`;
+          this.lastFinalizeStatus = 'FAILED';
+        }
+      }
+
       // Enrich trace with finalization outcome
       if (winningAttempt.trace) {
         winningAttempt.trace.finalizeWasCalled = this.finalizeWasCalled;
