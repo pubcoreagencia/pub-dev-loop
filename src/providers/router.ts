@@ -1,6 +1,6 @@
 import type { Task } from '../domain.js';
 import type { AgentProvider, ProviderTaskResult } from './types.js';
-import { DEFAULT_ROUTER_BASE_URL, normalizeBaseUrl } from './shared.js';
+import { DEFAULT_ROUTER_BASE_URL, normalizeBaseUrl, SHARED_SYSTEM_INSTRUCTIONS, PREVIEW_SYSTEM_INSTRUCTIONS, isPrototypeTask } from './shared.js';
 import { ToolRuntime } from '../tools/runtime.js';
 import { AgentExecutor } from '../executor.js';
 import type { ToolCall, ToolResult, ToolExecutionContext, ToolDefinition } from '../tools/types.js';
@@ -22,21 +22,17 @@ interface OpenAIChatResponse {
   error?: { message?: string; type?: string; code?: string };
 }
 
-/**
- * Build the system + user prompt for the 9Router.
- * Instructs the model to use tools for file/workspace operations.
- */
 function buildSystemPrompt(workspace: string, task: Task): OpenAIChatMessage {
+  const instructions = [
+    `You are a 9router-backed coding agent for PUB DEV LOOP.`,
+    ...SHARED_SYSTEM_INSTRUCTIONS.slice(1),
+  ];
+  if (isPrototypeTask(task)) {
+    instructions.push(...PREVIEW_SYSTEM_INSTRUCTIONS);
+  }
   return {
     role: 'system',
-    content: [
-      'You are a 9router-backed coding agent for PUB DEV LOOP.',
-      'You have access to the following tools. Use them to complete the task.',
-      'Always resolve file paths within the workspace. Never write outside it.',
-      'After writing a file, read it back to verify contents.',
-      'IMPORTANT: Do NOT use git_commit tool — the worker will automatically commit changes after you complete.',
-      'IMPORTANT: Do NOT run git commands (git add, git status, etc.) — the worker handles git operations.',
-      'After completing all work, provide a final summary without further tool calls.',
+    content: [...instructions,
       `Workspace: ${workspace}`,
       `Task ID: ${task.id}`,
       `Objective: ${task.objective}`,
