@@ -769,6 +769,20 @@ export default {
         }
       }
 
+      const taskItemMatch = path.match(/^\/prototype\/tasks\/([^\/]+)$/);
+      if (taskItemMatch && method === 'POST') {
+        const taskId = taskItemMatch[1];
+        const action = url.searchParams.get('action');
+        if (action === 'cancel') {
+          const tasksRepo = getRepository(env);
+          const updated = await tasksRepo.cancel(taskId);
+          if (!updated) {
+            return new Response(JSON.stringify({ error: 'Task not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+          }
+          return new Response(JSON.stringify({ status: updated.status, id: updated.id }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+      }
+
       // POST /tasks
       if (method === 'POST' && path === '/tasks') {
         const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || '127.0.0.1';

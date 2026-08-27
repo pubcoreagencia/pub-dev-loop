@@ -119,6 +119,20 @@ export class PrototypeWorker {
       }));
 
       const result = await this.provider.execute(task, workspace);
+
+      // Check for cancellation during provider execution
+      try {
+        const currentTask = await (this.tasks as any).get?.(task.id);
+        if (currentTask?.status === 'CANCELLED') {
+          await this.tasks.update(task.id, { status: 'CANCELLED', workspacePath: workspace, leaseOwner: null, leaseDeadline: null });
+          await this.prototypes.updateSession(sessionId, { status: 'READY', workspacePath: workspace });
+          this.events.emit({ sessionId, type: 'ERROR', payload: { message: 'Task cancelled by user', taskId: task.id } });
+          console.log(JSON.stringify({ event: 'TASK_CANCELLED', taskId: task.id, sessionId, timestamp: new Date().toISOString() }));
+          return true;
+        }
+      } catch {
+        // get() may not be available on mock repos — cancellation check is best-effort
+      }
       const durationMs = Date.now() - started;
 
       console.log(JSON.stringify({
@@ -146,6 +160,21 @@ export class PrototypeWorker {
 
       this.events.emit({ sessionId, type: 'AGENT_OUTPUT', payload: { summary: result.stdout.slice(-8000), changedFiles: result.changedFiles ?? [], taskId: task.id } });
       const finalizer = new TaskFinalizer(workspace, { commandTimeoutMs: Number(process.env.ROUTER_COMMAND_TIMEOUT_MS ?? 60000) });
+
+      // Check for cancellation before finalizer
+      try {
+        const currentTask = await (this.tasks as any).get?.(task.id);
+        if (currentTask?.status === 'CANCELLED') {
+          await this.prototypes.updateSession(sessionId, { status: 'READY', workspacePath: workspace });
+          this.events.emit({ sessionId, type: 'ERROR', payload: { message: 'Task cancelled by user', taskId: task.id } });
+          console.log(JSON.stringify({ event: 'TASK_CANCELLED', taskId: task.id, sessionId, timestamp: new Date().toISOString() }));
+          return true;
+        }
+      } catch {
+        // get() may not be available on mock repos — cancellation check is best-effort
+      }
+
+      this.events.emit({ sessionId, type: 'BUILD_STARTED', payload: { taskId: task.id, phase: 'finalize' } });
       const finalize = await finalizer.finalize(task.objective, task.prompt, {
         testCommand: process.env.TASK_TEST_COMMAND || null,
         commitMessage: `prototype(${task.project}): prompt ${task.id}`,

@@ -33,10 +33,11 @@ describe('Fullscreen behavior', () => {
     setupDom(false);
     const btn = document.getElementById('fullscreen') as HTMLElement;
     btn.click();
-    const tips = document.getElementById('overlayTips');
-    expect(tips?.textContent).toContain('Fullscreen API não suportada');
-    const overlay = document.getElementById('overlay');
-    expect(overlay?.style.display).toBe('flex');
+    // The toast is a dynamically created element with class 'processing-overlay'
+    const toasts = document.querySelectorAll('.processing-overlay');
+    const toastWithMessage = Array.from(toasts).find(t => t.textContent?.includes('Fullscreen API não suportada'));
+    expect(toastWithMessage).toBeTruthy();
+    expect(toastWithMessage?.textContent).toContain('Fullscreen API não suportada');
   });
 
   it('calls requestFullscreen when available', () => {

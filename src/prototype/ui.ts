@@ -52,7 +52,7 @@ body{margin:0;height:100vh;overflow:hidden;background:#09090b}
 .checkpoint{margin:6px 0 16px;padding:9px 11px;border:1px solid #27272a;border-radius:10px;background:#0f0f10;font-size:11px;color:#a1a1aa}
 .checkpoint .checkpoint-title{font-weight:600;color:#e4e4e7;margin-bottom:4px}
 .checkpoint .checkpoint-files{display:flex;flex-wrap:gap:4px;margin-top:4px}
-.checkpoint .checkpoint-file{font-size:10px;color:#71717a;background:#18181b;border:1px solid #27272a;border-radius:4px;padding:1px 6px}
+.checkpoint .checkpoint-file{font-size:10px;color:#a1a1aa;background:#18181b;border:1px solid #27272a;border-radius:4px;padding:1px 6px}
 .checkpoint .checkpoint-sha{font-size:10px;color:#71717a;margin-top:2px}
 /* Agent output (changed files summary) */
 .agent-output{border:1px solid #27272a;border-radius:10px;background:#111113;padding:8px 10px;margin:8px 0 16px}
@@ -108,18 +108,29 @@ iframe{width:100%;height:100%;border:0;background:#fff;display:none}
   .sidebar-toggle{position:fixed;top:12px;left:12px;z-index:100;background:#18181b;border:1px solid #27272a;border-radius:7px;padding:6px 10px;cursor:pointer;font-size:12px;color:#d4d4d8}
   .preview-toggle{position:fixed;top:12px;right:12px;z-index:100;background:#18181b;border:1px solid #27272a;border-radius:7px;padding:6px 10px;cursor:pointer;font-size:12px;color:#d4d4d8}
 }
-/* Processing overlay */
-.processing-overlay{display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;position:absolute;inset:0;background:rgba(9,9,11,.91);z-index:10;text-align:center;color:#fff;padding:24px}
-.spinner{width:40px;height:40px;border:4px solid rgba(255,255,255,.1);border-left-color:#fff;border-radius:50%;animation:spin 1s linear infinite}
+/* Processing overlay — non-blocking progress panel */
+.processing-overlay{display:none;position:fixed;bottom:24px;right:24px;flex-direction:column;gap:12px;background:#18181b;border:1px solid #27272a;border-radius:14px;padding:16px 20px;max-width:340px;z-index:2000;box-shadow:0 20px 60px rgba(0,0,0,.5);transition:transform .2s ease,opacity .2s ease}
+.processing-overlay.show{transform:translateY(0);opacity:1}
+.processing-overlay.hide{transform:translateY(20px);opacity:0}
+.processing-spinner{width:14px;height:14px;border:3px solid rgba(255,255,255,.1);border-left-color:#fff;border-radius:50%;animation:spin 1s linear infinite}
 @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
-.overlay-title{font-weight:700;font-size:16px}
-.overlay-desc{font-size:13px;color:#a1a1aa}
-.overlay-tips{font-size:11px;color:#71717a;margin-top:8px}
+.processing-steps{margin-top:8px}
+.processing-step{display:flex;align-items:center;gap:6px;font-size:11px;color:#a1a1aa}
+.processing-step .dot{width:5px;height:5px;border-radius:50%;background:#52525b;flex-shrink:0}
+.processing-step.done .dot{background:#22c55e;box-shadow:0 0 6px rgba(34,197,94,.5)}
+.processing-step.done{color:#a1a1aa}
+.processing-step.active .dot{background:#3b82f6;box-shadow:0 0 8px rgba(59,130,246,.6);color:#fafafa;font-weight:600}
+.processing-files{display:flex;flex-wrap:wrap;gap:3px;margin-top:6px}
+.processing-file{font-size:10px;color:#a1a1aa;background:#111113;border:1px solid #27272a;border-radius:3px;padding:1px 5px}
+.processing-footer{display:flex;justify-content:space-between;align-items:center;margin-top:8px}
+.timer{font-size:11px;color:#71717a}
+.processing-cancel{border:1px solid #3f3f46;background:#18181b;color:#d4d4d8;border-radius:7px;padding:4px 10px;cursor:pointer;font-size:11px}
+.processing-cancel:hover{background:#27272a}
+.processing-cancel:disabled{opacity:.4;cursor:not-allowed}
 </style>
 </head>
 <body>
 <div class="app">
-  <!-- Sidebar -->
   <section class="sidebar" id="sidebar" role="navigation" aria-label="Sidebar navigation">
     <div class="header">
       <div class="brand"><span class="dot"></span>PUB Prototype</div>
@@ -134,7 +145,6 @@ iframe{width:100%;height:100%;border:0;background:#fff;display:none}
     </div>
   </section>
 
-  <!-- Conversation column -->
   <section class="conversation" id="conversation">
     <div class="chat" id="chat"></div>
     <div class="composer">
@@ -146,10 +156,8 @@ iframe{width:100%;height:100%;border:0;background:#fff;display:none}
     </div>
   </section>
 
-  <!-- Splitter -->
   <div class="splitter" id="splitter"></div>
 
-  <!-- Preview column -->
   <section class="preview" id="preview">
     <div class="preview-header">
       <div class="preview-title"><strong>Live Preview</strong> <span class="status" id="status">Aguardando ideia</span></div>
@@ -172,6 +180,7 @@ iframe{width:100%;height:100%;border:0;background:#fff;display:none}
 </div>
 <script>
 let sessionId=null,source=null,currentUrl=null,activeTimeline=null,checkpoints=[];
+let currentTaskId=null,activeTaskStatus=null,taskStartAt=null,timerInterval=null;
 const STORAGE_KEY='pub-prototype:last-session';
 const LAST_SEQ_KEY='pub-prototype:last-seq';
 const SPLIT_KEY='pub-prototype:split';
@@ -179,6 +188,7 @@ const SIDEBAR_KEY='pub-prototype:sidebar-collapsed';
 const MOBILE_KEY='pub-prototype:mobile-active';
 function $(id){return document.getElementById(id)}
 let sendBtn=document.getElementById('send'),chat=document.getElementById('chat'),progress=document.getElementById('progress');
+let cancelBtn,timerEl,stepsEl,filesEl;
 
 function formatTime(date){
   if(!date) return '';
@@ -194,6 +204,14 @@ function formatTime(date){
     if (diffDay < 2) return 'ontem ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
     return d.toLocaleDateString('pt-BR', {day:'2-digit',month:'2-digit'}) + ' ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
   } catch { return ''; }
+}
+
+function formatElapsed(ms){
+  const s=Math.floor(ms/1000);
+  if(s<60) return s+'s';
+  const m=Math.floor(s/60);
+  const rem=s%60;
+  return m+'m ' + rem + 's';
 }
 
 function add(label,text,timestamp){
@@ -220,20 +238,76 @@ function system(txt){const el=document.createElement('div');el.className='system
 
 function setStatus(txt){$('status').textContent=txt}
 
-function showOverlay(title,desc){
-  $('overlay').style.display='flex';
+// --- Progress Panel (non-blocking) ---
+const STEP_ORDER=['USER_PROMPT','AGENT_STARTED','AGENT_OUTPUT','BUILD_STARTED','BUILD_PASSED','PREVIEW_STARTED','PREVIEW_READY'];
+let stepStates={};
+
+function renderProgressSteps(){
+  if(!stepsEl)return;
+  stepsEl.innerHTML='';
+  STEP_ORDER.forEach(s=>{
+    const div=document.createElement('div');
+    div.className='processing-step '+(stepStates[s]||'');
+    div.innerHTML='<span class="dot"></span><span class="step-label">'+s.replace('_',' ')+'</span>';
+    stepsEl.appendChild(div);
+  });
+}
+
+function setStepStatus(step,status){
+  stepStates[step]=status; // 'done' | 'active'
+  renderProgressSteps();
+}
+
+function startTimer(){
+  if(timerInterval)return;
+  taskStartAt=Date.now();
+  timerInterval=setInterval(()=>{
+    if(timerEl){timerEl.textContent=formatElapsed(Date.now()-taskStartAt);}
+  },500);
+}
+
+function stopTimer(){
+  if(timerInterval){clearInterval(timerInterval);timerInterval=null;}
+  taskStartAt=null;
+}
+
+function showProcessing(title,desc){
+  const overlay=$('overlay');
+  overlay.classList.remove('hide');
+  overlay.classList.add('show');
+  overlay.style.display='block';
   $('overlayTitle').textContent=title;
   $('overlayDesc').textContent=desc;
   sendBtn.disabled=true;
   $('prompt').disabled=true;
-  sendBtn.textContent='Processando...';
+  cancelBtn.disabled=false;
+  startTimer();
 }
 
-function hideOverlay(){
-  $('overlay').style.display='none';
+function hideProcessing(){
+  const overlay=$('overlay');
+  overlay.classList.add('hide');
+  setTimeout(()=>{overlay.style.display='none';},200);
   sendBtn.disabled=false;
   $('prompt').disabled=false;
+  cancelBtn.disabled=true;
   sendBtn.textContent='Enviar';
+  sendBtn.classList.remove('hint');
+  stopTimer();
+  // Reset step states
+  stepStates={};
+}
+
+function setProcessingFiles(files){
+  if(!filesEl)return;
+  filesEl.innerHTML='';
+  if(!files||!files.length)return;
+  files.forEach(f=>{
+    const span=document.createElement('span');
+    span.className='processing-file';
+    span.textContent=f;
+    filesEl.appendChild(span);
+  });
 }
 
 function renderVersions(){
@@ -266,14 +340,10 @@ function renderVersions(){
 function checkpoint(payload,renderPrompt=false){
   const cp={...payload};
   if(cp.id&&!checkpoints.some(x=>x.id===cp.id))checkpoints.push(cp);
-
-  // Render agent-output summary card (files changed)
   const files = cp.changedFiles || [];
   if(renderPrompt && cp.prompt){
     add('Você',cp.prompt);
   }
-
-  // Checkpoint summary card
   const card=document.createElement('div');
   card.className='checkpoint-summary';
   const title=document.createElement('div');
@@ -284,7 +354,6 @@ function checkpoint(payload,renderPrompt=false){
   statusBadge.textContent=cp.buildPassed?'Build OK':'Build falhou';
   title.appendChild(statusBadge);
   card.appendChild(title);
-
   if(files.length > 0){
     const filesEl=document.createElement('div');
     filesEl.className='checkpoint-summary-files';
@@ -301,14 +370,12 @@ function checkpoint(payload,renderPrompt=false){
     });
     card.appendChild(filesEl);
   }
-
   if(cp.commitSha){
     const shaEl=document.createElement('div');
     shaEl.className='checkpoint-summary-sha';
     shaEl.textContent=cp.commitSha.slice(0,8);
     card.appendChild(shaEl);
   }
-
   chat.appendChild(card);
   activeTimeline=null;
   chat.scrollTop=chat.scrollHeight;
@@ -332,24 +399,25 @@ function attachEvents(id){
 
   source.addEventListener('USER_PROMPT',e=>{
     const p=JSON.parse(e.data).payload;
-    step('USER_PROMPT');
+    setStepStatus('USER_PROMPT','done');
     if(p?.prompt&&!p.prompt.startsWith('Restaurar v'))add('Você',p.prompt,p.timestamp);
   });
 
   source.addEventListener('AGENT_STARTED',e=>{
-    step('AGENT_STARTED');
+    setStepStatus('AGENT_STARTED','done');
+    setStepStatus('AGENT_OUTPUT','active');
     setStatus('Construindo');
-    showOverlay('Construindo...','Seu aplicativo está sendo construído.');
+    showProcessing('Construindo seu aplicativo','Agente iniciado. Implementando alterações...');
   });
 
   source.addEventListener('AGENT_OUTPUT',e=>{
     const p=JSON.parse(e.data).payload;
-    step('AGENT_OUTPUT');
-    setStatus('Implementando');
-    showOverlay('Implementando...','Escrevendo arquivos de código.');
-
-    // Render changed files summary
+    setStepStatus('AGENT_OUTPUT','done');
+    setStepStatus('BUILD_STARTED','active');
+    setStatus('Validando');
+    showProcessing('Validando build','Executando testes e checagem de tipos.');
     const files = p?.changedFiles || [];
+    setProcessingFiles(files);
     if(files.length > 0){
       const ao=document.createElement('div');
       ao.className='agent-output';
@@ -378,21 +446,25 @@ function attachEvents(id){
   });
 
   source.addEventListener('BUILD_STARTED',e=>{
-    step('BUILD_STARTED');
+    if(!stepStates['AGENT_OUTPUT'])setStepStatus('AGENT_OUTPUT','done');
+    if(!stepStates['BUILD_STARTED'])setStepStatus('BUILD_STARTED','active');
     setStatus('Validando');
-    showOverlay('Validando...','Executando testes e checagem de tipos.');
+    showProcessing('Validando build','Executando testes e checagem de tipos.');
   });
 
   source.addEventListener('BUILD_PASSED',e=>{
-    step('BUILD_PASSED');
+    setStepStatus('BUILD_STARTED','done');
+    setStepStatus('BUILD_PASSED','done');
+    setStepStatus('PREVIEW_STARTED','active');
     setStatus('Build aprovado');
-    showOverlay('Sucesso!','Build aprovado. Preparando preview.');
+    showProcessing('Preparando preview','Build aprovado. Subindo ao ar.');
   });
 
   source.addEventListener('PREVIEW_STARTED',e=>{
-    step('PREVIEW_STARTED');
+    setStepStatus('PREVIEW_STARTED','done');
+    setStepStatus('PREVIEW_READY','active');
     setStatus('Subindo preview');
-    showOverlay('Preparando preview...','Publicando sua aplicação online.');
+    showProcessing('Preparando preview','Publicando sua aplicação online.');
   });
 
   source.addEventListener('CHECKPOINT_CREATED',e=>{
@@ -403,17 +475,18 @@ function attachEvents(id){
   source.addEventListener('PREVIEW_READY',e=>{
     const ev=JSON.parse(e.data);
     renderPreview(ev.payload?.url||ev.payload?.previewUrl);
-    step('PREVIEW_READY');
+    setStepStatus('PREVIEW_READY','done');
     setStatus('Pronto');
-    hideOverlay();
+    hideProcessing();
     localStorage.setItem(STORAGE_KEY,sessionId);
   });
 
   source.addEventListener('ERROR',e=>{
     const p=JSON.parse(e.data).payload;
-    step('ERROR',p?.message);
+    setStepStatus('AGENT_STARTED','done');
+    setStepStatus('AGENT_OUTPUT','done');
     setStatus('Erro');
-    hideOverlay();
+    hideProcessing();
 
     const card=document.createElement('div');
     card.className='error-card';
@@ -442,9 +515,9 @@ function attachEvents(id){
 
   source.addEventListener('BUILD_FAILED',e=>{
     const p=JSON.parse(e.data).payload;
-    step('BUILD_FAILED',p?.message);
+    setStepStatus('BUILD_STARTED','done');
     setStatus('Falha no build');
-    hideOverlay();
+    hideProcessing();
 
     const card=document.createElement('div');
     card.className='error-card';
@@ -467,7 +540,6 @@ function attachEvents(id){
       card.append(detail,expanded);
     }
 
-    // Add recovery message
     const recovery=document.createElement('div');
     recovery.className='checkpoint-summary';
     recovery.style.borderColor='#71717a';
@@ -485,27 +557,8 @@ function attachEvents(id){
     chat.scrollTop=chat.scrollHeight;
   });
 
-  source.onerror=()=>{setStatus('Reconectando...')};
+  source.onerror=()=>{setStatus('Reconectando...') };
 }
-
-function step(event,detail){
-  const wrap=document.createElement('div');
-  wrap.className='step '+event.toLowerCase();
-  const label=document.createElement('span');
-  label.className='step-label';
-  label.textContent=event;
-  if(detail){
-    label.textContent=event+': '+detail;
-  }
-  const time=document.createElement('span');
-  time.className='step-time';
-  time.textContent=formatTime(new Date());
-  wrap.append(label,time);
-  activeTimeline=wrap;
-  chat.appendChild(wrap);
-}
-
-function clearChat(){chat.replaceChildren();activeTimeline=null}
 
 async function loadSession(id){
   const r=await fetch('/prototype/sessions/'+encodeURIComponent(id));
@@ -531,15 +584,43 @@ async function loadSession(id){
 
   renderVersions();
   if(data.session.previewUrl)renderPreview(data.session.previewUrl);
-  setStatus(data.session.status==='READY'?'Pronto':data.session.status.replaceAll('_',' '));
+
+  // Check for active task to reconstruct processing state
+  const tasks=(data.tasks||[]);
+  const activeTask=tasks.find(t=>['QUEUED','ASSIGNED','RUNNING','TESTING'].includes(t.status));
+  if(activeTask){
+    currentTaskId=activeTask.id;
+    activeTaskStatus=activeTask.status;
+    taskStartAt=new Date(activeTask.createdAt).getTime();
+    // Reconstruct timeline based on task status
+    if(activeTask.status==='QUEUED'){
+      setStepStatus('USER_PROMPT','done');
+      setStepStatus('AGENT_STARTED','active');
+      setStatus('Na fila');
+      showProcessing('Processo na fila','Sua tarefa está aguardando uma unidade de processamento.');
+    }else if(activeTask.status==='RUNNING'){
+      setStepStatus('USER_PROMPT','done');
+      setStepStatus('AGENT_STARTED','done');
+      setStepStatus('AGENT_OUTPUT','active');
+      setStatus('Implementando');
+      showProcessing('Construindo seu aplicativo','Agente está implementando alterações.');
+    }
+  }else if(['BUILDING','PREVIEWING','CREATING'].includes(data.session.status)){
+    // Fallback: session status indicates active processing but no task found
+    setStepStatus('USER_PROMPT','done');
+    setStepStatus('AGENT_STARTED','active');
+    setStatus(data.session.status==='BUILDING'?'Construindo':data.session.status.replaceAll('_',' '));
+    showProcessing('Construindo seu aplicativo...','Seu projeto continua sendo processado no servidor.');
+  }
+
+  // Set session status
+  if(!activeTask){
+    setStatus(data.session.status==='READY'?'Pronto':(data.session.status||'Criando').replaceAll('_',' '));
+    hideProcessing();
+  }
+
   attachEvents(id);
   localStorage.setItem(STORAGE_KEY,id);
-  hideOverlay();
-
-  if(['BUILDING','PREVIEWING','CREATING'].includes(data.session.status)){
-    showOverlay('Construindo seu aplicativo...','Seu projeto continua sendo processado no servidor.');
-    step('AGENT_STARTED');
-  }
 }
 
 async function createSession(){
@@ -559,11 +640,14 @@ async function createSession(){
   return s;
 }
 
+function clearChat(){chat.replaceChildren();activeTimeline=null;}
+
 async function send(){
   const text=$('prompt').value.trim();
   if(!text||sendBtn.disabled)return;
 
-  showOverlay('Construindo...','Seu aplicativo está sendo construído.');
+  showProcessing('Enviando...','Sua solicitação está sendo processada.');
+  setStepStatus('USER_PROMPT','active');
   add('Você',text);
   $('prompt').value='';
   $('prompt').style.height='auto';
@@ -586,28 +670,58 @@ async function send(){
       throw new Error(parsed.error||err);
     }
 
-    // Show hint in send button while processing
+    const result=await r.json();
+
+    // Store task ID for cancellation
+    if(result?.task?.id){
+      currentTaskId=result.task.id;
+    }
+
+    // Update send button to show "Enviado"
     sendBtn.textContent='Enviado';
     sendBtn.classList.add('hint');
+    sendBtn.disabled=false; // Still allow seeing the button text
 
+    setStepStatus('USER_PROMPT','done');
     setStatus('Tarefa enfileirada');
   }catch(e){
     add('PP','Erro: '+(e?.message||String(e)));
     setStatus('Erro');
-    hideOverlay();
+    hideProcessing();
     progress.style.width='100%';
     sendBtn.textContent='Enviar';
     sendBtn.classList.remove('hint');
   }
 }
 
+async function cancelTask(){
+  if(!currentTaskId)return;
+  cancelBtn.disabled=true;
+  try{
+    const r=await fetch('/prototype/tasks/'+encodeURIComponent(currentTaskId)+'?action=cancel',{method:'POST'});
+    if(r.ok){
+      add('PP','Tarefa cancelada pelo usuário.');
+      setStatus('Cancelado');
+      hideProcessing();
+      step('CANCELLED');
+    }else{
+      const err=await r.text();
+      add('PP','Erro ao cancelar: '+err);
+    }
+  }catch(e){
+    add('PP','Erro ao cancelar: '+(e?.message||String(e)));
+  }finally{
+    cancelBtn.disabled=false;
+  }
+}
+
 function restore(cp){
   if(!sessionId||sendBtn.disabled)return;
   if(!window.confirm('Restaurar a v'+cp.promptIndex+'? Isso cria uma nova versão a partir desse snapshot e preserva o histórico.'))return;
-  showOverlay('Restaurando v'+cp.promptIndex+'...','Aguarde o carregamento do checkpoint.');
+  showProcessing('Restaurando...','Carregando checkpoint v'+(cp.promptIndex||cp.id?.slice(0,8)));
   add('Você','Restaurar v'+cp.promptIndex);
   activeTimeline=null;
-  progress.style.width('8%');
+  progress.style.width='8%';
   fetch('/prototype/sessions/'+encodeURIComponent(sessionId)+'/restore/'+encodeURIComponent(cp.id),{method:'POST'})
     .then(r=>{
       if(!r.ok)throw new Error(r.statusText);
@@ -616,7 +730,7 @@ function restore(cp){
     .catch(e=>{
       add('PP','Erro ao restaurar: '+(e?.message||String(e)));
       setStatus('Erro');
-      hideOverlay();
+      hideProcessing();
     });
 }
 
@@ -649,12 +763,17 @@ function enterFullscreen(){
   }else if(el.webkitRequestFullscreen){
     el.webkitRequestFullscreen();
   }else{
-    const tips=$('overlayTips');
-    if(tips){
-      tips.textContent='Fullscreen API não suportada neste navegador.';
-      $('overlay').style.display='flex';
-    }
+    showToast('Fullscreen API não suportada neste navegador.');
   }
+}
+
+function showToast(message, duration=3000){
+  const toast=document.createElement('div');
+  toast.className='processing-overlay show';
+  toast.style.cssText='position:fixed;top:24px;left:50%;transform:translateX(-50%);right:auto;bottom:auto;max-width:400px;text-align:center;display:flex;flex-direction:column;gap:4px;padding:12px 16px;z-index:3000';
+  toast.innerHTML='<div class="processing-title" style="font-size:12px">'+message+'</div>';
+  document.body.appendChild(toast);
+  setTimeout(()=>{toast.remove();},duration);
 }
 
 function exitFullscreen(){if(document.exitFullscreen){document.exitFullscreen();}else if(document.webkitExitFullscreen){document.webkitExitFullscreen();}}
@@ -704,6 +823,7 @@ chat.addEventListener('scroll',()=>{
 
 $('scrollBottom').addEventListener('click',()=>{chat.scrollTop=chat.scrollHeight;});
 $('send').addEventListener('click',send);
+$('cancelBtn').addEventListener('click',cancelTask);
 
 $('refresh').addEventListener('click',()=>{if(currentUrl)$('iframe').src=currentUrl});
 $('open').addEventListener('click',()=>{if(currentUrl)window.open(currentUrl,'_blank','noopener,noreferrer')});
@@ -725,28 +845,29 @@ $('fullscreen').addEventListener('click',()=>{
 // Composer: Enter = send, Shift+Enter = newline, Ctrl/Cmd+Enter = send
 $('prompt').addEventListener('keydown',e=>{
   if(e.key==='Enter'){
-    if(e.shiftKey){
-      // Shift+Enter: insert newline (let default happen)
-      return;
-    }
+    if(e.shiftKey){return;}
     if(e.ctrlKey||e.metaKey){
       e.preventDefault();
       send();
       return;
     }
-    // Plain Enter: send
     e.preventDefault();
     send();
   }
 });
 
 window.addEventListener('load',async()=>{
+  // Lazy-init elements that appear after the script tag in the DOM
+  cancelBtn=document.getElementById('cancelBtn');
+  timerEl=document.getElementById('timer');
+  stepsEl=document.getElementById('processingSteps');
+  filesEl=document.getElementById('processingFiles');
+
   system('Descreva uma ideia e o PP cria a sessão, constrói o MVP e abre o preview ao lado.');
   const last=localStorage.getItem(STORAGE_KEY);
   if(last){
     try{await loadSession(last)}catch{localStorage.removeItem(STORAGE_KEY)}
   }
-  hideOverlay();
   const sbCollapsed = localStorage.getItem(SIDEBAR_KEY);
   if(sbCollapsed==='1'){$('sidebar').classList.add('collapsed');}
   const mobileActive = localStorage.getItem(MOBILE_KEY)||'conversation';
@@ -762,7 +883,7 @@ window.addEventListener('load',async()=>{
   initSplitter();
 });
 </script>
-<div class="processing-overlay" id="overlay"><div class="spinner"></div><div class="overlay-title" id="overlayTitle"></div><div class="overlay-desc" id="overlayDesc"></div><div class="overlay-tips" id="overlayTips"></div></div>
+<div class="processing-overlay" id="overlay"><div class="processing-header"><div class="processing-spinner"></div><div class="processing-title" id="overlayTitle"></div></div><div class="processing-desc" id="overlayDesc"></div><div class="processing-steps" id="processingSteps"></div><div class="processing-files" id="processingFiles"></div><div class="processing-footer"><span class="timer" id="timer">0s</span><button class="processing-cancel" id="cancelBtn" disabled>Cancelar</button></div></div>
 </body>
 </html>`;
 }
