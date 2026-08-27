@@ -177,8 +177,9 @@ const LAST_SEQ_KEY='pub-prototype:last-seq';
 const SPLIT_KEY='pub-prototype:split';
 const SIDEBAR_KEY='pub-prototype:sidebar-collapsed';
 const MOBILE_KEY='pub-prototype:mobile-active';
-
 function $(id){return document.getElementById(id)}
+let sendBtn=document.getElementById('send'),chat=document.getElementById('chat'),progress=document.getElementById('progress');
+
 function formatTime(date){
   if(!date) return '';
   try {
