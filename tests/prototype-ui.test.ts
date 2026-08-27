@@ -9,7 +9,7 @@ describe('Prototype UI', () => {
     expect(html).toContain('EventSource');
     expect(html).toContain('/prototype/sessions/');
     expect(html).toContain('iframe');
-    expect(html).toContain('Monte um sistema para gerenciamento de uma barbearia');
+    expect(html).toContain('Descreva uma ideia e o PP cria o MVP');
     expect(html).toContain('Version History');
     expect(html).toContain('Restaurar');
   });
