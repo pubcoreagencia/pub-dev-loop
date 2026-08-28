@@ -33,6 +33,7 @@ export interface Env {
   PROTOTYPE_TEMPLATE_REPOSITORY?: string;
   PROTOTYPE_PROTOTYPES_REPO?: string;
   PROTOTYPE_PERSISTENT_PUSH?: string;
+  PROTOTYPE_BOT_TOKEN?: string;
 }
 
 export class PubDevLoopWorkerContainer extends Container<Env> {
@@ -288,6 +289,10 @@ async function triggerContainerWorker(env: Env): Promise<void> {
       ROUTER_MODEL: env.ROUTER_MODEL || '',
       ROUTER_FALLBACK_MODELS: env.ROUTER_FALLBACK_MODELS || '',
       AGENT_PROVIDER: env.AGENT_PROVIDER || 'gateway',
+      PROTOTYPE_TEMPLATE_REPOSITORY: env.PROTOTYPE_TEMPLATE_REPOSITORY || 'https://github.com/pubcoreagencia/pub-dev-loop-template.git',
+      PROTOTYPE_PROTOTYPES_REPO: env.PROTOTYPE_PROTOTYPES_REPO || 'pubcoreagencia/pub-dev-loop-prototypes',
+      PROTOTYPE_PERSISTENT_PUSH: env.PROTOTYPE_PERSISTENT_PUSH || 'false',
+      PROTOTYPE_BOT_TOKEN: env.PROTOTYPE_BOT_TOKEN || '',
       WORKER_POLL_INTERVAL_MS: '3000',
       WORKER_LEASE_TIMEOUT_MS: '30000',
       WORKER_HEARTBEAT_MS: '10000',
