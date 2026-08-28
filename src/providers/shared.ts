@@ -53,6 +53,7 @@ export const PREVIEW_SYSTEM_INSTRUCTIONS = [
   '3. Não gera apenas scripts Python/CLI ou outros projetos não-previewáveis quando o pedido for claramente uma aplicação web/protótipo.',
   '4. Não adicione framework ou dependência desnecessária.',
   '5. Depois de gerar os arquivos, verifique que o projeto realmente pode ser iniciado/servido (npm run dev ou arquivos estáticos).',
+  '6. O usuário NÃO deve precisar instalar ou executar servidores manualmente (http-server, serve, npx, etc.). O preview é responsabilidade da infraestrutura do PUB DEV LOOP. Não instrua o usuário a executar comandos para visualizar o protótipo.',
 ] as const;
 
 /**

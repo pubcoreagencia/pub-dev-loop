@@ -94,6 +94,13 @@ describe('PREVIEW_SYSTEM_INSTRUCTIONS', () => {
     expect(text).toMatch(/verifique|verify/i);
     expect(text).toContain('npm run dev');
   });
+
+  it('explicitly says the user must NOT start servers manually', () => {
+    const text = PREVIEW_SYSTEM_INSTRUCTIONS.join('\n');
+    expect(text.toLowerCase()).toMatch(/não.*manualmente|not.*manually/i);
+    expect(text).toMatch(/http-server|serve/);
+    expect(text.toLowerCase()).toMatch(/usuário|user/);
+  });
 });
 
 // ── SHARED_SYSTEM_INSTRUCTIONS regression ──────────────────────────────────
