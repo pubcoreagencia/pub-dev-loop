@@ -115,11 +115,17 @@ export function pushBranch(workspace: string, branch: string): PushResult {
     });
 
     // Push the branch
-    execFileSync('git', ['push', '-u', 'origin', branch, '--force-with-lease'], {
-      cwd: workspace,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 60000,
-    });
+    try {
+      const pushOutput = execFileSync('git', ['push', '-u', 'origin', branch, '--force-with-lease'], {
+        cwd: workspace,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 60000,
+      });
+      console.log('[github-app] push output:', pushOutput?.toString()?.slice(0, 500));
+    } catch (pushError: any) {
+      console.error('[github-app] push failed:', pushError.message?.slice(0, 500), 'stderr:', pushError.stderr?.toString()?.slice(0, 500));
+      throw pushError;
+    }
 
     // SECURITY: remove the remote (with the token) from git config immediately
     try {
