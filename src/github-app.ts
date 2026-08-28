@@ -31,6 +31,9 @@ export const PROTOTYPE_REPOSITORY = 'pubcoreagencia/pub-dev-loop-prototypes';
  */
 export function getGitHubToken(): string {
   const envToken = process.env.PROTOTYPE_BOT_TOKEN || process.env.GITHUB_TOKEN;
+  console.log('[github-app] getGitHubToken: env keys with token:',
+    process.env.PROTOTYPE_BOT_TOKEN ? 'PROTOTYPE_BOT_TOKEN' : (process.env.GITHUB_TOKEN ? 'GITHUB_TOKEN' : 'NONE'),
+    'length:', envToken ? envToken.length : 0);
   if (envToken && envToken.trim().length > 0) {
     return envToken.trim();
   }
