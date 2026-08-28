@@ -99,31 +99,48 @@ export class PrototypeWorker {
 
       await mkdir(WORKSPACE_ROOT, { recursive: true });
 
-      // Determine which repository and branch to use.
-      // If persistent push is enabled AND the session has a persistent repo/branch,
-      // fetch from the persistent repo instead of cloning the template.
+      // Determine which repository to use.
+      // Architecture:
+      //   - session.repository = persistent repo (where commits are pushed)
+      //   - template = base for the first clone (has package.json, etc.)
+      //   - For 1st task: clone template, push to persistent
+      //   - For 2nd+ tasks: clone persistent, fetch existing branch
       const { PROTOTYPE_REPOSITORY, getGitHubToken } = await import('./github-app.js');
-      const usePersistentRepo =
+      const usePersistentPush =
         process.env.PROTOTYPE_PERSISTENT_PUSH === 'true' &&
         !!getGitHubToken();
 
-      const cloneUrl = usePersistentRepo
+      const templateRepo = process.env.PROTOTYPE_TEMPLATE_REPOSITORY
+        || 'https://github.com/pubcoreagencia/pub-dev-loop-template.git';
+
+      const persistentUrl = usePersistentPush
         ? `https://x-access-token:${getGitHubToken()}@github.com/${PROTOTYPE_REPOSITORY}.git`
-        : task.repository;
+        : null;
 
       if (!await directoryExists(path.join(workspace, '.git'))) {
         await mkdir(workspace, { recursive: true });
-        git(['clone', cloneUrl, workspace]);
+        // Clone from task.repository (template for legacy, persistent for new).
+        // The persistent push happens in finalizer.
+        git(['clone', task.repository, workspace]);
       }
 
       // If persistent push is enabled, try to fetch the existing branch.
       // If the branch exists remotely, checkout from it (continue from last checkpoint).
-      // If not, create a new branch from main.
-      if (usePersistentRepo) {
+      // If not, create a new branch from current HEAD (which is template's main).
+      if (usePersistentPush && persistentUrl) {
+        // Set up origin to point to the persistent repo
+        try {
+          execFileSync('git', ['remote', 'remove', 'origin'], {
+            cwd: workspace, stdio: 'pipe', timeout: 5000,
+          });
+        } catch { /* ignore */ }
+        execFileSync('git', ['remote', 'add', 'origin', persistentUrl], {
+          cwd: workspace, stdio: 'pipe', timeout: 5000,
+        });
+
         try {
           // Try to fetch the specific branch from origin
           git(['fetch', 'origin', branch], workspace);
-          // Check if the branch exists remotely
           try {
             const revParse = execFileSync('git', ['rev-parse', '--verify', `origin/${branch}`], {
               cwd: workspace, encoding: 'utf8', stdio: 'pipe',
@@ -142,11 +159,9 @@ export class PrototypeWorker {
               git(['checkout', '-B', branch], workspace);
             }
           } catch {
-            // Branch doesn't exist remotely — create from main
             git(['checkout', '-B', branch], workspace);
           }
         } catch {
-          // Fetch failed (network or auth) — fallback to local branch
           git(['checkout', '-B', branch], workspace);
         }
         // SECURITY: remove the remote (with token) from git config

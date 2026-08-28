@@ -221,7 +221,7 @@ describe('PreviewRecoveryService - Git-based reconstruction', () => {
 
     it('deve falhar com GIT_CLONE_FAILED se clone falhar', async () => {
       const id = 'clone-fail-' + Date.now();
-      mockPrototypes.addSession(makeSession({ id, repository: 'https://github.com/invalid/repo.git' }));
+      mockPrototypes.addSession(makeSession({ id }));
 
       mockExecFileSync.mockImplementation((cmd: string, args: any) => {
         if (cmd === 'git' && args?.[0] === 'clone') throw new Error('not found');

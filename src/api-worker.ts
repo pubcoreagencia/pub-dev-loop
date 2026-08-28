@@ -31,6 +31,8 @@ export interface Env {
   AGENT_PROVIDER?: string;
   PUB_DEV_LOOP_API_KEY?: string;
   PROTOTYPE_TEMPLATE_REPOSITORY?: string;
+  PROTOTYPE_PROTOTYPES_REPO?: string;
+  PROTOTYPE_PERSISTENT_PUSH?: string;
 }
 
 export class PubDevLoopWorkerContainer extends Container<Env> {
@@ -466,7 +468,12 @@ export default {
           return new Response(JSON.stringify({ error: 'project is required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
         }
         const prototypes = getPrototypesRepository(env);
+
+        // Legacy: session.repository is the template base.
+        // For recovery, the PreviewRecoveryService uses a hard-coded
+        // whitelist of the persistent repository instead of session.repository.
         const defaultRepo = env.PROTOTYPE_TEMPLATE_REPOSITORY || 'https://github.com/pubcoreagencia/pub-dev-loop-template.git';
+
         const session = await prototypes.createSession({
           project: project.trim(),
           repository: (typeof repository === 'string' && repository.trim()) ? repository.trim() : defaultRepo,

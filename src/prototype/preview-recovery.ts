@@ -153,17 +153,19 @@ export class PreviewRecoveryService {
       throw { code: 'WORKSPACE_MISSING', message: 'Session has no repository URL' } as PreviewRecoveryError;
     }
 
-    // SECURITY: enforce whitelist for prototype recovery repository
-    // Disabled by default to maintain backwards compatibility. Enable in
-    // production via env var: PROTOTYPE_PERSISTENT_PUSH=true
-    if (process.env.PROTOTYPE_PERSISTENT_PUSH === 'true') {
-      const allowedRepo = process.env.PROTOTYPE_PROTOTYPES_REPO ?? 'pubcoreagencia/pub-dev-loop-prototypes';
-      if (!session.repository.endsWith(allowedRepo) && !session.repository.includes(`/${allowedRepo}`)) {
-        throw {
-          code: 'WORKSPACE_MISSING',
-          message: `Session repository ${session.repository} does not match allowed persistent repo ${allowedRepo}`,
-        } as PreviewRecoveryError;
-      }
+    // SECURITY: enforce hard whitelist for prototype recovery repository.
+    // The recovery ALWAYS clones from the persistent repository
+    // (pub-dev-loop-prototypes), not the template. This ensures we can
+    // checkout the lastCheckpointSha, which is pushed to the persistent repo.
+    const allowedRepo = 'pubcoreagencia/pub-dev-loop-prototypes';
+    const sessionRepoPath = session.repository
+      .replace('https://github.com/', '')
+      .replace('.git', '');
+    if (sessionRepoPath !== allowedRepo && !sessionRepoPath.endsWith('/' + allowedRepo)) {
+      throw {
+        code: 'WORKSPACE_MISSING',
+        message: `Session repository ${session.repository} does not match persistent repo ${allowedRepo}. Cannot recover legacy sessions.`,
+      } as PreviewRecoveryError;
     }
 
     const workspacePath = await this.reconstructWorkspace(session as PrototypeSession);
