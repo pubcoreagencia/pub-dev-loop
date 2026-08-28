@@ -823,7 +823,6 @@ chat.addEventListener('scroll',()=>{
 
 $('scrollBottom').addEventListener('click',()=>{chat.scrollTop=chat.scrollHeight;});
 $('send').addEventListener('click',send);
-$('cancelBtn').addEventListener('click',cancelTask);
 
 $('refresh').addEventListener('click',()=>{if(currentUrl)$('iframe').src=currentUrl});
 $('open').addEventListener('click',()=>{if(currentUrl)window.open(currentUrl,'_blank','noopener,noreferrer')});
@@ -862,6 +861,8 @@ window.addEventListener('load',async()=>{
   timerEl=document.getElementById('timer');
   stepsEl=document.getElementById('processingSteps');
   filesEl=document.getElementById('processingFiles');
+  // Attach cancel button event listener after DOM is ready
+  cancelBtn.addEventListener('click',cancelTask);
 
   system('Descreva uma ideia e o PP cria a sessão, constrói o MVP e abre o preview ao lado.');
   const last=localStorage.getItem(STORAGE_KEY);
