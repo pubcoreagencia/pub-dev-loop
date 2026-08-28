@@ -13,7 +13,7 @@ body{margin:0;height:100vh;overflow:hidden;background:#09090b}
 /* Sidebar */
 .sidebar{display:flex;flex-direction:column;border-right:1px solid #27272a;background:#111113;overflow:auto}
 .sidebar.collapsed{width:40px;padding:0;border:none;display:flex;overflow:hidden}
-.sidebar.collapsed .brand,.sidebar.collapsed .project-label,.sidebar.collapsed .session,.sidebar.collapsed .versions {display:none}
+.sidebar.collapsed .brand,.sidebar.collapsed .project-label,.sidebar.collapsed .session,.sidebar.collapsed .versions,.sidebar.collapsed .projects-section {display:none}
 .sidebar .header{height:60px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid #27272a;font-weight:700}
 .sidebar .brand{display:flex;align-items:center;gap:8px}
 .sidebar .dot{width:9px;height:9px;border-radius:50%;background:#fff;box-shadow:0 0 14px rgba(255,255,255,.6)}
@@ -28,6 +28,35 @@ body{margin:0;height:100vh;overflow:hidden;background:#09090b}
 .sidebar .version-meta{font-size:10px;color:#71717a;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sidebar .version button{border:1px solid #3f3f46;background:#18181b;color:#d4d4d8;border-radius:7px;padding:6px 8px;cursor:pointer;font-size:10px}
 .sidebar .version button:disabled{opacity:.4;cursor:not-allowed}
+/* Projects list */
+.projects-section{margin:12px;border-top:1px solid #27272a;padding-top:12px}
+.projects-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#a1a1aa;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.projects-title button{border:1px solid #3f3f46;background:#18181b;color:#d4d4d8;border-radius:7px;padding:4px 8px;cursor:pointer;font-size:10px}
+.projects-title button:hover{background:#27272a}
+.project-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:7px;cursor:pointer;border:1px solid transparent;margin-bottom:4px;transition:background .15s,border-color .15s}
+.project-item:hover{background:#18181b;border-color:#27272a}
+.project-item.active{background:#18181b;border-color:#3b82f6}
+.project-item .project-status{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.project-item .project-status.ready{background:#22c55e;box-shadow:0 0 6px rgba(34,197,94,.5)}
+.project-item .project-status.building{background:#3b82f6;box-shadow:0 0 6px rgba(59,130,246,.5);animation:pulse 1.5s infinite}
+.project-item .project-status.failed{background:#ef4444;box-shadow:0 0 6px rgba(239,68,68,.5)}
+.project-item .project-status.creating{background:#f59e0b;box-shadow:0 0 6px rgba(245,158,11,.5)}
+.project-item .project-info{flex:1;min-width:0}
+.project-item .project-name{font-size:12px;color:#e4e4e7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.project-item .project-meta{font-size:10px;color:#71717a;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+/* Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:3000;align-items:center;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal-content{background:#18181b;border:1px solid #27272a;border-radius:14px;padding:24px;width:400px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.modal-title{font-size:16px;font-weight:600;color:#e4e4e7;margin-bottom:16px}
+.modal-label{font-size:12px;color:#a1a1aa;margin-bottom:6px}
+.modal-input{width:100%;border:1px solid #3f3f46;background:#111113;color:#fff;border-radius:8px;padding:10px 12px;outline:none;font-family:inherit;font-size:13px;margin-bottom:16px}
+.modal-input:focus{border-color:#3b82f6}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end}
+.modal-actions button{border:1px solid #3f3f46;background:#18181b;color:#d4d4d8;border-radius:7px;padding:8px 16px;cursor:pointer;font-size:12px}
+.modal-actions button.primary{background:#3b82f6;border-color:#3b82f6;color:#fff}
+.modal-actions button:hover{opacity:.9}
 /* Conversation */
 .conversation{display:flex;flex-direction:column;height:100vh;overflow:hidden}
 .chat{flex:1;overflow:auto;padding:12px}
@@ -136,7 +165,10 @@ iframe{width:100%;height:100%;border:0;background:#fff;display:none}
       <div class="brand"><span class="dot"></span>PUB Prototype</div>
       <button id="collapseSidebar" title="Recolher" aria-label="Collapse sidebar">☰</button>
     </div>
-    <div class="toolbar"><button id="newProject" aria-label="New project">Novo</button></div>
+    <div class="projects-section">
+      <div class="projects-title"><span>PROJETOS</span><button id="newProject" aria-label="New project">+ Novo</button></div>
+      <div id="projectsList"></div>
+    </div>
     <div class="project-label" id="projectLabel" aria-label="Current project">Projeto: <span id="projectName"></span></div>
     <div class="session" id="sessionBox" aria-label="Current session"></div>
     <div class="versions" id="versions" aria-label="Version history">
@@ -178,9 +210,24 @@ iframe{width:100%;height:100%;border:0;background:#fff;display:none}
     <div class="preview-url" id="previewUrl"></div>
   </section>
 </div>
+
+<!-- Modal for new project -->
+<div class="modal-overlay" id="newProjectModal">
+  <div class="modal-content">
+    <div class="modal-title">Novo projeto</div>
+    <div class="modal-label">Nome do projeto</div>
+    <input type="text" class="modal-input" id="newProjectName" placeholder="Ex: Sistema para Padaria" maxlength="60">
+    <div class="modal-actions">
+      <button id="cancelNewProject">Cancelar</button>
+      <button id="confirmNewProject" class="primary">Criar projeto</button>
+    </div>
+  </div>
+</div>
+
 <script>
 let sessionId=null,source=null,currentUrl=null,activeTimeline=null,checkpoints=[];
 let currentTaskId=null,activeTaskStatus=null,taskStartAt=null,timerInterval=null;
+let projectsCache=[];
 const STORAGE_KEY='pub-prototype:last-session';
 const LAST_SEQ_KEY='pub-prototype:last-seq';
 const SPLIT_KEY='pub-prototype:split';
@@ -621,11 +668,12 @@ async function loadSession(id){
 
   attachEvents(id);
   localStorage.setItem(STORAGE_KEY,id);
+  // Update projects list to highlight active project
+  renderProjects();
 }
 
-async function createSession(){
-  const project=$('projectName').textContent.trim()||'untitled-prototype';
-  const r=await fetch('/prototype/sessions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({project})});
+async function createSession(projectName){
+  const r=await fetch('/prototype/sessions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({project:projectName})});
   if(!r.ok)throw new Error(await r.text());
   const s=await r.json();
   sessionId=s.id;
@@ -635,6 +683,7 @@ async function createSession(){
   localStorage.removeItem(LAST_SEQ_KEY);
   $('sessionBox').style.display='block';
   $('sessionBox').textContent='Sessão '+s.id;
+  $('projectName').textContent=projectName;
   attachEvents(sessionId);
   add('PP','Sessão criada. Descreva sua ideia e o PP constrói o MVP.');
   return s;
@@ -656,7 +705,7 @@ async function send(){
   progress.style.width='4%';
 
   try{
-    if(!sessionId)await createSession();
+    if(!sessionId)await createSession($('projectName').textContent.trim()||'untitled-prototype');
     fetch('/prototype/sessions/'+encodeURIComponent(sessionId)+'/messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({role:'user',content:text})}).catch(()=>{});
 
     const r=await fetch('/prototype/sessions/'+encodeURIComponent(sessionId)+'/prompts',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({prompt:text})});
@@ -808,6 +857,113 @@ function initSplitter(){
   if(saved){document.querySelector('.app').style.gridTemplateColumns=saved;}
 }
 
+// --- Projects list ---
+async function loadProjects(){
+  try{
+    const r=await fetch('/prototype/sessions');
+    if(!r.ok)throw new Error('Failed to load sessions');
+    const data=await r.json();
+    const sessions=Array.isArray(data)?data:[];
+    // Group by project, keep most recent session per project
+    const projectMap=new Map();
+    sessions.forEach(s=>{
+      const existing=projectMap.get(s.project);
+      if(!existing||new Date(s.updatedAt)>new Date(existing.updatedAt)){
+        projectMap.set(s.project,s);
+      }
+    });
+    projectsCache=Array.from(projectMap.values()).sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt));
+    renderProjects();
+  }catch(e){
+    console.error('Failed to load projects:',e);
+    projectsCache=[];
+    renderProjects();
+  }
+}
+
+function getStatusLabel(status){
+  if(!status) return '';
+  const map={
+    'READY':'Pronto',
+    'BUILDING':'Construindo',
+    'PREVIEWING':'Preparando preview',
+    'CREATING':'Criando',
+    'FAILED':'Falhou',
+    'CANCELLED':'Cancelado',
+    'ARCHIVED':'Arquivado'
+  };
+  return map[status]||status;
+}
+
+function getStatusClass(status){
+  if(status==='READY')return 'ready';
+  if(status==='BUILDING'||status==='PREVIEWING'||status==='CREATING')return 'building';
+  if(status==='FAILED')return 'failed';
+  return 'creating';
+}
+
+function renderProjects(){
+  const list=$('projectsList');
+  if(!list)return;
+  list.innerHTML='';
+  if(!projectsCache.length){
+    list.innerHTML='<div style="font-size:11px;color:#71717a;padding:8px 10px">Nenhum projeto ainda. Clique em + Novo para começar.</div>';
+    return;
+  }
+  projectsCache.forEach(p=>{
+    const el=document.createElement('div');
+    el.className='project-item'+(p.id===sessionId?' active':'');
+    el.innerHTML='<span class="project-status '+getStatusClass(p.status)+'"></span>'+
+      '<div class="project-info">'+
+        '<div class="project-name">'+escapeHtml(p.project||'Sem nome')+'</div>'+
+        '<div class="project-meta">'+getStatusLabel(p.status)+' · '+formatTime(p.updatedAt)+'</div>'+
+      '</div>';
+    el.onclick=()=>selectProject(p.id);
+    list.appendChild(el);
+  });
+}
+
+function escapeHtml(str){
+  const div=document.createElement('div');
+  div.textContent=str;
+  return div.innerHTML;
+}
+
+async function selectProject(id){
+  if(id===sessionId)return;
+  try{
+    await loadSession(id);
+  }catch(e){
+    add('PP','Erro ao carregar projeto: '+(e?.message||String(e)));
+  }
+}
+
+function showNewProjectModal(){
+  const modal=$('newProjectModal');
+  const input=$('newProjectName');
+  modal.classList.add('show');
+  input.value='';
+  setTimeout(()=>input.focus(),100);
+}
+
+function hideNewProjectModal(){
+  $('newProjectModal').classList.remove('show');
+}
+
+async function confirmNewProject(){
+  const input=$('newProjectName');
+  const name=input.value.trim();
+  if(!name)return;
+  hideNewProjectModal();
+  try{
+    const s=await createSession(name);
+    await loadProjects();
+    await loadSession(s.id);
+  }catch(e){
+    add('PP','Erro ao criar projeto: '+(e?.message||String(e)));
+  }
+}
+
 $('prompt').addEventListener('input',function(){
   this.style.height='auto';
   this.style.height=Math.min(this.scrollHeight,300)+'px';
@@ -827,11 +983,16 @@ $('send').addEventListener('click',send);
 $('refresh').addEventListener('click',()=>{if(currentUrl)$('iframe').src=currentUrl});
 $('open').addEventListener('click',()=>{if(currentUrl)window.open(currentUrl,'_blank','noopener,noreferrer')});
 
-$('newProject').addEventListener('click',()=>{
-  if(source)source.close();
-  localStorage.removeItem(STORAGE_KEY);
-  localStorage.removeItem(LAST_SEQ_KEY);
-  location.reload();
+// New project button - show modal
+$('newProject').addEventListener('click',showNewProjectModal);
+$('cancelNewProject').addEventListener('click',hideNewProjectModal);
+$('confirmNewProject').addEventListener('click',confirmNewProject);
+$('newProjectName').addEventListener('keydown',e=>{
+  if(e.key==='Enter')confirmNewProject();
+  if(e.key==='Escape')hideNewProjectModal();
+});
+$('newProjectModal').addEventListener('click',e=>{
+  if(e.target===$('newProjectModal'))hideNewProjectModal();
 });
 
 $('collapseSidebar').addEventListener('click',toggleSidebar);
@@ -865,10 +1026,8 @@ window.addEventListener('load',async()=>{
   cancelBtn.addEventListener('click',cancelTask);
 
   system('Descreva uma ideia e o PP cria a sessão, constrói o MVP e abre o preview ao lado.');
-  const last=localStorage.getItem(STORAGE_KEY);
-  if(last){
-    try{await loadSession(last)}catch{localStorage.removeItem(STORAGE_KEY)}
-  }
+
+  // Synchronous UI setup (must run before async operations for test compatibility)
   const sbCollapsed = localStorage.getItem(SIDEBAR_KEY);
   if(sbCollapsed==='1'){$('sidebar').classList.add('collapsed');}
   const mobileActive = localStorage.getItem(MOBILE_KEY)||'conversation';
@@ -882,8 +1041,24 @@ window.addEventListener('load',async()=>{
     }
   }
   initSplitter();
-  // Ensure composer is enabled on fresh load (no session or after session restore attempt)
+  // Ensure composer is enabled on fresh load
   hideProcessing();
+
+  // Async: load projects list
+  await loadProjects();
+
+  // Determine which session to open
+  const last=localStorage.getItem(STORAGE_KEY);
+  let targetId=last;
+
+  // If no last session or last session not in list, use most recent project
+  if(!targetId||!projectsCache.find(p=>p.id===targetId)){
+    targetId=projectsCache.length>0?projectsCache[0].id:null;
+  }
+
+  if(targetId){
+    try{await loadSession(targetId)}catch{localStorage.removeItem(STORAGE_KEY)}
+  }
 });
 </script>
 <div class="processing-overlay" id="overlay"><div class="processing-header"><div class="processing-spinner"></div><div class="processing-title" id="overlayTitle"></div></div><div class="processing-desc" id="overlayDesc"></div><div class="processing-steps" id="processingSteps"></div><div class="processing-files" id="processingFiles"></div><div class="processing-footer"><span class="timer" id="timer">0s</span><button class="processing-cancel" id="cancelBtn" disabled>Cancelar</button></div></div>
