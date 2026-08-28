@@ -881,6 +881,8 @@ window.addEventListener('load',async()=>{
     }
   }
   initSplitter();
+  // Ensure composer is enabled on fresh load (no session or after session restore attempt)
+  hideProcessing();
 });
 </script>
 <div class="processing-overlay" id="overlay"><div class="processing-header"><div class="processing-spinner"></div><div class="processing-title" id="overlayTitle"></div></div><div class="processing-desc" id="overlayDesc"></div><div class="processing-steps" id="processingSteps"></div><div class="processing-files" id="processingFiles"></div><div class="processing-footer"><span class="timer" id="timer">0s</span><button class="processing-cancel" id="cancelBtn" disabled>Cancelar</button></div></div>
