@@ -9,6 +9,8 @@
 - Preview real foi validado no Worker público
 - **Fase de Produto validada** — 5 testes E2E reais concluídos
 - **Sprint V2 concluída** — UI/UX aprimorada, 236 testes passando
+- **Bug de produção corrigido (commit `18ad455`)** — Botão Enviar disabled no PP público. Causa raiz: `sendBtn` referenciado mas nunca declarado (em browsers, só element IDs viram globals; `sendBtn` não é um ID). Agora declarado explicitamente via `document.getElementById('send')`.
+|- **Bug de geração previewável corrigido (commit `d017203`)** — Sessão `2034fc87` gerou projeto Python (`task_manager.py`, `tasks.txt`) sem `package.json` → `npm error enoent`. Causa raiz: system prompt não instruía previewabilidade. Correção: `PREVIEW_SYSTEM_INSTRUCTIONS` adicionadas condicionalmente em `src/providers/shared.ts`, usadas por `RouterProvider` e `OpenRouterProvider`. Não alterou runtime, API, SSE, banco, Cloudflare, Docker ou deploy.
 
 ## Sprint V2 — Agent Workspace UX (IMPLEMENTADO)
 

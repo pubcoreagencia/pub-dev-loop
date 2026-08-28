@@ -98,11 +98,66 @@ export class PrototypeWorker {
       await this.events.emit({ sessionId, type: 'AGENT_STARTED', payload: { taskId: task.id } });
 
       await mkdir(WORKSPACE_ROOT, { recursive: true });
+
+      // Determine which repository and branch to use.
+      // If persistent push is enabled AND the session has a persistent repo/branch,
+      // fetch from the persistent repo instead of cloning the template.
+      const { PROTOTYPE_REPOSITORY, getGitHubToken } = await import('./github-app.js');
+      const usePersistentRepo =
+        process.env.PROTOTYPE_PERSISTENT_PUSH === 'true' &&
+        !!getGitHubToken();
+
+      const cloneUrl = usePersistentRepo
+        ? `https://x-access-token:${getGitHubToken()}@github.com/${PROTOTYPE_REPOSITORY}.git`
+        : task.repository;
+
       if (!await directoryExists(path.join(workspace, '.git'))) {
         await mkdir(workspace, { recursive: true });
-        git(['clone', task.repository, workspace]);
+        git(['clone', cloneUrl, workspace]);
       }
-      git(['checkout', '-B', branch], workspace);
+
+      // If persistent push is enabled, try to fetch the existing branch.
+      // If the branch exists remotely, checkout from it (continue from last checkpoint).
+      // If not, create a new branch from main.
+      if (usePersistentRepo) {
+        try {
+          // Try to fetch the specific branch from origin
+          git(['fetch', 'origin', branch], workspace);
+          // Check if the branch exists remotely
+          try {
+            const revParse = execFileSync('git', ['rev-parse', '--verify', `origin/${branch}`], {
+              cwd: workspace, encoding: 'utf8', stdio: 'pipe',
+            });
+            if (revParse.trim()) {
+              // Branch exists remotely — continue from there
+              git(['checkout', '-B', branch, `origin/${branch}`], workspace);
+              console.log(JSON.stringify({
+                event: 'PROTOTYPE_BRANCH_RESUMED',
+                sessionId,
+                branch,
+                fromCheckpoint: revParse.trim().slice(0, 8),
+                timestamp: new Date().toISOString(),
+              }));
+            } else {
+              git(['checkout', '-B', branch], workspace);
+            }
+          } catch {
+            // Branch doesn't exist remotely — create from main
+            git(['checkout', '-B', branch], workspace);
+          }
+        } catch {
+          // Fetch failed (network or auth) — fallback to local branch
+          git(['checkout', '-B', branch], workspace);
+        }
+        // SECURITY: remove the remote (with token) from git config
+        try {
+          execFileSync('git', ['remote', 'remove', 'origin'], {
+            cwd: workspace, stdio: 'pipe', timeout: 5000,
+          });
+        } catch { /* ignore */ }
+      } else {
+        git(['checkout', '-B', branch], workspace);
+      }
 
       if (task.objective === RESTORE_OBJECTIVE) {
         return await this.restoreCheckpoint(task, workspace, branch);

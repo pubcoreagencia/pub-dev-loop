@@ -330,6 +330,47 @@ export class TaskFinalizer {
     const shaResult = await this.exec('git', ['rev-parse', 'HEAD']);
     const commitSha = shaResult.stdout?.trim() || null;
 
+    if (!commitSha) {
+      return {
+        status: 'FAILED',
+        commitSha: null,
+        commitMessage: null,
+        changedFiles,
+        gitStatus,
+        testsPassed,
+        testOutput: '',
+        errorCode: 'COMMIT_FAILED',
+        errorMessage: 'Failed to read commit SHA after git commit',
+      };
+    }
+
+    // PERSISTENT PUSH (optional): push the commit to the persistent prototypes
+    // repository before reporting success. This ensures lastCheckpointSha points
+    // to a commit that is actually retrievable from the remote.
+    // Disabled by default to maintain backwards compatibility with existing tests.
+    // Enable in production via env var: PROTOTYPE_PERSISTENT_PUSH=true
+    if (process.env.PROTOTYPE_PERSISTENT_PUSH === 'true') {
+      const { pushBranch, getPrototypesRepo } = await import('./github-app.js');
+      // Discover current branch from git (works for both prototype and worker)
+      const branchResult = await this.exec('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
+      const branchName = branchResult.stdout?.trim() || 'main';
+      const pushResult = pushBranch(this.security.root, branchName);
+      if (!pushResult.ok) {
+        // Push failed — return FAILED so checkpoint is not persisted
+        return {
+          status: 'FAILED',
+          commitSha: null,
+          commitMessage,
+          changedFiles,
+          gitStatus,
+          testsPassed,
+          testOutput: '',
+          errorCode: 'PUSH_FAILED',
+          errorMessage: `git push to ${getPrototypesRepo()} failed: ${pushResult.error}`,
+        };
+      }
+    }
+
     // Verify working tree is clean after commit
     const finalStatusResult = await this.exec('git', ['status', '--short']);
     const workingTreeClean = (finalStatusResult.stdout || '').trim() === '';

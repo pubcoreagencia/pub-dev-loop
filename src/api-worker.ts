@@ -5,6 +5,7 @@ import { PostgresTaskRepository } from './repository.js';
 import { PostgresPrototypeRepository } from './prototype/repository.js';
 import { PrototypeHandoffService, type PrototypeHandoffInput } from './prototype/handoff.js';
 import { PrototypeEventStream } from './prototype/events.js';
+import { PreviewRecoveryService } from './prototype/preview-recovery.js';
 import { prototypeUiHtml } from './prototype/ui.js';
 import { prototypeHistoryUiScript } from './prototype/history-ui.js';
 
@@ -479,6 +480,37 @@ export default {
         const prototypes = getPrototypesRepository(env);
         const sessions = await prototypes.listSessions();
         return new Response(JSON.stringify(sessions), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      // 4c. POST /prototype/sessions/:id/preview/refresh
+      const previewRefreshMatch = path.match(/^\/prototype\/sessions\/([^\/]+)\/preview\/refresh$/);
+      if (previewRefreshMatch && method === 'POST') {
+        const sessionId = previewRefreshMatch[1];
+        const prototypes = getPrototypesRepository(env);
+        const recovery = new PreviewRecoveryService(prototypes);
+        try {
+          const result = await recovery.refresh(sessionId);
+          return new Response(JSON.stringify({
+            session: {
+              id: result.sessionId,
+              status: 'READY',
+              previewUrl: result.previewUrl,
+              previewRuntime: result.previewRuntime
+            }
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        } catch (error: any) {
+          const code = error?.code || 'RECOVERY_FAILED';
+          const status =
+            code === 'SESSION_NOT_FOUND' ? 404
+            : code === 'NOT_READY' ? 409
+            : code === 'NO_CHECKPOINT' ? 409
+            : code === 'WORKSPACE_MISSING' ? 422
+            : code === 'GIT_CLONE_FAILED' || code === 'GIT_CHECKOUT_FAILED' ? 502
+            : code === 'NPM_INSTALL_FAILED' ? 502
+            : code === 'PREVIEW_START_FAILED' ? 502
+            : 500;
+          return new Response(JSON.stringify({ error: error?.message || 'Preview refresh failed', code }), { status, headers: { 'Content-Type': 'application/json' } });
+        }
       }
       // 4b. POST /prototype/sessions/:id/messages
       const sessionMessagesMatch = path.match(/^\/prototype\/sessions\/([^\/]+)\/messages$/);

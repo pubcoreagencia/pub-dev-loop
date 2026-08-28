@@ -440,6 +440,27 @@ function renderPreview(url){
   $('previewUrl').innerHTML = '<a href="' + url + '" target="_blank" rel="noreferrer">' + url + '</a>';
 }
 
+async function verifyAndRefreshPreview(sessionId, url){
+  try {
+    const resp = await fetch(url, { method: 'HEAD', mode: 'no-cors' });
+    if (resp.ok || resp.status === 0) return; // status 0 = no-cors opaque response (likely ok)
+  } catch {}
+
+  // Preview is dead, try to refresh
+  system('Reconectando preview...');
+  try {
+    const r = await fetch('/prototype/sessions/' + encodeURIComponent(sessionId) + '/preview/refresh', { method: 'POST' });
+    if (!r.ok) throw new Error('Refresh failed');
+    const data = await r.json();
+    if (data.session?.previewUrl) {
+      renderPreview(data.session.previewUrl);
+      system('Preview pronto');
+    }
+  } catch {
+    system('Não foi possível recuperar o preview');
+  }
+}
+
 function attachEvents(id){
   if(source)source.close();
   source=new EventSource('/prototype/sessions/'+encodeURIComponent(id)+'/events');
@@ -630,7 +651,12 @@ async function loadSession(id){
   }
 
   renderVersions();
-  if(data.session.previewUrl)renderPreview(data.session.previewUrl);
+  if(data.session.previewUrl){
+    const url = data.session.previewUrl;
+    renderPreview(url);
+    // Verify preview is reachable, refresh if dead
+    verifyAndRefreshPreview(id, url);
+  }
 
   // Check for active task to reconstruct processing state
   const tasks=(data.tasks||[]);
