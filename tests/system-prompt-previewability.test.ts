@@ -101,6 +101,43 @@ describe('PREVIEW_SYSTEM_INSTRUCTIONS', () => {
     expect(text).toMatch(/http-server|serve/);
     expect(text.toLowerCase()).toMatch(/usuário|user/);
   });
+
+  it('7. favors STATIC for simple web apps (no unnecessary package.json)', () => {
+    const text = PREVIEW_SYSTEM_INSTRUCTIONS.join('\n');
+    expect(text.toLowerCase()).toMatch(/prefira.*static|prefer.*static/i);
+    expect(text).toMatch(/sem package.json|without package.json/i);
+  });
+
+  it('8. forbids live-server in dev script', () => {
+    const text = PREVIEW_SYSTEM_INSTRUCTIONS.join('\n');
+    expect(text).toMatch(/live-server/);
+    expect(text.toLowerCase()).toMatch(/nunca.*live-server|never.*live-server/i);
+  });
+
+  it('8. forbids http-server in dev script', () => {
+    const text = PREVIEW_SYSTEM_INSTRUCTIONS.join('\n');
+    expect(text).toMatch(/http-server/);
+    expect(text.toLowerCase()).toMatch(/nunca.*http-server|never.*http-server/i);
+  });
+
+  it('8. forbids serve in dev script', () => {
+    const text = PREVIEW_SYSTEM_INSTRUCTIONS.join('\n');
+    expect(text).toMatch(/serve/);
+    expect(text.toLowerCase()).toMatch(/nunca.*serve|never.*serve/i);
+  });
+
+  it('8. forbids pipe "|" in dev script', () => {
+    const text = PREVIEW_SYSTEM_INSTRUCTIONS.join('\n');
+    expect(text).toMatch(/\|/);
+    expect(text.toLowerCase()).toMatch(/pipeline|pipe/i);
+  });
+
+  it('9. requires verifying package.json before finalizing NODE project', () => {
+    const text = PREVIEW_SYSTEM_INSTRUCTIONS.join('\n');
+    expect(text.toLowerCase()).toMatch(/antes de finalizar|before finalizing/i);
+    expect(text.toLowerCase()).toMatch(/verifique|verify/i);
+    expect(text).toMatch(/package.json/);
+  });
 });
 
 // ── SHARED_SYSTEM_INSTRUCTIONS regression ──────────────────────────────────

@@ -54,6 +54,9 @@ export const PREVIEW_SYSTEM_INSTRUCTIONS = [
   '4. Não adicione framework ou dependência desnecessária.',
   '5. Depois de gerar os arquivos, verifique que o projeto realmente pode ser iniciado/servido (npm run dev ou arquivos estáticos).',
   '6. O usuário NÃO deve precisar instalar ou executar servidores manualmente (http-server, serve, npx, etc.). O preview é responsabilidade da infraestrutura do PUB DEV LOOP. Não instrua o usuário a executar comandos para visualizar o protótipo.',
+  '7. Quando a solicitação puder ser atendida como aplicação web estática (HTML + CSS + JS), PREFIRA STATIC e gere index.html + assets necessários, SEM package.json desnecessário.',
+  '8. Se escolher NODE, o package.json DEVE conter um script "dev" que execute apenas comandos válidos e arquivos existentes no workspace. Nunca use live-server, http-server, serve ou outros servidores externos no script dev. Nunca gere pipelines ("|") no script dev.',
+  '9. Antes de finalizar um projeto NODE, leia o package.json gerado e verifique que o script "dev" é válido e executável no workspace (sem pipes, sem servidores externos, sem comandos inexistentes).',
 ] as const;
 
 /**
