@@ -119,9 +119,14 @@ export class PrototypeWorker {
 
       if (!await directoryExists(path.join(workspace, '.git'))) {
         await mkdir(workspace, { recursive: true });
-        // Clone from task.repository (template for legacy, persistent for new).
-        // The persistent push happens in finalizer.
-        git(['clone', task.repository, workspace]);
+        // For 1st task: clone from TEMPLATE (public, no auth needed).
+        // The persistent push will be done by the finalizer using the token.
+        // Fallback: if PROTOTYPE_TEMPLATE_REPOSITORY is not set, use task.repository
+        // (which may be a local path for tests, or the legacy template URL).
+        const templateUrl = process.env.PROTOTYPE_TEMPLATE_REPOSITORY
+          || task.repository
+          || 'https://github.com/pubcoreagencia/pub-dev-loop-template.git';
+        git(['clone', templateUrl, workspace]);
       }
 
       // If persistent push is enabled, try to fetch the existing branch.
