@@ -11,7 +11,7 @@ export interface PrototypeEventInput<TPayload extends Record<string, unknown> = 
 export interface PrototypeEventPublisher {
   emit<TPayload extends Record<string, unknown>>(
     input: PrototypeEventInput<TPayload>,
-  ): PrototypeEvent<TPayload>;
+  ): Promise<PrototypeEvent<TPayload>> | PrototypeEvent<TPayload>;
   subscribe(listener: (event: PrototypeEvent) => void): () => void;
 }
 
@@ -57,9 +57,9 @@ export class PostgresPrototypeEventPublisher implements PrototypeEventPublisher 
 
   constructor(private readonly pool: Pool) {}
 
-  emit<TPayload extends Record<string, unknown>>(
+  async emit<TPayload extends Record<string, unknown>>(
     input: PrototypeEventInput<TPayload>,
-  ): PrototypeEvent<TPayload> {
+  ): Promise<PrototypeEvent<TPayload>> {
     const event: PrototypeEvent<TPayload> = {
       id: `pe_${randomUUID()}`,
       sessionId: input.sessionId,
@@ -70,14 +70,36 @@ export class PostgresPrototypeEventPublisher implements PrototypeEventPublisher 
     };
 
     for (const listener of this.listeners) listener(event);
-    void this.pool.query(
+
+    // Await INSERT to ensure event is persisted before continuing
+    await this.pool.query(
       `INSERT INTO prototype_events (id, session_id, type, sequence, payload, created_at)
        VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
       [event.id, event.sessionId, event.type, event.sequence, JSON.stringify(event.payload), event.timestamp],
-    ).then(() => this.pool.query(`SELECT pg_notify($1, $2)`, [this.channel, JSON.stringify(event)]))
-      .catch(() => undefined);
+    );
+
+    // Only send NOTIFY after successful INSERT
+    await this.pool.query(`SELECT pg_notify($1, $2)`, [this.channel, JSON.stringify(event)]).catch(() => undefined);
 
     return event;
+  }
+
+  /**
+   * Retrieve persisted events for a session — useful for testing and diagnostics.
+   */
+  async getEvents(sessionId: string, afterSequence = 0): Promise<PrototypeEvent[]> {
+    const result = await this.pool.query(
+      `SELECT * FROM prototype_events WHERE session_id = $1 AND sequence > $2 ORDER BY sequence ASC`,
+      [sessionId, afterSequence],
+    );
+    return result.rows.map((row: any) => ({
+      id: row.id,
+      sessionId: row.session_id,
+      type: row.type,
+      sequence: Number(row.sequence),
+      timestamp: row.created_at,
+      payload: row.payload,
+    }));
   }
 
   subscribe(listener: (event: PrototypeEvent) => void): () => void {

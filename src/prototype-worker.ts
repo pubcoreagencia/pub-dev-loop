@@ -95,7 +95,7 @@ export class PrototypeWorker {
 
       await this.tasks.update(task.id, { status: 'RUNNING', workspacePath: workspace, branch });
       await this.prototypes.updateSession(sessionId, { status: 'BUILDING', workspacePath: workspace });
-      this.events.emit({ sessionId, type: 'AGENT_STARTED', payload: { taskId: task.id } });
+      await this.events.emit({ sessionId, type: 'AGENT_STARTED', payload: { taskId: task.id } });
 
       await mkdir(WORKSPACE_ROOT, { recursive: true });
       if (!await directoryExists(path.join(workspace, '.git'))) {
@@ -126,7 +126,7 @@ export class PrototypeWorker {
         if (currentTask?.status === 'CANCELLED') {
           await this.tasks.update(task.id, { status: 'CANCELLED', workspacePath: workspace, leaseOwner: null, leaseDeadline: null });
           await this.prototypes.updateSession(sessionId, { status: 'READY', workspacePath: workspace });
-          this.events.emit({ sessionId, type: 'ERROR', payload: { message: 'Task cancelled by user', taskId: task.id } });
+          await this.events.emit({ sessionId, type: 'ERROR', payload: { message: 'Task cancelled by user', taskId: task.id } });
           console.log(JSON.stringify({ event: 'TASK_CANCELLED', taskId: task.id, sessionId, timestamp: new Date().toISOString() }));
           return true;
         }
@@ -154,11 +154,11 @@ export class PrototypeWorker {
           result: { provider: result.provider, model: result.model, stdout: result.stdout, stderr: result.stderr, durationMs },
           leaseOwner: null, leaseDeadline: null });
         await this.prototypes.updateSession(sessionId, { status: 'FAILED', workspacePath: workspace });
-        this.events.emit({ sessionId, type: 'ERROR', payload: { message, taskId: task.id } });
+        await this.events.emit({ sessionId, type: 'ERROR', payload: { message, taskId: task.id } });
         return true;
       }
 
-      this.events.emit({ sessionId, type: 'AGENT_OUTPUT', payload: { summary: result.stdout.slice(-8000), changedFiles: result.changedFiles ?? [], taskId: task.id } });
+      await this.events.emit({ sessionId, type: 'AGENT_OUTPUT', payload: { summary: result.stdout.slice(-8000), changedFiles: result.changedFiles ?? [], taskId: task.id } });
       const finalizer = new TaskFinalizer(workspace, { commandTimeoutMs: Number(process.env.ROUTER_COMMAND_TIMEOUT_MS ?? 60000) });
 
       // Check for cancellation before finalizer
@@ -166,7 +166,7 @@ export class PrototypeWorker {
         const currentTask = await (this.tasks as any).get?.(task.id);
         if (currentTask?.status === 'CANCELLED') {
           await this.prototypes.updateSession(sessionId, { status: 'READY', workspacePath: workspace });
-          this.events.emit({ sessionId, type: 'ERROR', payload: { message: 'Task cancelled by user', taskId: task.id } });
+          await this.events.emit({ sessionId, type: 'ERROR', payload: { message: 'Task cancelled by user', taskId: task.id } });
           console.log(JSON.stringify({ event: 'TASK_CANCELLED', taskId: task.id, sessionId, timestamp: new Date().toISOString() }));
           return true;
         }
@@ -174,7 +174,7 @@ export class PrototypeWorker {
         // get() may not be available on mock repos — cancellation check is best-effort
       }
 
-      this.events.emit({ sessionId, type: 'BUILD_STARTED', payload: { taskId: task.id, phase: 'finalize' } });
+      await this.events.emit({ sessionId, type: 'BUILD_STARTED', payload: { taskId: task.id, phase: 'finalize' } });
       const finalize = await finalizer.finalize(task.objective, task.prompt, {
         testCommand: process.env.TASK_TEST_COMMAND || null,
         commitMessage: `prototype(${task.project}): prompt ${task.id}`,
@@ -189,7 +189,7 @@ export class PrototypeWorker {
           error: finalize.errorMessage ?? 'Prototype finalization failed', result: { finalize, provider: result.provider, model: result.model, durationMs },
           leaseOwner: null, leaseDeadline: null });
         await this.prototypes.updateSession(sessionId, { status: 'FAILED', workspacePath: workspace });
-        this.events.emit({ sessionId, type: 'BUILD_FAILED', payload: { message: finalize.errorMessage ?? 'Finalization failed' } });
+        await this.events.emit({ sessionId, type: 'BUILD_FAILED', payload: { message: finalize.errorMessage ?? 'Finalization failed' } });
         return true;
       }
 
@@ -205,7 +205,7 @@ export class PrototypeWorker {
       await this.tasks.update(task.id, { status: 'COMPLETED', branch, commitSha: finalize.commitSha, gitStatus: finalize.gitStatus,
         workspacePath: workspace, leaseOwner: null, leaseDeadline: null,
         result: { finalize, provider: result.provider, model: result.model, durationMs } });
-      this.events.emit({ sessionId, type: 'BUILD_PASSED', payload: { commitSha: finalize.commitSha, taskId: task.id } });
+      await this.events.emit({ sessionId, type: 'BUILD_PASSED', payload: { commitSha: finalize.commitSha, taskId: task.id } });
 
       const preview = await this.ensurePreview(sessionId, workspace);
       await this.prototypes.updateSession(sessionId, { status: 'READY', workspacePath: workspace, previewRuntime: preview.id,
@@ -241,14 +241,14 @@ export class PrototypeWorker {
       }));
 
       await this.tasks.update(task.id, { status: 'COMPLETED' });
-      this.events.emit({ sessionId, type: 'CHECKPOINT_CREATED', payload: checkpoint as unknown as Record<string, unknown> });
-      this.events.emit({ sessionId, type: 'PREVIEW_READY', payload: { url: preview.url, runtimeId: preview.id, port: preview.port } });
+      await this.events.emit({ sessionId, type: 'CHECKPOINT_CREATED', payload: checkpoint as unknown as Record<string, unknown> });
+      await this.events.emit({ sessionId, type: 'PREVIEW_READY', payload: { url: preview.url, runtimeId: preview.id, port: preview.port } });
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await this.tasks.update(task.id, { status: 'FAILED', error: message.slice(0, 4000), workspacePath: workspace, leaseOwner: null, leaseDeadline: null });
       await this.prototypes.updateSession(sessionId, { status: 'FAILED', workspacePath: workspace });
-      this.events.emit({ sessionId, type: 'ERROR', payload: { message, taskId: task.id } });
+      await this.events.emit({ sessionId, type: 'ERROR', payload: { message, taskId: task.id } });
       return true;
     } finally {
       clearInterval(heartbeat);
@@ -263,11 +263,11 @@ export class PrototypeWorker {
     if (currentSha === commitSha) {
       await this.tasks.update(task.id, { status: 'COMPLETED', branch, workspacePath: workspace, commitSha: currentSha, leaseOwner: null, leaseDeadline: null });
       await this.prototypes.updateSession(sessionId, { status: 'READY', workspacePath: workspace, lastCheckpointSha: currentSha });
-      this.events.emit({ sessionId, type: 'PREVIEW_READY', payload: { url: (await this.prototypes.getSession(sessionId))?.previewUrl, restoredFrom: checkpointId, unchanged: true } });
+      await this.events.emit({ sessionId, type: 'PREVIEW_READY', payload: { url: (await this.prototypes.getSession(sessionId))?.previewUrl, restoredFrom: checkpointId, unchanged: true } });
       return true;
     }
 
-    this.events.emit({ sessionId, type: 'BUILD_STARTED', payload: { phase: 'restore', checkpointId, targetSha: commitSha } });
+    await this.events.emit({ sessionId, type: 'BUILD_STARTED', payload: { phase: 'restore', checkpointId, targetSha: commitSha } });
     git(['read-tree', '-m', '-u', commitSha], workspace);
     git(['add', '-A'], workspace);
     const commitMessage = `prototype(${task.project}): restore checkpoint ${checkpointId}`;
@@ -293,9 +293,9 @@ export class PrototypeWorker {
       previewUrl: preview.url,
       buildPassed: true,
     });
-    this.events.emit({ sessionId, type: 'BUILD_PASSED', payload: { commitSha: restoredSha, restoredFrom: checkpointId, targetSha: commitSha } });
-    this.events.emit({ sessionId, type: 'CHECKPOINT_CREATED', payload: checkpoint as unknown as Record<string, unknown> });
-    this.events.emit({ sessionId, type: 'PREVIEW_READY', payload: { url: preview.url, runtimeId: preview.id, port: preview.port, restoredFrom: checkpointId } });
+    await this.events.emit({ sessionId, type: 'BUILD_PASSED', payload: { commitSha: restoredSha, restoredFrom: checkpointId, targetSha: commitSha } });
+    await this.events.emit({ sessionId, type: 'CHECKPOINT_CREATED', payload: checkpoint as unknown as Record<string, unknown> });
+    await this.events.emit({ sessionId, type: 'PREVIEW_READY', payload: { url: preview.url, runtimeId: preview.id, port: preview.port, restoredFrom: checkpointId } });
     return true;
   }
 
@@ -313,7 +313,7 @@ export class PrototypeWorker {
     const previewMode = process.env.PROTOTYPE_PREVIEW_MODE ?? PREVIEW_MODE;
     const publicBaseUrl = process.env.PROTOTYPE_PREVIEW_BASE_URL || PREVIEW_PUBLIC_BASE_URL;
 
-    this.events.emit({ sessionId, type: 'PREVIEW_STARTED', payload: { phase: 'runtime_starting', mode: previewMode } });
+    await this.events.emit({ sessionId, type: 'PREVIEW_STARTED', payload: { phase: 'runtime_starting', mode: previewMode } });
     const runtime = await this.preview.create({
       workspace,
       command: previewCommand,
@@ -323,9 +323,9 @@ export class PrototypeWorker {
       startupTimeoutMs: Number(process.env.PROTOTYPE_PREVIEW_STARTUP_TIMEOUT_MS ?? 60000),
       environment: { NODE_ENV: 'development' },
     });
-    const unsubscribe = this.preview.subscribe(runtime.id, event => {
+    const unsubscribe = this.preview.subscribe(runtime.id, async event => {
       if (event.stream === 'stderr') {
-        this.events.emit({ sessionId, type: 'ERROR', payload: { runtimeId: event.runtimeId, line: event.line } });
+        await this.events.emit({ sessionId, type: 'ERROR', payload: { runtimeId: event.runtimeId, line: event.line } });
       }
     });
     try {
