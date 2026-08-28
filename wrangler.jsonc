@@ -56,7 +56,7 @@
     "AGENT_PROVIDER": "gateway",
     "PROTOTYPE_TEMPLATE_REPOSITORY": "https://github.com/pubcoreagencia/pub-dev-loop-template.git",
     "PROTOTYPE_PROTOTYPES_REPO": "pubcoreagencia/pub-dev-loop-prototypes",
-    "PROTOTYPE_PERSISTENT_PUSH": "true"
+    "PROTOTYPE_PERSISTENT_PUSH": "false"
   },
   "env": {
     "staging": {
