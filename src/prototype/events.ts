@@ -23,7 +23,7 @@ export class PrototypeEventStream implements PrototypeEventPublisher {
     input: PrototypeEventInput<TPayload>,
   ): PrototypeEvent<TPayload> {
     const event: PrototypeEvent<TPayload> = {
-      id: `pe_${randomUUID()}`,
+      id: randomUUID(),
       sessionId: input.sessionId,
       type: input.type,
       sequence: ++this.sequence,
@@ -61,7 +61,7 @@ export class PostgresPrototypeEventPublisher implements PrototypeEventPublisher 
     input: PrototypeEventInput<TPayload>,
   ): Promise<PrototypeEvent<TPayload>> {
     const event: PrototypeEvent<TPayload> = {
-      id: `pe_${randomUUID()}`,
+      id: randomUUID(),
       sessionId: input.sessionId,
       type: input.type,
       sequence: ++this.sequence,
