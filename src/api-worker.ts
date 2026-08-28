@@ -293,6 +293,8 @@ async function triggerContainerWorker(env: Env): Promise<void> {
       PROTOTYPE_PROTOTYPES_REPO: env.PROTOTYPE_PROTOTYPES_REPO || 'pubcoreagencia/pub-dev-loop-prototypes',
       PROTOTYPE_PERSISTENT_PUSH: env.PROTOTYPE_PERSISTENT_PUSH || 'false',
       PROTOTYPE_BOT_TOKEN: env.PROTOTYPE_BOT_TOKEN || '',
+      PROTOTYPE_WORKSPACES_ROOT: '/tmp/pub-prototype',
+      PROTOTYPE_PREVIEW_MODE: 'public',
       WORKER_POLL_INTERVAL_MS: '3000',
       WORKER_LEASE_TIMEOUT_MS: '30000',
       WORKER_HEARTBEAT_MS: '10000',
@@ -495,33 +497,52 @@ export default {
       }
 
       // 4c. POST /prototype/sessions/:id/preview/refresh
+      // Recovery requires git operations which are not available in the
+      // Cloudflare Workers runtime (no child_process). Dispatch to the
+      // Worker Container which has Node.js + git.
       const previewRefreshMatch = path.match(/^\/prototype\/sessions\/([^\/]+)\/preview\/refresh$/);
       if (previewRefreshMatch && method === 'POST') {
         const sessionId = previewRefreshMatch[1];
-        const prototypes = getPrototypesRepository(env);
-        const recovery = new PreviewRecoveryService(prototypes);
+        if (!env.WORKER_CONTAINER) {
+          return new Response(JSON.stringify({ error: 'WORKER_CONTAINER binding missing' }), {
+            status: 500, headers: { 'Content-Type': 'application/json' },
+          });
+        }
         try {
-          const result = await recovery.refresh(sessionId);
-          return new Response(JSON.stringify({
-            session: {
-              id: result.sessionId,
-              status: 'READY',
-              previewUrl: result.previewUrl,
-              previewRuntime: result.previewRuntime
-            }
-          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        } catch (error: any) {
-          const code = error?.code || 'RECOVERY_FAILED';
-          const status =
-            code === 'SESSION_NOT_FOUND' ? 404
-            : code === 'NOT_READY' ? 409
-            : code === 'NO_CHECKPOINT' ? 409
-            : code === 'WORKSPACE_MISSING' ? 422
-            : code === 'GIT_CLONE_FAILED' || code === 'GIT_CHECKOUT_FAILED' ? 502
-            : code === 'NPM_INSTALL_FAILED' ? 502
-            : code === 'PREVIEW_START_FAILED' ? 502
-            : 500;
-          return new Response(JSON.stringify({ error: error?.message || 'Preview refresh failed', code }), { status, headers: { 'Content-Type': 'application/json' } });
+          const container = getContainer(env.WORKER_CONTAINER);
+          const res = await container.fetch(new Request('http://localhost:3000/internal/prototype/preview/refresh', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ sessionId }),
+          }));
+          const result: any = await res.json().catch(() => null);
+          if (!result) {
+            return new Response(JSON.stringify({ error: 'Invalid response from container', code: 'CONTAINER_INVALID' }), {
+              status: 502, headers: { 'Content-Type': 'application/json' },
+            });
+          }
+          if (result.ok) {
+            return new Response(JSON.stringify({
+              session: {
+                id: result.sessionId,
+                status: 'READY',
+                previewUrl: result.previewUrl,
+                previewRuntime: result.previewRuntime,
+              }
+            }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          }
+          const status = result.code === 'SESSION_NOT_FOUND' ? 404
+            : result.code === 'NOT_READY' || result.code === 'NO_CHECKPOINT' ? 409
+            : result.code === 'WORKSPACE_MISSING' ? 422
+            : 502;
+          return new Response(JSON.stringify({ error: result.error || 'Preview refresh failed', code: result.code || 'RECOVERY_FAILED' }), {
+            status, headers: { 'Content-Type': 'application/json' },
+          });
+        } catch (containerError: any) {
+          console.error('[API Worker] Container recovery error:', containerError.message);
+          return new Response(JSON.stringify({ error: `Container recovery failed: ${containerError.message}`, code: 'CONTAINER_ERROR' }), {
+            status: 502, headers: { 'Content-Type': 'application/json' },
+          });
         }
       }
       // 4b. POST /prototype/sessions/:id/messages
