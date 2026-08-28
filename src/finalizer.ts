@@ -349,12 +349,16 @@ export class TaskFinalizer {
     // to a commit that is actually retrievable from the remote.
     // Disabled by default to maintain backwards compatibility with existing tests.
     // Enable in production via env var: PROTOTYPE_PERSISTENT_PUSH=true
+    console.log('[Finalizer] PROTOTYPE_PERSISTENT_PUSH:', process.env.PROTOTYPE_PERSISTENT_PUSH);
     if (process.env.PROTOTYPE_PERSISTENT_PUSH === 'true') {
       const { pushBranch, getPrototypesRepo } = await import('./github-app.js');
+      console.log('[Finalizer] Starting persistent push...');
       // Discover current branch from git (works for both prototype and worker)
       const branchResult = await this.exec('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
       const branchName = branchResult.stdout?.trim() || 'main';
+      console.log('[Finalizer] Branch:', branchName);
       const pushResult = pushBranch(this.security.root, branchName);
+      console.log('[Finalizer] Push result:', JSON.stringify(pushResult));
       if (!pushResult.ok) {
         // Push failed — return FAILED so checkpoint is not persisted
         return {
