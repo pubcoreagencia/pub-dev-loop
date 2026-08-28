@@ -474,14 +474,14 @@ export default {
         }
         const prototypes = getPrototypesRepository(env);
 
-        // Legacy: session.repository is the template base.
-        // For recovery, the PreviewRecoveryService uses a hard-coded
-        // whitelist of the persistent repository instead of session.repository.
-        const defaultRepo = env.PROTOTYPE_TEMPLATE_REPOSITORY || 'https://github.com/pubcoreagencia/pub-dev-loop-template.git';
+        // Architecture: session.repository = persistent repo (pub-dev-loop-prototypes)
+        // The template is only used internally as the base for the first clone.
+        // For recovery, PreviewRecoveryService uses a hard-coded whitelist.
+        const persistentRepoUrl = 'https://github.com/pubcoreagencia/pub-dev-loop-prototypes.git';
 
         const session = await prototypes.createSession({
           project: project.trim(),
-          repository: (typeof repository === 'string' && repository.trim()) ? repository.trim() : defaultRepo,
+          repository: persistentRepoUrl,
           branch: (typeof branch === 'string' && branch.trim()) ? branch.trim() : undefined,
         });
         return new Response(JSON.stringify(session), { status: 201, headers: { 'Content-Type': 'application/json' } });
