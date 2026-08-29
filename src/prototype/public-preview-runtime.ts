@@ -101,6 +101,78 @@ export class PublicPreviewRuntime implements PreviewRuntime {
 
       const cleanup = () => clearInterval(timer);
       tunnel.once('exit', cleanup);
+
+      // If the tunnel dies AFTER it was established, mark as EXPIRED.
+      // The UI's verifyAndRefreshPreview will detect the dead tunnel via
+      // iframe.onerror + 3s timeout, then trigger recovery which creates
+      // a new runtime. This is simpler and more reliable than in-place
+      // restart (which would change the URL while listeners hold a stale one).
+      tunnel.on('exit', () => {
+        if (settled) return;
+        record.info = { ...record.info, status: 'EXPIRED', error: 'Tunnel died' };
+      });
+    });
+
+    // Watcher: if the tunnel dies (e.g. cloudflared killed it after 30-60s),
+    // immediately spawn a new one with the same local port. The new URL is
+    // written back to record.info and emitted to listeners. This keeps the
+    // preview alive without requiring a full recovery flow.
+    this.watchTunnelLifecycle(runtimeId, record);
+  }
+
+  private watchTunnelLifecycle(runtimeId: string, record: PublicRecord): void {
+    const initialTunnel = record.tunnel;
+    if (!initialTunnel) return;
+    let restartCount = 0;
+    const MAX_RESTARTS = 100; // effectively unlimited within a session lifetime
+    initialTunnel.on('exit', () => {
+      // If the runtime was deliberately stopped, don't restart
+      if (record.info.status === 'STOPPED' || record.info.status === 'STOPPING' || record.info.status === 'FAILED') return;
+      if (record.info.status === 'EXPIRED') return; // already marked dead
+      if (restartCount >= MAX_RESTARTS) {
+        record.info = { ...record.info, status: 'EXPIRED', error: 'Tunnel restart limit reached' };
+        return;
+      }
+      restartCount++;
+      // Mark as EXPIRED while we restart (UI will see this and trigger recovery if needed)
+      record.info = { ...record.info, status: 'EXPIRED', error: 'Tunnel died, restarting...' };
+      // Small delay before restarting to avoid busy-looping
+      setTimeout(() => {
+        if (record.info.status === 'STOPPED' || record.info.status === 'STOPPING' || record.info.status === 'FAILED') return;
+        try {
+          const newTunnel = spawn(
+            this.cloudflared,
+            ['tunnel', '--url', `http://127.0.0.1:${record.info.port}`, '--no-autoupdate'],
+            { stdio: ['ignore', 'pipe', 'pipe'], shell: false, detached: true },
+          );
+          record.tunnel = newTunnel;
+          const chunks: string[] = [];
+          const onData = (chunk: Buffer) => chunks.push(chunk.toString());
+          newTunnel.stdout?.on('data', onData);
+          newTunnel.stderr?.on('data', onData);
+          const check = setInterval(() => {
+            const text = chunks.join('');
+            const m = text.match(QUICK_TUNNEL_RE);
+            if (m) {
+              clearInterval(check);
+              record.info = { ...record.info, status: 'READY', url: m[0], error: null };
+              this.emit(record, 'system', `public-preview:restarted url=${m[0]}`);
+              // Watch the new tunnel too
+              this.watchTunnelLifecycle(runtimeId, record);
+            }
+          }, 250);
+          const startupMs = Number(process.env.PROTOTYPE_TUNNEL_STARTUP_TIMEOUT_MS ?? DEFAULT_TUNNEL_TIMEOUT_MS);
+          const tmo = setTimeout(() => clearInterval(check), startupMs);
+          newTunnel.on('exit', () => {
+            clearInterval(check);
+            clearTimeout(tmo);
+            // Recursive: if the new tunnel also dies, restart again
+            this.watchTunnelLifecycle(runtimeId, record);
+          });
+        } catch (err) {
+          record.info = { ...record.info, status: 'EXPIRED', error: 'Tunnel restart failed: ' + (err as Error).message };
+        }
+      }, 1000);
     });
   }
 

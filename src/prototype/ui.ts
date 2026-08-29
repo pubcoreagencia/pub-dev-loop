@@ -435,9 +435,9 @@ function renderPreview(url) {
   previewLoadTimeout = setTimeout(() => {
     if (generation !== previewLoadGeneration) return;
     // Tunnel is likely expired - do not declare ready, leave in loading
-    // and trigger recovery
+    // and trigger recovery immediately (no user action needed)
     if (sessionId) triggerPreviewRecovery(sessionId);
-  }, 8000);
+  }, 3000);
 }
 
 function showPreviewError(opts) {

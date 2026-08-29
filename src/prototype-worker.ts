@@ -413,11 +413,19 @@ export class PrototypeWorker {
       if (event.stream === 'stderr') {
         await this.events.emit({ sessionId, type: 'ERROR', payload: { runtimeId: event.runtimeId, line: event.line } });
       }
+      // If the tunnel was restarted with a new URL, update the session DB
+      // and emit PREVIEW_READY so the UI can reload the iframe.
+      const m = event.line.match(/public-preview:restarted url=(\S+)/);
+      if (m) {
+        const newUrl = m[1];
+        await this.prototypes.updateSession(sessionId, { previewUrl: newUrl });
+        await this.events.emit({ sessionId, type: 'PREVIEW_READY', payload: { sessionId, url: newUrl, restoredFrom: 'tunnel-restart' } });
+      }
     });
-    try {
-      return await this.preview.start(runtime.id);
-    } finally {
-      unsubscribe();
-    }
+    // Note: we intentionally do NOT unsubscribe here. The tunnel watcher
+    // keeps the runtime alive and may emit 'public-preview:restarted' events
+    // when the URL changes. The listener persists for the session lifetime.
+    void unsubscribe; // suppress unused warning
+    return await this.preview.start(runtime.id);
   }
 }
