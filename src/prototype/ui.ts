@@ -545,10 +545,14 @@ function attachEvents(id){
     const ev=JSON.parse(e.data);
     // Only apply if the event is for the current session.
     // SSE events for preview should only come from the session we're listening to,
-    // but defense-in-depth: check sessionId if present, and verify the URL makes sense.
+    // but defense-in-depth: reject events without sessionId (legacy/stale events)
+    // and reject events for other sessions.
     const eventSessionId = ev.payload?.sessionId;
-    if (eventSessionId && eventSessionId !== sessionId) return;
-    renderPreview(ev.payload?.url||ev.payload?.previewUrl);
+    if (!eventSessionId) return; // Reject legacy events without sessionId
+    if (eventSessionId !== sessionId) return; // Reject events for other sessions
+    const newUrl = ev.payload?.url || ev.payload?.previewUrl;
+    if (!newUrl || newUrl === currentUrl) return;
+    renderPreview(newUrl);
     setStepStatus('PREVIEW_READY','done');
     setStatus('Pronto');
     hideProcessing();
@@ -659,6 +663,8 @@ async function loadSession(id){
   renderVersions();
   if(data.session.previewUrl){
     const url = data.session.previewUrl;
+    // Reset currentUrl to force iframe update with the new session's previewUrl
+    currentUrl=null;
     renderPreview(url);
     // Verify preview is reachable, refresh if dead
     verifyAndRefreshPreview(id, url);
