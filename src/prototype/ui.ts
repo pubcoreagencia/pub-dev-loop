@@ -629,9 +629,11 @@ function attachEvents(id){
 }
 
 async function loadSession(id){
+  console.log('[loadSession] called with id:', id);
   const r=await fetch('/prototype/sessions/'+encodeURIComponent(id));
   if(!r.ok)throw new Error('Sessão não encontrada');
   const data=await r.json();
+  console.log('[loadSession] API returned session.id:', data.session.id, 'previewUrl:', data.session.previewUrl);
   sessionId=data.session.id;
   $('projectName').textContent=data.session.project;
   $('sessionBox').style.display='block';
