@@ -115,8 +115,10 @@ export function pushBranch(workspace: string, branch: string): PushResult {
     });
 
     // Push the branch
+    // For prototype sessions (1 user, 1 branch), --force is acceptable
+    // to allow rapid iteration without race conditions.
     try {
-      const pushOutput = execFileSync('git', ['push', '-u', 'origin', branch, '--force-with-lease'], {
+      const pushOutput = execFileSync('git', ['push', '-u', 'origin', branch, '--force'], {
         cwd: workspace,
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 60000,
