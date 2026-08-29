@@ -1077,13 +1077,19 @@ window.addEventListener('load',async()=>{
   const last=localStorage.getItem(STORAGE_KEY);
   let targetId=last;
 
-  // If no last session or last session not in list, use most recent project
-  if(!targetId||!projectsCache.find(p=>p.id===targetId)){
+  // If no last session in localStorage, use most recent project
+  // If last session is set but not in cache (cache may be stale or still loading),
+  // still try to load it directly - the session might exist in the DB
+  // even if the projects list endpoint doesn't include it yet.
+  if(!targetId){
     targetId=projectsCache.length>0?projectsCache[0].id:null;
   }
 
   if(targetId){
-    try{await loadSession(targetId)}catch{localStorage.removeItem(STORAGE_KEY)}
+    try{await loadSession(targetId)}catch(e){
+      console.error('Failed to load session:', e);
+      localStorage.removeItem(STORAGE_KEY);
+    }
   }
 });
 </script>
