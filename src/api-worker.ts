@@ -510,6 +510,51 @@ export default {
         }
         try {
           const container = getContainer(env.WORKER_CONTAINER);
+
+          // Stop the container to force restart with current env vars
+          // (Cloudflare Workers Containers are singletons that don't auto-restart)
+          try {
+            await container.stop();
+          } catch (stopErr) {
+            // Container might already be stopped - that's fine
+          }
+
+          // Start with fresh env vars
+          const containerEnv: Record<string, string> = {
+            DATABASE_URL: env.DATABASE_URL || env.HYPERDRIVE?.connectionString || '',
+            GITHUB_TOKEN: env.GITHUB_TOKEN || '',
+            PRIMARY_GATEWAY: env.PRIMARY_GATEWAY || 'openrouter',
+            FALLBACK_GATEWAY: env.FALLBACK_GATEWAY || 'openrouter',
+            OPENROUTER_API_KEY: env.OPENROUTER_API_KEY || '',
+            OPENROUTER_BASE_URL: env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+            OPENROUTER_MODEL: env.OPENROUTER_MODEL || 'openrouter/free',
+            OPENROUTER_FALLBACK_MODELS: env.OPENROUTER_FALLBACK_MODELS || '',
+            ROUTER_API_KEY: env.ROUTER_API_KEY || '',
+            ROUTER_BASE_URL: env.ROUTER_BASE_URL || '',
+            ROUTER_MODEL: env.ROUTER_MODEL || '',
+            ROUTER_FALLBACK_MODELS: env.ROUTER_FALLBACK_MODELS || '',
+            AGENT_PROVIDER: env.AGENT_PROVIDER || 'gateway',
+            PROTOTYPE_TEMPLATE_REPOSITORY: env.PROTOTYPE_TEMPLATE_REPOSITORY || 'https://github.com/pubcoreagencia/pub-dev-loop-template.git',
+            PROTOTYPE_PROTOTYPES_REPO: env.PROTOTYPE_PROTOTYPES_REPO || 'pubcoreagencia/pub-dev-loop-prototypes',
+            PROTOTYPE_PERSISTENT_PUSH: env.PROTOTYPE_PERSISTENT_PUSH || 'false',
+            PROTOTYPE_BOT_TOKEN: env.PROTOTYPE_BOT_TOKEN || '',
+            PROTOTYPE_WORKSPACES_ROOT: '/tmp/pub-prototype',
+            PROTOTYPE_PREVIEW_MODE: 'public',
+            WORKER_POLL_INTERVAL_MS: '3000',
+            WORKER_LEASE_TIMEOUT_MS: '30000',
+            WORKER_HEARTBEAT_MS: '10000',
+          };
+
+          await container.startAndWaitForPorts({
+            ports: [3000],
+            startOptions: {
+              envVars: containerEnv,
+              enableInternet: true,
+              entrypoint: ['npm', 'run', 'worker'],
+            },
+            cancellationOptions: { portReadyTimeoutMS: 60000 },
+          });
+
           const res = await container.fetch(new Request('http://localhost:3000/internal/prototype/preview/refresh', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
