@@ -393,35 +393,105 @@ function getStatusClass(status){if(status==='READY')return 'ready';if(status==='
 function getStatusLabel(status){const labels={READY:'Pronto',BUILDING:'Construindo',CREATING:'Criando',FAILED:'Falhou'};return labels[status]||status}
 
 // === PREVIEW ===
+// State machine: idle → loading → ready | error
+// "ready" is ONLY declared after iframe.onload fires (proves content actually rendered)
+let previewLoadTimeout = null;
+let previewLoadGeneration = 0;
+
 function renderPreview(url) {
   if (!url) return;
   if (url === currentUrl) return;
   currentUrl = url;
   const iframe = $('iframe');
-  iframe.src = url;
-  iframe.style.display = 'block';
-  setPreviewState('ready');
+  // Go to LOADING first - do NOT declare ready until iframe.onload fires
+  setPreviewState('loading');
   $('previewUrl').textContent = url;
   $('previewUrl').href = url;
   $('previewUrlBar').style.display = 'flex';
-  $('refresh').disabled = false;
-  $('open').disabled = false;
-  $('fullscreen').disabled = false;
+  // Bind load handlers BEFORE setting src
+  const generation = ++previewLoadGeneration;
+  const onLoad = () => {
+    if (generation !== previewLoadGeneration) return; // stale callback
+    if (previewLoadTimeout) { clearTimeout(previewLoadTimeout); previewLoadTimeout = null; }
+    setPreviewState('ready');
+  };
+  const onError = () => {
+    if (generation !== previewLoadGeneration) return;
+    if (previewLoadTimeout) { clearTimeout(previewLoadTimeout); previewLoadTimeout = null; }
+    // Keep URL but mark as error - user can retry
+    showPreviewError({title: 'Preview indisponível', desc: 'O preview não pôde ser carregado. Tente reconectar.'});
+  };
+  // Replace iframe to drop stale listeners
+  const newIframe = iframe.cloneNode(false);
+  newIframe.src = url;
+  newIframe.addEventListener('load', onLoad);
+  newIframe.addEventListener('error', onError);
+  iframe.parentNode.replaceChild(newIframe, iframe);
+  // Update the reference so future renders use the new element
+  // (UI bindings target $('iframe') which re-queries each time)
+  // Timeout safety: if onload never fires (e.g. cloudflared tunnel expired),
+  // probe the URL after a delay
+  if (previewLoadTimeout) clearTimeout(previewLoadTimeout);
+  previewLoadTimeout = setTimeout(() => {
+    if (generation !== previewLoadGeneration) return;
+    // Tunnel is likely expired - do not declare ready, leave in loading
+    // and trigger recovery
+    if (sessionId) triggerPreviewRecovery(sessionId);
+  }, 8000);
 }
 
-function showPreviewError(opts) { setPreviewState('error', opts); }
+function showPreviewError(opts) {
+  if (previewLoadTimeout) { clearTimeout(previewLoadTimeout); previewLoadTimeout = null; }
+  setPreviewState('error', opts);
+}
 
-async function verifyAndRefreshPreview(sessionId, url) {
-  let alive = false;
-  try { const resp = await fetch(url, { method: 'HEAD', mode: 'no-cors' }); if (resp.type === 'opaque' || resp.ok) alive = true; } catch {}
-  if (alive) return;
+async function triggerPreviewRecovery(sid) {
   setPreviewState('recovering');
   try {
-    const r = await fetch('/prototype/sessions/' + encodeURIComponent(sessionId) + '/preview/refresh', { method: 'POST' });
-    if (!r.ok) { showPreviewError({title: 'Preview indisponível', desc: 'Não foi possível reconectar.'}); return; }
+    const r = await fetch('/prototype/sessions/' + encodeURIComponent(sid) + '/preview/refresh', { method: 'POST' });
+    if (!r.ok) {
+      const errData = await r.json().catch(() => ({}));
+      showPreviewError({title: 'Preview indisponível', desc: errData.error || 'Não foi possível reconectar.'});
+      return;
+    }
     const data = await r.json();
-    if (data.session?.previewUrl) { currentUrl = null; renderPreview(data.session.previewUrl); }
-  } catch (e) { showPreviewError({title: 'Erro de conexão', desc: 'Não foi possível reconectar.'}); }
+    if (data.session?.previewUrl) {
+      currentUrl = null; // force update
+      renderPreview(data.session.previewUrl);
+    } else {
+      showPreviewError({title: 'Falha na reconexão', desc: 'Tente novamente em alguns segundos.'});
+    }
+  } catch (e) {
+    showPreviewError({title: 'Erro de conexão', desc: 'Não foi possível reconectar ao preview.'});
+  }
+}
+
+async function verifyAndRefreshPreview(sessionId, url) {
+  // Only run the probe if the iframe hasn't fired onload yet OR if the URL is recent.
+  // If iframe.onload already fired and we're in 'ready' state, trust it.
+  if (previewState === 'ready') return;
+  // Probe: HEAD request with no-cors to detect DNS/connection failures.
+  // Note: no-cors returns "opaque" for any HTTP response, so this only catches
+  // hard failures (DNS error, connection refused, tunnel dead). That's enough
+  // to detect a dead tunnel - the actual content load is verified by onload.
+  let reachable = false;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    const resp = await fetch(url, { method: 'HEAD', mode: 'no-cors', signal: controller.signal });
+    clearTimeout(timer);
+    // opaque response = tunnel is up (even if 5xx)
+    if (resp.type === 'opaque' || resp.ok) reachable = true;
+  } catch {
+    // aborted or network error = tunnel is likely dead
+  }
+  if (reachable) {
+    // Tunnel is up - if iframe is in loading state, let onload decide.
+    // If iframe already failed (error state), keep error.
+    return;
+  }
+  // Tunnel is dead - trigger recovery
+  await triggerPreviewRecovery(sessionId);
 }
 
 // === CHAT ===
@@ -601,11 +671,27 @@ function attachEvents(id) {
     const newUrl = ev.payload?.url || ev.payload?.previewUrl;
     if (!newUrl || newUrl === currentUrl) return;
     if (loadSessionAt && (Date.now() - loadSessionAt) < 2000) return;
+    // Update timeline to show preview building (not yet ready)
+    addTimeline([{label: 'Seu pedido', status: 'done'}, {label: 'Agente iniciado', status: 'done'}, {label: 'Gerando código', status: 'done'}, {label: 'Build aprovado', status: 'done'}, {label: 'Subindo preview', status: 'active'}]);
+    // renderPreview goes to 'loading' - it will transition to 'ready' on iframe.onload
     renderPreview(newUrl);
-    addTimeline([{label: 'Seu pedido', status: 'done'}, {label: 'Agente iniciado', status: 'done'}, {label: 'Gerando código', status: 'done'}, {label: 'Build aprovado', status: 'done'}, {label: 'Subindo preview', status: 'done'}, {label: 'Pronto', status: 'done'}]);
-    $('send').classList.remove('sending'); $('prompt').disabled = false; $('composeStatus').textContent = 'Pronto';
-    $('chatHeaderStatus').textContent = 'Pronto'; $('chatHeaderMeta').querySelector('.dot').style.background = 'var(--success)';
-    currentTaskId = null; activeTaskStatus = null;
+    // Poll for iframe.onload completion before declaring "Pronto"
+    const checkLoaded = () => {
+      if (previewState === 'ready') {
+        addTimeline([{label: 'Seu pedido', status: 'done'}, {label: 'Agente iniciado', status: 'done'}, {label: 'Gerando código', status: 'done'}, {label: 'Build aprovado', status: 'done'}, {label: 'Subindo preview', status: 'done'}, {label: 'Pronto', status: 'done'}]);
+        $('send').classList.remove('sending'); $('prompt').disabled = false; $('composeStatus').textContent = 'Pronto';
+        $('chatHeaderStatus').textContent = 'Pronto'; $('chatHeaderMeta').querySelector('.dot').style.background = 'var(--success)';
+        currentTaskId = null; activeTaskStatus = null;
+      } else if (previewState === 'error') {
+        // Show partial timeline + "Pronto" disabled - user will need to retry
+        $('send').classList.remove('sending'); $('prompt').disabled = false; $('composeStatus').textContent = 'Pronto';
+        $('chatHeaderStatus').textContent = 'Pronto'; $('chatHeaderMeta').querySelector('.dot').style.background = 'var(--warning)';
+        currentTaskId = null; activeTaskStatus = null;
+      } else {
+        setTimeout(checkLoaded, 500);
+      }
+    };
+    setTimeout(checkLoaded, 500);
   });
 
   source.addEventListener('PREVIEW_FAILED', e => {
@@ -649,17 +735,23 @@ async function send() {
 }
 
 // === PREVIEW CONTROLS ===
-$('refresh').addEventListener('click', () => { if (currentUrl) { setPreviewState('loading'); const iframe = $('iframe'); iframe.src = 'about:blank'; setTimeout(() => { iframe.src = currentUrl; setPreviewState('ready'); }, 100); } });
-$('open').addEventListener('click', () => { if (currentUrl) window.open(currentUrl, '_blank', 'noopener,noreferrer'); });
-$('fullscreen').addEventListener('click', () => { const frame = $('frame'); if (frame.requestFullscreen) frame.requestFullscreen(); });
-$('mobilePreviewBtn').addEventListener('click', () => { $('frame').classList.toggle('mobile-view'); $('mobilePreviewBtn').classList.toggle('active'); });
-$('previewErrorRetry').addEventListener('click', () => {
-  if (sessionId) {
-    setPreviewState('recovering');
-    fetch('/prototype/sessions/' + encodeURIComponent(sessionId) + '/preview/refresh', { method: 'POST' })
-      .then(r => r.json()).then(data => { if (data.session?.previewUrl) { currentUrl = null; renderPreview(data.session.previewUrl); } else { showPreviewError({title: 'Falha na reconexão', desc: data.error || 'Tente novamente'}); } })
-      .catch(() => showPreviewError({title: 'Erro de rede', desc: 'Verifique sua conexão.'}));
+$('refresh').addEventListener('click', () => {
+  if (currentUrl) {
+    // Force re-render with onload detection
+    const saved = currentUrl;
+    currentUrl = null;
+    renderPreview(saved);
   }
+});
+
+$('open').addEventListener('click', () => { if (currentUrl) window.open(currentUrl, '_blank', 'noopener,noreferrer'); });
+
+$('fullscreen').addEventListener('click', () => { const frame = $('frame'); if (frame.requestFullscreen) frame.requestFullscreen(); });
+
+$('mobilePreviewBtn').addEventListener('click', () => { $('frame').classList.toggle('mobile-view'); $('mobilePreviewBtn').classList.toggle('active'); });
+
+$('previewErrorRetry').addEventListener('click', () => {
+  if (sessionId) triggerPreviewRecovery(sessionId);
 });
 
 // === CHAT SCROLL ===
