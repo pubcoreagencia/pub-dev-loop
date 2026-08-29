@@ -187,6 +187,12 @@ function startHealthServer(port = Number(process.env.PORT ?? 3000)): http.Server
       worker: 'PubDevLoopWorker',
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
+      env: {
+        DATABASE_URL: process.env.DATABASE_URL ? 'SET (len=' + process.env.DATABASE_URL.length + ')' : 'EMPTY',
+        GITHUB_TOKEN: process.env.GITHUB_TOKEN ? 'SET' : 'EMPTY',
+        PROTOTYPE_BOT_TOKEN: process.env.PROTOTYPE_BOT_TOKEN ? 'SET' : 'EMPTY',
+        OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ? 'SET' : 'EMPTY',
+      },
     }));
   });
 
