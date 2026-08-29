@@ -24,3 +24,19 @@ temp_clone_publeads/
 template_repo/
 pub-dev-loop/
 .wrangler/
+.agent/
+
+# Audit/screenshot artifacts
+audit-*.png
+f5-*.png
+p1-*.png
+p11-*.png
+baseline-*.png
+after-*.png
+
+# CDP debug scripts (transient, used during E2E testing)
+scripts/cdp-*.cjs
+scripts/capture-*.cjs
+scripts/p1-e2e.cjs
+scripts/p11-e2e.cjs
+scripts/check-container.cjs
