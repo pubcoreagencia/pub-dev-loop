@@ -429,15 +429,19 @@ function checkpoint(payload,renderPrompt=false){
 }
 
 function renderPreview(url){
-  if(!url)return;
+  console.log('[renderPreview] called with url:', url);
+  if(!url){console.log('[renderPreview] EARLY RETURN: url is empty');return;}
   currentUrl=url;
-  $('iframe').src=url;
+  const iframeEl = $('iframe');
+  console.log('[renderPreview] iframe element:', !!iframeEl, 'current src:', iframeEl?.src);
+  if (iframeEl) iframeEl.src = url;
   $('iframe').style.display='block';
   $('empty').style.display='none';
   $('refresh').disabled=false;
   $('open').disabled=false;
   $('previewUrl').style.display='block';
   $('previewUrl').innerHTML = '<a href="' + url + '" target="_blank" rel="noreferrer">' + url + '</a>';
+  console.log('[renderPreview] DONE. iframe src now:', $('iframe')?.src);
 }
 
 async function verifyAndRefreshPreview(sessionId, url){
@@ -542,6 +546,11 @@ function attachEvents(id){
 
   source.addEventListener('PREVIEW_READY',e=>{
     const ev=JSON.parse(e.data);
+    // Only apply if the event is for the current session.
+    // SSE events for preview should only come from the session we're listening to,
+    // but defense-in-depth: check sessionId if present, and verify the URL makes sense.
+    const eventSessionId = ev.payload?.sessionId;
+    if (eventSessionId && eventSessionId !== sessionId) return;
     renderPreview(ev.payload?.url||ev.payload?.previewUrl);
     setStepStatus('PREVIEW_READY','done');
     setStatus('Pronto');
