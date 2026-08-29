@@ -276,7 +276,7 @@ async function triggerContainerWorker(env: Env): Promise<void> {
   try {
     const container = getContainer(env.WORKER_CONTAINER);
     const containerEnv: Record<string, string> = {
-      DATABASE_URL: env.DATABASE_URL || '',
+      DATABASE_URL: env.DATABASE_URL || env.HYPERDRIVE?.connectionString || '',
       GITHUB_TOKEN: env.GITHUB_TOKEN || '',
       PRIMARY_GATEWAY: env.PRIMARY_GATEWAY || 'openrouter',
       FALLBACK_GATEWAY: env.FALLBACK_GATEWAY || '9router',
@@ -404,7 +404,7 @@ export default {
           }
           const container = getContainer(env.WORKER_CONTAINER);
           const containerEnv: Record<string, string> = {
-            DATABASE_URL: env.DATABASE_URL || '',
+            DATABASE_URL: env.DATABASE_URL || env.HYPERDRIVE?.connectionString || '',
             GITHUB_TOKEN: env.GITHUB_TOKEN || '',
             PRIMARY_GATEWAY: env.PRIMARY_GATEWAY || 'openrouter',
             FALLBACK_GATEWAY: env.FALLBACK_GATEWAY || '9router',
