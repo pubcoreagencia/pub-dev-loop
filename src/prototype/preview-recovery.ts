@@ -269,7 +269,14 @@ export class PreviewRecoveryService {
     await mkdir(target, { recursive: true });
 
     try {
-      git(['clone', repository, target]);
+      // For private repos, embed the token in the clone URL.
+      // Use PROTOTYPE_BOT_TOKEN or GITHUB_TOKEN from environment.
+      const token = process.env.PROTOTYPE_BOT_TOKEN || process.env.GITHUB_TOKEN;
+      let cloneUrl = repository;
+      if (token && repository.startsWith('https://')) {
+        cloneUrl = `https://x-access-token:${token}@${repository.replace('https://', '')}`;
+      }
+      git(['clone', cloneUrl, target]);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw {
