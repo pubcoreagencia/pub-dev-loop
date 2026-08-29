@@ -225,7 +225,7 @@ iframe{width:100%;height:100%;border:0;background:#fff;display:none}
 </div>
 
 <script>
-let sessionId=null,source=null,currentUrl=null,activeTimeline=null,checkpoints=[];
+let sessionId=null,source=null,currentUrl=null,activeTimeline=null,checkpoints=[],loadSessionAt=0;
 let currentTaskId=null,activeTaskStatus=null,taskStartAt=null,timerInterval=null;
 let projectsCache=[];
 const STORAGE_KEY='pub-prototype:last-session';
@@ -544,14 +544,14 @@ function attachEvents(id){
   source.addEventListener('PREVIEW_READY',e=>{
     const ev=JSON.parse(e.data);
     // Only apply if the event is for the current session.
-    // SSE events for preview should only come from the session we're listening to,
-    // but defense-in-depth: reject events without sessionId (legacy/stale events)
-    // and reject events for other sessions.
     const eventSessionId = ev.payload?.sessionId;
-    if (!eventSessionId) return; // Reject legacy events without sessionId
-    if (eventSessionId !== sessionId) return; // Reject events for other sessions
+    if (eventSessionId && eventSessionId !== sessionId) return;
     const newUrl = ev.payload?.url || ev.payload?.previewUrl;
     if (!newUrl || newUrl === currentUrl) return;
+    // Ignore events that arrive within 2 seconds of loadSession - these are
+    // SSE replay events from the database (stale events from previous tasks/sessions).
+    // The loadSession already set the correct iframe URL.
+    if (loadSessionAt && (Date.now() - loadSessionAt) < 2000) return;
     renderPreview(newUrl);
     setStepStatus('PREVIEW_READY','done');
     setStatus('Pronto');
@@ -642,6 +642,9 @@ async function loadSession(id){
   const r=await fetch('/prototype/sessions/'+encodeURIComponent(id));
   if(!r.ok)throw new Error('Sessão não encontrada');
   const data=await r.json();
+  // Mark the time of this loadSession so we can ignore PREVIEW_READY events
+  // that arrive from SSE replay (stale events from previous sessions/tasks).
+  loadSessionAt = Date.now();
   sessionId=data.session.id;
   $('projectName').textContent=data.session.project;
   $('sessionBox').style.display='block';
