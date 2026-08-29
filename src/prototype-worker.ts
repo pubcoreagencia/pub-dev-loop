@@ -317,7 +317,7 @@ export class PrototypeWorker {
 
       await this.tasks.update(task.id, { status: 'COMPLETED' });
       await this.events.emit({ sessionId, type: 'CHECKPOINT_CREATED', payload: checkpoint as unknown as Record<string, unknown> });
-      await this.events.emit({ sessionId, type: 'PREVIEW_READY', payload: { url: preview.url, runtimeId: preview.id, port: preview.port } });
+      await this.events.emit({ sessionId, type: 'PREVIEW_READY', payload: { sessionId, url: preview.url, runtimeId: preview.id, port: preview.port } });
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -338,7 +338,7 @@ export class PrototypeWorker {
     if (currentSha === commitSha) {
       await this.tasks.update(task.id, { status: 'COMPLETED', branch, workspacePath: workspace, commitSha: currentSha, leaseOwner: null, leaseDeadline: null });
       await this.prototypes.updateSession(sessionId, { status: 'READY', workspacePath: workspace, lastCheckpointSha: currentSha });
-      await this.events.emit({ sessionId, type: 'PREVIEW_READY', payload: { url: (await this.prototypes.getSession(sessionId))?.previewUrl, restoredFrom: checkpointId, unchanged: true } });
+      await this.events.emit({ sessionId, type: 'PREVIEW_READY', payload: { sessionId, url: (await this.prototypes.getSession(sessionId))?.previewUrl, restoredFrom: checkpointId, unchanged: true } });
       return true;
     }
 
@@ -370,7 +370,7 @@ export class PrototypeWorker {
     });
     await this.events.emit({ sessionId, type: 'BUILD_PASSED', payload: { commitSha: restoredSha, restoredFrom: checkpointId, targetSha: commitSha } });
     await this.events.emit({ sessionId, type: 'CHECKPOINT_CREATED', payload: checkpoint as unknown as Record<string, unknown> });
-    await this.events.emit({ sessionId, type: 'PREVIEW_READY', payload: { url: preview.url, runtimeId: preview.id, port: preview.port, restoredFrom: checkpointId } });
+    await this.events.emit({ sessionId, type: 'PREVIEW_READY', payload: { sessionId, url: preview.url, runtimeId: preview.id, port: preview.port, restoredFrom: checkpointId } });
     return true;
   }
 
