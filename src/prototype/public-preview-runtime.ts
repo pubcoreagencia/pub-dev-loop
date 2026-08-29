@@ -107,6 +107,11 @@ export class PublicPreviewRuntime implements PreviewRuntime {
   async get(runtimeId: string): Promise<PreviewRuntimeInfo | null> {
     const record = this.records.get(runtimeId);
     if (!record) return null;
+    // If the tunnel process died, the URL is dead too - mark as EXPIRED
+    if (record.tunnel && record.tunnel.exitCode !== null) {
+      record.info = { ...record.info, status: 'EXPIRED', error: 'Tunnel expired' };
+      return { ...record.info };
+    }
     const local = await this.local.get(record.localRuntimeId);
     if (local) {
       const isFailed = record.info.status === 'FAILED';

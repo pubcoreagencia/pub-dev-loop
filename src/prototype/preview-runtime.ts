@@ -5,6 +5,7 @@ export const PREVIEW_RUNTIME_STATUSES = [
   'STOPPING',
   'STOPPED',
   'FAILED',
+  'EXPIRED',
 ] as const;
 export type PreviewRuntimeStatus = typeof PREVIEW_RUNTIME_STATUSES[number];
 

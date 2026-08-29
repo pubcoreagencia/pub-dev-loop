@@ -119,7 +119,9 @@ describe('PUB Prototype — Concurrency, Migrations & Preview Error Handling', (
       await expect(publicRuntime.start(runtimeInfo.id)).rejects.toThrow();
 
       const info = await publicRuntime.get(runtimeInfo.id);
-      expect(info?.status).toBe('FAILED');
+      // Status can be FAILED (if start failed before tunnel was created) or
+      // EXPIRED (if tunnel was created but died). Both are valid failure states.
+      expect(['FAILED', 'EXPIRED']).toContain(info?.status);
       expect(info?.error).toBeTruthy();
     }, 10000);
   });
