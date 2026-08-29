@@ -282,6 +282,17 @@ export class PrototypeWorker {
         result: { finalize, provider: result.provider, model: result.model, durationMs } });
       await this.events.emit({ sessionId, type: 'BUILD_PASSED', payload: { commitSha: finalize.commitSha, taskId: task.id } });
 
+      // FAIL-CLOSED: if the agent didn't generate any files, there's nothing to preview.
+      // Skip the preview start entirely instead of trying `npm run dev` on an empty workspace
+      // (which fails with enoent: package.json not found).
+      if (!finalize.changedFiles || finalize.changedFiles.length === 0) {
+        const noFilesMsg = 'Agente não gerou arquivos. Tente reformular o pedido.';
+        await this.tasks.update(task.id, { error: noFilesMsg, leaseOwner: null, leaseDeadline: null });
+        await this.prototypes.updateSession(sessionId, { status: 'FAILED', workspacePath: workspace });
+        await this.events.emit({ sessionId, type: 'ERROR', payload: { message: noFilesMsg, taskId: task.id } });
+        return true;
+      }
+
       const preview = await this.ensurePreview(sessionId, workspace);
       await this.prototypes.updateSession(sessionId, { status: 'READY', workspacePath: workspace, previewRuntime: preview.id,
         previewUrl: preview.url, lastCheckpointSha: finalize.commitSha });
