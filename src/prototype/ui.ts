@@ -687,8 +687,9 @@ function attachEvents(id) {
     stopTaskTimer();
   });
 
-  source.addEventListener('PREVIEW_STARTED', e => { setPreviewState('loading'); });
-
+  source.addEventListener('PREVIEW_STARTING', e => { setPreviewState('loading'); addTimeline([{label:'Iniciando preview',status:'active'}]); });
+  source.addEventListener('PREVIEW_LOCAL_SERVER_READY', e => { const p=JSON.parse(e.data).payload; addTimeline([{label:'Servidor local pronto',status:'done',detail:p?.port?'porta '+p.port:''}]); });
+  source.addEventListener('PREVIEW_TUNNEL_READY', e => { const p=JSON.parse(e.data).payload; addTimeline([{label:'Tunnel conectado',status:'done',detail:p?.url?'URL '+p.url:''}]); });
   source.addEventListener('PREVIEW_READY', e => {
     const ev = JSON.parse(e.data);
     const eventSessionId = ev.payload?.sessionId;
@@ -729,12 +730,20 @@ function attachEvents(id) {
 
   source.addEventListener('CHECKPOINT_CREATED', e => { loadProjects(); });
 
-  source.addEventListener('ERROR', e => {
-    const p = JSON.parse(e.data).payload;
-    addErrorCard({type: 'AGENT_ERROR', desc: p?.message || 'Erro inesperado.'});
-    $('send').classList.remove('sending'); $('prompt').disabled = false; $('composeStatus').textContent = '';
-    stopTaskTimer();
-  });
+  const seenIds = new Set<string>();
+    source.addEventListener('ERROR', e => {
+      try {
+        const ev = JSON.parse(e.data);
+        if (seenIds.has(ev.id)) return;
+        seenIds.add(ev.id);
+        const p = ev.payload ?? ({} as Record<string, unknown>);
+        if (p?.message && typeof p.message === 'string' && p.message.length > 0) {
+          addErrorCard({ type: 'AGENT_ERROR', desc: p.message.slice(0, 300), detail: p.message, actions: [{ label: 'Tentar novamente', onClick: () => { $('prompt').focus(); } }] });
+        } else {
+          addErrorCard({ type: 'PREVIEW_ERROR', desc: 'O preview não respondeu. Verificar logs de runtime.', detail: JSON.stringify(p), actions: [{ label: 'Ver detalhes', onClick: () => { /* expand details */ } }] });
+        }
+      } catch { }
+    });
 }
 
 // === COMPOSER ===

@@ -410,12 +410,20 @@ export class PrototypeWorker {
       environment: { NODE_ENV: 'development' },
     });
     const unsubscribe = this.preview.subscribe(runtime.id, async event => {
-      if (event.stream === 'stderr') {
-        await this.events.emit({ sessionId, type: 'ERROR', payload: { runtimeId: event.runtimeId, line: event.line } });
-      }
-      // If the tunnel was restarted with a new URL, update the session DB
-      // and emit PREVIEW_READY so the UI can reload the iframe.
-      const m = event.line.match(/public-preview:restarted url=(\S+)/);
+          if (event.stream === 'stderr') {
+            await this.events.emit({ sessionId, type: 'ERROR', payload: { runtimeId: event.runtimeId, line: event.line } });
+          }
+          // Emit PREVIEW_LOCAL_SERVER_READY when local server is up
+          if (event.line?.includes('local-server:ready')) {
+            await this.events.emit({ sessionId, type: 'PREVIEW_LOCAL_SERVER_READY', payload: { runtimeId: event.runtimeId, port: event.line.match(/port=(\\d+)/)?.[1] } });
+          }
+          // Emit PREVIEW_TUNNEL_READY when tunnel connects
+          if (event.line?.includes('tunnel:connected')) {
+            await this.events.emit({ sessionId, type: 'PREVIEW_TUNNEL_READY', payload: { runtimeId: event.runtimeId, url: event.line.match(/url=(\\S+)/)?.[1] } });
+          }
+          // If the tunnel was restarted with a new URL, update the session DB
+          // and emit PREVIEW_READY so the UI can reload the iframe.
+          const m = event.line.match(/public-preview:restarted url=(\\S+)/);
       if (m) {
         const newUrl = m[1];
         await this.prototypes.updateSession(sessionId, { previewUrl: newUrl });
