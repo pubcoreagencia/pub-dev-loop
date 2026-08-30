@@ -79,6 +79,7 @@ export class PublicPreviewRuntime implements PreviewRuntime {
             error: null,
           };
           this.emit(record, 'system', `public-preview:ready url=${match[0]}`);
+          this.watchTunnelLifecycle(runtimeId, record);
           resolve({ ...record.info });
         }
         if (buffer.length > 16_384) buffer = buffer.slice(-8_192);
@@ -104,22 +105,11 @@ export class PublicPreviewRuntime implements PreviewRuntime {
       const cleanup = () => clearInterval(timer);
       tunnel.once('exit', cleanup);
 
-      // If the tunnel dies AFTER it was established, mark as EXPIRED.
-      // The UI's verifyAndRefreshPreview will detect the dead tunnel via
-      // iframe.onerror + 3s timeout, then trigger recovery which creates
-      // a new runtime. This is simpler and more reliable than in-place
-      // restart (which would change the URL while listeners hold a stale one).
       tunnel.on('exit', () => {
         if (settled) return;
         record.info = { ...record.info, status: 'EXPIRED', error: 'Tunnel died' };
       });
     });
-
-    // Watcher: if the tunnel dies (e.g. cloudflared killed it after 30-60s),
-    // immediately spawn a new one with the same local port. The new URL is
-    // written back to record.info and emitted to listeners. This keeps the
-    // preview alive without requiring a full recovery flow.
-    this.watchTunnelLifecycle(runtimeId, record);
   }
 
   private watchTunnelLifecycle(runtimeId: string, record: PublicRecord): void {
