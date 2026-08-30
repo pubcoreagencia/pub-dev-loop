@@ -531,17 +531,31 @@ function addMessage(role, content, ts) {
   chat.scrollTop = chat.scrollHeight;
 }
 
-function addTimeline(steps, files) {
+function addTimeline(steps, files, opts = {}) {
   const chat = $('chat');
   const empty = chat.querySelector('.empty-chat');
   if (empty) empty.remove();
-  const div = document.createElement('div');
-  div.className = 'message system';
   const doneIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>';
   const activeIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>';
-  const stepsHtml = steps.map(s => '<div class="timeline-step ' + s.status + '"><div class="step-icon">' + (s.status === 'active' ? activeIcon : doneIcon) + '</div><span>' + s.label + '</span></div>').join('');
+  const stepsHtml = steps.map(s => '<div class="timeline-step ' + s.status + '"><div class="step-icon">' + (s.status === 'active' ? activeIcon : doneIcon) + '</div><span>' + s.label + '</span>' + (s.detail ? '<div class="step-detail">' + s.detail + '</div>' : '') + '</div>').join('');
   const filesHtml = files && files.length ? '<div class="files-changed"><div class="files-changed-label">' + files.length + ' arquivo' + (files.length !== 1 ? 's' : '') + '</div><div class="files-changed-list">' + files.map(f => '<span class="files-changed-file">' + escapeHtml(f) + '</span>').join('') + '</div></div>' : '';
-  div.innerHTML = '<div class="message-avatar">i</div><div class="message-body" style="flex:1;min-width:0"><div class="timeline"><div class="timeline-header"><div class="timeline-title">Progresso</div></div><div class="timeline-steps">' + stepsHtml + '</div>' + filesHtml + '</div></div>';
+
+  // Find existing active timeline to update in-place (avoids duplicate cards)
+  const existing = chat.querySelector('.timeline[data-active]');
+  if (existing) {
+    existing.querySelector('.timeline-steps').innerHTML = stepsHtml;
+    const filesEl = existing.querySelector('.files-changed');
+    if (filesHtml) {
+      if (filesEl) filesEl.outerHTML = filesHtml; else existing.insertAdjacentHTML('beforeend', filesHtml);
+    }
+    chat.scrollTop = chat.scrollHeight;
+    return;
+  }
+
+  // No active timeline — create new one and mark as active
+  const div = document.createElement('div');
+  div.className = 'message system';
+  div.innerHTML = '<div class="message-avatar">i</div><div class="message-body" style="flex:1;min-width:0"><div class="timeline" data-active><div class="timeline-header"><div class="timeline-title">Progresso</div></div><div class="timeline-steps">' + stepsHtml + '</div>' + filesHtml + '</div></div>';
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
 }
@@ -662,15 +676,30 @@ function attachEvents(id) {
   });
 
   source.addEventListener('FILE_CHANGED', e => {
-    const p = JSON.parse(e.data).payload;
-    if (p?.files) {
-      const lastTimeline = $$('.timeline').last();
-      if (lastTimeline && !lastTimeline.querySelector('.files-changed')) {
-        const filesHtml = '<div class="files-changed"><div class="files-changed-label">' + p.files.length + ' arquivo' + (p.files.length !== 1 ? 's' : '') + '</div><div class="files-changed-list">' + p.files.map(f => '<span class="files-changed-file">' + escapeHtml(f) + '</span>').join('') + '</div></div>';
-        lastTimeline.insertAdjacentHTML('beforeend', filesHtml);
+      const p = JSON.parse(e.data).payload;
+      if (p?.files) {
+        const existing = chat.querySelector('.timeline[data-active]');
+        if (existing) {
+          let filesEl = existing.querySelector('.files-changed');
+          if (!filesEl) {
+            filesEl = document.createElement('div');
+            filesEl.className = 'files-changed';
+            filesEl.innerHTML = '<div class="files-changed-label"></div><div class="files-changed-list"></div>';
+            existing.appendChild(filesEl);
+          }
+          const list = filesEl.querySelector('.files-changed-list');
+          const existingFiles = new Set(Array.from(list.querySelectorAll('.files-changed-file')).map(el => el.textContent));
+          p.files.forEach(f => {
+            if (!existingFiles.has(f)) {
+              list.insertAdjacentHTML('beforeend', '<span class="files-changed-file">' + escapeHtml(f) + '</span>');
+              existingFiles.add(f);
+            }
+          });
+          const count = list.querySelectorAll('.files-changed-file').length;
+          filesEl.querySelector('.files-changed-label').textContent = count + ' arquivo' + (count !== 1 ? 's' : '');
+        }
       }
-    }
-  });
+    });
 
   source.addEventListener('BUILD_STARTED', e => {
     addTimeline([{label: 'Seu pedido', status: 'done'}, {label: 'Agente iniciado', status: 'done'}, {label: 'Gerando código', status: 'done'}, {label: 'Validando', status: 'active'}]);
@@ -691,36 +720,37 @@ function attachEvents(id) {
   source.addEventListener('PREVIEW_LOCAL_SERVER_READY', e => { const p=JSON.parse(e.data).payload; addTimeline([{label:'Servidor local pronto',status:'done',detail:p?.port?'porta '+p.port:''}]); });
   source.addEventListener('PREVIEW_TUNNEL_READY', e => { const p=JSON.parse(e.data).payload; addTimeline([{label:'Tunnel conectado',status:'done',detail:p?.url?'URL '+p.url:''}]); });
   source.addEventListener('PREVIEW_READY', e => {
-    const ev = JSON.parse(e.data);
-    const eventSessionId = ev.payload?.sessionId;
-    if (eventSessionId && eventSessionId !== sessionId) return;
-    const newUrl = ev.payload?.url || ev.payload?.previewUrl;
-    if (!newUrl || newUrl === currentUrl) return;
-    if (loadSessionAt && (Date.now() - loadSessionAt) < 2000) return;
-    // Update timeline to show preview building (not yet ready)
-    addTimeline([{label: 'Seu pedido', status: 'done'}, {label: 'Agente iniciado', status: 'done'}, {label: 'Gerando código', status: 'done'}, {label: 'Build aprovado', status: 'done'}, {label: 'Subindo preview', status: 'active'}]);
-    // renderPreview goes to 'loading' - it will transition to 'ready' on iframe.onload
-    renderPreview(newUrl);
-    // Poll for iframe.onload completion before declaring "Pronto"
-    const checkLoaded = () => {
-      if (previewState === 'ready') {
-        addTimeline([{label: 'Seu pedido', status: 'done'}, {label: 'Agente iniciado', status: 'done'}, {label: 'Gerando código', status: 'done'}, {label: 'Build aprovado', status: 'done'}, {label: 'Subindo preview', status: 'done'}, {label: 'Pronto', status: 'done'}]);
-        $('send').classList.remove('sending'); $('prompt').disabled = false; $('composeStatus').textContent = 'Pronto';
-        $('chatHeaderStatus').textContent = 'Pronto'; $('chatHeaderMeta').querySelector('.dot').style.background = 'var(--success)';
-        currentTaskId = null; activeTaskStatus = null;
-        stopTaskTimer();
-      } else if (previewState === 'error') {
-        // Show partial timeline + "Pronto" disabled - user will need to retry
-        $('send').classList.remove('sending'); $('prompt').disabled = false; $('composeStatus').textContent = 'Pronto';
-        $('chatHeaderStatus').textContent = 'Pronto'; $('chatHeaderMeta').querySelector('.dot').style.background = 'var(--warning)';
-        currentTaskId = null; activeTaskStatus = null;
-        stopTaskTimer();
-      } else {
-        setTimeout(checkLoaded, 500);
-      }
-    };
-    setTimeout(checkLoaded, 500);
-  });
+      const ev = JSON.parse(e.data);
+      const eventSessionId = ev.payload?.sessionId;
+      if (eventSessionId && eventSessionId !== sessionId) return;
+      const newUrl = ev.payload?.url || ev.payload?.previewUrl;
+      if (!newUrl || newUrl === currentUrl) return;
+      if (loadSessionAt && (Date.now() - loadSessionAt) < 2000) return;
+      // Update timeline to show preview building (not yet ready)
+      addTimeline([{label: 'Seu pedido', status: 'done'}, {label: 'Agente iniciado', status: 'done'}, {label: 'Gerando código', status: 'done'}, {label: 'Build aprovado', status: 'done'}, {label: 'Subindo preview', status: 'active'}]);
+      // renderPreview goes to 'loading' - it will transition to 'ready' on iframe.onload
+      renderPreview(newUrl);
+      // Poll for iframe.onload completion before declaring "Pronto"
+      const checkLoaded = () => {
+        if (previewState === 'ready') {
+          addTimeline([{label: 'Seu pedido', status: 'done'}, {label: 'Agente iniciado', status: 'done'}, {label: 'Gerando código', status: 'done'}, {label: 'Build aprovado', status: 'done'}, {label: 'Subindo preview', status: 'done'}, {label: 'Pronto', status: 'done'}]);
+          $('send').classList.remove('sending'); $('prompt').disabled = false; $('composeStatus').textContent = 'Pronto';
+          $('chatHeaderStatus').textContent = 'Pronto'; $('chatHeaderMeta').querySelector('.dot').style.background = 'var(--success)';
+          currentTaskId = null; activeTaskStatus = null;
+          stopTaskTimer();
+        } else if (previewState === 'error') {
+          // Show timeline with error state
+          addTimeline([{label: 'Seu pedido', status: 'done'}, {label: 'Agente iniciado', status: 'done'}, {label: 'Gerando código', status: 'done'}, {label: 'Build aprovado', status: 'done'}, {label: 'Subindo preview', status: 'done'}, {label: 'Erro no preview', status: 'error'}]);
+          $('send').classList.remove('sending'); $('prompt').disabled = false; $('composeStatus').textContent = 'Preview indisponível';
+          $('chatHeaderStatus').textContent = 'Erro'; $('chatHeaderMeta').querySelector('.dot').style.background = 'var(--danger)';
+          currentTaskId = null; activeTaskStatus = null;
+          stopTaskTimer();
+        } else {
+          setTimeout(checkLoaded, 500);
+        }
+      };
+      setTimeout(checkLoaded, 500);
+    });
 
   source.addEventListener('PREVIEW_FAILED', e => {
     const p = JSON.parse(e.data).payload;
