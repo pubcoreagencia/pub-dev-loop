@@ -137,14 +137,15 @@ export class LocalPreviewRuntime implements PreviewRuntime {
       shell: false,
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    }) as unknown as ChildProcessWithoutNullStreams;
     record.child = child;
+
     record.info = { ...record.info, pid: child.pid ?? null, startedAt: new Date(), error: null };
 
-    child.stdout.on('data', chunk => {
+    child.stdout.on('data', (chunk: Buffer) => {
       for (const line of chunk.toString().split(/\r?\n/).filter(Boolean)) emit(record, 'stdout', line);
     });
-    child.stderr.on('data', chunk => {
+    child.stderr.on('data', (chunk: Buffer) => {
       for (const line of chunk.toString().split(/\r?\n/).filter(Boolean)) emit(record, 'stderr', line);
     });
 
@@ -157,7 +158,8 @@ export class LocalPreviewRuntime implements PreviewRuntime {
     };
 
     child.on('exit', onExit);
-    child.on('error', error => setStatus(record, 'FAILED', error.message));
+    child.on('error', (error: Error) => setStatus(record, 'FAILED', error.message));
+
 
     try {
       const healthUrl = `http://127.0.0.1:${record.config.port}`;

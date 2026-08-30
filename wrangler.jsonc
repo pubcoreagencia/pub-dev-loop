@@ -26,8 +26,14 @@
       "new_sqlite_classes": [
         "PubDevLoopWorkerContainer"
       ]
+    },
+    {
+      "tag": "v2",
+      "new_classes": ["PubDevLoopApiContainer"]
     }
+
   ],
+
   "containers": [
     {
       "class_name": "PubDevLoopWorkerContainer",
