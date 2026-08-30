@@ -1,3 +1,4 @@
+import { classifyApiError, type ClassificationResult } from '../api-error-classifier.js';
 import type { Task } from '../domain.js';
 import type { AgentProvider, ProviderTaskResult } from './types.js';
 import { DEFAULT_OPENROUTER_BASE_URL, normalizeBaseUrl, SHARED_SYSTEM_INSTRUCTIONS, PREVIEW_SYSTEM_INSTRUCTIONS, isPrototypeTask } from './shared.js';
@@ -144,6 +145,61 @@ export class OpenRouterProvider implements AgentProvider {
 
               if (!response.ok) {
                 const errPayload = this.parseError(text);
+                const errMsg = errPayload.message || text;
+                const errTextLower = text.toLowerCase();
+                const hasToolMsg = messages.some(m => m.role === 'tool');
+                // Pre-flight: se payload tem tool message E é Nvidia, forçar fallback imediato
+                const isNvidiaToolMismatch =
+                  hasToolMsg && (text.includes('Nvidia') || errTextLower.includes('nvidia'));
+                if (response.status === 400) {
+                  const cls = classifyApiError(response.status, errMsg, undefined, hasToolMsg);
+                  if (cls.shouldFallback || isNvidiaToolMismatch) {
+                    const isLastModel = model === modelQueue[modelQueue.length - 1];
+                    if (isLastModel) {
+                      clearTimeout(timer);
+                      const hasFallbacks = cfg.fallbackModels && cfg.fallbackModels.length > 0;
+                      return {
+                        status: 'ROUTER_HTTP_ERROR',
+                        provider: this.kind,
+                        model: modelUsed ?? model,
+                        exitCode: response.status,
+                        durationMs: Date.now() - started,
+                        stdout: lastResponseText || '',
+                        stderr: isNvidiaToolMismatch
+                          ? `[capability_error] Nvidia does not support tool-message format: ${errMsg}`
+                          : `[capability_error] ${cls.reason}: ${errMsg}`,
+                        changedFiles: runtime.getChangedFiles(),
+                        commit: null,
+                        errorCode: hasFallbacks ? 'ALL_PROVIDERS_FAILED' : 'ROUTER_HTTP_ERROR',
+                        errorMessage: hasFallbacks
+                          ? `All configured OpenRouter models failed: HTTP ${response.status} [${isNvidiaToolMismatch ? 'Nvidia tool-message' : cls.reason}]: ${errMsg}`
+                          : `OpenRouter HTTP ${response.status} [${isNvidiaToolMismatch ? 'Nvidia tool-message' : cls.reason}]: ${errMsg}`,
+                        toolCalls: totalToolCalls,
+                        toolRounds: toolRounds,
+                        httpStatus: response.status,
+                      };
+                    }
+                    break; // → next model
+                  }
+                  // 400 payload error → abort
+                  clearTimeout(timer);
+                  return {
+                    status: 'ROUTER_HTTP_ERROR',
+                    provider: this.kind,
+                    model: modelUsed ?? model,
+                    exitCode: response.status,
+                    durationMs: Date.now() - started,
+                    stdout: lastResponseText || '',
+                    stderr: `[payload_error] ${errMsg}`,
+                    changedFiles: runtime.getChangedFiles(),
+                    commit: null,
+                    errorCode: 'ROUTER_HTTP_ERROR',
+                    errorMessage: `OpenRouter HTTP 400 (payload): ${errMsg}`,
+                    toolCalls: totalToolCalls,
+                    toolRounds: toolRounds,
+                    httpStatus: response.status,
+                  };
+                }
                 if (response.status === 429 && attempt < cfg.maxRetries) {
                   const retryAfter = response.headers.get('retry-after');
                   const delayMs = retryAfter ? Number(retryAfter) * 1000 : cfg.baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 100;
