@@ -45,8 +45,9 @@ export class PublicPreviewRuntime implements PreviewRuntime {
       this.cloudflared,
       ['tunnel', '--url', `http://127.0.0.1:${local.port}`, '--no-autoupdate'],
       { stdio: ['ignore', 'pipe', 'pipe'], shell: false, detached: true },
-    );
+    ) as unknown as ChildProcessWithoutNullStreams;
     record.tunnel = tunnel;
+
 
     const timeoutMs = Number(process.env.PROTOTYPE_TUNNEL_STARTUP_TIMEOUT_MS ?? DEFAULT_TUNNEL_TIMEOUT_MS);
     const deadline = Date.now() + timeoutMs;
@@ -83,14 +84,15 @@ export class PublicPreviewRuntime implements PreviewRuntime {
         if (buffer.length > 16_384) buffer = buffer.slice(-8_192);
       };
 
-      tunnel.stdout?.on('data', chunk => handleChunk('stdout', chunk));
-      tunnel.stderr?.on('data', chunk => handleChunk('stderr', chunk));
-      tunnel.once('error', error => void fail(error));
-      tunnel.once('exit', (code, signal) => {
+      tunnel.stdout.on('data', (chunk: Buffer) => handleChunk('stdout', chunk));
+      tunnel.stderr.on('data', (chunk: Buffer) => handleChunk('stderr', chunk));
+      tunnel.once('error', (error: Error) => void fail(error));
+      tunnel.once('exit', (code: number | null, signal: NodeJS.Signals | null) => {
         if (!settled) {
           void fail(new Error(`cloudflared exited before preview URL was available (code=${String(code)} signal=${String(signal)})`));
         }
       });
+
 
       const timer = setInterval(() => {
         if (Date.now() >= deadline && !settled) {
