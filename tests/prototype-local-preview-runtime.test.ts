@@ -183,7 +183,7 @@ describe('LocalPreviewRuntime', () => {
 
     const status = await runtime.get(info.id);
     expect(status?.status).toBe('FAILED');
-    expect(status?.error).toMatch(/Missing script/);
+    expect(status?.error).toMatch(/preview process exited with code=1/);
 
     await rm(workspace, { recursive: true, force: true });
   });
