@@ -250,6 +250,7 @@ Novo
 <span class="kbd">Shift+Enter</span> para nova linha
 </div>
 <div id="composeStatus"></div>
+<div id="taskTimer" style="font-size:11px;color:var(--text-tertiary);font-family:'JetBrains Mono',monospace;margin-top:4px;display:none"></div>
 </div>
 <button id="scrollBottom" class="scroll-bottom" aria-label="Rolar para baixo">
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
@@ -389,6 +390,28 @@ function renderChatEmpty() {
 
 function formatTime(iso){if(!iso)return '';const d=new Date(iso);const now=new Date();const diff=(now-d)/1000;if(diff<60)return 'agora';if(diff<3600)return Math.floor(diff/60)+'min';if(diff<86400)return Math.floor(diff/3600)+'h';if(diff<604800)return Math.floor(diff/86400)+'d';return d.toLocaleDateString('pt-BR',{day:'numeric',month:'short'})}
 function formatElapsed(ms){const s=Math.floor(ms/1000);if(s<60)return s+'s';return Math.floor(s/60)+'m'+(s%60)+'s'}
+function startTaskTimer(){
+  if(timerInterval)clearInterval(timerInterval);
+  taskStartAt=Date.now();
+  const el=$('taskTimer');
+  if(el){el.style.display='block';el.textContent='0s';}
+  timerInterval=setInterval(()=>{
+    if(!taskStartAt)return;
+    const elapsed=formatElapsed(Date.now()-taskStartAt);
+    const el=$('taskTimer');
+    if(el)el.textContent=elapsed;
+    const status=$('composeStatus');
+    if(status&&status.textContent==='Construindo...'){
+      status.textContent='Construindo... '+elapsed;
+    }
+  },1000);
+}
+function stopTaskTimer(){
+  if(timerInterval){clearInterval(timerInterval);timerInterval=null;}
+  taskStartAt=null;
+  const el=$('taskTimer');
+  if(el){el.style.display='none';el.textContent='';}
+}
 function getStatusClass(status){if(status==='READY')return 'ready';if(status==='BUILDING'||status==='CREATING')return 'building';if(status==='FAILED')return 'failed';return 'creating'}
 function getStatusLabel(status){const labels={READY:'Pronto',BUILDING:'Construindo',CREATING:'Criando',FAILED:'Falhou'};return labels[status]||status}
 
@@ -612,7 +635,7 @@ async function loadSession(id) {
   if (data.session.previewUrl) { currentUrl = null; renderPreview(data.session.previewUrl); verifyAndRefreshPreview(id, data.session.previewUrl); } else { setPreviewState('idle'); }
   const tasks = data.tasks || [];
   const activeTask = tasks.find(t => ['QUEUED','ASSIGNED','RUNNING','TESTING'].includes(t.status));
-  if (activeTask) { currentTaskId = activeTask.id; activeTaskStatus = activeTask.status; $('send').classList.add('sending'); $('composeStatus').textContent = 'Construindo...'; } else { currentTaskId = null; activeTaskStatus = null; $('send').classList.remove('sending'); $('composeStatus').textContent = ''; }
+  if (activeTask) { currentTaskId = activeTask.id; activeTaskStatus = activeTask.status; $('send').classList.add('sending'); $('composeStatus').textContent = 'Construindo...'; startTaskTimer(); } else { currentTaskId = null; activeTaskStatus = null; $('send').classList.remove('sending'); $('composeStatus').textContent = ''; stopTaskTimer(); }
   attachEvents(id);
 }
 
@@ -630,6 +653,7 @@ function attachEvents(id) {
     $('prompt').value = '';
     $('prompt').disabled = true;
     $('send').disabled = true;
+    startTaskTimer();
     addTimeline([{label: 'Seu pedido', status: 'done'}, {label: 'Agente iniciado', status: 'active'}]);
   });
 
@@ -660,6 +684,7 @@ function attachEvents(id) {
     const p = JSON.parse(e.data).payload;
     addErrorCard({type: 'BUILD_ERROR', desc: p?.message || 'O código foi gerado mas não passou na validação.', detail: p?.stderr || p?.output || '', actions: [{label: 'Tentar novamente', onClick: () => { $('prompt').focus(); }}]});
     $('send').classList.remove('sending'); $('prompt').disabled = false; $('composeStatus').textContent = '';
+    stopTaskTimer();
   });
 
   source.addEventListener('PREVIEW_STARTED', e => { setPreviewState('loading'); });
@@ -682,11 +707,13 @@ function attachEvents(id) {
         $('send').classList.remove('sending'); $('prompt').disabled = false; $('composeStatus').textContent = 'Pronto';
         $('chatHeaderStatus').textContent = 'Pronto'; $('chatHeaderMeta').querySelector('.dot').style.background = 'var(--success)';
         currentTaskId = null; activeTaskStatus = null;
+        stopTaskTimer();
       } else if (previewState === 'error') {
         // Show partial timeline + "Pronto" disabled - user will need to retry
         $('send').classList.remove('sending'); $('prompt').disabled = false; $('composeStatus').textContent = 'Pronto';
         $('chatHeaderStatus').textContent = 'Pronto'; $('chatHeaderMeta').querySelector('.dot').style.background = 'var(--warning)';
         currentTaskId = null; activeTaskStatus = null;
+        stopTaskTimer();
       } else {
         setTimeout(checkLoaded, 500);
       }
@@ -706,6 +733,7 @@ function attachEvents(id) {
     const p = JSON.parse(e.data).payload;
     addErrorCard({type: 'AGENT_ERROR', desc: p?.message || 'Erro inesperado.'});
     $('send').classList.remove('sending'); $('prompt').disabled = false; $('composeStatus').textContent = '';
+    stopTaskTimer();
   });
 }
 
