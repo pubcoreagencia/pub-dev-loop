@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createServer } from 'node:net';
 import { existsSync } from 'node:fs';
 import { stat, readFile } from 'node:fs/promises';
@@ -204,19 +204,16 @@ export class LocalPreviewRuntime implements PreviewRuntime {
       shell: false,
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    }) as unknown as ChildProcessWithoutNullStreams;
     record.child = child;
+
     record.info = { ...record.info, pid: child.pid ?? null, startedAt: new Date(), error: null };
 
-    child.stdout?.on('data', chunk => {
+    child.stdout.on('data', (chunk: Buffer) => {
       for (const line of chunk.toString().split(/\r?\n/).filter(Boolean)) emit(record, 'stdout', line);
     });
-    child.stderr?.on('data', chunk => {
-      const lines = chunk.toString().split(/\r?\n/).filter(Boolean);
-      for (const line of lines) {
-        record.stderrLines.push(line);
-        emit(record, 'stderr', line);
-      }
+    child.stderr.on('data', (chunk: Buffer) => {
+      for (const line of chunk.toString().split(/\r?\n/).filter(Boolean)) emit(record, 'stderr', line);
     });
 
     const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
@@ -232,7 +229,8 @@ export class LocalPreviewRuntime implements PreviewRuntime {
     };
 
     child.on('exit', onExit);
-    child.on('error', error => setStatus(record, 'FAILED', error.message));
+    child.on('error', (error: Error) => setStatus(record, 'FAILED', error.message));
+
 
     try {
       const healthUrl = `http://127.0.0.1:${record.config.port}`;

@@ -33,11 +33,11 @@
     },
     {
       "tag": "v2",
-      "new_sqlite_classes": [
-        "PubDevLoopApiContainer"
-      ]
+      "new_classes": ["PubDevLoopApiContainer"]
     }
+
   ],
+
   "containers": [
     {
       "class_name": "PubDevLoopWorkerContainer",
