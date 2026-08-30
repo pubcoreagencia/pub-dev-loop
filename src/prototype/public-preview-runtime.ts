@@ -10,6 +10,7 @@ import { LocalPreviewRuntime } from './local-preview-runtime.js';
 
 const DEFAULT_TUNNEL_TIMEOUT_MS = 30_000;
 const QUICK_TUNNEL_RE = /https:\/\/[-a-z0-9]+\.trycloudflare\.com/i;
+const PROBE_TIMEOUT_MS = 5000;
 
 interface PublicRecord {
   localRuntimeId: string;
@@ -48,7 +49,6 @@ export class PublicPreviewRuntime implements PreviewRuntime {
     ) as unknown as ChildProcessWithoutNullStreams;
     record.tunnel = tunnel;
 
-
     const timeoutMs = Number(process.env.PROTOTYPE_TUNNEL_STARTUP_TIMEOUT_MS ?? DEFAULT_TUNNEL_TIMEOUT_MS);
     const deadline = Date.now() + timeoutMs;
     let buffer = '';
@@ -72,13 +72,17 @@ export class PublicPreviewRuntime implements PreviewRuntime {
         const match = buffer.match(QUICK_TUNNEL_RE);
         if (match && !settled) {
           settled = true;
+          // URL detectada - marca como CONNECTING e faz probe HTTP
+          const url = match[0];
           record.info = {
             ...record.info,
-            status: 'READY',
-            url: match[0],
+            status: 'CONNECTING',
+            url,
             error: null,
           };
-          this.emit(record, 'system', `public-preview:ready url=${match[0]}`);
+          this.emit(record, 'system', `public-preview:url=${url}`);
+          // Probe HTTP assíncrono - não bloqueia o promise
+          this.probeUrl(runtimeId, record, url).catch(() => undefined);
           this.watchTunnelLifecycle(runtimeId, record);
           resolve({ ...record.info });
         }
@@ -93,7 +97,6 @@ export class PublicPreviewRuntime implements PreviewRuntime {
           void fail(new Error(`cloudflared exited before preview URL was available (code=${String(code)} signal=${String(signal)})`));
         }
       });
-
 
       const timer = setInterval(() => {
         if (Date.now() >= deadline && !settled) {
@@ -112,29 +115,58 @@ export class PublicPreviewRuntime implements PreviewRuntime {
     });
   }
 
+  /**
+   * Probe HTTP público da URL do tunnel.
+   * SÓ emite PREVIEW_READY se a URL estiver REALMENTE acessível
+   * (resposta 2xx/3xx). 1033, 4xx, 5xx, timeout = NÃO READY.
+   */
+  private async probeUrl(runtimeId: string, record: PublicRecord, url: string): Promise<void> {
+    if (record.info.status === 'STOPPED' || record.info.status === 'STOPPING' || record.info.status === 'FAILED') {
+      return;
+    }
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+      const response = await fetch(url, { method: 'HEAD', signal: controller.signal, redirect: 'manual' });
+      clearTimeout(timeoutId);
+      // Considerar READY apenas para 2xx e 3xx
+      if (response.status >= 200 && response.status < 400) {
+        // Sucesso - agora sim é READY
+        record.info = { ...record.info, status: 'READY', error: null };
+        this.emit(record, 'system', `public-preview:ready url=${url}`);
+        return;
+      }
+      // 4xx/5xx (incluindo 1033) ou qualquer outro status
+      throw new Error(`HTTP ${response.status}`);
+    } catch (err) {
+      // Falha no probe - NÃO marca como READY, deixa como EXPIRED para o watcher reiniciar
+      const message = (err as Error).message;
+      record.info = { ...record.info, status: 'EXPIRED', error: `Probe failed: ${message}` };
+      this.emit(record, 'system', `public-preview:probe-failed ${message}`);
+    }
+  }
+
   private watchTunnelLifecycle(runtimeId: string, record: PublicRecord): void {
     const initialTunnel = record.tunnel;
     if (!initialTunnel) return;
     let restartCount = 0;
-    const MAX_RESTARTS = 100; // effectively unlimited within a session lifetime
+    const MAX_RESTARTS = 100;
     initialTunnel.on('exit', () => {
-      // If the runtime was deliberately stopped, don't restart
       if (record.info.status === 'STOPPED' || record.info.status === 'STOPPING' || record.info.status === 'FAILED') return;
-      if (record.info.status === 'EXPIRED') return; // already marked dead
+      if (record.info.status === 'EXPIRED') return;
       if (restartCount >= MAX_RESTARTS) {
         record.info = { ...record.info, status: 'EXPIRED', error: 'Tunnel restart limit reached' };
         return;
       }
       restartCount++;
-      // Mark as EXPIRED while we restart (UI will see this and trigger recovery if needed)
       record.info = { ...record.info, status: 'EXPIRED', error: 'Tunnel died, restarting...' };
-      // Small delay before restarting to avoid busy-looping
       setTimeout(() => {
         if (record.info.status === 'STOPPED' || record.info.status === 'STOPPING' || record.info.status === 'FAILED') return;
         try {
+          const port = record.info.port ?? 3000;
           const newTunnel = spawn(
             this.cloudflared,
-            ['tunnel', '--url', `http://127.0.0.1:${record.info.port}`, '--no-autoupdate'],
+            ['tunnel', '--url', `http://127.0.0.1:${port}`, '--no-autoupdate'],
             { stdio: ['ignore', 'pipe', 'pipe'], shell: false, detached: true },
           );
           record.tunnel = newTunnel;
@@ -147,10 +179,11 @@ export class PublicPreviewRuntime implements PreviewRuntime {
             const m = text.match(QUICK_TUNNEL_RE);
             if (m) {
               clearInterval(check);
-              record.info = { ...record.info, status: 'READY', url: m[0], error: null };
-              this.emit(record, 'system', `public-preview:restarted url=${m[0]}`);
-              // Watch the new tunnel too
-              this.watchTunnelLifecycle(runtimeId, record);
+              const newUrl = m[0];
+              record.info = { ...record.info, status: 'CONNECTING', url: newUrl, error: null };
+              this.emit(record, 'system', `public-preview:restarted url=${newUrl}`);
+              // Probe HTTP após restart
+              this.probeUrl(runtimeId, record, newUrl).catch(() => undefined);
             }
           }, 250);
           const startupMs = Number(process.env.PROTOTYPE_TUNNEL_STARTUP_TIMEOUT_MS ?? DEFAULT_TUNNEL_TIMEOUT_MS);
@@ -158,7 +191,6 @@ export class PublicPreviewRuntime implements PreviewRuntime {
           newTunnel.on('exit', () => {
             clearInterval(check);
             clearTimeout(tmo);
-            // Recursive: if the new tunnel also dies, restart again
             this.watchTunnelLifecycle(runtimeId, record);
           });
         } catch (err) {
@@ -171,7 +203,6 @@ export class PublicPreviewRuntime implements PreviewRuntime {
   async get(runtimeId: string): Promise<PreviewRuntimeInfo | null> {
     const record = this.records.get(runtimeId);
     if (!record) return null;
-    // If the tunnel process died, the URL is dead too - mark as EXPIRED
     if (record.tunnel && record.tunnel.exitCode !== null) {
       record.info = { ...record.info, status: 'EXPIRED', error: 'Tunnel expired' };
       return { ...record.info };

@@ -1,6 +1,7 @@
 export const PREVIEW_RUNTIME_STATUSES = [
   'CREATING',
   'STARTING',
+  'CONNECTING',
   'READY',
   'STOPPING',
   'STOPPED',
