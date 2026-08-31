@@ -22,6 +22,8 @@ interface PublicRecord {
 export class PublicPreviewRuntime implements PreviewRuntime {
   private readonly local = new LocalPreviewRuntime();
   private readonly records = new Map<string, PublicRecord>();
+  // Nova config: hostname do tunnel criado via wrangler (não usa mais o RE quick+cloudflared output)
+  private readonly previewHostname = process.env.PREVIEW_HOSTNAME ?? '';
   private readonly cloudflared = process.env.CLOUDFLARED_COMMAND ?? 'cloudflared';
 
   async create(config: PreviewRuntimeConfig): Promise<PreviewRuntimeInfo> {
@@ -37,83 +39,100 @@ export class PublicPreviewRuntime implements PreviewRuntime {
   }
 
   async start(runtimeId: string): Promise<PreviewRuntimeInfo> {
-    const record = this.require(runtimeId);
-    const local = await this.local.start(record.localRuntimeId);
-    record.info = { ...local, url: null };
-    this.emit(record, 'system', `local-preview:ready port=${local.port}`);
+      const record = this.require(runtimeId);
+      const local = await this.local.start(record.localRuntimeId);
+      record.info = { ...local, url: null };
+      this.emit(record, 'system', `local-preview:ready port=${local.port}`);
 
-    const tunnel = spawn(
-      this.cloudflared,
-      ['tunnel', '--url', `http://127.0.0.1:${local.port}`, '--no-autoupdate'],
-      { stdio: ['ignore', 'pipe', 'pipe'], shell: false, detached: true },
-    ) as unknown as ChildProcessWithoutNullStreams;
-    record.tunnel = tunnel;
+      // If previewHostname is configured (via wrangler tunnel), use it directly
+      if (this.previewHostname) {
+        const url = `https://${this.previewHostname}`;
+        record.info = {
+          ...record.info,
+          status: 'CONNECTING',
+          url,
+          error: null,
+        };
+        this.emit(record, 'system', `public-preview:url=${url}`);
+        // Probe HTTP assíncrono
+        this.probeUrl(runtimeId, record, url).catch(() => undefined);
+        // No tunnel process to watch for this mode
+        return { ...record.info };
+      }
 
-    const timeoutMs = Number(process.env.PROTOTYPE_TUNNEL_STARTUP_TIMEOUT_MS ?? DEFAULT_TUNNEL_TIMEOUT_MS);
-    const deadline = Date.now() + timeoutMs;
-    let buffer = '';
+      // Fallback to cloudflared tunnel detection (legacy)
+      const tunnel = spawn(
+        this.cloudflared,
+        ['tunnel', '--url', `http://127.0.0.1:${local.port}`, '--no-autoupdate'],
+        { stdio: ['ignore', 'pipe', 'pipe'], shell: false, detached: true }
+      ) as unknown as ChildProcessWithoutNullStreams;
+      record.tunnel = tunnel;
 
-    return await new Promise<PreviewRuntimeInfo>((resolve, reject) => {
-      let settled = false;
+      const timeoutMs = Number(process.env.PROTOTYPE_TUNNEL_STARTUP_TIMEOUT_MS ?? DEFAULT_TUNNEL_TIMEOUT_MS);
+      const deadline = Date.now() + timeoutMs;
+      let buffer = '';
 
-      const fail = async (error: Error) => {
-        if (settled) return;
-        settled = true;
-        await this.stop(runtimeId).catch(() => undefined);
-        record.info = { ...record.info, status: 'FAILED', error: error.message };
-        this.emit(record, 'system', `public-preview:failed ${error.message}`);
-        reject(error);
-      };
+      return await new Promise<PreviewRuntimeInfo>((resolve, reject) => {
+        let settled = false;
 
-      const handleChunk = (stream: 'stdout' | 'stderr', chunk: Buffer) => {
-        const text = chunk.toString();
-        this.emit(record, stream, text.trimEnd());
-        buffer += text;
-        const match = buffer.match(QUICK_TUNNEL_RE);
-        if (match && !settled) {
+        const fail = async (error: Error) => {
+          if (settled) return;
           settled = true;
-          // URL detectada - marca como CONNECTING e faz probe HTTP
-          const url = match[0];
-          record.info = {
-            ...record.info,
-            status: 'CONNECTING',
-            url,
-            error: null,
-          };
-          this.emit(record, 'system', `public-preview:url=${url}`);
-          // Probe HTTP assíncrono - não bloqueia o promise
-          this.probeUrl(runtimeId, record, url).catch(() => undefined);
-          this.watchTunnelLifecycle(runtimeId, record);
-          resolve({ ...record.info });
-        }
-        if (buffer.length > 16_384) buffer = buffer.slice(-8_192);
-      };
+          await this.stop(runtimeId).catch(() => undefined);
+          record.info = { ...record.info, status: 'FAILED', error: error.message };
+          this.emit(record, 'system', `public-preview:failed ${error.message}`);
+          reject(error);
+        };
 
-      tunnel.stdout.on('data', (chunk: Buffer) => handleChunk('stdout', chunk));
-      tunnel.stderr.on('data', (chunk: Buffer) => handleChunk('stderr', chunk));
-      tunnel.once('error', (error: Error) => void fail(error));
-      tunnel.once('exit', (code: number | null, signal: NodeJS.Signals | null) => {
-        if (!settled) {
-          void fail(new Error(`cloudflared exited before preview URL was available (code=${String(code)} signal=${String(signal)})`));
-        }
+        const handleChunk = (stream: 'stdout' | 'stderr', chunk: Buffer) => {
+          const text = chunk.toString();
+          this.emit(record, stream, text.trimEnd());
+          buffer += text;
+          const match = buffer.match(QUICK_TUNNEL_RE);
+          if (match && !settled) {
+            settled = true;
+            // URL detectada - marca como CONNECTING e faz probe HTTP
+            const url = match[0];
+            record.info = {
+              ...record.info,
+              status: 'CONNECTING',
+              url,
+              error: null,
+            };
+            this.emit(record, 'system', `public-preview:url=${url}`);
+            // Probe HTTP assíncrono - não bloqueia o promise
+            this.probeUrl(runtimeId, record, url).catch(() => undefined);
+            this.watchTunnelLifecycle(runtimeId, record);
+            resolve({ ...record.info });
+          }
+          if (buffer.length > 16_384) buffer = buffer.slice(-8_192);
+        };
+
+        tunnel.stdout.on('data', (chunk: Buffer) => handleChunk('stdout', chunk));
+        tunnel.stderr.on('data', (chunk: Buffer) => handleChunk('stderr', chunk));
+        tunnel.once('error', (error: Error) => void fail(error));
+        tunnel.once('exit', (code: number | null, signal: NodeJS.Signals | null) => {
+          if (!settled) {
+            void fail(new Error(`cloudflared exited before preview URL was available (code=${String(code)} signal=${String(signal)})`));
+          }
+        });
+
+        const timer = setInterval(() => {
+          if (Date.now() >= deadline && !settled) {
+            clearInterval(timer);
+            void fail(new Error('cloudflared did not produce a public preview URL before timeout'));
+          }
+        }, 250);
+
+        const cleanup = () => clearInterval(timer);
+        tunnel.once('exit', cleanup);
+
+        tunnel.on('exit', () => {
+          if (settled) return;
+          record.info = { ...record.info, status: 'EXPIRED', error: 'Tunnel died' };
+        });
       });
-
-      const timer = setInterval(() => {
-        if (Date.now() >= deadline && !settled) {
-          clearInterval(timer);
-          void fail(new Error('cloudflared did not produce a public preview URL before timeout'));
-        }
-      }, 250);
-
-      const cleanup = () => clearInterval(timer);
-      tunnel.once('exit', cleanup);
-
-      tunnel.on('exit', () => {
-        if (settled) return;
-        record.info = { ...record.info, status: 'EXPIRED', error: 'Tunnel died' };
-      });
-    });
-  }
+    }
 
   /**
    * Probe HTTP público da URL do tunnel.

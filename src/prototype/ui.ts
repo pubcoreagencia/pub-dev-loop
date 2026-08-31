@@ -674,22 +674,34 @@ function addErrorCard(opts) {
 function clearStaleErrors() { $$('.error-card').forEach(el => el.closest('.message')?.remove()); }
 
 // === SIDEBAR ===
-async function loadProjects() {
+function loadProjects() {
   try {
     const r = await fetch('/prototype/sessions');
     if (!r.ok) throw new Error('Falha ao listar projetos: ' + r.status);
     const data = await r.json();
     const sessions = Array.isArray(data) ? data : [];
-    const projectMap = new Map();
+    // Usar o ID da sessão como chave (único), não o nome do projeto.
+    // Isso evita que sessões com nomes similares sejam sobrescritas.
+    const sessionMap = new Map();
     sessions.forEach(s => {
-      const key = (s.project || '').trim().toLowerCase();
+      const key = (s.id || '').trim();
       if (!key) return;
-      const ex = projectMap.get(key);
-      if (!ex || new Date(s.updatedAt) > new Date(ex.updatedAt)) {
-        projectMap.set(key, s);
+      if (!sessionMap.has(key)) {
+        sessionMap.set(key, s);
       }
     });
-    projectsCache = Array.from(projectMap.values()).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    // Coleta de projetos únicos por projeto (mantendo ordenação por updatedAt mais recente).
+    const projectMap = new Map();
+    sessionMap.forEach((s, key) => {
+      const projKey = (s.project || '').trim().toLowerCase();
+      if (!projKey) return;
+      const existing = projectMap.get(projKey);
+      if (!existing || new Date(s.updatedAt) > new Date(existing.updatedAt)) {
+        projectMap.set(projKey, { ...s, id: key });
+      }
+    });
+    projectsCache = Array.from(projectMap.values())
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     renderProjects();
   } catch (e) {
     console.error('Failed to load projects:', e);
