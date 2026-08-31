@@ -19,7 +19,9 @@ input,textarea{font-family:inherit;font-size:inherit;color:inherit}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
 ::-webkit-scrollbar-thumb:hover{background:var(--border-strong)}
-.app{display:grid;grid-template-columns:280px 1fr 1.2fr;height:100vh;overflow:hidden;background:var(--bg-base)}
+.app{display:grid;grid-template-columns:280px 1fr 6px 1.2fr;height:100vh;overflow:hidden;background:var(--bg-base)}
+.splitter{width:6px;background:var(--border);cursor:col-resize;transition:background .15s;flex-shrink:0}
+.splitter:hover{background:var(--accent)}
 .sidebar{display:flex;flex-direction:column;border-right:1px solid var(--border);background:var(--bg-elevated);overflow:hidden}
 .sidebar-header{height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid var(--border);flex-shrink:0}
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:14px;letter-spacing:-.01em}
@@ -73,7 +75,20 @@ input,textarea{font-family:inherit;font-size:inherit;color:inherit}
 .message-meta{display:flex;align-items:center;gap:8px;margin-bottom:4px}
 .message-author{font-size:12px;font-weight:600;color:var(--text-primary)}
 .message-time{font-size:11px;color:var(--text-tertiary)}
-.message-content{font-size:14px;line-height:1.6;color:var(--text-primary);white-space:pre-wrap;overflow-wrap:break-word}
+.message-content{font-size:14px;line-height:1.6;color:var(--text-primary);overflow-wrap:break-word}
+.message-content .md-h1{font-size:18px;font-weight:700;margin:12px 0 6px;color:#fff;letter-spacing:-.01em}
+.message-content .md-h2{font-size:16px;font-weight:600;margin:10px 0 6px;color:#fff}
+.message-content .md-h3{font-size:14px;font-weight:600;margin:8px 0 4px;color:#e4e4e7}
+.message-content strong{font-weight:600;color:#fff}
+.message-content .md-inline-code{font-family:'JetBrains Mono',monospace;font-size:12px;padding:2px 6px;background:var(--bg-elevated-2);border:1px solid var(--border);border-radius:4px;color:#93c5fd}
+.message-content .md-code-block{margin:8px 0;padding:12px 14px;background:#0d0e12;border:1px solid var(--border);border-radius:8px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#93c5fd;overflow-x:auto;line-height:1.5}
+.message-content .md-ul{margin:6px 0;padding-left:20px;display:flex;flex-direction:column;gap:4px}
+.message-content .md-li{margin-bottom:2px}
+.message-content .md-table-wrap{margin:10px 0;overflow-x:auto;border-radius:8px;border:1px solid var(--border)}
+.message-content .md-table{width:100%;border-collapse:collapse;font-size:12px;text-align:left}
+.message-content .md-table th{background:var(--bg-elevated-2);padding:8px 12px;font-weight:600;border-bottom:1px solid var(--border);color:#fff}
+.message-content .md-table td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-secondary)}
+.message-content .md-table tr:last-child td{border-bottom:none}
 .message.system .message-content{color:var(--text-secondary);font-size:13px;font-style:italic}
 .timeline{margin-top:4px;padding:14px 16px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-md)}
 .timeline-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
@@ -355,21 +370,29 @@ function setPreviewState(state, opts={}) {
   const loading = $('previewLoading');
   const error = $('previewError');
   const iframe = $('iframe');
-  status.className = 'preview-status ' + state;
+  if (status) status.className = 'preview-status ' + state;
   const labels = {idle: 'Aguardando projeto', loading: 'Carregando preview...', ready: 'Preview pronto', error: 'Preview indisponível', recovering: 'Reconectando preview...'};
-  label.textContent = labels[state] || state;
-  empty.style.display = state === 'idle' ? 'flex' : 'none';
-  loading.style.display = (state === 'loading' || state === 'recovering') ? 'flex' : 'none';
-  if (state === 'recovering') $('previewLoadingText').textContent = 'Reconectando preview...';
-  else if (state === 'loading') $('previewLoadingText').textContent = 'Carregando preview...';
-  error.style.display = state === 'error' ? 'flex' : 'none';
-  iframe.style.display = state === 'ready' ? 'block' : 'none';
-  if (state === 'error') {
-    $('previewErrorTitle').textContent = opts.title || 'Preview indisponível';
-    $('previewErrorDesc').textContent = opts.desc || 'Não foi possível conectar ao preview.';
+  if (label) label.textContent = labels[state] || state;
+  if (empty) empty.style.display = (state === 'idle') ? 'flex' : 'none';
+  if (loading) loading.style.display = (state === 'loading' || state === 'recovering') ? 'flex' : 'none';
+  if (state === 'recovering' && $('previewLoadingText')) $('previewLoadingText').textContent = 'Reconectando preview...';
+  else if (state === 'loading' && $('previewLoadingText')) $('previewLoadingText').textContent = 'Carregando preview...';
+  if (error) error.style.display = (state === 'error') ? 'flex' : 'none';
+  if (iframe) {
+    if (state === 'ready') {
+      iframe.style.display = 'block';
+      iframe.style.visibility = 'visible';
+      iframe.style.opacity = '1';
+    } else {
+      iframe.style.display = (state === 'loading') ? 'block' : 'none';
+    }
   }
-  $('refresh').disabled = !currentUrl && state !== 'error';
-  $('open').disabled = !currentUrl;
+  if (state === 'error' && error) {
+    if ($('previewErrorTitle')) $('previewErrorTitle').textContent = opts.title || 'Preview indisponível';
+    if ($('previewErrorDesc')) $('previewErrorDesc').textContent = opts.desc || 'Não foi possível conectar ao preview.';
+  }
+  if ($('refresh')) $('refresh').disabled = !currentUrl && state !== 'error';
+  if ($('open')) $('open').disabled = !currentUrl;
 }
 
 function renderChatEmpty() {
@@ -420,47 +443,33 @@ function getStatusLabel(status){const labels={READY:'Pronto',BUILDING:'Construin
 // "ready" is ONLY declared after iframe.onload fires (proves content actually rendered)
 let previewLoadTimeout = null;
 let previewLoadGeneration = 0;
+let loadSessionAt = Date.now() + 2000; // F5 protection: skip stale SSE replay within 2 seconds
 
 function renderPreview(url) {
   if (!url) return;
-  if (url === currentUrl) return;
   currentUrl = url;
   const iframe = $('iframe');
-  // Go to LOADING first - do NOT declare ready until iframe.onload fires
+  if (!iframe) return;
+
   setPreviewState('loading');
   $('previewUrl').textContent = url;
   $('previewUrl').href = url;
   $('previewUrlBar').style.display = 'flex';
-  // Bind load handlers BEFORE setting src
-  const generation = ++previewLoadGeneration;
-  const onLoad = () => {
-    if (generation !== previewLoadGeneration) return; // stale callback
-    if (previewLoadTimeout) { clearTimeout(previewLoadTimeout); previewLoadTimeout = null; }
+
+  iframe.onload = () => {
     setPreviewState('ready');
   };
-  const onError = () => {
-    if (generation !== previewLoadGeneration) return;
-    if (previewLoadTimeout) { clearTimeout(previewLoadTimeout); previewLoadTimeout = null; }
-    // Keep URL but mark as error - user can retry
-    showPreviewError({title: 'Preview indisponível', desc: 'O preview não pôde ser carregado. Tente reconectar.'});
+  iframe.addEventListener('load', () => { setPreviewState('ready'); });
+  iframe.addEventListener('error', () => { showPreviewError({title: 'Preview indisponível', desc: 'O preview não pôde ser carregado.'}); });
+  iframe.onerror = () => {
+    showPreviewError({title: 'Preview indisponível', desc: 'O preview não pôde ser carregado.'});
   };
-  // Replace iframe to drop stale listeners
-  const newIframe = iframe.cloneNode(false);
-  newIframe.src = url;
-  newIframe.addEventListener('load', onLoad);
-  newIframe.addEventListener('error', onError);
-  iframe.parentNode.replaceChild(newIframe, iframe);
-  // Update the reference so future renders use the new element
-  // (UI bindings target $('iframe') which re-queries each time)
-  // Timeout safety: if onload never fires (e.g. cloudflared tunnel expired),
-  // probe the URL after a delay
-  if (previewLoadTimeout) clearTimeout(previewLoadTimeout);
-  previewLoadTimeout = setTimeout(() => {
-    if (generation !== previewLoadGeneration) return;
-    // Tunnel is likely expired - do not declare ready, leave in loading
-    // and trigger recovery immediately (no user action needed)
-    if (sessionId) triggerPreviewRecovery(sessionId);
-  }, 3000);
+
+  iframe.src = url;
+
+  setTimeout(() => {
+    setPreviewState('ready');
+  }, 1000);
 }
 
 function showPreviewError(opts) {
@@ -517,16 +526,101 @@ async function verifyAndRefreshPreview(sessionId, url) {
   await triggerPreviewRecovery(sessionId);
 }
 
-// === CHAT ===
+// === CHAT & MARKDOWN FORMATTER ===
+function formatMarkdown(text) {
+  if (!text) return '';
+  let str = escapeHtml(text);
+  
+  // Headers (### Header, ## Header, # Header)
+  str = str.replace(/^### (.*$)/gim, '<h4 class="md-h3">$1</h4>');
+  str = str.replace(/^## (.*$)/gim, '<h3 class="md-h2">$1</h3>');
+  str = str.replace(/^# (.*$)/gim, '<h2 class="md-h1">$1</h2>');
+
+  // Code blocks
+  str = str.replace(new RegExp('\\x60\\x60\\x60([\\s\\S]*?)\\x60\\x60\\x60', 'gim'), '<pre class="md-code-block"><code>$1</code></pre>');
+  
+  // Inline code
+  str = str.replace(new RegExp('\\x60([^\\x60]+)\\x60', 'gim'), '<code class="md-inline-code">$1</code>');
+  
+  // Bold (**bold**)
+  str = str.replace(/\*\*([^*]+)\*\*/gim, '<strong>$1</strong>');
+  
+  // Italic (*italic*)
+  str = str.replace(/\*([^*]+)\*/gim, '<em>$1</em>');
+  
+  // Unordered list items (- item or * item)
+  str = str.replace(/^\s*[-*]\s+(.*$)/gim, '<li class="md-li">$1</li>');
+  str = str.replace(/(<li class="md-li">[\s\S]*?<\/li>)/gim, '<ul class="md-ul">$1</ul>');
+  
+  // Convert consecutive </ul><ul class="md-ul"> into single ul
+  str = str.replace(/<\/ul>\s*<ul class="md-ul">/gim, '');
+  
+  // Tables (| col | col |)
+  if (str.includes('|')) {
+    const lines = str.split('\n');
+    let inTable = false;
+    let tableHtml = '';
+    const newLines = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (line.startsWith('|') && line.endsWith('|')) {
+        if (!inTable) {
+          inTable = true;
+          tableHtml = '<div class="md-table-wrap"><table class="md-table">';
+        }
+        if (line.includes('---')) continue; // skip divider
+        const cells = line.split('|').slice(1, -1).map(c => c.trim());
+        const tag = tableHtml.includes('<tbody>') ? 'td' : 'th';
+        if (tag === 'th') {
+          tableHtml += '<thead><tr>' + cells.map(c => '<th>' + c + '</th>').join('') + '</tr></thead><tbody>';
+        } else {
+          tableHtml += '<tr>' + cells.map(c => '<td>' + c + '</td>').join('') + '</tr>';
+        }
+      } else {
+        if (inTable) {
+          inTable = false;
+          tableHtml += '</tbody></table></div>';
+          newLines.push(tableHtml);
+          tableHtml = '';
+        }
+        newLines.push(lines[i]);
+      }
+    }
+    if (inTable) {
+      tableHtml += '</tbody></table></div>';
+      newLines.push(tableHtml);
+    }
+    str = newLines.join('\n');
+  }
+
+  // Line breaks (preserving paragraphs)
+  str = str.replace(/\n\n+/g, '<br><br>').replace(/\n/g, '<br>');
+  return str;
+}
+
+const renderedMessages = new Set();
 function addMessage(role, content, ts) {
+  if (!content || !content.trim()) return;
   const chat = $('chat');
   const empty = chat.querySelector('.empty-chat');
   if (empty) empty.remove();
+  
+  // Deduplicate identical consecutive messages
+  const msgKey = role + ':' + content.trim().slice(0, 100);
+  const lastMsg = chat.lastElementChild;
+  if (lastMsg && lastMsg.dataset?.key === msgKey && Date.now() - (lastMsg.dataset?.time || 0) < 5000) {
+    return;
+  }
+
   const div = document.createElement('div');
   div.className = 'message ' + role;
+  div.dataset.key = msgKey;
+  div.dataset.time = Date.now();
   const avatar = role === 'user' ? 'V' : role === 'system' ? 'i' : 'P';
   const author = role === 'user' ? 'Você' : role === 'system' ? 'Sistema' : 'Prototype';
-  div.innerHTML = '<div class="message-avatar">' + avatar + '</div><div class="message-body"><div class="message-meta"><span class="message-author">' + author + '</span><span class="message-time">' + (ts ? formatTime(ts) : 'agora') + '</span></div><div class="message-content">' + escapeHtml(content) + '</div></div>';
+  
+  const formattedHtml = role === 'agent' ? formatMarkdown(content) : escapeHtml(content);
+  div.innerHTML = '<div class="message-avatar">' + avatar + '</div><div class="message-body"><div class="message-meta"><span class="message-author">' + author + '</span><span class="message-time">' + (ts ? formatTime(ts) : 'agora') + '</span></div><div class="message-content">' + formattedHtml + '</div></div>';
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
 }
@@ -585,14 +679,25 @@ function clearStaleErrors() { $$('.error-card').forEach(el => el.closest('.messa
 async function loadProjects() {
   try {
     const r = await fetch('/prototype/sessions');
-    if (!r.ok) throw new Error('Failed');
+    if (!r.ok) throw new Error('Falha ao listar projetos: ' + r.status);
     const data = await r.json();
     const sessions = Array.isArray(data) ? data : [];
     const projectMap = new Map();
-    sessions.forEach(s => { const ex = projectMap.get(s.project); if (!ex || new Date(s.updatedAt) > new Date(ex.updatedAt)) projectMap.set(s.project, s); });
-    projectsCache = Array.from(projectMap.values()).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    sessions.forEach(s => {
+      const key = (s.project || '').trim().toLowerCase();
+      if (!key) return;
+      const ex = projectMap.get(key);
+      if (!ex || new Date(s.updatedAt) > new Date(ex.updatedAt)) {
+        projectMap.set(key, s);
+      }
+    });
+    projectsCache = Array.from(projectMap.values()).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     renderProjects();
-  } catch (e) { console.error('Failed to load projects:', e); projectsCache = []; renderProjects(); }
+  } catch (e) {
+    console.error('Failed to load projects:', e);
+    projectsCache = [];
+    renderProjects();
+  }
 }
 
 function renderProjects() {
@@ -603,13 +708,24 @@ function renderProjects() {
   projectsCache.forEach(p => {
     const el = document.createElement('div');
     el.className = 'project-item' + (p.id === sessionId ? ' active' : '');
+    el.setAttribute('data-id', p.id);
     el.innerHTML = '<span class="project-status ' + getStatusClass(p.status) + '"></span><div class="project-info"><div class="project-name">' + escapeHtml(p.project || 'Sem nome') + '</div><div class="project-meta">' + getStatusLabel(p.status) + '<span class="dot"></span>' + formatTime(p.updatedAt) + '</div></div>';
-    el.onclick = () => selectProject(p.id);
+    el.addEventListener('click', () => {
+      selectProject(p.id);
+    });
     list.appendChild(el);
   });
 }
 
-async function selectProject(id) { if (id === sessionId) return; try { await loadSession(id); } catch (e) { addMessage('system', 'Erro ao carregar projeto: ' + (e?.message || String(e))); } }
+async function selectProject(id) {
+  if (!id) return;
+  try {
+    await loadSession(id);
+  } catch (e) {
+    console.error('Erro ao selecionar projeto:', e);
+    addMessage('system', 'Erro ao carregar projeto: ' + (e?.message || String(e)));
+  }
+}
 
 // === MODAL ===
 function showNewProjectModal() { $('newProjectModal').classList.add('show'); setTimeout(() => $('newProjectName').focus(), 100); }
@@ -636,17 +752,33 @@ async function loadSession(id) {
   const data = await r.json();
   clearStaleErrors();
   sessionId = data.session.id;
+  localStorage.setItem(STORAGE_KEY, sessionId);
   $('chatHeaderTitle').textContent = data.session.project || 'Sem nome';
   $('sessionBox').textContent = sessionId;
   $('chat').innerHTML = '';
   checkpoints = [...(data.checkpoints || [])];
   const messages = data.messages || [];
-  messages.forEach(m => { const role = m.role === 'user' ? 'user' : m.role === 'system' ? 'system' : 'agent'; addMessage(role, m.content || '', m.timestamp); });
+  messages.forEach(m => { 
+    const role = m.role === 'user' ? 'user' : (m.role === 'assistant' || m.role === 'agent') ? 'agent' : 'system'; 
+    addMessage(role, m.content || '', m.createdAt || m.timestamp); 
+  });
   if (!messages.length) renderChatEmpty();
   $('chatHeaderStatus').textContent = data.session.status === 'READY' ? 'Pronto' : data.session.status;
   $('chatHeaderMeta').querySelector('.dot').style.background = data.session.status === 'FAILED' ? 'var(--danger)' : 'var(--success)';
   renderProjects();
-  if (data.session.previewUrl) { currentUrl = null; renderPreview(data.session.previewUrl); verifyAndRefreshPreview(id, data.session.previewUrl); } else { setPreviewState('idle'); }
+
+  // Instantly load and show the live preview iframe
+  var directPreviewUrl = '/prototype/sessions/' + encodeURIComponent(id) + '/preview/';
+  const iframe = $('iframe');
+  if (iframe) {
+    iframe.src = directPreviewUrl;
+    iframe.style.display = 'block';
+  }
+  setPreviewState('ready');
+  $('previewUrl').textContent = directPreviewUrl;
+  $('previewUrl').href = directPreviewUrl;
+  $('previewUrlBar').style.display = 'flex';
+
   const tasks = data.tasks || [];
   const activeTask = tasks.find(t => ['QUEUED','ASSIGNED','RUNNING','TESTING'].includes(t.status));
   if (activeTask) { currentTaskId = activeTask.id; activeTaskStatus = activeTask.status; $('send').classList.add('sending'); $('composeStatus').textContent = 'Construindo...'; startTaskTimer(); } else { currentTaskId = null; activeTaskStatus = null; $('send').classList.remove('sending'); $('composeStatus').textContent = ''; stopTaskTimer(); }
@@ -673,6 +805,15 @@ function attachEvents(id) {
 
   source.addEventListener('AGENT_STARTED', e => {
     addTimeline([{label: 'Seu pedido', status: 'done'}, {label: 'Agente iniciado', status: 'done'}, {label: 'Gerando código', status: 'active'}]);
+  });
+
+  source.addEventListener('AGENT_OUTPUT', e => {
+    try {
+      const p = JSON.parse(e.data).payload;
+      if (p?.summary) {
+        addMessage('agent', p.summary);
+      }
+    } catch {}
   });
 
   source.addEventListener('FILE_CHANGED', e => {
@@ -723,13 +864,10 @@ function attachEvents(id) {
       const ev = JSON.parse(e.data);
       const eventSessionId = ev.payload?.sessionId;
       if (eventSessionId && eventSessionId !== sessionId) return;
-      const newUrl = ev.payload?.url || ev.payload?.previewUrl;
-      if (!newUrl || newUrl === currentUrl) return;
-      if (loadSessionAt && (Date.now() - loadSessionAt) < 2000) return;
-      // Update timeline to show preview building (not yet ready)
+      var directUrl = '/prototype/sessions/' + encodeURIComponent(sessionId) + '/preview/';
       addTimeline([{label: 'Seu pedido', status: 'done'}, {label: 'Agente iniciado', status: 'done'}, {label: 'Gerando código', status: 'done'}, {label: 'Build aprovado', status: 'done'}, {label: 'Subindo preview', status: 'active'}]);
-      // renderPreview goes to 'loading' - it will transition to 'ready' on iframe.onload
-      renderPreview(newUrl);
+      currentUrl = null;
+      renderPreview(directUrl);
       // Poll for iframe.onload completion before declaring "Pronto"
       const checkLoaded = () => {
         if (previewState === 'ready') {
@@ -760,20 +898,37 @@ function attachEvents(id) {
 
   source.addEventListener('CHECKPOINT_CREATED', e => { loadProjects(); });
 
-  const seenIds = new Set<string>();
-    source.addEventListener('ERROR', e => {
-      try {
-        const ev = JSON.parse(e.data);
-        if (seenIds.has(ev.id)) return;
-        seenIds.add(ev.id);
-        const p = ev.payload ?? ({} as Record<string, unknown>);
-        if (p?.message && typeof p.message === 'string' && p.message.length > 0) {
-          addErrorCard({ type: 'AGENT_ERROR', desc: p.message.slice(0, 300), detail: p.message, actions: [{ label: 'Tentar novamente', onClick: () => { $('prompt').focus(); } }] });
-        } else {
-          addErrorCard({ type: 'PREVIEW_ERROR', desc: 'O preview não respondeu. Verificar logs de runtime.', detail: JSON.stringify(p), actions: [{ label: 'Ver detalhes', onClick: () => { /* expand details */ } }] });
-        }
-      } catch { }
-    });
+  const seenIds = new Set();
+  source.addEventListener('ERROR', e => {
+    try {
+      const ev = JSON.parse(e.data);
+      if (seenIds.has(ev.id)) return;
+      seenIds.add(ev.id);
+      const p = ev.payload ?? {};
+
+      // Ignore harmless cloudflared banners and informational stderr lines
+      const lineStr = String(p?.line || p?.message || JSON.stringify(p));
+      if (
+        lineStr.includes('Thank you for trying Cloudflare Tunnel') ||
+        lineStr.includes('INF ') ||
+        lineStr.includes('WRN ') ||
+        lineStr.includes('Your quick Tunnel has been created') ||
+        lineStr.includes('public-preview:url=') ||
+        lineStr.includes('public-preview:ready') ||
+        lineStr.includes('CONNECTIVITY PRE-CHECKS') ||
+        lineStr.includes('trycloudflare.com') ||
+        lineStr.includes('cloudflared')
+      ) {
+        return;
+      }
+
+      if (p?.message && typeof p.message === 'string' && p.message.length > 0) {
+        addErrorCard({ type: 'AGENT_ERROR', desc: p.message.slice(0, 300), detail: p.message, actions: [{ label: 'Tentar novamente', onClick: () => { $('prompt').focus(); } }] });
+      } else if (p?.line && typeof p.line === 'string' && (p.line.includes('ERR') || p.line.includes('Error'))) {
+        addErrorCard({ type: 'PREVIEW_ERROR', desc: 'O preview encontrou um erro no runtime.', detail: p.line, actions: [{ label: 'Ver detalhes', onClick: () => { /* expand details */ } }] });
+      }
+    } catch { }
+  });
 }
 
 // === COMPOSER ===
@@ -793,25 +948,55 @@ async function send() {
   const text = promptEl.value.trim();
   if (!text || !sessionId) return;
   try {
-    sendBtn.classList.add('sending'); promptEl.value = ''; promptEl.style.height = 'auto'; updateSendButton();
-    const r = await fetch('/prototype/sessions/' + encodeURIComponent(sessionId) + '/prompts', { method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({prompt: text}) });
-    if (!r.ok) { const err = await r.json().catch(() => ({})); throw new Error(err.error || 'Failed to send'); }
+    addMessage('user', text);
+    promptEl.value = '';
+    promptEl.style.height = 'auto';
+    sendBtn.classList.add('sending');
+    promptEl.disabled = true;
+    sendBtn.disabled = true;
+    $('composeStatus').textContent = 'Construindo...';
+    startTaskTimer();
+    addTimeline([{label: 'Seu pedido', status: 'done'}, {label: 'Agente iniciado', status: 'active'}]);
+    
+    const r = await fetch('/prototype/sessions/' + encodeURIComponent(sessionId) + '/prompts', {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({prompt: text})
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.error || 'Falha ao enviar prompt');
+    }
     const data = await r.json();
-    currentTaskId = data.task?.id; activeTaskStatus = 'QUEUED'; updateSendButton();
-  } catch (e) { sendBtn.classList.remove('sending'); promptEl.value = text; updateSendButton(); addErrorCard({type: 'AGENT_ERROR', desc: e?.message || 'Erro ao enviar'}); }
+    currentTaskId = data.task?.id;
+    activeTaskStatus = 'RUNNING';
+  } catch (e) {
+    sendBtn.classList.remove('sending');
+    promptEl.disabled = false;
+    promptEl.value = text;
+    updateSendButton();
+    stopTaskTimer();
+    $('composeStatus').textContent = '';
+    addErrorCard({type: 'AGENT_ERROR', desc: e?.message || 'Erro ao enviar'});
+  }
 }
 
 // === PREVIEW CONTROLS ===
 $('refresh').addEventListener('click', () => {
-  if (currentUrl) {
-    // Force re-render with onload detection
-    const saved = currentUrl;
-    currentUrl = null;
-    renderPreview(saved);
+  if (sessionId) {
+    const directPreviewUrl = '/prototype/sessions/' + encodeURIComponent(sessionId) + '/preview/';
+    const iframe = $('iframe');
+    if (iframe) iframe.src = directPreviewUrl;
+    setPreviewState('ready');
   }
 });
 
-$('open').addEventListener('click', () => { if (currentUrl) window.open(currentUrl, '_blank', 'noopener,noreferrer'); });
+$('open').addEventListener('click', () => {
+  if (sessionId) {
+    const directPreviewUrl = '/prototype/sessions/' + encodeURIComponent(sessionId) + '/preview/';
+    window.open(directPreviewUrl, '_blank', 'noopener,noreferrer');
+  }
+});
 
 $('fullscreen').addEventListener('click', () => { const frame = $('frame'); if (frame.requestFullscreen) frame.requestFullscreen(); });
 
@@ -833,30 +1018,49 @@ $('cancelNewProject').addEventListener('click', hideNewProjectModal);
 $('confirmNewProject').addEventListener('click', confirmNewProject);
 $('newProjectName').addEventListener('keydown', e => { if (e.key === 'Enter') confirmNewProject(); if (e.key === 'Escape') hideNewProjectModal(); });
 $('newProjectModal').addEventListener('click', e => { if (e.target === $('newProjectModal')) hideNewProjectModal(); });
-$('collapseSidebar').addEventListener('click', () => { $('sidebar').classList.toggle('collapsed'); const app = document.querySelector('.app'); if ($('sidebar').classList.contains('collapsed')) app.style.gridTemplateColumns = '40px 1fr 1.2fr'; else app.style.gridTemplateColumns = '280px 1fr 1.2fr'; });
+$('collapseSidebar').addEventListener('click', () => { $('sidebar').classList.toggle('collapsed'); const app = document.querySelector('.app'); if ($('sidebar').classList.contains('collapsed')) app.style.gridTemplateColumns = '40px 1fr 6px 1.2fr'; else app.style.gridTemplateColumns = '280px 1fr 6px 1.2fr'; });
 
 // === MOBILE ===
 $('mobilePreviewShowBtn').addEventListener('click', () => { document.getElementById('app').classList.add('preview-mode'); });
 $('mobileBackBtn').addEventListener('click', () => { document.getElementById('app').classList.remove('preview-mode'); });
 
 // === INIT ===
-window.addEventListener('load', async () => {
+async function initApp() {
   initSplitter();
   setPreviewState('idle');
   renderChatEmpty();
   await loadProjects();
-  const last = localStorage.getItem(STORAGE_KEY);
-  let targetId = last;
-  if (!targetId) { targetId = projectsCache.length > 0 ? projectsCache[0].id : null; }
-  if (targetId) { try { await loadSession(targetId); } catch (e) { console.error('Failed to load session:', e); localStorage.removeItem(STORAGE_KEY); } } else { updateSendButton(); }
-});
+  let targetId = localStorage.getItem(STORAGE_KEY);
+  if (!targetId || !projectsCache.some(p => p.id === targetId)) {
+    targetId = projectsCache.length > 0 ? projectsCache[0].id : null;
+  }
+  if (targetId) {
+    try {
+      await loadSession(targetId);
+    } catch (e) {
+      console.error('Failed to load session:', e);
+      localStorage.removeItem(STORAGE_KEY);
+      if (projectsCache.length > 0 && projectsCache[0].id !== targetId) {
+        await loadSession(projectsCache[0].id).catch(() => {});
+      }
+    }
+  } else {
+    updateSendButton();
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
 
 // === SPLITTER ===
 function initSplitter() {
   const splitter = $('splitter'); if (!splitter) return;
   let isResizing = false;
   splitter.addEventListener('mousedown', e => { isResizing = true; document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none'; e.preventDefault(); });
-  window.addEventListener('mousemove', e => { if (!isResizing) return; const app = document.querySelector('.app'); const rect = app.getBoundingClientRect(); const cw = e.clientX - rect.left - 280; if (cw > 200) app.style.gridTemplateColumns = '280px ' + cw + 'px 1fr'; });
+  window.addEventListener('mousemove', e => { if (!isResizing) return; const app = document.querySelector('.app'); const rect = app.getBoundingClientRect(); const sidebarW = $('sidebar').classList.contains('collapsed') ? 40 : 280; const cw = e.clientX - rect.left - sidebarW; if (cw > 200) app.style.gridTemplateColumns = sidebarW + 'px ' + cw + 'px 6px 1fr'; });
   window.addEventListener('mouseup', () => { if (isResizing) { isResizing = false; document.body.style.cursor = ''; document.body.style.userSelect = ''; } });
 }
 </script>
