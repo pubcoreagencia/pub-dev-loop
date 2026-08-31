@@ -44,6 +44,10 @@ function createId(): string {
 }
 
 function emit(record: RuntimeRecord, stream: PreviewLogEvent['stream'], line: string): void {
+  if (stream === 'stderr') {
+    record.stderrLines.push(line);
+    if (record.stderrLines.length > 50) record.stderrLines.shift();
+  }
   const event: PreviewLogEvent = {
     runtimeId: record.info.id,
     stream,
@@ -193,7 +197,9 @@ export class LocalPreviewRuntime implements PreviewRuntime {
 
     setStatus(record, 'STARTING', null);
 
-    if (record.config.workspaceKind === 'static') {
+    const currentKind = detectWorkspaceKind(record.config.workspace);
+    if (currentKind === 'static' || record.config.workspaceKind === 'static') {
+      record.config.workspaceKind = 'static';
       return this.startStaticServer(record);
     }
 
@@ -239,6 +245,14 @@ export class LocalPreviewRuntime implements PreviewRuntime {
       setStatus(record, 'READY', null);
       return { ...record.info };
     } catch (error) {
+      // Fallback: if Node command failed or crashed, but workspace contains any HTML files,
+      // gracefully recover with the static HTTP server so preview is always available.
+      if (existsSync(path.join(record.config.workspace, 'index.html')) || existsSync(path.join(record.config.workspace, 'public/index.html'))) {
+        console.warn(`[LocalPreviewRuntime] Node preview failed, falling back to static server for ${record.config.workspace}`);
+        await this.stop(runtimeId).catch(() => undefined);
+        record.config.workspaceKind = 'static';
+        return this.startStaticServer(record);
+      }
       const message = error instanceof Error ? error.message : String(error);
       await this.stop(runtimeId).catch(() => undefined);
       const finalMessage = record.info.error ?? message;

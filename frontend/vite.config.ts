@@ -6,11 +6,10 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '^/': {
-        target: 'http://localhost:3000',
+      '/api-remote': {
+        target: 'https://pub-dev-loop-api.contato-pubcore.workers.dev',
         changeOrigin: true,
-        secure: false,
-        // keep path as is
+        rewrite: (path) => path.replace(/^\/api-remote/, ''),
       },
     },
   },

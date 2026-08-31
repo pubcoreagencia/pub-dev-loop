@@ -367,10 +367,33 @@ export default {
     const path = url.pathname;
     const method = request.method;
 
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, User-Agent',
+      'Access-Control-Max-Age': '86400',
+    };
+
+    if (method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: corsHeaders });
+    }
+
     try {
+      // Helper to wrap json responses with CORS
+      const jsonResponse = (data: any, status = 200, extraHeaders: Record<string, string> = {}) => {
+        return new Response(JSON.stringify(data), {
+          status,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders,
+            ...extraHeaders,
+          },
+        });
+      };
+
       // 1. GET /health
       if (method === 'GET' && path === '/health') {
-        return new Response(JSON.stringify({
+        return jsonResponse({
           status: 'ok',
           runtime: 'cloudflare-worker',
           databaseConfigured: Boolean(env.DATABASE_URL && env.DATABASE_URL.trim().length > 0),
@@ -379,9 +402,6 @@ export default {
           primaryGateway: env.PRIMARY_GATEWAY || 'openrouter',
           fallbackGateway: env.FALLBACK_GATEWAY || '9router',
           agentProvider: env.AGENT_PROVIDER || 'gateway',
-        }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
         });
       }
 
@@ -452,7 +472,7 @@ export default {
 
       // 2. GET /prototype (Serve Full Prototype Web UI)
       if (method === 'GET' && (path === '/prototype' || path === '/prototype/' || path.match(/^\/prototype\/sessions\/([^\/]+)\/view$/))) {
-        const html = prototypeUiHtml() + prototypeHistoryUiScript();
+        const html = prototypeUiHtml();
         return new Response(html, {
           status: 200,
           headers: {
@@ -493,7 +513,7 @@ export default {
       if (method === 'GET' && path === '/prototype/sessions') {
         const prototypes = getPrototypesRepository(env);
         const sessions = await prototypes.listSessions();
-        return new Response(JSON.stringify(sessions), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        return jsonResponse(sessions);
       }
 
       // 4c. POST /prototype/sessions/:id/preview/refresh
@@ -849,6 +869,72 @@ export default {
         }
       }
 
+      // GET /prototype/sessions/:id/preview/ (Direct serving & live preview)
+      const sessionPreviewMatch = path.match(/^\/prototype\/sessions\/([^\/]+)\/preview(?:\/(.*))?$/);
+      if (sessionPreviewMatch && method === 'GET') {
+        const id = sessionPreviewMatch[1];
+        const subPath = sessionPreviewMatch[2] || 'index.html';
+        const prototypes = getPrototypesRepository(env);
+        const session = await prototypes.getSession(id);
+        if (!session) {
+          return new Response(JSON.stringify({ error: 'Session not found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+
+        // 1. Try to serve file directly from GitHub branch if available
+        const botToken = (env as any).PROTOTYPE_BOT_TOKEN || (env as any).GITHUB_TOKEN || '';
+        const branchName = session.branch || `prototype/${session.project.toLowerCase().replace(/[^a-z0-9-_]/g, '-')}/${session.id}`;
+        
+        if (botToken) {
+          try {
+            const ghUrl = `https://api.github.com/repos/pubcoreagencia/pub-dev-loop-prototypes/contents/${subPath}?ref=${encodeURIComponent(branchName)}`;
+            const ghRes = await fetch(ghUrl, {
+              headers: {
+                'Authorization': `Bearer ${botToken}`,
+                'User-Agent': 'PUB-DEV-LOOP-API',
+                'Accept': 'application/vnd.github.v3.raw',
+              },
+            });
+
+            if (ghRes.ok) {
+              const fileBody = await ghRes.arrayBuffer();
+              let contentType = 'text/plain; charset=utf-8';
+              const lower = subPath.toLowerCase();
+              if (lower.endsWith('.html') || lower === '') contentType = 'text/html; charset=utf-8';
+              else if (lower.endsWith('.css')) contentType = 'text/css; charset=utf-8';
+              else if (lower.endsWith('.js')) contentType = 'application/javascript; charset=utf-8';
+              else if (lower.endsWith('.json')) contentType = 'application/json; charset=utf-8';
+              else if (lower.endsWith('.png')) contentType = 'image/png';
+              else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) contentType = 'image/jpeg';
+              else if (lower.endsWith('.svg')) contentType = 'image/svg+xml';
+
+              return new Response(fileBody, {
+                status: 200,
+                headers: {
+                  'Content-Type': contentType,
+                  'Access-Control-Allow-Origin': '*',
+                  'Cache-Control': 'no-cache',
+                },
+              });
+            }
+          } catch (e) {
+            console.error('[Preview] GitHub direct fetch failed:', e);
+          }
+        }
+
+        // 2. Fallback to redirect if tunnel URL exists
+        if (session.previewUrl) {
+          return Response.redirect(session.previewUrl, 302);
+        }
+
+        return new Response(JSON.stringify({ error: 'Preview not available for this session', status: session.status || 'NOT_FOUND' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
       const sessionItemMatch = path.match(/^\/prototype\/sessions\/([^\/]+)$/);
       if (sessionItemMatch) {
         const id = sessionItemMatch[1];
@@ -864,7 +950,7 @@ export default {
           const allTasks = await tasksRepo.list();
           const tasks = allTasks.filter((t: any) => t.prototypeSessionId === session.id);
           const messages = await prototypes.listMessages(session.id);
-          return new Response(JSON.stringify({ session, checkpoints, tasks, messages }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          return jsonResponse({ session, checkpoints, tasks, messages });
         }
 
         if (method === 'PATCH') {
@@ -978,10 +1064,7 @@ export default {
 
       if (method === 'GET' && path === '/tasks') {
         const tasks = await repo.list();
-        return new Response(JSON.stringify(tasks), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        return jsonResponse(tasks);
       }
 
       const taskMatch = path.match(/^\/tasks\/([^\/]+)(?:\/(cancel|retry))?$/);

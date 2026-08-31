@@ -5,9 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/api.ts",
+    "office:dev": "npm --prefix frontend run dev",
+    "office:build": "npm --prefix frontend run build",
     "start": "node dist/api.js",
     "worker": "node dist/worker.js",
     "worker:health": "node dist/worker-health.js",
+    "router:start": "powershell -ExecutionPolicy Bypass -File start-9router.ps1",
     "router:health": "node dist/router-health.js",
     "build": "tsc -p tsconfig.json",
     "build:cf": "tsc -p tsconfig.json",

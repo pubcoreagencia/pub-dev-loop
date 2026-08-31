@@ -438,12 +438,10 @@ function stopTaskTimer(){
 function getStatusClass(status){if(status==='READY')return 'ready';if(status==='BUILDING'||status==='CREATING')return 'building';if(status==='FAILED')return 'failed';return 'creating'}
 function getStatusLabel(status){const labels={READY:'Pronto',BUILDING:'Construindo',CREATING:'Criando',FAILED:'Falhou'};return labels[status]||status}
 
-// === PREVIEW ===
-// State machine: idle → loading → ready | error
 // "ready" is ONLY declared after iframe.onload fires (proves content actually rendered)
 let previewLoadTimeout = null;
 let previewLoadGeneration = 0;
-let loadSessionAt = Date.now() + 2000; // F5 protection: skip stale SSE replay within 2 seconds
+loadSessionAt = Date.now() + 2000; // F5 protection: skip stale SSE replay within 2 seconds
 
 function renderPreview(url) {
   if (!url) return;

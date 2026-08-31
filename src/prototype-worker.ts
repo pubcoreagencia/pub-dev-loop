@@ -282,17 +282,8 @@ export class PrototypeWorker {
         result: { finalize, provider: result.provider, model: result.model, durationMs } });
       await this.events.emit({ sessionId, type: 'BUILD_PASSED', payload: { commitSha: finalize.commitSha, taskId: task.id } });
 
-      // FAIL-CLOSED: if the agent didn't generate any files, there's nothing to preview.
-      // Skip the preview start entirely instead of trying `npm run dev` on an empty workspace
-      // (which fails with enoent: package.json not found).
-      if (!finalize.changedFiles || finalize.changedFiles.length === 0) {
-        const noFilesMsg = 'Agente não gerou arquivos. Tente reformular o pedido.';
-        await this.tasks.update(task.id, { error: noFilesMsg, leaseOwner: null, leaseDeadline: null });
-        await this.prototypes.updateSession(sessionId, { status: 'FAILED', workspacePath: workspace });
-        await this.events.emit({ sessionId, type: 'ERROR', payload: { message: noFilesMsg, taskId: task.id } });
-        return true;
-      }
-
+      // If changedFiles is empty on an iterative prompt (e.g. agent answered question or workspace was already updated),
+      // we ensure the existing prototype files are served and preview is refreshed without failing the session.
       const preview = await this.ensurePreview(sessionId, workspace);
       await this.prototypes.updateSession(sessionId, { status: 'READY', workspacePath: workspace, previewRuntime: preview.id,
         previewUrl: preview.url, lastCheckpointSha: finalize.commitSha });
@@ -411,7 +402,10 @@ export class PrototypeWorker {
     });
     const unsubscribe = this.preview.subscribe(runtime.id, async event => {
           if (event.stream === 'stderr') {
-            await this.events.emit({ sessionId, type: 'ERROR', payload: { runtimeId: event.runtimeId, line: event.line } });
+            const isInfoBanner = event.line?.includes('INF ') || event.line?.includes('Thank you for trying Cloudflare Tunnel') || event.line?.includes('Your quick Tunnel has been created');
+            if (!isInfoBanner) {
+              await this.events.emit({ sessionId, type: 'ERROR', payload: { runtimeId: event.runtimeId, line: event.line } });
+            }
           }
           // Emit PREVIEW_LOCAL_SERVER_READY when local server is up
           if (event.line?.includes('local-server:ready')) {

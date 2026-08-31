@@ -2,9 +2,12 @@ import type { Task, CreateTaskInput } from "../types/task";
 import type { Agent } from "../types/agent";
 import { deriveAgentsFromTasks } from "./agentAdapter";
 
-const API_BASE = import.meta.env.VITE_API_URL
-  ? `${import.meta.env.VITE_API_URL.replace(/\/*$/, "")}/`
-  : "/";
+const API_BASE = (
+  import.meta.env.VITE_API_URL ||
+  (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+    ? "/api-remote"
+    : "https://pub-dev-loop-api.contato-pubcore.workers.dev")
+).replace(/\/*$/, "") + "/";
 
 function isJsonResponse(res: Response): boolean {
   const ct = res.headers.get("content-type") || "";

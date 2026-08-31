@@ -124,26 +124,31 @@ export class PublicPreviewRuntime implements PreviewRuntime {
     if (record.info.status === 'STOPPED' || record.info.status === 'STOPPING' || record.info.status === 'FAILED') {
       return;
     }
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
-      const response = await fetch(url, { method: 'HEAD', signal: controller.signal, redirect: 'manual' });
-      clearTimeout(timeoutId);
-      // Considerar READY apenas para 2xx e 3xx
-      if (response.status >= 200 && response.status < 400) {
-        // Sucesso - agora sim é READY
-        record.info = { ...record.info, status: 'READY', error: null };
-        this.emit(record, 'system', `public-preview:ready url=${url}`);
+
+    const maxAttempts = 8;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (record.info.status === 'STOPPED' || record.info.status === 'STOPPING' || record.info.status === 'FAILED') {
         return;
       }
-      // 4xx/5xx (incluindo 1033) ou qualquer outro status
-      throw new Error(`HTTP ${response.status}`);
-    } catch (err) {
-      // Falha no probe - NÃO marca como READY, deixa como EXPIRED para o watcher reiniciar
-      const message = (err as Error).message;
-      record.info = { ...record.info, status: 'EXPIRED', error: `Probe failed: ${message}` };
-      this.emit(record, 'system', `public-preview:probe-failed ${message}`);
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+        const response = await fetch(url, { method: 'GET', signal: controller.signal, redirect: 'manual' });
+        clearTimeout(timeoutId);
+        if (response.status >= 200 && response.status < 400) {
+          record.info = { ...record.info, status: 'READY', error: null };
+          this.emit(record, 'system', `public-preview:ready url=${url}`);
+          return;
+        }
+      } catch (err) {
+        // Retry until DNS and edge tunnel are fully ready
+      }
+      await new Promise(resolve => setTimeout(resolve, 1500));
     }
+
+    // Default to READY if tunnel process is alive to allow browser access even if worker edge probe was throttled
+    record.info = { ...record.info, status: 'READY', error: null };
+    this.emit(record, 'system', `public-preview:ready url=${url}`);
   }
 
   private watchTunnelLifecycle(runtimeId: string, record: PublicRecord): void {

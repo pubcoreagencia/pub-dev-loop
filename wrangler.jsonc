@@ -46,13 +46,14 @@
     }
   ],
   "vars": {
-    "PRIMARY_GATEWAY": "openrouter",
+    "PRIMARY_GATEWAY": "9router",
     "FALLBACK_GATEWAY": "openrouter",
+    "ROUTER_BASE_URL": "https://pub-9router.contato-pubcore.workers.dev/v1",
+    "ROUTER_MODEL": "gemini/gemini-3.6-flash",
+    "ROUTER_FALLBACK_MODELS": "gemini/gemini-3.7-flash,nvidia/minimaxai/minimax-m2.7,qwen/qwen-2.5-coder-32b-instruct",
     "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
     "OPENROUTER_MODEL": "openrouter/free",
     "OPENROUTER_FALLBACK_MODELS": "qwen/qwen-2.5-coder-32b-instruct,deepseek/deepseek-chat",
-    "ROUTER_BASE_URL": "http://127.0.0.1:20128/v1",
-    "ROUTER_MODEL": "gemini/gemini-3.7-flash",
     "AGENT_PROVIDER": "gateway",
     "PROTOTYPE_TEMPLATE_REPOSITORY": "https://github.com/pubcoreagencia/pub-dev-loop-template.git",
     "PROTOTYPE_PROTOTYPES_REPO": "pubcoreagencia/pub-dev-loop-prototypes",
