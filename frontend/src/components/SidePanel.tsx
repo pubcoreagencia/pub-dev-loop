@@ -71,6 +71,45 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
       })
     : [];
 
+  // P3.3 AI Trace & Diagnostics extraction from most relevant task in session
+  const sortedSessionTasks = [...sessionTasks].sort(
+    (a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()
+  );
+  const latestTask = sortedSessionTasks[0];
+  const rawResult = (latestTask?.result || {}) as Record<string, any>;
+  const trace = rawResult.trace as Record<string, any> | undefined;
+
+  const latestModel =
+    (rawResult.model as string) ||
+    (trace?.attempts?.[0]?.model as string) ||
+    (trace?.model as string) ||
+    (latestTask ? "gemini-3.7-flash" : "—");
+
+  const latestProvider =
+    (rawResult.provider as string) ||
+    (trace?.attempts?.[0]?.provider as string) ||
+    (trace?.provider as string) ||
+    (latestTask ? "9Router" : "—");
+
+  const latestWorker = latestTask?.worker || (latestTask ? "9Router Worker" : "—");
+  const latestTaskStatus = latestTask?.status || "—";
+
+  const durationMs = rawResult.durationMs
+    ? Number(rawResult.durationMs)
+    : latestTask
+    ? Math.max(0, new Date(latestTask.updatedAt).getTime() - new Date(latestTask.createdAt).getTime())
+    : 0;
+
+  const lastDuration = latestTask
+    ? durationMs > 0
+      ? `${Math.round(durationMs / 1000)}s`
+      : "< 1s"
+    : "—";
+
+  const hasFallback = Boolean(
+    trace?.attempts && Array.isArray(trace.attempts) && trace.attempts.length > 1
+  );
+
   return (
     <aside className="side-panel">
       {/* Header */}
@@ -200,17 +239,51 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
               </span>
             </div>
 
-            {/* P2.4 — Métricas Básicas do Projeto */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", margin: "10px 0", background: "rgba(30,41,59,0.5)", padding: "8px 10px", borderRadius: "6px" }}>
-              <div>
-                <div style={{ fontSize: "10px", color: "#94a3b8", textTransform: "uppercase" }}>Tarefas do Projeto</div>
-                <div style={{ fontSize: "14px", fontWeight: 700, color: "#93c5fd" }}>{projectTasks.length}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: "10px", color: "#94a3b8", textTransform: "uppercase" }}>Tarefas da Sessão</div>
-                <div style={{ fontSize: "14px", fontWeight: 700, color: "#60a5fa" }}>{sessionTasks.length}</div>
-              </div>
-            </div>
+            {/* P3.2 — Métricas Operacionais Detalhadas do Projeto / Sessão */}
+            {(() => {
+              const completedTasks = sessionTasks.filter((t) => t.status === "COMPLETED").length;
+              const failedTasks = sessionTasks.filter((t) => t.status === "FAILED").length;
+              const runningTasks = sessionTasks.filter((t) => ["RUNNING", "TESTING"].includes(t.status)).length;
+              const totalFinished = completedTasks + failedTasks;
+              const successRate = totalFinished > 0 ? `${Math.round((completedTasks / totalFinished) * 100)}%` : "—";
+
+              return (
+                <div className="project-metrics-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "6px", margin: "10px 0", background: "rgba(30,41,59,0.5)", padding: "8px 10px", borderRadius: "6px" }}>
+                  <div className="metric-box">
+                    <span className="metric-label" style={{ fontSize: "9px", color: "#94a3b8", textTransform: "uppercase", display: "block" }}>Proj. Tasks</span>
+                    <span className="metric-val" style={{ fontSize: "13px", fontWeight: 700, color: "#93c5fd" }}>{projectTasks.length}</span>
+                  </div>
+                  <div className="metric-box">
+                    <span className="metric-label" style={{ fontSize: "9px", color: "#94a3b8", textTransform: "uppercase", display: "block" }}>Sess. Tasks</span>
+                    <span className="metric-val" style={{ fontSize: "13px", fontWeight: 700, color: "#60a5fa" }}>{sessionTasks.length}</span>
+                  </div>
+                  <div className="metric-box">
+                    <span className="metric-label" style={{ fontSize: "9px", color: "#94a3b8", textTransform: "uppercase", display: "block" }}>Concluídas</span>
+                    <span className="metric-val" style={{ fontSize: "13px", fontWeight: 700, color: "#34d399" }}>{completedTasks}</span>
+                  </div>
+                  <div className="metric-box">
+                    <span className="metric-label" style={{ fontSize: "9px", color: "#94a3b8", textTransform: "uppercase", display: "block" }}>Taxa Sucesso</span>
+                    <span className="metric-val" style={{ fontSize: "13px", fontWeight: 700, color: totalFinished > 0 ? "#38bdf8" : "#94a3b8" }}>{successRate}</span>
+                  </div>
+                  <div className="metric-box">
+                    <span className="metric-label" style={{ fontSize: "9px", color: "#94a3b8", textTransform: "uppercase", display: "block" }}>Em Execução</span>
+                    <span className="metric-val" style={{ fontSize: "13px", fontWeight: 700, color: runningTasks > 0 ? "#fbbf24" : "#94a3b8" }}>{runningTasks}</span>
+                  </div>
+                  <div className="metric-box">
+                    <span className="metric-label" style={{ fontSize: "9px", color: "#94a3b8", textTransform: "uppercase", display: "block" }}>Falhas</span>
+                    <span className="metric-val" style={{ fontSize: "13px", fontWeight: 700, color: failedTasks > 0 ? "#f87171" : "#94a3b8" }}>{failedTasks}</span>
+                  </div>
+                  <div className="metric-box">
+                    <span className="metric-label" style={{ fontSize: "9px", color: "#94a3b8", textTransform: "uppercase", display: "block" }}>Prompts</span>
+                    <span className="metric-val" style={{ fontSize: "13px", fontWeight: 700, color: "#c084fc" }}>{currentSession.promptCount ?? "—"}</span>
+                  </div>
+                  <div className="metric-box">
+                    <span className="metric-label" style={{ fontSize: "9px", color: "#94a3b8", textTransform: "uppercase", display: "block" }}>Duração</span>
+                    <span className="metric-val" style={{ fontSize: "13px", fontWeight: 700, color: "#e2e8f0" }}>{lastDuration}</span>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* P2.1 — Seletor de Sessões Históricas (quando houver múltiplas sessões) */}
             {activeProject.sessionCount > 1 && (
@@ -288,13 +361,6 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
                 </div>
               )}
 
-              {currentSession.promptCount !== undefined && (
-                <div className="detail-item">
-                  <span className="detail-label">TOTAL PROMPTS</span>
-                  <span className="detail-value highlight">{currentSession.promptCount}</span>
-                </div>
-              )}
-
               {currentSession.createdAt && (
                 <div className="detail-item">
                   <span className="detail-label">CRIADO EM</span>
@@ -308,7 +374,39 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
               </div>
             </div>
 
-            {/* Ações da Sessão Ativa (Preview & Repo) */}
+            {/* P3.3 — Diagnóstico / Trace da IA da Sessão */}
+            <div style={{ marginTop: "12px", background: "rgba(15,23,42,0.6)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "6px", padding: "8px 10px" }}>
+              <div style={{ fontSize: "10px", fontWeight: 700, color: "#93c5fd", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "6px" }}>
+                Diagnóstico de IA & Trace
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", fontSize: "11px" }}>
+                <div>
+                  <span style={{ color: "#94a3b8", fontSize: "10px", display: "block" }}>MODELO</span>
+                  <span style={{ fontWeight: 600, color: "#f1f5f9" }}>{latestModel}</span>
+                </div>
+                <div>
+                  <span style={{ color: "#94a3b8", fontSize: "10px", display: "block" }}>PROVEDOR</span>
+                  <span style={{ fontWeight: 600, color: "#f1f5f9" }}>{latestProvider}</span>
+                </div>
+                <div>
+                  <span style={{ color: "#94a3b8", fontSize: "10px", display: "block" }}>WORKER</span>
+                  <span style={{ color: "#cbd5e1" }}>{latestWorker}</span>
+                </div>
+                <div>
+                  <span style={{ color: "#94a3b8", fontSize: "10px", display: "block" }}>STATUS ÚLTIMA TASK</span>
+                  <span style={{ fontWeight: 600, color: latestTaskStatus === "COMPLETED" ? "#34d399" : latestTaskStatus === "FAILED" ? "#f87171" : "#60a5fa" }}>
+                    {latestTaskStatus}
+                  </span>
+                </div>
+                {hasFallback && (
+                  <div style={{ gridColumn: "1 / -1", color: "#fbbf24", fontSize: "10px" }}>
+                    ⚠️ Tentativa com Fallback detectada no trace
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* P3.4 — Ações Operacionais da Sessão Ativa */}
             <div className="task-action-buttons" style={{ marginTop: "12px" }}>
               {currentSession.previewUrl ? (
                 <a
@@ -330,9 +428,9 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
                     fontWeight: 600,
                     fontSize: "12px"
                   }}
-                  title="Abrir URL pública de pré-visualização em nova aba"
+                  title="Abrir URL pública de pré-visualização da sessão ativa"
                 >
-                  🌐 Abrir Preview
+                  🌐 Abrir Preview (Sessão)
                 </a>
               ) : null}
 
@@ -356,9 +454,9 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
                     fontWeight: 600,
                     fontSize: "12px"
                   }}
-                  title="Abrir repositório Git em nova aba"
+                  title="Abrir repositório Git da sessão ativa"
                 >
-                  🐙 Ver Repositório
+                  🐙 Ver Repositório (Sessão)
                 </a>
               ) : null}
             </div>

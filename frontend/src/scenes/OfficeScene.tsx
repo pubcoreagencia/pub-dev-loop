@@ -17,10 +17,13 @@ const ROOMS_CONFIG: { id: RoomId; name: string; position: [number, number, numbe
 ];
 
 export const OfficeScene: React.FC = () => {
-  const { agents, selectedAgent, selectAgent } = useStore();
+  const { agents, selectedAgent, selectAgent, activeProject, activeSession } = useStore();
 
   // Active rooms with agents in them
   const activeRooms = new Set(agents.map((a) => a.room));
+
+  const currentSessionId = (activeSession || activeProject?.latestSession)?.id;
+  const activeProjNorm = activeProject?.normalizedProject;
 
   return (
     <Canvas
@@ -68,12 +71,21 @@ export const OfficeScene: React.FC = () => {
           baseCoord[2],
         ];
 
+        // Is agent contextual to the selected activeProject / currentSession?
+        const isProjectContextual = Boolean(
+          activeProject && (
+            (currentSessionId && agent.prototypeSessionId === currentSessionId) ||
+            (activeProjNorm && agent.project && agent.project.trim().toLowerCase().replace(/\s+/g, " ") === activeProjNorm)
+          )
+        );
+
         return (
           <AgentMarker
             key={agent.id || index}
             agent={agent}
             position={agentPos}
             isSelected={selectedAgent?.id === agent.id}
+            isProjectContextual={isProjectContextual}
             onSelect={selectAgent}
           />
         );

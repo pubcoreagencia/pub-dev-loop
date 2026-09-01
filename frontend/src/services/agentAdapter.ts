@@ -116,6 +116,7 @@ export function deriveAgentsFromTasks(tasks: Task[]): Agent[] {
       lastEvent: mapTaskToEvent(t),
       commitSha: t.commitSha || null,
       error: t.error || null,
+      prototypeSessionId: t.prototypeSessionId || null,
     };
   });
 }

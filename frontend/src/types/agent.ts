@@ -24,4 +24,5 @@ export interface Agent {
   lastEvent: string;
   commitSha?: string | null;
   error?: string | null;
+  prototypeSessionId?: string | null;
 }

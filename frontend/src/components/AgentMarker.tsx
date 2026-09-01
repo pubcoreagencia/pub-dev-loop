@@ -10,6 +10,7 @@ interface Props {
   agent: Agent;
   position: [number, number, number];
   isSelected?: boolean;
+  isProjectContextual?: boolean;
   onSelect: (agent: Agent) => void;
 }
 
@@ -29,6 +30,7 @@ export const AgentMarker: React.FC<Props> = ({
   agent,
   position,
   isSelected = false,
+  isProjectContextual = false,
   onSelect,
 }) => {
   const meshRef = useRef<Mesh>(null);
@@ -45,7 +47,7 @@ export const AgentMarker: React.FC<Props> = ({
       meshRef.current.rotation.y = t * 0.8;
     }
     if (ringRef.current) {
-      const s = 1.0 + Math.sin(t * 3) * 0.15;
+      const s = (isProjectContextual ? 1.2 : 1.0) + Math.sin(t * (isProjectContextual ? 4 : 3)) * 0.18;
       ringRef.current.scale.set(s, s, s);
     }
   });
@@ -58,11 +60,11 @@ export const AgentMarker: React.FC<Props> = ({
         rotation={[-Math.PI / 2, 0, 0]}
         position={[0, 0.05, 0]}
       >
-        <ringGeometry args={[0.7, 0.85, 32]} />
+        <ringGeometry args={[isProjectContextual ? 0.8 : 0.7, isProjectContextual ? 1.05 : 0.85, 32]} />
         <meshBasicMaterial
-          color={mainColor}
+          color={isProjectContextual ? "#60a5fa" : mainColor}
           transparent
-          opacity={isSelected ? 0.9 : 0.6}
+          opacity={isSelected ? 0.95 : isProjectContextual ? 0.85 : 0.6}
         />
       </mesh>
 
@@ -76,18 +78,18 @@ export const AgentMarker: React.FC<Props> = ({
         }}
         castShadow
       >
-        <sphereGeometry args={[0.55, 32, 32]} />
+        <sphereGeometry args={[isProjectContextual ? 0.65 : 0.55, 32, 32]} />
         <meshStandardMaterial
           color={mainColor}
-          emissive={mainColor}
-          emissiveIntensity={isSelected ? 0.6 : 0.3}
+          emissive={isProjectContextual ? "#3b82f6" : mainColor}
+          emissiveIntensity={isSelected ? 0.7 : isProjectContextual ? 0.5 : 0.3}
           roughness={0.2}
           metalness={0.5}
         />
       </mesh>
 
       {/* Floating Badge Header */}
-      <Html position={[0, 2.2, 0]} center distanceFactor={18}>
+      <Html position={[0, isProjectContextual ? 2.4 : 2.2, 0]} center distanceFactor={18}>
         <div
           onClick={(e) => {
             e.stopPropagation();
@@ -99,7 +101,7 @@ export const AgentMarker: React.FC<Props> = ({
               ? "rgba(15, 23, 42, 0.95)"
               : "rgba(15, 23, 42, 0.85)",
             backdropFilter: "blur(6px)",
-            border: `2px solid ${isSelected ? "#60a5fa" : mainColor}`,
+            border: `2px solid ${isSelected ? "#60a5fa" : isProjectContextual ? "#3b82f6" : mainColor}`,
             padding: "5px 10px",
             borderRadius: "8px",
             color: "#fff",
@@ -110,11 +112,16 @@ export const AgentMarker: React.FC<Props> = ({
             alignItems: "center",
             gap: "2px",
             whiteSpace: "nowrap",
-            boxShadow: `0 4px 14px rgba(0, 0, 0, 0.5), 0 0 10px ${mainColor}44`,
-            transform: isSelected ? "scale(1.08)" : "scale(1)",
+            boxShadow: `0 4px 14px rgba(0, 0, 0, 0.5), 0 0 10px ${isProjectContextual ? "#3b82f6" : mainColor}44`,
+            transform: isSelected ? "scale(1.12)" : isProjectContextual ? "scale(1.05)" : "scale(1)",
             transition: "transform 0.2s ease",
           }}
         >
+          {isProjectContextual && (
+            <div style={{ fontSize: "9px", color: "#93c5fd", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              ⚡ PROJETO ATIVO
+            </div>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             <span
               style={{
