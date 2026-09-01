@@ -165,3 +165,19 @@ describe('P1 UI — Design Tokens', () => {
     expect(html).toContain('--danger');
   });
 });
+
+describe('P1 UI — Script Syntax & Runtime Integrity', () => {
+  it('contains valid executable JavaScript with ZERO SyntaxErrors', async () => {
+    const { prototypeUiHtml } = await import('../src/prototype/ui.js');
+    const html = prototypeUiHtml();
+    const scriptMatch = html.match(/<script>([\s\S]*?)<\/script>/);
+    expect(scriptMatch).not.toBeNull();
+    const scriptContent = scriptMatch![1];
+    
+    // Parse in Node.js VM to ensure 100% valid JS syntax (checks for duplicate lets, invalid regex, etc)
+    const vm = await import('node:vm');
+    expect(() => {
+      new vm.Script(scriptContent);
+    }).not.toThrow();
+  });
+});

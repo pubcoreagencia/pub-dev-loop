@@ -9,7 +9,6 @@ import type {
 import { LocalPreviewRuntime } from './local-preview-runtime.js';
 
 const DEFAULT_TUNNEL_TIMEOUT_MS = 30_000;
-const QUICK_TUNNEL_RE = /https:\/\/[-a-z0-9]+\.trycloudflare\.com/i;
 const PROBE_TIMEOUT_MS = 5000;
 
 interface PublicRecord {
@@ -88,7 +87,8 @@ export class PublicPreviewRuntime implements PreviewRuntime {
           const text = chunk.toString();
           this.emit(record, stream, text.trimEnd());
           buffer += text;
-          const match = buffer.match(QUICK_TUNNEL_RE);
+          // Regex de quick-tunnel (sem flags inválidas)
+          const match = buffer.match(/https:\/\/[-a-z0-9]+\.trycloudflare\.com/);
           if (match && !settled) {
             settled = true;
             // URL detectada - marca como CONNECTING e faz probe HTTP
@@ -200,7 +200,7 @@ export class PublicPreviewRuntime implements PreviewRuntime {
           newTunnel.stderr?.on('data', onData);
           const check = setInterval(() => {
             const text = chunks.join('');
-            const m = text.match(QUICK_TUNNEL_RE);
+            const m = text.match(/https:\/\/[-a-z0-9]+\.trycloudflare\.com/);
             if (m) {
               clearInterval(check);
               const newUrl = m[0];

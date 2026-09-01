@@ -530,32 +530,32 @@ function formatMarkdown(text) {
   let str = escapeHtml(text);
   
   // Headers (### Header, ## Header, # Header)
-  str = str.replace(/^### (.*$)/gim, '<h4 class="md-h3">$1</h4>');
-  str = str.replace(/^## (.*$)/gim, '<h3 class="md-h2">$1</h3>');
-  str = str.replace(/^# (.*$)/gim, '<h2 class="md-h1">$1</h2>');
+  str = str.replace(/^### (.*$)/gm, '<h4 class="md-h3">$1</h4>');
+  str = str.replace(/^## (.*$)/gm, '<h3 class="md-h2">$1</h3>');
+  str = str.replace(/^# (.*$)/gm, '<h2 class="md-h1">$1</h2>');
 
-  // Code blocks
-  str = str.replace(new RegExp('\\x60\\x60\\x60([\\s\\S]*?)\\x60\\x60\\x60', 'gim'), '<pre class="md-code-block"><code>$1</code></pre>');
+  // Code blocks (\`\`\`code\`\`\`)
+  str = str.replace(new RegExp('\\\\x60\\\\x60\\\\x60([\\\\s\\\\S]*?)\\\\x60\\\\x60\\\\x60', 'gm'), '<pre class="md-code-block"><code>$1</code></pre>');
   
-  // Inline code
-  str = str.replace(new RegExp('\\x60([^\\x60]+)\\x60', 'gim'), '<code class="md-inline-code">$1</code>');
+  // Inline code (\`code\`)
+  str = str.replace(new RegExp('\\\\x60([^\\\\x60]+)\\\\x60', 'gm'), '<code class="md-inline-code">$1</code>');
   
   // Bold (**bold**)
-  str = str.replace(/\*\*([^*]+)\*\*/gim, '<strong>$1</strong>');
+  str = str.replace(/\\*\\*([^*]+)\\*\\*/gm, '<strong>$1</strong>');
   
   // Italic (*italic*)
-  str = str.replace(/\*([^*]+)\*/gim, '<em>$1</em>');
+  str = str.replace(/\\*([^*]+)\\*/gm, '<em>$1</em>');
   
   // Unordered list items (- item or * item)
-  str = str.replace(/^\s*[-*]\s+(.*$)/gim, '<li class="md-li">$1</li>');
-  str = str.replace(/(<li class="md-li">[\s\S]*?<\/li>)/gim, '<ul class="md-ul">$1</ul>');
+  str = str.replace(/^\\s*[-*]\\s+(.*$)/gm, '<li class="md-li">$1</li>');
+  str = str.replace(new RegExp('(<li class="md-li">[\\\\s\\\\S]*?<\\\\/li>)', 'gm'), '<ul class="md-ul">$1</ul>');
   
   // Convert consecutive </ul><ul class="md-ul"> into single ul
-  str = str.replace(/<\/ul>\s*<ul class="md-ul">/gim, '');
+  str = str.replace(new RegExp('<\\\\/ul>\\\\s*<ul class="md-ul">', 'gm'), '');
   
   // Tables (| col | col |)
   if (str.includes('|')) {
-    const lines = str.split('\n');
+    const lines = str.split('\\n');
     let inTable = false;
     let tableHtml = '';
     const newLines = [];
@@ -588,11 +588,11 @@ function formatMarkdown(text) {
       tableHtml += '</tbody></table></div>';
       newLines.push(tableHtml);
     }
-    str = newLines.join('\n');
+    str = newLines.join('\\n');
   }
 
   // Line breaks (preserving paragraphs)
-  str = str.replace(/\n\n+/g, '<br><br>').replace(/\n/g, '<br>');
+  str = str.replace(/\\n\\n+/g, '<br><br>').replace(/\\n/g, '<br>');
   return str;
 }
 
@@ -674,9 +674,10 @@ function addErrorCard(opts) {
 function clearStaleErrors() { $$('.error-card').forEach(el => el.closest('.message')?.remove()); }
 
 // === SIDEBAR ===
-function loadProjects() {
+async function loadProjects() {
+  (async () => {
   try {
-    const r = await fetch('/prototype/sessions');
+    const r = await fetch('/prototype/sessions', {cache: 'no-store'});
     if (!r.ok) throw new Error('Falha ao listar projetos: ' + r.status);
     const data = await r.json();
     const sessions = Array.isArray(data) ? data : [];
@@ -708,6 +709,7 @@ function loadProjects() {
     projectsCache = [];
     renderProjects();
   }
+  })();
 }
 
 function renderProjects() {
