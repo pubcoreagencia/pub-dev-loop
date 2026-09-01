@@ -7,6 +7,8 @@ import {
 } from './types.js';
 import { MODEL_REGISTRY, filterCapableModels } from './registry.js';
 import { classifyTaskProfile } from './classifier.js';
+import { reorderTier1ModelsWithCalibration } from './calibration.js';
+import type { SystemObservabilityReport } from './observability.js';
 
 /**
  * Default Curated Tier 1 Free models per task profile.
@@ -113,7 +115,8 @@ export function buildRoutingPolicy(
 export function resolveCandidateModels(
   policy: ModelRoutingPolicy,
   legacyModelOverride?: string,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  observabilityReport?: SystemObservabilityReport
 ): CandidateModelEntry[] {
   // If a specific explicit model override is requested (e.g., via CLI, test or OPENROUTER_MODEL env), honor it directly
   const explicitModel = legacyModelOverride || (env.OPENROUTER_MODEL && env.OPENROUTER_MODEL !== 'openrouter/free' ? env.OPENROUTER_MODEL : undefined);
@@ -148,14 +151,24 @@ export function resolveCandidateModels(
 
   const candidates: CandidateModelEntry[] = [];
 
-  // 1. Tier 1: Filtered curated free models
-  const validTier1 = filterCapableModels(policy.tiers.tier1ExplicitFree, {
+  // 1. Tier 1: Filtered curated free models (Safe Empirical Calibration applied if enabled)
+  const capableTier1 = filterCapableModels(policy.tiers.tier1ExplicitFree, {
     requireToolCalling: policy.capabilities.requireToolCalling,
     minContextTokens: policy.capabilities.minContextTokens,
     profile: policy.profile,
   });
 
-  for (const m of validTier1) {
+  const calibratedTier1 = reorderTier1ModelsWithCalibration(
+    capableTier1,
+    policy.profile,
+    observabilityReport,
+    {
+      enabled: env.OPENROUTER_CALIBRATION_ENABLED === 'true',
+      minSampleSize: Number(env.OPENROUTER_CALIBRATION_MIN_SAMPLES ?? 10),
+    }
+  );
+
+  for (const m of calibratedTier1) {
     candidates.push({
       model: m,
       tier: 1,
