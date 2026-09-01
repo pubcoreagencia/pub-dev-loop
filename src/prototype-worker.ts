@@ -11,6 +11,9 @@ import { PostgresPrototypeRepository } from './prototype/repository.js';
 import { LocalPreviewRuntime } from './prototype/local-preview-runtime.js';
 import { PublicPreviewRuntime } from './prototype/public-preview-runtime.js';
 import type { PreviewRuntime, PreviewRuntimeInfo } from './prototype/preview-runtime.js';
+import { StreamEventSink } from './providers/streaming/index.js';
+import { OperationalEventBridge } from './prototype/bridge.js';
+
 
 const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
 const WORKSPACE_ROOT = process.env.PROTOTYPE_WORKSPACES_ROOT ?? '/tmp/pub-prototype';
@@ -186,14 +189,44 @@ export class PrototypeWorker {
       const baseline = captureWorkspaceSnapshot(workspace);
       const started = Date.now();
 
-      console.log(JSON.stringify({
-        event: 'PROVIDER_EXECUTION_STARTED',
-        taskId: task.id,
-        sessionId,
-        timestamp: new Date().toISOString(),
-      }));
+      const bridge = new OperationalEventBridge(sessionId, this.events);
+      const sink = new StreamEventSink(
+        {
+          onEnvelope: (envelope) => {
+            bridge.handleEnvelope(envelope).catch(() => undefined);
+          },
+        },
+        { taskId: task.id, attempt: 0 }
+      );
 
-      const result = await this.provider.execute(task, workspace);
+      // Emit initial attempt_started lifecycle event
+      sink.emitEnvelope('attempt_started', {
+        attempt: 0,
+        provider: this.provider.kind || 'openrouter',
+        model: (this.provider as any).model || 'default',
+      });
+
+      const result = await this.provider.execute(task, workspace, {
+        consumer: sink,
+      });
+
+      // If provider completed, emit attempt_completed before closing bridge
+      if (result.status === 'COMPLETED') {
+        sink.emitEnvelope('attempt_completed', {
+          attempt: 0,
+          status: result.status,
+          durationMs: result.durationMs,
+        });
+      } else {
+        sink.emitEnvelope('attempt_failed', {
+          attempt: 0,
+          error: result.errorMessage ?? result.stderr ?? 'Prototype agent failed',
+          retryable: false,
+        });
+      }
+      await bridge.close();
+
+
 
       // Check for cancellation during provider execution
       try {
