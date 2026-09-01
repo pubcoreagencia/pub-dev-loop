@@ -43,6 +43,7 @@ Task states: `QUEUED`, `ASSIGNED`, `RUNNING`, `TESTING`, `COMPLETED`, `FAILED`, 
 
 `AGENT_PROVIDER` is the new explicit provider selector. Supported values are `mock`, `codex-api`, and `9router`. `codex-api` preserves the Codex worker path, while `9router` uses an OpenAI-compatible gateway as the planning brain and keeps filesystem, shell, and Git control inside the worker runtime.
 
+
 `AgentExecutor` starts the process without a shell, captures stdout/stderr, redacts common secret values before persistence, and kills a timed-out process. A missing CLI records `CODEX_CLI_UNAVAILABLE`; an inaccessible CLI returns structured `START_ERROR`; authentication failures are captured as failed process results. The Docker image intentionally does not claim to contain Codex: install and authenticate the official Linux CLI in the production worker image before enabling this mode. This retains Linux/container/headless compatibility and does not require any desktop UI. `AUTO_PUSH` and auto-merge are not implemented.
 
 For the first cloud proof, a manual GitHub Actions Ubuntu worker runs the real isolated `hello.txt` integration test. See [GitHub Actions Worker](docs/GITHUB_ACTIONS_WORKER.md). It is experimental and does not replace the Docker/Linux worker runtime.
@@ -52,3 +53,21 @@ For the first cloud proof, a manual GitHub Actions Ubuntu worker runs the real i
 ### Controlled real integration test
 
 The real test is isolated from `npm test`: provision a disposable cloned repository and authenticated Linux container, then run `RUN_CODEX_INTEGRATION=1 CODEX_INTEGRATION_REPOSITORY=/workspace/sandbox npm test -- tests/integration/codex-hello.integration.ts`. It asks Codex to create only `hello.txt` with `PUB DEV LOOP TEST`; no push or merge occurs. The worker itself creates `worker/codex/TASK-ID`, records its diff summary, and commits successful file changes locally with the worker identity.
+
+## PP Production Safety Gate
+
+Para garantir que deploys do PUB Prototype nunca sejam publicados com JavaScript quebrado, template strings corrompidas ou erros de parsing V8, todo deploy de produção do worker exige a execução prévia obrigatória do gate:
+
+```sh
+npm run pp:safety-gate
+```
+
+### O que o Gate valida:
+1. **Typecheck & Build**: Compilação TypeScript integral sem erros.
+2. **Geração do HTML Real**: Avalia `prototypeUiHtml()` e extrai todos os blocos `<script>`.
+3. **Compilação Estrita no V8 (`node:vm`)**: Garante ZERO `SyntaxError`, ausência de variáveis duplicadas (`let/const`) e validação de todas as regex.
+4. **Teste Negativo de Controle**: Prova que o validador falha imediatamente caso JavaScript inválido seja inserido.
+5. **Execução no DOM Simulado (JSDOM)**: Simula o carregamento no browser, chamada a `/prototype/sessions` e renderização de `#projectsList`.
+6. **Contrato da API**: Valida o payload de sessões.
+
+Qualquer deploy via `npm run deploy:cf` invoca o `pp:safety-gate` antes de prosseguir com o Wrangler. Deploys sem PASS são proibidos.

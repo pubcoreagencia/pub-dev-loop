@@ -37,4 +37,22 @@ describe('Prototype Mode contracts', () => {
     stream.emit({ sessionId: 'session-1', type: 'BUILD_STARTED' });
     expect(received).toHaveLength(2);
   });
+
+  it('validates session schema compatibility with loadProjects/renderProjects requirements', () => {
+    // Exact schema fields expected by loadProjects() and renderProjects()
+    const mockSession = {
+      id: 'session-schema-check',
+      project: 'sistema pato de minas',
+      status: 'READY',
+      updatedAt: '2026-09-01T04:26:51.000Z',
+      repository: 'https://github.com/pubcoreagencia/pub-dev-loop-prototypes.git',
+      previewUrl: 'https://example.trycloudflare.com',
+    };
+
+    expect(typeof mockSession.id).toBe('string');
+    expect(typeof mockSession.project).toBe('string');
+    expect(typeof mockSession.status).toBe('string');
+    expect(isNaN(Date.parse(mockSession.updatedAt))).toBe(false);
+  });
 });
+

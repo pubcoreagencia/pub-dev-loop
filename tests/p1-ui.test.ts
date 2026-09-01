@@ -166,18 +166,114 @@ describe('P1 UI — Design Tokens', () => {
   });
 });
 
-describe('P1 UI — Script Syntax & Runtime Integrity', () => {
-  it('contains valid executable JavaScript with ZERO SyntaxErrors', async () => {
+describe('P1 UI — Safety Gate & Runtime Integrity', () => {
+  it('contains valid executable JavaScript with ZERO SyntaxErrors across ALL inline scripts', async () => {
     const { prototypeUiHtml } = await import('../src/prototype/ui.js');
     const html = prototypeUiHtml();
-    const scriptMatch = html.match(/<script>([\s\S]*?)<\/script>/);
-    expect(scriptMatch).not.toBeNull();
-    const scriptContent = scriptMatch![1];
+    const scriptRegex = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
+    const scripts: string[] = [];
+    let match;
+    while ((match = scriptRegex.exec(html)) !== null) {
+      if (match[1].trim()) scripts.push(match[1]);
+    }
+    expect(scripts.length).toBeGreaterThan(0);
     
-    // Parse in Node.js VM to ensure 100% valid JS syntax (checks for duplicate lets, invalid regex, etc)
+    const vm = await import('node:vm');
+    for (let i = 0; i < scripts.length; i++) {
+      expect(() => {
+        new vm.Script(scripts[i], { filename: `inline-script-${i}.js` });
+      }).not.toThrow();
+    }
+  });
+
+  it('proves the V8 parser rejects invalid JavaScript (Negative Control Test)', async () => {
     const vm = await import('node:vm');
     expect(() => {
-      new vm.Script(scriptContent);
-    }).not.toThrow();
+      new vm.Script('const invalidAssignment = ;');
+    }).toThrow(SyntaxError);
+
+    expect(() => {
+      new vm.Script('let loadSessionAt = 0; let loadSessionAt = 2000;');
+    }).toThrow(SyntaxError);
+
+    expect(() => {
+      new vm.Script('str.replace(/(<li class="md-li">[sS]*?</li>)/gm, "");');
+    }).toThrow(SyntaxError);
+  });
+
+  it('guarantees unique declaration of loadSessionAt in the generated HTML', async () => {
+    const { prototypeUiHtml } = await import('../src/prototype/ui.js');
+    const html = prototypeUiHtml();
+    
+    // Check let declarations containing loadSessionAt
+    const letDeclarations = html.match(/\blet\s+[^;]*\bloadSessionAt\b[^;]*;/g) || [];
+    expect(letDeclarations.length).toBe(1);
+
+    // Ensure there are no separate duplicate "let loadSessionAt" or "const loadSessionAt"
+    const standaloneDecl = html.match(/\b(let|const)\s+loadSessionAt\s*=/g) || [];
+    expect(standaloneDecl.length).toBe(0);
+  });
+
+  it('executes in simulated browser DOM, fetches /prototype/sessions and renders projects', async () => {
+    const { prototypeUiHtml } = await import('../src/prototype/ui.js');
+    const html = prototypeUiHtml();
+    const { JSDOM } = await import('jsdom');
+
+    let fetchCalled = false;
+    const dom = new JSDOM(html, {
+      runScripts: 'dangerously',
+      url: 'https://pub-dev-loop-api.contato-pubcore.workers.dev/prototype',
+      beforeParse(window) {
+        window.localStorage = {
+          getItem: () => null,
+          setItem: () => {},
+          removeItem: () => {}
+        };
+        window.EventSource = function() {
+          this.close = () => {};
+          this.addEventListener = () => {};
+        };
+        window.fetch = async (url: string) => {
+          if (url === '/prototype/sessions' || url.startsWith('/prototype/sessions')) {
+            fetchCalled = true;
+            return {
+              ok: true,
+              status: 200,
+              json: async () => [
+                {
+                  id: 'session-safety-pato',
+                  project: 'sistema pato de minas',
+                  status: 'READY',
+                  updatedAt: new Date().toISOString(),
+                }
+              ]
+            };
+          }
+          return { ok: false, status: 404 };
+        };
+      }
+    });
+
+    const win = dom.window;
+    await new Promise((resolve, reject) => {
+      const start = Date.now();
+      const check = () => {
+        const list = win.document.querySelector('#projectsList');
+        if (list && list.children.length > 0) {
+          resolve(true);
+        } else if (Date.now() - start > 3000) {
+          reject(new Error('DOM render timeout for projectsList'));
+        } else {
+          setTimeout(check, 50);
+        }
+      };
+      check();
+    });
+
+    const list = win.document.querySelector('#projectsList');
+    expect(fetchCalled).toBe(true);
+    expect(list?.children.length).toBe(1);
+    expect(list?.children[0].textContent).toContain('sistema pato de minas');
   });
 });
+
