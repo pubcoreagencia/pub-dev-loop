@@ -195,7 +195,7 @@ export class RouterProvider implements AgentProvider {
               const streamResult = await parseOpenAISSEStream(
                 response.body,
                 controller.signal,
-                this.consumer?.onEvent
+                this.consumer ? (event) => this.consumer?.onEvent?.(event) : undefined
               );
               messageContent = streamResult.fullText;
               toolCalls = streamResult.toolCalls;
