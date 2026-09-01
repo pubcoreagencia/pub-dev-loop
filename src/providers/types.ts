@@ -31,6 +31,10 @@ export interface ProviderTaskResult {
   commitMessage?: string | null;
   testsPassed?: boolean | null;
   httpStatus?: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  costUsd?: number;
 }
 
 export interface AgentProvider {

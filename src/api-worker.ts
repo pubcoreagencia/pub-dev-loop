@@ -472,7 +472,7 @@ export default {
 
       // 2. GET /prototype (Serve Full Prototype Web UI)
       if (method === 'GET' && (path === '/prototype' || path === '/prototype/' || path.match(/^\/prototype\/sessions\/([^\/]+)\/view$/))) {
-        const html = prototypeUiHtml();
+        const html = prototypeUiHtml() + prototypeHistoryUiScript();
         return new Response(html, {
           status: 200,
           headers: {

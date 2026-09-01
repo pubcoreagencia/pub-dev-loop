@@ -6,6 +6,7 @@ import { ToolRuntime } from '../tools/runtime.js';
 import { AgentExecutor } from '../executor.js';
 import type { ToolCall, ToolResult, ToolExecutionContext, ToolDefinition } from '../tools/types.js';
 import { loadOpenRouterConfig, type OpenRouterConfig } from './openrouterConfig.js';
+import { canUsePaidFallback } from '../routing/index.js';
 
 interface OpenAIChatMessage {
   role: string;
@@ -20,6 +21,13 @@ interface OpenAIChatResponse {
     finish_reason?: string;
   }>;
   model?: string;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+    cost?: number;
+  };
+  total_cost?: number;
   error?: { message?: string; type?: string; code?: string | number };
 }
 
@@ -99,7 +107,7 @@ export class OpenRouterProvider implements AgentProvider {
       buildSystemPrompt(workspace, task),
       buildUserPrompt(task),
     ];
-    const cfg: OpenRouterConfig = loadOpenRouterConfig(this.model || undefined);
+    const cfg: OpenRouterConfig = loadOpenRouterConfig(this.model || undefined, task);
     const modelQueue = [cfg.primaryModel, ...cfg.fallbackModels];
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -108,13 +116,45 @@ export class OpenRouterProvider implements AgentProvider {
     let toolRounds = 0;
     let finalMessage = '';
     let lastResponseText = '';
+    let accumulatedPromptTokens = 0;
+    let accumulatedCompletionTokens = 0;
+    let accumulatedTotalTokens = 0;
+    let accumulatedCostUsd: number | undefined = undefined;
+    let paidAttemptsUsed = 0;
+
+    const candidateEntries = cfg.candidateModels || modelQueue.map(m => {
+      const isFree = m.includes(':free') || m.endsWith('/free');
+      return {
+        model: m,
+        tier: m === 'openrouter/free' ? 2 : isFree ? 1 : 3,
+        free: isFree,
+        maxRetries: cfg.maxRetries,
+      };
+    });
 
     try {
       while (toolRounds < this.maxToolRounds) {
         let modelFound = false;
-        for (const model of modelQueue) {
+        for (const entry of candidateEntries) {
+          const model = entry.model;
+          const isPaid = !entry.free;
+
+          // Cost Guard: verify if paid fallback is permitted before calling
+          if (isPaid && cfg.policy) {
+            const allowed = canUsePaidFallback(cfg.policy, paidAttemptsUsed, accumulatedCostUsd ?? 0);
+            if (!allowed) {
+              continue; // Skip paid model if blocked by budget / max attempts guard
+            }
+          }
+
+          if (isPaid) {
+            paidAttemptsUsed++;
+          }
+
           let attempt = 0;
-          while (attempt < cfg.maxRetries) {
+          const retriesForModel = isPaid ? 1 : entry.maxRetries;
+
+          while (attempt < retriesForModel) {
             attempt++;
             const requestBody: Record<string, unknown> = {
               model,
@@ -154,7 +194,7 @@ export class OpenRouterProvider implements AgentProvider {
                 if (response.status === 400) {
                   const cls = classifyApiError(response.status, errMsg, undefined, hasToolMsg);
                   if (cls.shouldFallback || isNvidiaToolMismatch) {
-                    const isLastModel = model === modelQueue[modelQueue.length - 1];
+                    const isLastModel = model === candidateEntries[candidateEntries.length - 1].model;
                     if (isLastModel) {
                       clearTimeout(timer);
                       const hasFallbacks = cfg.fallbackModels && cfg.fallbackModels.length > 0;
@@ -177,6 +217,10 @@ export class OpenRouterProvider implements AgentProvider {
                         toolCalls: totalToolCalls,
                         toolRounds: toolRounds,
                         httpStatus: response.status,
+                        promptTokens: accumulatedPromptTokens || undefined,
+                        completionTokens: accumulatedCompletionTokens || undefined,
+                        totalTokens: accumulatedTotalTokens || undefined,
+                        costUsd: accumulatedCostUsd,
                       };
                     }
                     break; // → next model
@@ -198,21 +242,25 @@ export class OpenRouterProvider implements AgentProvider {
                     toolCalls: totalToolCalls,
                     toolRounds: toolRounds,
                     httpStatus: response.status,
+                    promptTokens: accumulatedPromptTokens || undefined,
+                    completionTokens: accumulatedCompletionTokens || undefined,
+                    totalTokens: accumulatedTotalTokens || undefined,
+                    costUsd: accumulatedCostUsd,
                   };
                 }
-                if (response.status === 429 && attempt < cfg.maxRetries) {
+                if (response.status === 429 && attempt < retriesForModel) {
                   const retryAfter = response.headers.get('retry-after');
                   const delayMs = retryAfter ? Number(retryAfter) * 1000 : cfg.baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 100;
                   await new Promise(r => setTimeout(r, delayMs));
                   continue;
                 }
-                if (response.status >= 500 && attempt < cfg.maxRetries) {
+                if (response.status >= 500 && attempt < retriesForModel) {
                   const delayMs = cfg.baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 100;
                   await new Promise(r => setTimeout(r, delayMs));
                   continue;
                 }
 
-                const isLastModel = model === modelQueue[modelQueue.length - 1];
+                const isLastModel = model === candidateEntries[candidateEntries.length - 1].model;
                 if (isLastModel) {
                   clearTimeout(timer);
                   const hasFallbacks = cfg.fallbackModels && cfg.fallbackModels.length > 0;
@@ -233,14 +281,18 @@ export class OpenRouterProvider implements AgentProvider {
                     toolCalls: totalToolCalls,
                     toolRounds: toolRounds,
                     httpStatus: response.status,
+                    promptTokens: accumulatedPromptTokens || undefined,
+                    completionTokens: accumulatedCompletionTokens || undefined,
+                    totalTokens: accumulatedTotalTokens || undefined,
+                    costUsd: accumulatedCostUsd,
                   };
                 }
                 break;
               }
 
               if (!text || text.trim() === '') {
-                const isLastModel = model === modelQueue[modelQueue.length - 1];
-                if (isLastModel && attempt >= cfg.maxRetries) {
+                const isLastModel = model === candidateEntries[candidateEntries.length - 1].model;
+                if (isLastModel && attempt >= retriesForModel) {
                   clearTimeout(timer);
                   return {
                     status: 'FAILED',
@@ -256,6 +308,10 @@ export class OpenRouterProvider implements AgentProvider {
                     errorMessage: 'Empty response body from OpenRouter',
                     toolCalls: totalToolCalls,
                     toolRounds: toolRounds,
+                    promptTokens: accumulatedPromptTokens || undefined,
+                    completionTokens: accumulatedCompletionTokens || undefined,
+                    totalTokens: accumulatedTotalTokens || undefined,
+                    costUsd: accumulatedCostUsd,
                   };
                 }
                 continue;
@@ -267,8 +323,8 @@ export class OpenRouterProvider implements AgentProvider {
               try {
                 payload = JSON.parse(text);
               } catch {
-                const isLastModel = model === modelQueue[modelQueue.length - 1];
-                if (isLastModel && attempt >= cfg.maxRetries) {
+                const isLastModel = model === candidateEntries[candidateEntries.length - 1].model;
+                if (isLastModel && attempt >= retriesForModel) {
                   clearTimeout(timer);
                   return {
                     status: 'FAILED',
@@ -284,9 +340,34 @@ export class OpenRouterProvider implements AgentProvider {
                     errorMessage: 'Invalid JSON response from OpenRouter',
                     toolCalls: totalToolCalls,
                     toolRounds: toolRounds,
+                    promptTokens: accumulatedPromptTokens || undefined,
+                    completionTokens: accumulatedCompletionTokens || undefined,
+                    totalTokens: accumulatedTotalTokens || undefined,
+                    costUsd: accumulatedCostUsd,
                   };
                 }
                 continue;
+              }
+
+              // Capture token usage & cost statistics if returned in payload
+              if (payload.usage) {
+                if (typeof payload.usage.prompt_tokens === 'number') {
+                  accumulatedPromptTokens += payload.usage.prompt_tokens;
+                }
+                if (typeof payload.usage.completion_tokens === 'number') {
+                  accumulatedCompletionTokens += payload.usage.completion_tokens;
+                }
+                if (typeof payload.usage.total_tokens === 'number') {
+                  accumulatedTotalTokens += payload.usage.total_tokens;
+                }
+                if (typeof payload.usage.cost === 'number') {
+                  accumulatedCostUsd = (accumulatedCostUsd ?? 0) + payload.usage.cost;
+                }
+              }
+              if (typeof payload.total_cost === 'number') {
+                accumulatedCostUsd = (accumulatedCostUsd ?? 0) + payload.total_cost;
+              } else if (entry.free && accumulatedCostUsd === undefined) {
+                accumulatedCostUsd = 0;
               }
 
               modelUsed = payload.model ?? model;
@@ -314,6 +395,10 @@ export class OpenRouterProvider implements AgentProvider {
                   errorMessage: null,
                   toolCalls: totalToolCalls,
                   toolRounds: toolRounds,
+                  promptTokens: accumulatedPromptTokens || undefined,
+                  completionTokens: accumulatedCompletionTokens || undefined,
+                  totalTokens: accumulatedTotalTokens || undefined,
+                  costUsd: accumulatedCostUsd,
                 };
               }
 
@@ -335,6 +420,10 @@ export class OpenRouterProvider implements AgentProvider {
                     errorMessage: `Exceeded max tool calls (${this.maxToolCalls})`,
                     toolCalls: totalToolCalls,
                     toolRounds: toolRounds,
+                    promptTokens: accumulatedPromptTokens || undefined,
+                    completionTokens: accumulatedCompletionTokens || undefined,
+                    totalTokens: accumulatedTotalTokens || undefined,
+                    costUsd: accumulatedCostUsd,
                   };
                 }
                 totalToolCalls++;
@@ -369,6 +458,10 @@ export class OpenRouterProvider implements AgentProvider {
                   errorMessage: null,
                   toolCalls: totalToolCalls,
                   toolRounds: toolRounds,
+                  promptTokens: accumulatedPromptTokens || undefined,
+                  completionTokens: accumulatedCompletionTokens || undefined,
+                  totalTokens: accumulatedTotalTokens || undefined,
+                  costUsd: accumulatedCostUsd,
                 };
               }
               modelFound = true;
@@ -379,7 +472,7 @@ export class OpenRouterProvider implements AgentProvider {
               if (isAbort) {
                 throw fetchErr;
               }
-              if (attempt < cfg.maxRetries) {
+              if (attempt < retriesForModel) {
                 await new Promise(r => setTimeout(r, cfg.baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 100));
                 continue;
               }
@@ -405,6 +498,10 @@ export class OpenRouterProvider implements AgentProvider {
         errorMessage: 'All configured OpenRouter models failed',
         toolCalls: totalToolCalls,
         toolRounds: toolRounds,
+        promptTokens: accumulatedPromptTokens || undefined,
+        completionTokens: accumulatedCompletionTokens || undefined,
+        totalTokens: accumulatedTotalTokens || undefined,
+        costUsd: accumulatedCostUsd,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'OpenRouter request failed';
@@ -424,6 +521,10 @@ export class OpenRouterProvider implements AgentProvider {
         errorMessage: message,
         toolCalls: totalToolCalls,
         toolRounds: toolRounds,
+        promptTokens: accumulatedPromptTokens || undefined,
+        completionTokens: accumulatedCompletionTokens || undefined,
+        totalTokens: accumulatedTotalTokens || undefined,
+        costUsd: accumulatedCostUsd,
       };
     } finally {
       clearTimeout(timer);

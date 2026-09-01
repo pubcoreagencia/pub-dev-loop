@@ -98,6 +98,18 @@ export interface AttemptTrace {
   workspaceCreated: boolean;
   /** Lifecycle: workspace was cleaned up after this attempt */
   workspaceCleaned: boolean;
+  /** Model routing tier (1 = Curated Free, 2 = Free Pool, 3 = Paid Fallback) */
+  tier?: 1 | 2 | 3;
+  /** Task routing profile */
+  profile?: string;
+  /** Fallback classification type */
+  fallbackType?: 'retry' | 'model_switch' | 'tier_escalation';
+  /** Token usage statistics when provided by gateway */
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  /** Actual cost in USD if available or 0 for verified free models */
+  costUsd?: number;
 }
 
 /**

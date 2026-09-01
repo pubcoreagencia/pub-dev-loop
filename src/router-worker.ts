@@ -5,6 +5,7 @@ import type { WorkspaceSnapshot } from './finalizer.js';
 import { captureWorkspaceSnapshot } from './finalizer.js';
 import { RouterProvider } from './providers/router.js';
 import { OpenRouterProvider } from './providers/openrouter.js';
+import { classifyTaskProfile } from './routing/index.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -312,6 +313,27 @@ export class RouterWorker extends BaseWorker {
 
         // Collect attempt trace
         const retryable = isRetryableProviderResult(subResult);
+        const modelName = provider.model || subResult.model || '';
+        const isFreeModel = modelName.includes(':free') || modelName.endsWith('/free');
+        const calculatedTier: 1 | 2 | 3 = modelName === 'openrouter/free'
+          ? 2
+          : isFreeModel
+          ? 1
+          : 3;
+        const taskProfile = classifyTaskProfile(task);
+
+        let fallbackType: 'retry' | 'model_switch' | 'tier_escalation' | undefined = undefined;
+        if (attempt > 0) {
+          const prevAttempt = attemptTraces[attempt - 1];
+          if (prevAttempt && prevAttempt.tier !== calculatedTier) {
+            fallbackType = 'tier_escalation';
+          } else if (prevAttempt && prevAttempt.model === provider.model) {
+            fallbackType = 'retry';
+          } else {
+            fallbackType = 'model_switch';
+          }
+        }
+
         const trace: AttemptTrace = {
           attempt,
           provider: String(provider.kind),
@@ -330,6 +352,13 @@ export class RouterWorker extends BaseWorker {
           isWinner: false,
           workspaceCreated: true,
           workspaceCleaned: false,
+          tier: calculatedTier,
+          profile: taskProfile,
+          fallbackType,
+          promptTokens: subResult.promptTokens,
+          completionTokens: subResult.completionTokens,
+          totalTokens: subResult.totalTokens,
+          costUsd: subResult.costUsd,
         };
         attemptTraces.push(trace);
 
