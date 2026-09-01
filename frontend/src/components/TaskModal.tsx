@@ -7,6 +7,8 @@ export const TaskModal: React.FC = () => {
   const {
     activeModal,
     modalPayload,
+    activeProject,
+    activeSession,
     closeModal,
     handleCreateTask,
     handleCancelTask,
@@ -17,13 +19,27 @@ export const TaskModal: React.FC = () => {
   } = useStore();
 
   const [formData, setFormData] = useState<CreateTaskInput>({
-    project: "pub-dev-loop",
-    repository: "https://github.com/pubcoreagencia/pub-dev-loop.git",
+    project: activeProject?.project || "pub-dev-loop",
+    repository: activeSession?.repository || activeProject?.latestSession?.repository || "https://github.com/pubcoreagencia/pub-dev-loop.git",
     objective: "",
     prompt: "",
     priority: 0,
   });
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Sync default form data when activeProject/activeModal changes
+  React.useEffect(() => {
+    if (activeModal === "CREATE_TASK") {
+      setFormData({
+        project: activeProject?.project || "pub-dev-loop",
+        repository: activeSession?.repository || activeProject?.latestSession?.repository || "https://github.com/pubcoreagencia/pub-dev-loop.git",
+        objective: "",
+        prompt: "",
+        priority: 0,
+      });
+      setFormError(null);
+    }
+  }, [activeModal, activeProject, activeSession]);
 
   if (!activeModal) return null;
 

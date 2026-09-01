@@ -40,12 +40,6 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
     return p.normalizedProject.includes(query) || p.project.toLowerCase().includes(query);
   });
 
-  const queuedTasks = tasks.filter((t: Task) => ["QUEUED", "ASSIGNED"].includes(t.status));
-  const runningTasks = tasks.filter((t: Task) => ["RUNNING", "TESTING"].includes(t.status));
-  const finishedTasks = tasks.filter((t: Task) =>
-    ["COMPLETED", "FAILED", "NEEDS_REVIEW", "BLOCKED", "CANCELLED"].includes(t.status)
-  );
-
   const isCancellable = currentTask && ["QUEUED", "ASSIGNED", "RUNNING", "TESTING"].includes(currentTask.status);
   const isRetriable = currentTask && ["FAILED", "CANCELLED", "BLOCKED", "COMPLETED", "NEEDS_REVIEW"].includes(currentTask.status);
 
@@ -128,7 +122,7 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
           {filteredProjects.length === 0 ? (
             <p className="empty-text">Nenhum projeto encontrado.</p>
           ) : (
-            <div className="project-cards-list" style={{ maxHeight: "220px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px" }}>
+            <div className="project-cards-list" style={{ maxHeight: "200px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px" }}>
               {filteredProjects.map((p) => {
                 const isActive = activeProject?.normalizedProject === p.normalizedProject;
                 const sessCount = p.sessionCount;
@@ -165,7 +159,109 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
           )}
         </section>
 
-        {/* CONTROLE DA TAREFA (Requisito 2) */}
+        {/* DETALHES E AÇÕES DO PROJETO ATIVO */}
+        {activeProject && (
+          <section className="task-control-card" style={{ border: "1px solid rgba(59,130,246,0.3)" }}>
+            <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <span className="badge-category" style={{ background: "#2563eb" }}>Projeto Ativo</span>
+                <h3 style={{ margin: "4px 0 0 0" }}>{activeProject.project}</h3>
+              </div>
+              <span className={`status-pill status-${(activeProject.latestSession.status || "ready").toLowerCase()}`}>
+                {activeProject.latestSession.status || "READY"}
+              </span>
+            </div>
+
+            <div className="details-grid">
+              <div className="detail-item full-width">
+                <span className="detail-label">SESSÃO ATIVA (ID)</span>
+                <span className="detail-value task-id" title={activeProject.latestSession.id}>
+                  {activeProject.latestSession.id}
+                </span>
+              </div>
+
+              {activeProject.latestSession.branch && (
+                <div className="detail-item full-width">
+                  <span className="detail-label">BRANCH</span>
+                  <span className="detail-value" style={{ fontFamily: "monospace", fontSize: "11px" }}>
+                    {activeProject.latestSession.branch}
+                  </span>
+                </div>
+              )}
+
+              {activeProject.latestSession.lastCheckpointSha && (
+                <div className="detail-item">
+                  <span className="detail-label">CHECKPOINT SHA</span>
+                  <span className="detail-value commit-hash">
+                    {activeProject.latestSession.lastCheckpointSha.slice(0, 8)}
+                  </span>
+                </div>
+              )}
+
+              <div className="detail-item">
+                <span className="detail-label">TOTAL DE SESSÕES</span>
+                <span className="detail-value highlight">{activeProject.sessionCount}</span>
+              </div>
+            </div>
+
+            {/* Ações do Projeto Ativo (Preview & Repo) */}
+            <div className="task-action-buttons" style={{ marginTop: "12px" }}>
+              {activeProject.latestSession.previewUrl ? (
+                <a
+                  href={activeProject.latestSession.previewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-action-tool"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                    textDecoration: "none",
+                    background: "rgba(37,99,235,0.2)",
+                    border: "1px solid #3b82f6",
+                    color: "#93c5fd",
+                    padding: "8px 12px",
+                    borderRadius: "6px",
+                    fontWeight: 600,
+                    fontSize: "12px"
+                  }}
+                  title="Abrir URL pública de pré-visualização em nova aba"
+                >
+                  🌐 Abrir Preview
+                </a>
+              ) : null}
+
+              {activeProject.latestSession.repository ? (
+                <a
+                  href={activeProject.latestSession.repository.replace(/\.git$/, "")}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-action-tool"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                    textDecoration: "none",
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    color: "#e2e8f0",
+                    padding: "8px 12px",
+                    borderRadius: "6px",
+                    fontWeight: 600,
+                    fontSize: "12px"
+                  }}
+                  title="Abrir repositório Git em nova aba"
+                >
+                  🐙 Ver Repositório
+                </a>
+              ) : null}
+            </div>
+          </section>
+        )}
+
+        {/* CONTROLE DA TAREFA SELECIONADA */}
         {currentTask && (
           <section className="task-control-card">
             <div className="card-header">
@@ -249,54 +345,41 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
               <button
                 className="btn-action-tool"
                 onClick={() => openModal("VIEW_TASK", currentTask)}
-                title="Ver detalhes completos da tarefa"
               >
-                📄 Ver Tarefa
+                🔍 Detalhes
               </button>
 
               <button
                 className="btn-action-tool"
                 onClick={() => openModal("VIEW_LOGS", currentTask)}
-                title="Ver logs de execução"
               >
-                📋 Ver Registros
+                📜 Logs
               </button>
 
-              <button
-                className="btn-action-tool"
-                onClick={() => openModal("VIEW_RESULT", currentTask)}
-                title="Ver resultado da execução"
-              >
-                📊 Ver Resultado
-              </button>
-
-              {currentTask.commitSha && (
+              {currentTask.result && (
                 <button
                   className="btn-action-tool"
-                  onClick={() => openModal("VIEW_TASK", currentTask)}
-                  title="Ver commit gerado"
+                  onClick={() => openModal("VIEW_RESULT", currentTask)}
                 >
-                  🔗 Ver Commit
+                  📊 Resultado
                 </button>
               )}
 
               {isCancellable && (
                 <button
-                  className="btn-action-danger"
+                  className="btn-action-tool btn-danger"
                   onClick={() => openModal("CONFIRM_CANCEL", currentTask)}
-                  title="Cancelar execução da tarefa"
                 >
-                  🛑 Cancelar Tarefa
+                  🛑 Cancelar
                 </button>
               )}
 
               {isRetriable && (
                 <button
-                  className="btn-action-primary"
+                  className="btn-action-tool btn-warn"
                   onClick={() => openModal("CONFIRM_RETRY", currentTask)}
-                  title="Reexecutar esta tarefa"
                 >
-                  🔄 Reexecutar Tarefa
+                  🔄 Reexecutar
                 </button>
               )}
             </div>
@@ -386,90 +469,137 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
           )}
         </section>
 
-        {/* Real Tasks Tracking */}
-        <section className="panel-section">
-          <div className="section-title-row">
-            <h4>Tarefas em Execução</h4>
-            <span className="count-tag">{runningTasks.length}</span>
-          </div>
-          {runningTasks.length === 0 ? (
-            <p className="empty-text">Nenhuma tarefa em execução ativa.</p>
-          ) : (
-            <ul className="task-list">
-              {runningTasks.map((t: Task) => (
-                <li
-                  key={t.id}
-                  className={`task-item ${selectedTask?.id === t.id ? "active-task-item" : ""}`}
-                  onClick={() => selectTask(t)}
-                >
-                  <div className="task-row">
-                    <span className="task-title">{t.objective || t.prompt || t.id}</span>
-                    <span className={`status-badge-inline status-${t.status.toLowerCase()}`}>
-                      {STATE_LABELS_PT[t.status] ?? t.status}
-                    </span>
-                  </div>
-                  <span className="task-sub">{t.project} • {t.repository.split("/").pop()}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        {/* Real Tasks Tracking (Contextual ao Projeto Ativo) */}
+        {(() => {
+          // Contextual tasks filter:
+          // 1. Matched by prototypeSessionId === activeSession.id
+          // 2. Fallback: task.project normalized === activeProject.project normalized
+          const activeProjNorm = activeProject?.normalizedProject;
+          const activeSessionId = activeProject?.latestSession?.id;
 
-        <section className="panel-section">
-          <div className="section-title-row">
-            <h4>Fila de Espera</h4>
-            <span className="count-tag">{queuedTasks.length}</span>
-          </div>
-          {queuedTasks.length === 0 ? (
-            <p className="empty-text">Fila de espera vazia.</p>
-          ) : (
-            <ul className="task-list">
-              {queuedTasks.map((t: Task) => (
-                <li
-                  key={t.id}
-                  className={`task-item ${selectedTask?.id === t.id ? "active-task-item" : ""}`}
-                  onClick={() => selectTask(t)}
-                >
-                  <div className="task-row">
-                    <span className="task-title">{t.objective || t.prompt || t.id}</span>
-                    <span className="status-badge-inline status-queued">EM FILA</span>
-                  </div>
-                  <span className="task-sub">{t.project} • Prioridade: {t.priority}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+          const contextualTasks = activeProject
+            ? tasks.filter((t: Task) => {
+                if (activeSessionId && t.prototypeSessionId === activeSessionId) return true;
+                if (activeProjNorm && t.project) {
+                  const tNorm = t.project.trim().toLowerCase().replace(/\s+/g, " ");
+                  return tNorm === activeProjNorm;
+                }
+                return false;
+              })
+            : tasks;
 
-        <section className="panel-section">
-          <div className="section-title-row">
-            <h4>Histórico Recente</h4>
-            <span className="count-tag">{finishedTasks.length}</span>
-          </div>
-          {finishedTasks.length === 0 ? (
-            <p className="empty-text">Nenhuma tarefa finalizada no histórico.</p>
-          ) : (
-            <ul className="task-list">
-              {finishedTasks.slice(0, 8).map((t: Task) => (
-                <li
-                  key={t.id}
-                  className={`task-item ${selectedTask?.id === t.id ? "active-task-item" : ""}`}
-                  onClick={() => selectTask(t)}
-                >
-                  <div className="task-row">
-                    <span className="task-title">{t.objective || t.prompt || t.id}</span>
-                    <span className={`status-badge-inline status-${t.status.toLowerCase()}`}>
-                      {STATE_LABELS_PT[t.status] ?? t.status}
-                    </span>
-                  </div>
-                  <span className="task-sub">
-                    {t.commitSha ? `Commit: ${t.commitSha.slice(0, 7)}` : t.project} • {new Date(t.createdAt).toLocaleDateString("pt-BR")}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+          const contextRunning = contextualTasks.filter((t: Task) => ["RUNNING", "TESTING"].includes(t.status));
+          const contextQueued = contextualTasks.filter((t: Task) => ["QUEUED", "ASSIGNED"].includes(t.status));
+          const contextFinished = contextualTasks.filter((t: Task) =>
+            ["COMPLETED", "FAILED", "NEEDS_REVIEW", "BLOCKED", "CANCELLED"].includes(t.status)
+          );
+
+          return (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "16px", marginBottom: "4px" }}>
+                <span style={{ fontSize: "11px", fontWeight: 600, color: "#93c5fd", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  {activeProject ? `Tarefas de: ${activeProject.project}` : "Tarefas Globais"}
+                </span>
+                <span style={{ fontSize: "11px", color: "#64748b" }}>
+                  {contextualTasks.length} de {tasks.length} total
+                </span>
+              </div>
+
+              {/* Running Tasks */}
+              <section className="panel-section">
+                <div className="section-title-row">
+                  <h4>Tarefas em Execução</h4>
+                  <span className="count-tag">{contextRunning.length}</span>
+                </div>
+                {contextRunning.length === 0 ? (
+                  <p className="empty-text">
+                    {activeProject ? "Nenhuma tarefa em execução para este projeto." : "Nenhuma tarefa em execução ativa."}
+                  </p>
+                ) : (
+                  <ul className="task-list">
+                    {contextRunning.map((t: Task) => (
+                      <li
+                        key={t.id}
+                        className={`task-item ${selectedTask?.id === t.id ? "active-task-item" : ""}`}
+                        onClick={() => selectTask(t)}
+                      >
+                        <div className="task-row">
+                          <span className="task-title">{t.objective || t.prompt || t.id}</span>
+                          <span className={`status-badge-inline status-${t.status.toLowerCase()}`}>
+                            {STATE_LABELS_PT[t.status] ?? t.status}
+                          </span>
+                        </div>
+                        <span className="task-sub">{t.project} • {t.repository.split("/").pop()}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              {/* Queued Tasks */}
+              <section className="panel-section">
+                <div className="section-title-row">
+                  <h4>Fila de Espera</h4>
+                  <span className="count-tag">{contextQueued.length}</span>
+                </div>
+                {contextQueued.length === 0 ? (
+                  <p className="empty-text">
+                    {activeProject ? "Fila vazia para este projeto." : "Fila de espera vazia."}
+                  </p>
+                ) : (
+                  <ul className="task-list">
+                    {contextQueued.map((t: Task) => (
+                      <li
+                        key={t.id}
+                        className={`task-item ${selectedTask?.id === t.id ? "active-task-item" : ""}`}
+                        onClick={() => selectTask(t)}
+                      >
+                        <div className="task-row">
+                          <span className="task-title">{t.objective || t.prompt || t.id}</span>
+                          <span className="status-badge-inline status-queued">EM FILA</span>
+                        </div>
+                        <span className="task-sub">{t.project} • Prioridade: {t.priority}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              {/* Recent Tasks */}
+              <section className="panel-section">
+                <div className="section-title-row">
+                  <h4>Histórico do Projeto</h4>
+                  <span className="count-tag">{contextFinished.length}</span>
+                </div>
+                {contextFinished.length === 0 ? (
+                  <p className="empty-text">
+                    {activeProject ? "Nenhuma tarefa finalizada registrada para este projeto." : "Nenhuma tarefa finalizada no histórico."}
+                  </p>
+                ) : (
+                  <ul className="task-list">
+                    {contextFinished.slice(0, 10).map((t: Task) => (
+                      <li
+                        key={t.id}
+                        className={`task-item ${selectedTask?.id === t.id ? "active-task-item" : ""}`}
+                        onClick={() => selectTask(t)}
+                      >
+                        <div className="task-row">
+                          <span className="task-title">{t.objective || t.prompt || t.id}</span>
+                          <span className={`status-badge-inline status-${t.status.toLowerCase()}`}>
+                            {STATE_LABELS_PT[t.status] ?? t.status}
+                          </span>
+                        </div>
+                        <span className="task-sub">
+                          {t.commitSha ? `Commit: ${t.commitSha.slice(0, 7)}` : t.project} • {new Date(t.createdAt).toLocaleDateString("pt-BR")}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </>
+          );
+        })()}
       </div>
     </aside>
   );
