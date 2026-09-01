@@ -10,6 +10,16 @@ export type StreamEventType =
   | 'error'
   | 'stream_completed';
 
+export type OperationalEventType =
+  | StreamEventType
+  | 'attempt_started'
+  | 'attempt_completed'
+  | 'attempt_failed'
+  | 'retry_started'
+  | 'task_completed'
+  | 'task_failed'
+  | 'task_cancelled';
+
 export interface ToolCallDelta {
   index: number;
   id?: string;
@@ -41,6 +51,15 @@ export interface StreamEvent {
   };
 }
 
+export interface OperationalEventEnvelope<TPayload = any> {
+  taskId: string;
+  attempt: number;
+  seq: number;
+  timestamp: string;
+  type: OperationalEventType;
+  payload: TPayload;
+}
+
 export interface StreamConsumer {
   onEvent?: (event: StreamEvent) => void;
   onTextDelta?: (delta: string) => void;
@@ -48,4 +67,5 @@ export interface StreamConsumer {
   onToolCallCompleted?: (toolCall: ToolCall) => void;
   onUsage?: (usage: StreamUsageData) => void;
   onError?: (error: Error) => void;
+  onEnvelope?: (envelope: OperationalEventEnvelope) => void;
 }

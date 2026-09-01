@@ -1,5 +1,12 @@
 // src/providers/streaming/sink.ts
-import type { StreamConsumer, StreamEvent, StreamUsageData, ToolCallDelta } from './types.js';
+import type {
+  StreamConsumer,
+  StreamEvent,
+  StreamUsageData,
+  ToolCallDelta,
+  OperationalEventEnvelope,
+  OperationalEventType,
+} from './types.js';
 import type { ToolCall } from '../../tools/types.js';
 
 export interface RuntimeStreamFeedback {
@@ -14,7 +21,7 @@ export interface RuntimeStreamFeedback {
 
 /**
  * StreamEventSink
- * A lightweight runtime bridge connecting provider streaming events
+ * A lightweight runtime bridge connecting provider streaming and lifecycle events
  * to execution observation without interfering with task execution lifecycle.
  */
 export class StreamEventSink implements StreamConsumer {
@@ -26,14 +33,47 @@ export class StreamEventSink implements StreamConsumer {
   };
 
   private readonly externalConsumer?: StreamConsumer;
+  private readonly taskId?: string;
+  private readonly attempt: number;
+  private seqCounter = 0;
 
-  constructor(externalConsumer?: StreamConsumer) {
+  constructor(
+    externalConsumer?: StreamConsumer,
+    options?: { taskId?: string; attempt?: number; startSeq?: number }
+  ) {
     this.externalConsumer = externalConsumer;
+    this.taskId = options?.taskId;
+    this.attempt = options?.attempt ?? 0;
+    this.seqCounter = options?.startSeq ?? 0;
+  }
+
+  emitEnvelope<TPayload = any>(type: OperationalEventType, payload: TPayload): OperationalEventEnvelope<TPayload> {
+    const envelope: OperationalEventEnvelope<TPayload> = {
+      taskId: this.taskId ?? '',
+      attempt: this.attempt,
+      seq: this.seqCounter++,
+      timestamp: new Date().toISOString(),
+      type,
+      payload,
+    };
+
+    try {
+      const res = this.externalConsumer?.onEnvelope?.(envelope) as any;
+      if (res && typeof res.catch === 'function') {
+        res.catch(() => {});
+      }
+    } catch {}
+
+    return envelope;
   }
 
   onEvent(event: StreamEvent): void {
     this.feedback.eventsCount++;
 
+    // 1. Generate and emit OperationalEventEnvelope
+    this.emitEnvelope(event.type, event);
+
+    // 2. Specific event routing
     if (event.type === 'text_delta' && event.text) {
       this.feedback.textBuffer += event.text;
       try { this.externalConsumer?.onTextDelta?.(event.text); } catch {}
@@ -56,11 +96,16 @@ export class StreamEventSink implements StreamConsumer {
 
   onError(error: Error): void {
     this.feedback.error = error;
+    this.emitEnvelope('error', { message: error.message, name: error.name });
     try { this.externalConsumer?.onError?.(error); } catch {}
   }
 
   getFeedback(): Readonly<RuntimeStreamFeedback> {
     return { ...this.feedback };
+  }
+
+  getCurrentSeq(): number {
+    return this.seqCounter;
   }
 
   reset(): void {

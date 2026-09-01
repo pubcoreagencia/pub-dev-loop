@@ -5,7 +5,7 @@ import type { WorkspaceSnapshot } from './finalizer.js';
 import { captureWorkspaceSnapshot } from './finalizer.js';
 import { RouterProvider } from './providers/router.js';
 import { OpenRouterProvider } from './providers/openrouter.js';
-import { StreamEventSink } from './providers/streaming/index.js';
+import { StreamEventSink, type OperationalEventEnvelope, type OperationalEventType } from './providers/streaming/index.js';
 import { classifyTaskProfile } from './routing/index.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -106,12 +106,18 @@ function getRetryConfig(): {
  * The winning attempt's workspace + baseline + declaredChangedFiles are returned
  * as a unified AttemptResult to BaseWorker.executeOnce() for finalization.
  */
-export type TaskStreamEventCallback = (taskId: string, attempt: number, event: any) => void;
+export type TaskStreamEventCallback = (
+  taskId: string,
+  attempt: number,
+  event: any,
+  envelope?: OperationalEventEnvelope
+) => void;
 
 export class RouterWorker extends BaseWorker {
   protected readonly provider: AgentProvider;
   protected readonly onStreamEvent?: TaskStreamEventCallback;
   private currentAttemptController?: AbortController;
+  private currentAttemptSink?: StreamEventSink;
 
   constructor(
     tasks: TaskRepository,
@@ -124,8 +130,50 @@ export class RouterWorker extends BaseWorker {
     this.onStreamEvent = onStreamEvent;
   }
 
+  protected emitLifecycleEvent(
+    taskId: string,
+    attempt: number,
+    type: OperationalEventType,
+    payload: Record<string, unknown>,
+    sink?: StreamEventSink
+  ): void {
+    if (!this.onStreamEvent) return;
+
+    if (sink) {
+      sink.emitEnvelope(type, payload);
+    } else {
+      const envelope: OperationalEventEnvelope = {
+        taskId,
+        attempt,
+        seq: 0,
+        timestamp: new Date().toISOString(),
+        type,
+        payload,
+      };
+      try {
+        this.onStreamEvent(taskId, attempt, payload, envelope);
+      } catch {}
+    }
+  }
+
   override async cancel(): Promise<void> {
     await super.cancel();
+    if (this.currentAttemptSink) {
+      this.emitLifecycleEvent(
+        (this.currentAttemptSink as any).taskId || '',
+        (this.currentAttemptSink as any).attempt || 0,
+        'task_cancelled',
+        { cancelled: true },
+        this.currentAttemptSink
+      );
+    } else if (this.onStreamEvent) {
+      this.emitLifecycleEvent(
+        '',
+        0,
+        'task_cancelled',
+        { cancelled: true }
+      );
+    }
     if (this.currentAttemptController) {
       this.currentAttemptController.abort();
     }
@@ -286,15 +334,32 @@ export class RouterWorker extends BaseWorker {
         const attemptController = new AbortController();
         this.currentAttemptController = attemptController;
 
-        const attemptSink = new StreamEventSink({
-          onEvent: (event) => {
-            if (this.onStreamEvent) {
-              try {
-                this.onStreamEvent(task.id, attempt, event);
-              } catch {}
-            }
+        const attemptSink = new StreamEventSink(
+          {
+            onEnvelope: (envelope) => {
+              if (this.onStreamEvent) {
+                try {
+                  this.onStreamEvent(envelope.taskId || task.id, envelope.attempt ?? attempt, envelope.payload, envelope);
+                } catch {}
+              }
+            },
           },
-        });
+          { taskId: task.id, attempt }
+        );
+        this.currentAttemptSink = attemptSink;
+
+        // Emit lifecycle: attempt_started
+        this.emitLifecycleEvent(
+          task.id,
+          attempt,
+          'attempt_started',
+          {
+            attempt,
+            provider: provider.kind,
+            model: provider.model,
+          },
+          attemptSink
+        );
 
         let subResult: ProviderTaskResult;
         if (effectiveTimeout <= 0) {
@@ -410,6 +475,17 @@ export class RouterWorker extends BaseWorker {
           await rm(attemptWS, { recursive: true, force: true });
           workspaceCleaned = true;
           attemptTraces[attemptTraces.length - 1].workspaceCleaned = true;
+          this.emitLifecycleEvent(
+            task.id,
+            attempt,
+            'task_cancelled',
+            {
+              attempt,
+              provider: provider.kind,
+              model: provider.model,
+            },
+            attemptSink
+          );
           return {
             status: 'FAILED',
             workspace: attemptWS,
@@ -448,6 +524,20 @@ export class RouterWorker extends BaseWorker {
 
         if (isCompleted) {
           attemptTraces[attemptTraces.length - 1].isWinner = true;
+          this.emitLifecycleEvent(
+            task.id,
+            attempt,
+            'attempt_completed',
+            {
+              attempt,
+              provider: subResult.provider,
+              model: subResult.model,
+              durationMs: subResult.durationMs,
+              changedFiles: subResult.changedFiles,
+              toolCalls: subResult.toolCalls,
+            },
+            attemptSink
+          );
           return {
             status: 'COMPLETED',
             workspace: repo,
@@ -482,7 +572,22 @@ export class RouterWorker extends BaseWorker {
           };
         }
 
-        // Non-COMPLETED — check retryable
+        // Non-COMPLETED — emit attempt_failed
+        this.emitLifecycleEvent(
+          task.id,
+          attempt,
+          'attempt_failed',
+          {
+            attempt,
+            provider: subResult.provider,
+            model: subResult.model,
+            errorCode: subResult.errorCode,
+            errorMessage: subResult.errorMessage,
+            retryable,
+          },
+          attemptSink
+        );
+
         if (!retryable) {
           await rm(attemptWS, { recursive: true, force: true });
           workspaceCleaned = true;
@@ -533,6 +638,21 @@ export class RouterWorker extends BaseWorker {
         await rm(attemptWS, { recursive: true, force: true });
         workspaceCleaned = true;
         attemptTraces[attemptTraces.length - 1].workspaceCleaned = true;
+
+        // Emit lifecycle: retry_started
+        if (attempt < effectiveProviders.length - 1) {
+          this.emitLifecycleEvent(
+            task.id,
+            attempt,
+            'retry_started',
+            {
+              fromAttempt: attempt,
+              toAttempt: attempt + 1,
+              nextProvider: effectiveProviders[attempt + 1]?.kind,
+            },
+            attemptSink
+          );
+        }
 
         // BACKOFF (respecting deadline)
         if (attempt < effectiveProviders.length - 1) {
