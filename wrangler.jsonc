@@ -46,8 +46,8 @@
     }
   ],
   "vars": {
-    "PRIMARY_GATEWAY": "9router",
-    "FALLBACK_GATEWAY": "openrouter",
+    "PRIMARY_GATEWAY": "openrouter",
+    "FALLBACK_GATEWAY": "9router",
     "ROUTER_BASE_URL": "https://pub-9router.contato-pubcore.workers.dev/v1",
     "ROUTER_MODEL": "gemini/gemini-3.6-flash",
     "ROUTER_FALLBACK_MODELS": "gemini/gemini-3.7-flash,nvidia/minimaxai/minimax-m2.7,qwen/qwen-2.5-coder-32b-instruct",

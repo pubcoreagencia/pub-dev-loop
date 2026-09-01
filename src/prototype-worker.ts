@@ -13,6 +13,7 @@ import { PublicPreviewRuntime } from './prototype/public-preview-runtime.js';
 import type { PreviewRuntime, PreviewRuntimeInfo } from './prototype/preview-runtime.js';
 import { StreamEventSink } from './providers/streaming/index.js';
 import { OperationalEventBridge } from './prototype/bridge.js';
+import { loadOpenRouterConfig } from './providers/openrouterConfig.js';
 
 
 const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
@@ -199,11 +200,24 @@ export class PrototypeWorker {
         { taskId: task.id, attempt: 0 }
       );
 
+      // Resolve the dynamic model selected by policy for this task (if provider is OpenRouter or DualGateway)
+      let initialModel = (this.provider as any).model;
+      if (!initialModel || initialModel === 'default' || initialModel === 'openrouter/free') {
+        try {
+          const cfg = loadOpenRouterConfig(undefined, task);
+          if (cfg?.primaryModel) {
+            initialModel = cfg.primaryModel;
+          }
+        } catch {
+          // ignore error and fall back to provider default
+        }
+      }
+
       // Emit initial attempt_started lifecycle event
       sink.emitEnvelope('attempt_started', {
         attempt: 0,
         provider: this.provider.kind || 'openrouter',
-        model: (this.provider as any).model || 'default',
+        model: initialModel || (this.provider as any).model || 'default',
       });
 
       const result = await this.provider.execute(task, workspace, {
