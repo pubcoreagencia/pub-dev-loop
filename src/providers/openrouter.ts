@@ -7,6 +7,7 @@ import { AgentExecutor } from '../executor.js';
 import type { ToolCall, ToolResult, ToolExecutionContext, ToolDefinition } from '../tools/types.js';
 import { loadOpenRouterConfig, type OpenRouterConfig } from './openrouterConfig.js';
 import { canUsePaidFallback } from '../routing/index.js';
+import { parseOpenAISSEStream, type StreamConsumer } from './streaming/index.js';
 
 interface OpenAIChatMessage {
   role: string;
@@ -75,12 +76,16 @@ export class OpenRouterProvider implements AgentProvider {
   readonly timeoutMs: number;
   readonly maxToolRounds: number;
   readonly maxToolCalls: number;
+  readonly enableStream: boolean;
+  readonly consumer?: StreamConsumer;
 
   constructor(
     baseUrl = process.env.OPENROUTER_BASE_URL ?? DEFAULT_OPENROUTER_BASE_URL,
     apiKey = process.env.OPENROUTER_API_KEY,
     timeoutMs = Number(process.env.OPENROUTER_TIMEOUT_MS ?? 900000),
     modelOverride?: string,
+    enableStream = process.env.OPENROUTER_STREAM_ENABLED === 'true',
+    consumer?: StreamConsumer,
   ) {
     this.baseUrl = normalizeBaseUrl(baseUrl, DEFAULT_OPENROUTER_BASE_URL);
     this.apiKey = apiKey?.trim() || undefined;
@@ -88,6 +93,8 @@ export class OpenRouterProvider implements AgentProvider {
     this.maxToolRounds = Number(process.env.OPENROUTER_MAX_TOOL_ROUNDS ?? 20);
     this.maxToolCalls = Number(process.env.OPENROUTER_MAX_TOOL_CALLS ?? 50);
     this.model = modelOverride ?? process.env.OPENROUTER_MODEL ?? 'openrouter/free';
+    this.enableStream = enableStream;
+    this.consumer = consumer;
   }
 
   async execute(task: Task, workspace: string): Promise<ProviderTaskResult> {
@@ -159,7 +166,7 @@ export class OpenRouterProvider implements AgentProvider {
             const requestBody: Record<string, unknown> = {
               model,
               messages: this.messagesToApi(messages),
-              stream: false,
+              stream: this.enableStream,
               tools: toOpenAITools(toolDefs),
               tool_choice: 'auto',
             };
@@ -181,9 +188,8 @@ export class OpenRouterProvider implements AgentProvider {
                 signal: controller.signal,
               });
 
-              const text = await response.text();
-
               if (!response.ok) {
+                const text = await response.text();
                 const errPayload = this.parseError(text);
                 const errMsg = errPayload.message || text;
                 const errTextLower = text.toLowerCase();
@@ -290,95 +296,132 @@ export class OpenRouterProvider implements AgentProvider {
                 break;
               }
 
-              if (!text || text.trim() === '') {
-                const isLastModel = model === candidateEntries[candidateEntries.length - 1].model;
-                if (isLastModel && attempt >= retriesForModel) {
-                  clearTimeout(timer);
-                  return {
-                    status: 'FAILED',
-                    provider: this.kind,
-                    model: modelUsed ?? model,
-                    exitCode: null,
-                    durationMs: Date.now() - started,
-                    stdout: '',
-                    stderr: 'Empty response body from OpenRouter',
-                    changedFiles: runtime.getChangedFiles(),
-                    commit: null,
-                    errorCode: 'EMPTY_RESPONSE',
-                    errorMessage: 'Empty response body from OpenRouter',
-                    toolCalls: totalToolCalls,
-                    toolRounds: toolRounds,
-                    promptTokens: accumulatedPromptTokens || undefined,
-                    completionTokens: accumulatedCompletionTokens || undefined,
-                    totalTokens: accumulatedTotalTokens || undefined,
-                    costUsd: accumulatedCostUsd,
-                  };
+              let messageContent = '';
+              let toolCalls: ToolCall[] | undefined = undefined;
+              let finishReason: string | undefined = undefined;
+
+              if (this.enableStream && response.body) {
+                // STREAMING PATH (SSE)
+                const streamResult = await parseOpenAISSEStream(
+                  response.body,
+                  controller.signal,
+                  this.consumer?.onEvent
+                );
+                messageContent = streamResult.fullText;
+                toolCalls = streamResult.toolCalls;
+                finishReason = streamResult.finishReason;
+
+                if (streamResult.usage) {
+                  if (typeof streamResult.usage.promptTokens === 'number') {
+                    accumulatedPromptTokens += streamResult.usage.promptTokens;
+                  }
+                  if (typeof streamResult.usage.completionTokens === 'number') {
+                    accumulatedCompletionTokens += streamResult.usage.completionTokens;
+                  }
+                  if (typeof streamResult.usage.totalTokens === 'number') {
+                    accumulatedTotalTokens += streamResult.usage.totalTokens;
+                  }
+                  if (typeof streamResult.usage.costUsd === 'number') {
+                    accumulatedCostUsd = (accumulatedCostUsd ?? 0) + streamResult.usage.costUsd;
+                  }
                 }
-                continue;
+              } else {
+                // STANDARD STREAM: FALSE PATH
+                const text = await response.text();
+                if (!text || text.trim() === '') {
+                  const isLastModel = model === candidateEntries[candidateEntries.length - 1].model;
+                  if (isLastModel && attempt >= retriesForModel) {
+                    clearTimeout(timer);
+                    return {
+                      status: 'FAILED',
+                      provider: this.kind,
+                      model: modelUsed ?? model,
+                      exitCode: null,
+                      durationMs: Date.now() - started,
+                      stdout: '',
+                      stderr: 'Empty response body from OpenRouter',
+                      changedFiles: runtime.getChangedFiles(),
+                      commit: null,
+                      errorCode: 'EMPTY_RESPONSE',
+                      errorMessage: 'Empty response body from OpenRouter',
+                      toolCalls: totalToolCalls,
+                      toolRounds: toolRounds,
+                      promptTokens: accumulatedPromptTokens || undefined,
+                      completionTokens: accumulatedCompletionTokens || undefined,
+                      totalTokens: accumulatedTotalTokens || undefined,
+                      costUsd: accumulatedCostUsd,
+                    };
+                  }
+                  continue;
+                }
+
+                let payload: OpenAIChatResponse & {
+                  choices?: Array<{ message?: OpenAIChatMessage; finish_reason?: string }>;
+                };
+                try {
+                  payload = JSON.parse(text);
+                } catch {
+                  const isLastModel = model === candidateEntries[candidateEntries.length - 1].model;
+                  if (isLastModel && attempt >= retriesForModel) {
+                    clearTimeout(timer);
+                    return {
+                      status: 'FAILED',
+                      provider: this.kind,
+                      model: modelUsed ?? model,
+                      exitCode: null,
+                      durationMs: Date.now() - started,
+                      stdout: text,
+                      stderr: 'Invalid JSON response from OpenRouter',
+                      changedFiles: runtime.getChangedFiles(),
+                      commit: null,
+                      errorCode: 'INVALID_RESPONSE',
+                      errorMessage: 'Invalid JSON response from OpenRouter',
+                      toolCalls: totalToolCalls,
+                      toolRounds: toolRounds,
+                      promptTokens: accumulatedPromptTokens || undefined,
+                      completionTokens: accumulatedCompletionTokens || undefined,
+                      totalTokens: accumulatedTotalTokens || undefined,
+                      costUsd: accumulatedCostUsd,
+                    };
+                  }
+                  continue;
+                }
+
+                if (payload.usage) {
+                  if (typeof payload.usage.prompt_tokens === 'number') {
+                    accumulatedPromptTokens += payload.usage.prompt_tokens;
+                  }
+                  if (typeof payload.usage.completion_tokens === 'number') {
+                    accumulatedCompletionTokens += payload.usage.completion_tokens;
+                  }
+                  if (typeof payload.usage.total_tokens === 'number') {
+                    accumulatedTotalTokens += payload.usage.total_tokens;
+                  }
+                  if (typeof payload.usage.cost === 'number') {
+                    accumulatedCostUsd = (accumulatedCostUsd ?? 0) + payload.usage.cost;
+                  }
+                }
+                if (typeof payload.total_cost === 'number') {
+                  accumulatedCostUsd = (accumulatedCostUsd ?? 0) + payload.total_cost;
+                } else if (entry.free && accumulatedCostUsd === undefined) {
+                  accumulatedCostUsd = 0;
+                }
+
+                modelUsed = payload.model ?? model;
+                const choice = payload.choices?.[0];
+                const message = choice?.message;
+                finishReason = choice?.finish_reason;
+                messageContent = message?.content ?? '';
+                toolCalls = message?.tool_calls;
               }
 
-              let payload: OpenAIChatResponse & {
-                choices?: Array<{ message?: OpenAIChatMessage; finish_reason?: string }>;
-              };
-              try {
-                payload = JSON.parse(text);
-              } catch {
-                const isLastModel = model === candidateEntries[candidateEntries.length - 1].model;
-                if (isLastModel && attempt >= retriesForModel) {
-                  clearTimeout(timer);
-                  return {
-                    status: 'FAILED',
-                    provider: this.kind,
-                    model: modelUsed ?? model,
-                    exitCode: null,
-                    durationMs: Date.now() - started,
-                    stdout: text,
-                    stderr: 'Invalid JSON response from OpenRouter',
-                    changedFiles: runtime.getChangedFiles(),
-                    commit: null,
-                    errorCode: 'INVALID_RESPONSE',
-                    errorMessage: 'Invalid JSON response from OpenRouter',
-                    toolCalls: totalToolCalls,
-                    toolRounds: toolRounds,
-                    promptTokens: accumulatedPromptTokens || undefined,
-                    completionTokens: accumulatedCompletionTokens || undefined,
-                    totalTokens: accumulatedTotalTokens || undefined,
-                    costUsd: accumulatedCostUsd,
-                  };
-                }
-                continue;
-              }
-
-              // Capture token usage & cost statistics if returned in payload
-              if (payload.usage) {
-                if (typeof payload.usage.prompt_tokens === 'number') {
-                  accumulatedPromptTokens += payload.usage.prompt_tokens;
-                }
-                if (typeof payload.usage.completion_tokens === 'number') {
-                  accumulatedCompletionTokens += payload.usage.completion_tokens;
-                }
-                if (typeof payload.usage.total_tokens === 'number') {
-                  accumulatedTotalTokens += payload.usage.total_tokens;
-                }
-                if (typeof payload.usage.cost === 'number') {
-                  accumulatedCostUsd = (accumulatedCostUsd ?? 0) + payload.usage.cost;
-                }
-              }
-              if (typeof payload.total_cost === 'number') {
-                accumulatedCostUsd = (accumulatedCostUsd ?? 0) + payload.total_cost;
-              } else if (entry.free && accumulatedCostUsd === undefined) {
+              if (entry.free && accumulatedCostUsd === undefined) {
                 accumulatedCostUsd = 0;
               }
-
-              modelUsed = payload.model ?? model;
-              const choice = payload.choices?.[0];
-              const message = choice?.message;
-              const finishReason = choice?.finish_reason;
-              const messageContent = message?.content ?? '';
+              modelUsed = modelUsed ?? model;
               lastResponseText = messageContent;
               if (messageContent) finalMessage = messageContent;
 
-              const toolCalls = message?.tool_calls;
               if (!toolCalls || toolCalls.length === 0) {
                 clearTimeout(timer);
                 return {

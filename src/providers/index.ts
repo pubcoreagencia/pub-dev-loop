@@ -6,3 +6,4 @@ export * from './routerConfig.js';
 export * from './openrouter.js';
 export * from './openrouterConfig.js';
 export * from './gateway.js';
+export * from './streaming/index.js';

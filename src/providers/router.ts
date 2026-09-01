@@ -5,6 +5,7 @@ import { ToolRuntime } from '../tools/runtime.js';
 import { AgentExecutor } from '../executor.js';
 import type { ToolCall, ToolResult, ToolExecutionContext, ToolDefinition } from '../tools/types.js';
 import { loadRouterConfig, type RouterConfig } from './routerConfig.js';
+import { parseOpenAISSEStream, type StreamConsumer } from './streaming/index.js';
 
 interface OpenAIChatMessage {
   role: string;
@@ -69,12 +70,16 @@ export class RouterProvider implements AgentProvider {
   readonly timeoutMs: number;
   readonly maxToolRounds: number;
   readonly maxToolCalls: number;
+  readonly enableStream: boolean;
+  readonly consumer?: StreamConsumer;
 
   constructor(
     baseUrl = process.env.ROUTER_BASE_URL ?? DEFAULT_ROUTER_BASE_URL,
     apiKey = process.env.ROUTER_API_KEY,
     timeoutMs = Number(process.env.ROUTER_TIMEOUT_MS ?? 900000),
     modelOverride?: string,
+    enableStream = process.env.ROUTER_STREAM_ENABLED === 'true',
+    consumer?: StreamConsumer,
   ) {
     this.baseUrl = normalizeBaseUrl(baseUrl, DEFAULT_ROUTER_BASE_URL);
     this.apiKey = apiKey?.trim() || undefined;
@@ -82,6 +87,8 @@ export class RouterProvider implements AgentProvider {
     this.maxToolRounds = Number(process.env.ROUTER_MAX_TOOL_ROUNDS ?? 20);
     this.maxToolCalls = Number(process.env.ROUTER_MAX_TOOL_CALLS ?? 50);
     this.model = modelOverride ?? process.env.ROUTER_MODEL ?? null;
+    this.enableStream = enableStream;
+    this.consumer = consumer;
   }
 
   async execute(task: Task, workspace: string): Promise<ProviderTaskResult> {
@@ -123,7 +130,7 @@ export class RouterProvider implements AgentProvider {
           const requestBody: Record<string, unknown> = {
             model,
             messages: this.messagesToApi(messages),
-            stream: false,
+            stream: this.enableStream,
             tools: toOpenAITools(toolDefs),
             tool_choice: 'auto',
           };
@@ -139,9 +146,8 @@ export class RouterProvider implements AgentProvider {
               signal: controller.signal,
             });
 
-            const text = await response.text();
-
             if (!response.ok) {
+              const text = await response.text();
               const errPayload = this.parseError(text);
               if (response.status === 429 && attempt < cfg.maxRetries) {
                 const retryAfter = response.headers.get('retry-after');
@@ -181,17 +187,35 @@ export class RouterProvider implements AgentProvider {
               break;
             }
 
-            const payload = JSON.parse(text) as OpenAIChatResponse & { choices?: Array<{ message?: OpenAIChatMessage; finish_reason?: string }> };
+            let messageContent = '';
+            let toolCalls: ToolCall[] | undefined = undefined;
+            let finishReason: string | undefined = undefined;
 
-            modelUsed = payload.model ?? model;
-            const choice = payload.choices?.[0];
-            const message = choice?.message;
-            const finishReason = choice?.finish_reason;
-            const messageContent = message?.content ?? '';
+            if (this.enableStream && response.body) {
+              const streamResult = await parseOpenAISSEStream(
+                response.body,
+                controller.signal,
+                this.consumer?.onEvent
+              );
+              messageContent = streamResult.fullText;
+              toolCalls = streamResult.toolCalls;
+              finishReason = streamResult.finishReason;
+            } else {
+              const text = await response.text();
+              const payload = JSON.parse(text) as OpenAIChatResponse & { choices?: Array<{ message?: OpenAIChatMessage; finish_reason?: string }> };
+
+              modelUsed = payload.model ?? model;
+              const choice = payload.choices?.[0];
+              const message = choice?.message;
+              finishReason = choice?.finish_reason;
+              messageContent = message?.content ?? '';
+              toolCalls = message?.tool_calls;
+            }
+
+            modelUsed = modelUsed ?? model;
             lastResponseText = messageContent;
             if (messageContent) finalMessage = messageContent;
 
-            const toolCalls = message?.tool_calls;
             if (!toolCalls || toolCalls.length === 0) {
               clearTimeout(timer);
               return {
