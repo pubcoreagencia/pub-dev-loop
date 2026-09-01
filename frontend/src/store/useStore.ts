@@ -1,8 +1,10 @@
 import { create } from "zustand";
-import type { Task, CreateTaskInput } from "../types/task";
+import type { Task, CreateTaskInput, PrototypeSession, LogicalProject } from "../types/task";
 import type { Agent } from "../types/agent";
-import { fetchTasks, createTask, cancelTask, retryTask } from "../services/api";
-import { deriveAgentsFromTasks } from "../services/agentAdapter";
+import { fetchTasks, fetchSessions, createTask, cancelTask, retryTask } from "../services/api";
+import { deriveAgentsFromTasks, groupSessionsIntoProjects } from "../services/agentAdapter";
+
+const STORAGE_PROJECT_KEY = "pub-3d:last-project";
 
 export type ModalType =
   | "CREATE_TASK"
@@ -14,6 +16,11 @@ export type ModalType =
   | null;
 
 interface State {
+  sessions: PrototypeSession[];
+  projects: LogicalProject[];
+  activeProject?: LogicalProject;
+  activeSession?: PrototypeSession;
+  projectSearch: string;
   tasks: Task[];
   agents: Agent[];
   selectedAgent?: Agent;
@@ -23,9 +30,12 @@ interface State {
   loading: boolean;
   actionLoading: boolean;
   error?: string;
+  projectsError?: string;
   successMessage?: string;
 
   loadData: () => Promise<void>;
+  selectProject: (project?: LogicalProject) => void;
+  setProjectSearch: (query: string) => void;
   selectAgent: (agent?: Agent) => void;
   selectTask: (task?: Task) => void;
   openModal: (type: ModalType, payload?: any) => void;
@@ -39,6 +49,11 @@ interface State {
 }
 
 export const useStore = create<State>((set, get) => ({
+  sessions: [],
+  projects: [],
+  activeProject: undefined,
+  activeSession: undefined,
+  projectSearch: "",
   tasks: [],
   agents: [],
   selectedAgent: undefined,
@@ -48,7 +63,31 @@ export const useStore = create<State>((set, get) => ({
   loading: false,
   actionLoading: false,
   error: undefined,
+  projectsError: undefined,
   successMessage: undefined,
+
+  setProjectSearch: (query: string) => {
+    set({ projectSearch: query });
+  },
+
+  selectProject: (project) => {
+    if (project) {
+      if (typeof window !== "undefined" && window.localStorage) {
+        try {
+          window.localStorage.setItem(STORAGE_PROJECT_KEY, project.normalizedProject);
+        } catch {}
+      }
+      set({
+        activeProject: project,
+        activeSession: project.latestSession,
+      });
+    } else {
+      set({
+        activeProject: undefined,
+        activeSession: undefined,
+      });
+    }
+  },
 
   selectAgent: (agent) => {
     const state = get();
@@ -69,6 +108,46 @@ export const useStore = create<State>((set, get) => ({
   setSuccessMessage: (msg) => set({ successMessage: msg }),
 
   async loadData() {
+    // 1. Fetch Sessions and group into Logical Projects
+    try {
+      const sessions = await fetchSessions();
+      const logicalProjects = groupSessionsIntoProjects(sessions);
+
+      // Restore active project: try localStorage first, fallback to current or latest
+      let savedProjectKey: string | null = null;
+      if (typeof window !== "undefined" && window.localStorage) {
+        try {
+          savedProjectKey = window.localStorage.getItem(STORAGE_PROJECT_KEY);
+        } catch {}
+      }
+
+      let targetProject: LogicalProject | undefined;
+
+      if (savedProjectKey) {
+        targetProject = logicalProjects.find((p) => p.normalizedProject === savedProjectKey);
+      }
+
+      if (!targetProject && get().activeProject) {
+        const curNorm = get().activeProject!.normalizedProject;
+        targetProject = logicalProjects.find((p) => p.normalizedProject === curNorm);
+      }
+
+      if (!targetProject && logicalProjects.length > 0) {
+        targetProject = logicalProjects[0];
+      }
+
+      set({
+        sessions,
+        projects: logicalProjects,
+        activeProject: targetProject,
+        activeSession: targetProject?.latestSession,
+        projectsError: undefined,
+      });
+    } catch (e: any) {
+      set({ projectsError: e.message ?? "Erro ao carregar sessões de /prototype/sessions" });
+    }
+
+    // 2. Fetch Tasks from /tasks
     try {
       const tasks = await fetchTasks();
       const agents = deriveAgentsFromTasks(tasks);
@@ -106,7 +185,7 @@ export const useStore = create<State>((set, get) => ({
         error: undefined,
       });
     } catch (e: any) {
-      set({ error: e.message ?? "Erro ao conectar com a API do PUB DEV LOOP" });
+      set({ error: e.message ?? "Erro ao conectar com a API de tarefas do PUB DEV LOOP" });
     }
   },
 

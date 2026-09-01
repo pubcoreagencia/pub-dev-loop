@@ -119,3 +119,68 @@ export function deriveAgentsFromTasks(tasks: Task[]): Agent[] {
     };
   });
 }
+
+/**
+ * Normalizes project names for deterministic deduplication and grouping:
+ * - trim leading/trailing whitespace
+ * - convert to lowercase
+ * - collapse multiple consecutive spaces into a single space
+ */
+export function normalizeProjectName(name: string): string {
+  if (!name || typeof name !== "string") return "untitled-prototype";
+  const cleaned = name.trim().toLowerCase().replace(/\s+/g, " ");
+  return cleaned.length > 0 ? cleaned : "untitled-prototype";
+}
+
+/**
+ * Groups prototype sessions into logical projects (1 LogicalProject : N PrototypeSessions):
+ * 1. Groups sessions by normalizedProject
+ * 2. Selects the most recent session (by updatedAt) as latestSession
+ * 3. Counts total sessions
+ * 4. Sorts logical projects by latestSession.updatedAt in descending order
+ */
+export function groupSessionsIntoProjects(sessions: import("../types/task").PrototypeSession[]): import("../types/task").LogicalProject[] {
+  if (!sessions || sessions.length === 0) return [];
+
+  const groups = new Map<string, {
+    canonicalName: string;
+    sessions: import("../types/task").PrototypeSession[];
+  }>();
+
+  for (const session of sessions) {
+    const rawName = session.project && session.project.trim().length > 0 ? session.project.trim() : "untitled-prototype";
+    const key = normalizeProjectName(rawName);
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        canonicalName: rawName,
+        sessions: [session],
+      });
+    } else {
+      const g = groups.get(key)!;
+      g.sessions.push(session);
+    }
+  }
+
+  const result: import("../types/task").LogicalProject[] = [];
+
+  for (const [normalizedKey, group] of groups.entries()) {
+    // Sort sessions in this group descending by updatedAt
+    group.sessions.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    const latest = group.sessions[0];
+
+    result.push({
+      project: group.canonicalName,
+      normalizedProject: normalizedKey,
+      latestSession: latest,
+      sessionCount: group.sessions.length,
+      sessions: group.sessions,
+    });
+  }
+
+  // Sort logical projects descending by latest session updatedAt
+  result.sort((a, b) => new Date(b.latestSession.updatedAt).getTime() - new Date(a.latestSession.updatedAt).getTime());
+
+  return result;
+}
+

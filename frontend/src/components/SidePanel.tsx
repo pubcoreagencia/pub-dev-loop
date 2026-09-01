@@ -11,6 +11,12 @@ interface Props {
 
 export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
   const {
+    projects,
+    sessions,
+    activeProject,
+    selectProject,
+    projectSearch,
+    setProjectSearch,
     tasks,
     agents,
     selectAgent,
@@ -20,11 +26,19 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
     loadData,
     loading,
     error,
+    projectsError,
     successMessage,
     setSuccessMessage,
   } = useStore();
 
   const currentTask = selectedTask || (selectedAgent ? tasks.find((t) => t.id === selectedAgent.taskId) : undefined);
+
+  // Filter projects by search query
+  const filteredProjects = projects.filter((p) => {
+    if (!projectSearch.trim()) return true;
+    const query = projectSearch.trim().toLowerCase();
+    return p.normalizedProject.includes(query) || p.project.toLowerCase().includes(query);
+  });
 
   const queuedTasks = tasks.filter((t: Task) => ["QUEUED", "ASSIGNED"].includes(t.status));
   const runningTasks = tasks.filter((t: Task) => ["RUNNING", "TESTING"].includes(t.status));
@@ -71,6 +85,7 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
 
         {loading && <div className="loading-bar">Atualizando dados em tempo real...</div>}
         {error && <div className="error-card">{error}</div>}
+        {projectsError && <div className="error-card">{projectsError}</div>}
 
         {/* Global Action: New Task */}
         <div className="primary-action-bar">
@@ -81,6 +96,74 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
             ➕ Nova Tarefa
           </button>
         </div>
+
+        {/* PROJETOS (Logical Projects 1:N Sessions) */}
+        <section className="panel-section">
+          <div className="section-title-row">
+            <h4>Projetos</h4>
+            <span className="count-tag">{projects.length} ({sessions.length} sessões)</span>
+          </div>
+
+          {/* Quick Search */}
+          <div style={{ marginBottom: "8px" }}>
+            <input
+              type="text"
+              placeholder="🔍 Buscar projetos..."
+              value={projectSearch}
+              onChange={(e) => setProjectSearch(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px 10px",
+                borderRadius: "6px",
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(15,23,42,0.6)",
+                color: "#f8fafc",
+                fontSize: "12px",
+                boxSizing: "border-box",
+                outline: "none"
+              }}
+            />
+          </div>
+
+          {filteredProjects.length === 0 ? (
+            <p className="empty-text">Nenhum projeto encontrado.</p>
+          ) : (
+            <div className="project-cards-list" style={{ maxHeight: "220px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px" }}>
+              {filteredProjects.map((p) => {
+                const isActive = activeProject?.normalizedProject === p.normalizedProject;
+                const sessCount = p.sessionCount;
+                const sessLabel = sessCount === 1 ? "1 sessão" : `${sessCount} sessões`;
+                return (
+                  <div
+                    key={p.normalizedProject}
+                    className={`task-item ${isActive ? "active-task-item" : ""}`}
+                    style={{
+                      cursor: "pointer",
+                      padding: "8px 10px",
+                      borderRadius: "6px",
+                      border: isActive ? "1px solid #3b82f6" : "1px solid rgba(255,255,255,0.08)",
+                      background: isActive ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.03)"
+                    }}
+                    onClick={() => selectProject(p)}
+                  >
+                    <div className="task-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span className="task-title" style={{ fontWeight: 600, color: isActive ? "#93c5fd" : "#f1f5f9" }}>
+                        {p.project || "Sem nome"}
+                      </span>
+                      <span className={`status-badge-inline status-${(p.latestSession.status || "ready").toLowerCase()}`}>
+                        {p.latestSession.status || "READY"}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#94a3b8", marginTop: "4px" }}>
+                      <span>{sessLabel}</span>
+                      <span>{new Date(p.latestSession.updatedAt).toLocaleDateString("pt-BR")}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
 
         {/* CONTROLE DA TAREFA (Requisito 2) */}
         {currentTask && (

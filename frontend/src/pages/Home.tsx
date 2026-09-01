@@ -5,7 +5,7 @@ import { TaskModal } from "../components/TaskModal";
 import { useStore } from "../store/useStore";
 
 export const Home: React.FC = () => {
-  const { loadData, selectedAgent, agents, tasks, openModal } = useStore();
+  const { loadData, selectedAgent, agents, tasks, projects, activeProject, openModal } = useStore();
   const [showPanel, setShowPanel] = useState(true);
 
   useEffect(() => {
@@ -33,6 +33,14 @@ export const Home: React.FC = () => {
             <span className="pulse-dot-green" />
             <span>9Router: <strong>ONLINE</strong></span>
           </div>
+          <div className="indicator-pill">
+            <span>Projetos: <strong>{projects.length}</strong></span>
+          </div>
+          {activeProject && (
+            <div className="indicator-pill" style={{ border: "1px solid rgba(59,130,246,0.5)", background: "rgba(59,130,246,0.15)" }}>
+              <span>Ativo: <strong style={{ color: "#93c5fd" }}>{activeProject.project}</strong></span>
+            </div>
+          )}
           <div className="indicator-pill">
             <span>Agentes: <strong>{agents.length}</strong></span>
           </div>

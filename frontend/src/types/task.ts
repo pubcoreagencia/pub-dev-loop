@@ -29,6 +29,7 @@ export interface Task {
   leaseDeadline?: string | null;
   heartbeatAt?: string | null;
   workspacePath?: string | null;
+  prototypeSessionId?: string | null;
 }
 
 export interface CreateTaskInput {
@@ -38,3 +39,27 @@ export interface CreateTaskInput {
   prompt: string;
   priority?: number;
 }
+
+export interface PrototypeSession {
+  id: string;
+  project: string;
+  status: string;
+  updatedAt: string;
+  repository?: string;
+  previewUrl?: string | null;
+  branch?: string;
+  lastCheckpointSha?: string | null;
+}
+
+export interface LogicalProject {
+  project: string;
+  normalizedProject: string;
+  latestSession: PrototypeSession;
+  sessionCount: number;
+  sessions: PrototypeSession[];
+}
+
+// Backward compatibility alias
+export type Project = PrototypeSession;
+
+

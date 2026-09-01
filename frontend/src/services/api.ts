@@ -1,4 +1,4 @@
-import type { Task, CreateTaskInput } from "../types/task";
+import type { Task, CreateTaskInput, PrototypeSession } from "../types/task";
 import type { Agent } from "../types/agent";
 import { deriveAgentsFromTasks } from "./agentAdapter";
 
@@ -12,6 +12,17 @@ const API_BASE = (
 function isJsonResponse(res: Response): boolean {
   const ct = res.headers.get("content-type") || "";
   return ct.includes("application/json");
+}
+
+export async function fetchSessions(): Promise<PrototypeSession[]> {
+  const res = await fetch(`${API_BASE}prototype/sessions`);
+  if (!res.ok) throw new Error(`Erro ao buscar sessões do prototype: ${res.status}`);
+  if (!isJsonResponse(res)) throw new Error("Resposta de sessões não é JSON");
+  return (await res.json()) as PrototypeSession[];
+}
+
+export async function fetchProjects(): Promise<PrototypeSession[]> {
+  return fetchSessions();
 }
 
 export async function fetchHealth(): Promise<{ status: string }> {
