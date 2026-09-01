@@ -7,7 +7,7 @@ import { AgentExecutor } from '../executor.js';
 import type { ToolCall, ToolResult, ToolExecutionContext, ToolDefinition } from '../tools/types.js';
 import { loadOpenRouterConfig, type OpenRouterConfig } from './openrouterConfig.js';
 import { canUsePaidFallback } from '../routing/index.js';
-import { parseOpenAISSEStream, type StreamConsumer } from './streaming/index.js';
+import { parseOpenAISSEStream, type StreamConsumer, StreamEventSink } from './streaming/index.js';
 
 interface OpenAIChatMessage {
   role: string;
@@ -97,8 +97,14 @@ export class OpenRouterProvider implements AgentProvider {
     this.consumer = consumer;
   }
 
-  async execute(task: Task, workspace: string): Promise<ProviderTaskResult> {
+  async execute(
+    task: Task,
+    workspace: string,
+    options?: { signal?: AbortSignal; consumer?: StreamConsumer }
+  ): Promise<ProviderTaskResult> {
     const started = Date.now();
+    const rawConsumer = options?.consumer ?? this.consumer;
+    const effectiveConsumer = rawConsumer instanceof StreamEventSink ? rawConsumer : rawConsumer ? new StreamEventSink(rawConsumer) : undefined;
     const ctx: ToolExecutionContext = {
       workspaceRoot: workspace,
       maxRounds: this.maxToolRounds,
@@ -118,6 +124,13 @@ export class OpenRouterProvider implements AgentProvider {
     const modelQueue = [cfg.primaryModel, ...cfg.fallbackModels];
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    if (options?.signal) {
+      if (options.signal.aborted) {
+        controller.abort();
+      } else {
+        options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+      }
+    }
     let modelUsed: string | null = null;
     let totalToolCalls = 0;
     let toolRounds = 0;
@@ -305,7 +318,7 @@ export class OpenRouterProvider implements AgentProvider {
                 const streamResult = await parseOpenAISSEStream(
                   response.body,
                   controller.signal,
-                  this.consumer ? (event) => this.consumer?.onEvent?.(event) : undefined
+                  effectiveConsumer ? (event) => effectiveConsumer.onEvent?.(event) : undefined
                 );
                 messageContent = streamResult.fullText;
                 toolCalls = streamResult.toolCalls;
@@ -447,6 +460,28 @@ export class OpenRouterProvider implements AgentProvider {
 
               const toolResults: ToolResult[] = [];
               for (const tc of toolCalls) {
+                if (controller.signal.aborted) {
+                  clearTimeout(timer);
+                  return {
+                    status: 'ROUTER_TIMEOUT',
+                    provider: this.kind,
+                    model: modelUsed,
+                    exitCode: null,
+                    durationMs: Date.now() - started,
+                    stdout: finalMessage,
+                    stderr: 'Execution cancelled/aborted prior to tool execution',
+                    changedFiles: runtime.getChangedFiles(),
+                    commit: null,
+                    errorCode: 'ROUTER_TIMEOUT',
+                    errorMessage: 'Execution cancelled/aborted prior to tool execution',
+                    toolCalls: totalToolCalls,
+                    toolRounds: toolRounds,
+                    promptTokens: accumulatedPromptTokens || undefined,
+                    completionTokens: accumulatedCompletionTokens || undefined,
+                    totalTokens: accumulatedTotalTokens || undefined,
+                    costUsd: accumulatedCostUsd,
+                  };
+                }
                 if (totalToolCalls >= this.maxToolCalls) {
                   clearTimeout(timer);
                   return {

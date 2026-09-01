@@ -1,5 +1,6 @@
 import type { Task } from '../domain.js';
 import type { AgentProvider, ProviderKind, ProviderTaskResult } from './types.js';
+import type { StreamConsumer } from './streaming/index.js';
 
 export interface DualGatewayConfig {
   primary: AgentProvider;
@@ -65,8 +66,12 @@ export class DualGatewayProvider implements AgentProvider {
     return true;
   }
 
-  async execute(task: Task, workspace: string): Promise<ProviderTaskResult> {
-    const primaryResult = await this.primary.execute(task, workspace);
+  async execute(
+    task: Task,
+    workspace: string,
+    options?: { signal?: AbortSignal; consumer?: StreamConsumer }
+  ): Promise<ProviderTaskResult> {
+    const primaryResult = await this.primary.execute(task, workspace, options);
 
     if (primaryResult.status === 'COMPLETED') {
       return primaryResult;
@@ -93,7 +98,7 @@ export class DualGatewayProvider implements AgentProvider {
 
     // Attempt fallback gateway (safe: 0 tool calls, 0 changed files)
     try {
-      const fallbackResult = await this.fallback.execute(task, workspace);
+      const fallbackResult = await this.fallback.execute(task, workspace, options);
       return fallbackResult;
     } catch (fallbackError) {
       const message = fallbackError instanceof Error ? fallbackError.message : 'Fallback gateway failed';

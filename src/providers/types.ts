@@ -40,7 +40,11 @@ export interface ProviderTaskResult {
 export interface AgentProvider {
   readonly kind: ProviderKind;
   readonly model: string | null;
-  execute(task: Task, workspace: string): Promise<ProviderTaskResult>;
+  execute(
+    task: Task,
+    workspace: string,
+    options?: { signal?: AbortSignal; consumer?: any }
+  ): Promise<ProviderTaskResult>;
   health(): Promise<{ available: boolean; details: string }>;
   capabilities(): string[];
   metadata(): Record<string, string | null>;

@@ -5,6 +5,7 @@ import type { WorkspaceSnapshot } from './finalizer.js';
 import { captureWorkspaceSnapshot } from './finalizer.js';
 import { RouterProvider } from './providers/router.js';
 import { OpenRouterProvider } from './providers/openrouter.js';
+import { StreamEventSink } from './providers/streaming/index.js';
 import { classifyTaskProfile } from './routing/index.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -105,12 +106,29 @@ function getRetryConfig(): {
  * The winning attempt's workspace + baseline + declaredChangedFiles are returned
  * as a unified AttemptResult to BaseWorker.executeOnce() for finalization.
  */
+export type TaskStreamEventCallback = (taskId: string, attempt: number, event: any) => void;
+
 export class RouterWorker extends BaseWorker {
   protected readonly provider: AgentProvider;
+  protected readonly onStreamEvent?: TaskStreamEventCallback;
+  private currentAttemptController?: AbortController;
 
-  constructor(tasks: TaskRepository, provider: AgentProvider, name = 'router') {
+  constructor(
+    tasks: TaskRepository,
+    provider: AgentProvider,
+    name = 'router',
+    onStreamEvent?: TaskStreamEventCallback
+  ) {
     super(tasks, name);
     this.provider = provider;
+    this.onStreamEvent = onStreamEvent;
+  }
+
+  override async cancel(): Promise<void> {
+    await super.cancel();
+    if (this.currentAttemptController) {
+      this.currentAttemptController.abort();
+    }
   }
 
   /**
@@ -264,6 +282,20 @@ export class RouterWorker extends BaseWorker {
           Math.max(0, providerRemaining),
         );
 
+        // Setup attempt-level AbortController & StreamEventSink
+        const attemptController = new AbortController();
+        this.currentAttemptController = attemptController;
+
+        const attemptSink = new StreamEventSink({
+          onEvent: (event) => {
+            if (this.onStreamEvent) {
+              try {
+                this.onStreamEvent(task.id, attempt, event);
+              } catch {}
+            }
+          },
+        });
+
         let subResult: ProviderTaskResult;
         if (effectiveTimeout <= 0) {
           subResult = {
@@ -283,32 +315,44 @@ export class RouterWorker extends BaseWorker {
             httpStatus: undefined,
           };
         } else {
-          subResult = await Promise.race([
-            provider.execute(task, repo),
-            new Promise<ProviderTaskResult>((_, reject) => {
-              setTimeout(() => {
-                reject(new Error('Provider timeout after ' + effectiveTimeout + 'ms'));
-              }, effectiveTimeout);
-            }),
-          ]).catch((error: Error) => {
-            // Promise.race rejected → provider timed out
-            return {
+          let timeoutTimer: NodeJS.Timeout | undefined;
+          try {
+            subResult = await Promise.race([
+              provider.execute(task, repo, {
+                signal: attemptController.signal,
+                consumer: attemptSink,
+              }),
+              new Promise<ProviderTaskResult>((_, reject) => {
+                timeoutTimer = setTimeout(() => {
+                  attemptController.abort();
+                  reject(new Error('Provider timeout after ' + effectiveTimeout + 'ms'));
+                }, effectiveTimeout);
+              }),
+            ]);
+          } catch (error: any) {
+            // Promise.race rejected or aborted → provider timed out / cancelled
+            subResult = {
               status: 'ROUTER_TIMEOUT',
               provider: provider.kind,
               model: provider.model,
               exitCode: null,
               durationMs: Date.now() - globalStart,
               stdout: '',
-              stderr: error.message,
+              stderr: error?.message || 'Provider timeout or cancelled',
               changedFiles: [],
               commit: null,
               errorCode: 'ROUTER_TIMEOUT',
-              errorMessage: error.message,
+              errorMessage: error?.message || 'Provider timeout or cancelled',
               toolCalls: 0,
               toolRounds: 0,
               httpStatus: undefined,
             };
-          }) as ProviderTaskResult;
+          } finally {
+            if (timeoutTimer) clearTimeout(timeoutTimer);
+            if (this.currentAttemptController === attemptController) {
+              this.currentAttemptController = undefined;
+            }
+          }
         }
 
         // Collect attempt trace

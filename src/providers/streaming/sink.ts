@@ -36,27 +36,27 @@ export class StreamEventSink implements StreamConsumer {
 
     if (event.type === 'text_delta' && event.text) {
       this.feedback.textBuffer += event.text;
-      this.externalConsumer?.onTextDelta?.(event.text);
+      try { this.externalConsumer?.onTextDelta?.(event.text); } catch {}
     } else if (event.type === 'tool_call_completed' && event.toolCall) {
       this.feedback.toolCallsReceived.push(event.toolCall);
-      this.externalConsumer?.onToolCallCompleted?.(event.toolCall);
+      try { this.externalConsumer?.onToolCallCompleted?.(event.toolCall); } catch {}
     } else if (event.type === 'tool_call_delta' && event.toolCallDelta) {
-      this.externalConsumer?.onToolCallDelta?.(event.toolCallDelta);
+      try { this.externalConsumer?.onToolCallDelta?.(event.toolCallDelta); } catch {}
     } else if (event.type === 'finish_reason' && event.finishReason) {
       this.feedback.finishReason = event.finishReason;
     } else if (event.type === 'usage' && event.usage) {
       this.feedback.usage = event.usage;
-      this.externalConsumer?.onUsage?.(event.usage);
+      try { this.externalConsumer?.onUsage?.(event.usage); } catch {}
     } else if (event.type === 'stream_completed') {
       this.feedback.completedEventReceived = true;
     }
 
-    this.externalConsumer?.onEvent?.(event);
+    try { this.externalConsumer?.onEvent?.(event); } catch {}
   }
 
   onError(error: Error): void {
     this.feedback.error = error;
-    this.externalConsumer?.onError?.(error);
+    try { this.externalConsumer?.onError?.(error); } catch {}
   }
 
   getFeedback(): Readonly<RuntimeStreamFeedback> {
