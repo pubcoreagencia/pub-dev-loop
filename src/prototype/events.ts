@@ -51,32 +51,56 @@ export class PrototypeEventStream implements PrototypeEventPublisher {
  * NOTIFY so a separate API process can fan them out to SSE clients.
  */
 export class PostgresPrototypeEventPublisher implements PrototypeEventPublisher {
-  private sequence = 0;
+  private sequence: number | null = null;
   private readonly listeners = new Set<(event: PrototypeEvent) => void>();
   private readonly channel = 'prototype_events';
 
   constructor(private readonly pool: Pool) {}
 
+  private async getNextSequence(sessionId: string): Promise<number> {
+    if (this.sequence === null) {
+      const res = await this.pool.query(
+        `SELECT COALESCE(MAX(sequence), 0) AS max_seq FROM prototype_events WHERE session_id = $1`,
+        [sessionId]
+      );
+      this.sequence = Number(res.rows[0]?.max_seq ?? 0);
+    }
+    this.sequence += 1;
+    return this.sequence;
+  }
+
   async emit<TPayload extends Record<string, unknown>>(
     input: PrototypeEventInput<TPayload>,
   ): Promise<PrototypeEvent<TPayload>> {
+    const seq = await this.getNextSequence(input.sessionId);
     const event: PrototypeEvent<TPayload> = {
       id: randomUUID(),
       sessionId: input.sessionId,
       type: input.type,
-      sequence: ++this.sequence,
+      sequence: seq,
       timestamp: new Date(),
       payload: input.payload ?? ({} as TPayload),
     };
 
-    for (const listener of this.listeners) listener(event);
-
-    // Await INSERT to ensure event is persisted before continuing
-    await this.pool.query(
+    // Await INSERT with ON CONFLICT DO NOTHING to ensure restart-safe persistent idempotency
+    const insertResult = await this.pool.query(
       `INSERT INTO prototype_events (id, session_id, type, sequence, payload, created_at)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+       ON CONFLICT (session_id, (payload->>'taskId'), ((payload->>'attempt')::int), ((payload->>'operationalSeq')::bigint), type)
+       WHERE (payload->>'taskId') IS NOT NULL
+         AND (payload->>'attempt') IS NOT NULL
+         AND (payload->>'operationalSeq') IS NOT NULL
+       DO NOTHING
+       RETURNING id`,
       [event.id, event.sessionId, event.type, event.sequence, JSON.stringify(event.payload), event.timestamp],
     );
+
+    // If row was ignored because it's a duplicate, do not notify listeners
+    if (insertResult.rowCount === 0) {
+      return event;
+    }
+
+    for (const listener of this.listeners) listener(event);
 
     // Only send NOTIFY after successful INSERT
     await this.pool.query(`SELECT pg_notify($1, $2)`, [this.channel, JSON.stringify(event)]).catch(() => undefined);

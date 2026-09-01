@@ -55,4 +55,71 @@ describe('P5.5 — Event Bridge: Legacy Compatibility & Non-Streaming Fallback',
     ]);
     expect(allEmitted.map(e => e.sequence)).toEqual([1, 2, 3, 4]);
   });
+
+  it('2. persistent idempotency: prevents duplicate database insertion across process instances', async () => {
+    const { PostgresPrototypeEventPublisher } = await import('../src/prototype/events.js');
+    const insertedRows: any[] = [];
+    const uniqueKeys = new Set<string>();
+
+    const mockPool: any = {
+      query: vi.fn(async (sql: string, params: any[]) => {
+        if (sql.includes('MAX(sequence)')) {
+          const maxSeq = insertedRows.reduce((m, r) => Math.max(m, r.sequence), 0);
+          return { rows: [{ max_seq: maxSeq }] };
+        }
+        if (sql.includes('INSERT INTO prototype_events')) {
+          const [id, sessionId, type, sequence, payloadStr, createdAt] = params;
+          const payload = JSON.parse(payloadStr);
+          const taskId = payload.taskId;
+          const attempt = payload.attempt;
+          const operationalSeq = payload.operationalSeq;
+
+          if (taskId !== undefined && attempt !== undefined && operationalSeq !== undefined) {
+            const key = `${sessionId}:${taskId}:${attempt}:${operationalSeq}:${type}`;
+            if (uniqueKeys.has(key)) {
+              return { rowCount: 0, rows: [] };
+            }
+            uniqueKeys.add(key);
+          }
+
+          insertedRows.push({ id, sessionId, type, sequence, payload, createdAt });
+          return { rowCount: 1, rows: [{ id }] };
+        }
+        if (sql.includes('pg_notify')) {
+          return { rows: [] };
+        }
+        return { rows: [] };
+      }),
+    };
+
+    const sessionId = 'session-idempotency-1';
+    const taskId = 'task-idempotency-1';
+
+    const envelope = {
+      seq: 1,
+      type: 'attempt_started' as const,
+      attempt: 0,
+      timestamp: new Date().toISOString(),
+      taskId,
+      payload: { model: 'test-model' },
+    };
+
+    // Instance 1 emits envelope
+    const publisher1 = new PostgresPrototypeEventPublisher(mockPool);
+    const bridge1 = new OperationalEventBridge(sessionId, publisher1);
+    await bridge1.handleEnvelope(envelope);
+
+    expect(insertedRows.length).toBe(1);
+    expect(insertedRows[0].type).toBe('AGENT_ATTEMPT_STARTED');
+    expect(insertedRows[0].sequence).toBe(1);
+
+    // Instance 2 (simulating worker restart/redeploy) receives the same event
+    const publisher2 = new PostgresPrototypeEventPublisher(mockPool);
+    const bridge2 = new OperationalEventBridge(sessionId, publisher2);
+    await bridge2.handleEnvelope(envelope);
+
+    // Database row count must stay 1
+    expect(insertedRows.length).toBe(1);
+    expect(uniqueKeys.size).toBe(1);
+  });
 });

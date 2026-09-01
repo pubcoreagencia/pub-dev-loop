@@ -29,6 +29,8 @@ export interface Env {
   PRIMARY_GATEWAY?: string;
   FALLBACK_GATEWAY?: string;
   AGENT_PROVIDER?: string;
+  OPENROUTER_STREAM_ENABLED?: string;
+  ROUTER_STREAM_ENABLED?: string;
   PUB_DEV_LOOP_API_KEY?: string;
   PROTOTYPE_TEMPLATE_REPOSITORY?: string;
   PROTOTYPE_PROTOTYPES_REPO?: string;
@@ -225,7 +227,18 @@ const SCHEMA_MIGRATIONS = [
     "order" BIGINT NOT NULL
   );`,
   `CREATE UNIQUE INDEX IF NOT EXISTS prototype_messages_session_order_idx ON prototype_messages (session_id, "order" ASC);`,
-  `CREATE INDEX IF NOT EXISTS prototype_messages_session_idx ON prototype_messages (session_id, "order" ASC);`
+  `CREATE INDEX IF NOT EXISTS prototype_messages_session_idx ON prototype_messages (session_id, "order" ASC);`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS prototype_events_idempotency_idx
+    ON prototype_events (
+      session_id,
+      (payload->>'taskId'),
+      ((payload->>'attempt')::int),
+      ((payload->>'operationalSeq')::bigint),
+      type
+    )
+    WHERE (payload->>'taskId') IS NOT NULL
+      AND (payload->>'attempt') IS NOT NULL
+      AND (payload->>'operationalSeq') IS NOT NULL;`
 ];
 
 let migrationsChecked = false;
@@ -289,6 +302,8 @@ async function triggerContainerWorker(env: Env): Promise<void> {
       ROUTER_MODEL: env.ROUTER_MODEL || '',
       ROUTER_FALLBACK_MODELS: env.ROUTER_FALLBACK_MODELS || '',
       AGENT_PROVIDER: env.AGENT_PROVIDER || 'gateway',
+      OPENROUTER_STREAM_ENABLED: env.OPENROUTER_STREAM_ENABLED || 'false',
+      ROUTER_STREAM_ENABLED: env.ROUTER_STREAM_ENABLED || 'false',
       PROTOTYPE_TEMPLATE_REPOSITORY: env.PROTOTYPE_TEMPLATE_REPOSITORY || 'https://github.com/pubcoreagencia/pub-dev-loop-template.git',
       PROTOTYPE_PROTOTYPES_REPO: env.PROTOTYPE_PROTOTYPES_REPO || 'pubcoreagencia/pub-dev-loop-prototypes',
       PROTOTYPE_PERSISTENT_PUSH: env.PROTOTYPE_PERSISTENT_PUSH || 'false',
@@ -396,12 +411,17 @@ export default {
         return jsonResponse({
           status: 'ok',
           runtime: 'cloudflare-worker',
+          version: '0.1.11-p5.5',
           databaseConfigured: Boolean(env.DATABASE_URL && env.DATABASE_URL.trim().length > 0),
           hyperdriveConfigured: Boolean(env.HYPERDRIVE?.connectionString),
           openrouterConfigured: Boolean(env.OPENROUTER_API_KEY && env.OPENROUTER_API_KEY.trim().length > 0),
           primaryGateway: env.PRIMARY_GATEWAY || 'openrouter',
           fallbackGateway: env.FALLBACK_GATEWAY || '9router',
           agentProvider: env.AGENT_PROVIDER || 'gateway',
+          streamingEnabled: {
+            openrouter: env.OPENROUTER_STREAM_ENABLED === 'true',
+            router: env.ROUTER_STREAM_ENABLED === 'true',
+          },
         });
       }
 
@@ -437,6 +457,8 @@ export default {
             ROUTER_MODEL: env.ROUTER_MODEL || '',
             ROUTER_FALLBACK_MODELS: env.ROUTER_FALLBACK_MODELS || '',
             AGENT_PROVIDER: env.AGENT_PROVIDER || 'gateway',
+            OPENROUTER_STREAM_ENABLED: env.OPENROUTER_STREAM_ENABLED || 'false',
+            ROUTER_STREAM_ENABLED: env.ROUTER_STREAM_ENABLED || 'false',
             WORKER_POLL_INTERVAL_MS: '3000',
             WORKER_LEASE_TIMEOUT_MS: '30000',
             WORKER_HEARTBEAT_MS: '10000',
