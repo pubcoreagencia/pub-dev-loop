@@ -35,6 +35,7 @@ interface State {
 
   loadData: () => Promise<void>;
   selectProject: (project?: LogicalProject) => void;
+  selectSession: (session: PrototypeSession) => void;
   setProjectSearch: (query: string) => void;
   selectAgent: (agent?: Agent) => void;
   selectTask: (task?: Task) => void;
@@ -87,6 +88,10 @@ export const useStore = create<State>((set, get) => ({
         activeSession: undefined,
       });
     }
+  },
+
+  selectSession: (session: PrototypeSession) => {
+    set({ activeSession: session });
   },
 
   selectAgent: (agent) => {

@@ -14,7 +14,9 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
     projects,
     sessions,
     activeProject,
+    activeSession,
     selectProject,
+    selectSession,
     projectSearch,
     setProjectSearch,
     tasks,
@@ -42,6 +44,32 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
 
   const isCancellable = currentTask && ["QUEUED", "ASSIGNED", "RUNNING", "TESTING"].includes(currentTask.status);
   const isRetriable = currentTask && ["FAILED", "CANCELLED", "BLOCKED", "COMPLETED", "NEEDS_REVIEW"].includes(currentTask.status);
+
+  // Effective session for the active project
+  const currentSession = activeSession || activeProject?.latestSession;
+
+  // Project-level metrics
+  const projectTasks = activeProject
+    ? tasks.filter((t) => {
+        if (t.prototypeSessionId && activeProject.sessions.some((s) => s.id === t.prototypeSessionId)) return true;
+        if (t.project) {
+          const tNorm = t.project.trim().toLowerCase().replace(/\s+/g, " ");
+          return tNorm === activeProject.normalizedProject;
+        }
+        return false;
+      })
+    : [];
+
+  const sessionTasks = currentSession
+    ? tasks.filter((t) => {
+        if (t.prototypeSessionId) return t.prototypeSessionId === currentSession.id;
+        if (t.project && activeProject) {
+          const tNorm = t.project.trim().toLowerCase().replace(/\s+/g, " ");
+          return tNorm === activeProject.normalizedProject;
+        }
+        return false;
+      })
+    : [];
 
   return (
     <aside className="side-panel">
@@ -160,55 +188,131 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
         </section>
 
         {/* DETALHES E AÇÕES DO PROJETO ATIVO */}
-        {activeProject && (
-          <section className="task-control-card" style={{ border: "1px solid rgba(59,130,246,0.3)" }}>
+        {activeProject && currentSession && (
+          <section className="task-control-card" style={{ border: "1px solid rgba(59,130,246,0.35)", background: "rgba(15,23,42,0.75)" }}>
             <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <span className="badge-category" style={{ background: "#2563eb" }}>Projeto Ativo</span>
-                <h3 style={{ margin: "4px 0 0 0" }}>{activeProject.project}</h3>
+                <h3 style={{ margin: "4px 0 0 0", color: "#f8fafc" }}>{activeProject.project}</h3>
               </div>
-              <span className={`status-pill status-${(activeProject.latestSession.status || "ready").toLowerCase()}`}>
-                {activeProject.latestSession.status || "READY"}
+              <span className={`status-pill status-${(currentSession.status || "ready").toLowerCase()}`}>
+                {currentSession.status || "READY"}
               </span>
             </div>
 
-            <div className="details-grid">
+            {/* P2.4 — Métricas Básicas do Projeto */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", margin: "10px 0", background: "rgba(30,41,59,0.5)", padding: "8px 10px", borderRadius: "6px" }}>
+              <div>
+                <div style={{ fontSize: "10px", color: "#94a3b8", textTransform: "uppercase" }}>Tarefas do Projeto</div>
+                <div style={{ fontSize: "14px", fontWeight: 700, color: "#93c5fd" }}>{projectTasks.length}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: "10px", color: "#94a3b8", textTransform: "uppercase" }}>Tarefas da Sessão</div>
+                <div style={{ fontSize: "14px", fontWeight: 700, color: "#60a5fa" }}>{sessionTasks.length}</div>
+              </div>
+            </div>
+
+            {/* P2.1 — Seletor de Sessões Históricas (quando houver múltiplas sessões) */}
+            {activeProject.sessionCount > 1 && (
+              <div style={{ margin: "12px 0 8px 0" }}>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#94a3b8", marginBottom: "4px", textTransform: "uppercase" }}>
+                  Sessões / Iterações ({activeProject.sessionCount})
+                </label>
+                <div className="session-selector-list" style={{ display: "flex", flexDirection: "column", gap: "4px", maxHeight: "130px", overflowY: "auto" }}>
+                  {activeProject.sessions.map((sess, idx) => {
+                    const isSelected = sess.id === currentSession.id;
+                    const isLatest = sess.id === activeProject.latestSession.id;
+                    return (
+                      <div
+                        key={sess.id}
+                        className="session-selector-item"
+                        onClick={() => selectSession(sess)}
+                        style={{
+                          cursor: "pointer",
+                          padding: "6px 8px",
+                          borderRadius: "4px",
+                          fontSize: "11px",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          background: isSelected ? "rgba(59,130,246,0.25)" : "rgba(255,255,255,0.04)",
+                          border: isSelected ? "1px solid #3b82f6" : "1px solid rgba(255,255,255,0.06)",
+                          color: isSelected ? "#bfdbfe" : "#cbd5e1"
+                        }}
+                      >
+                        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                          <span style={{ fontWeight: 600 }}>
+                            {isLatest ? "⭐ Sessão Atual" : `Sessão #${activeProject.sessionCount - idx}`}
+                          </span>
+                          <span style={{ fontSize: "10px", color: "#64748b" }}>({sess.id.slice(0, 8)})</span>
+                        </div>
+                        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                          <span className={`status-badge-inline status-${(sess.status || "ready").toLowerCase()}`} style={{ fontSize: "9px", padding: "1px 4px" }}>
+                            {sess.status}
+                          </span>
+                          <span style={{ fontSize: "10px", color: "#94a3b8" }}>
+                            {new Date(sess.updatedAt).toLocaleDateString("pt-BR")}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* P2.3 — Card de Detalhes da Sessão Ativa */}
+            <div className="details-grid" style={{ marginTop: "8px" }}>
               <div className="detail-item full-width">
                 <span className="detail-label">SESSÃO ATIVA (ID)</span>
-                <span className="detail-value task-id" title={activeProject.latestSession.id}>
-                  {activeProject.latestSession.id}
+                <span className="detail-value task-id" title={currentSession.id}>
+                  {currentSession.id}
                 </span>
               </div>
 
-              {activeProject.latestSession.branch && (
+              {currentSession.branch && (
                 <div className="detail-item full-width">
                   <span className="detail-label">BRANCH</span>
                   <span className="detail-value" style={{ fontFamily: "monospace", fontSize: "11px" }}>
-                    {activeProject.latestSession.branch}
+                    {currentSession.branch}
                   </span>
                 </div>
               )}
 
-              {activeProject.latestSession.lastCheckpointSha && (
+              {currentSession.lastCheckpointSha && (
                 <div className="detail-item">
                   <span className="detail-label">CHECKPOINT SHA</span>
                   <span className="detail-value commit-hash">
-                    {activeProject.latestSession.lastCheckpointSha.slice(0, 8)}
+                    {currentSession.lastCheckpointSha.slice(0, 8)}
                   </span>
+                </div>
+              )}
+
+              {currentSession.promptCount !== undefined && (
+                <div className="detail-item">
+                  <span className="detail-label">TOTAL PROMPTS</span>
+                  <span className="detail-value highlight">{currentSession.promptCount}</span>
+                </div>
+              )}
+
+              {currentSession.createdAt && (
+                <div className="detail-item">
+                  <span className="detail-label">CRIADO EM</span>
+                  <span className="detail-value">{new Date(currentSession.createdAt).toLocaleDateString("pt-BR")}</span>
                 </div>
               )}
 
               <div className="detail-item">
-                <span className="detail-label">TOTAL DE SESSÕES</span>
-                <span className="detail-value highlight">{activeProject.sessionCount}</span>
+                <span className="detail-label">ÚLTIMA ATUALIZAÇÃO</span>
+                <span className="detail-value">{new Date(currentSession.updatedAt).toLocaleTimeString("pt-BR")}</span>
               </div>
             </div>
 
-            {/* Ações do Projeto Ativo (Preview & Repo) */}
+            {/* Ações da Sessão Ativa (Preview & Repo) */}
             <div className="task-action-buttons" style={{ marginTop: "12px" }}>
-              {activeProject.latestSession.previewUrl ? (
+              {currentSession.previewUrl ? (
                 <a
-                  href={activeProject.latestSession.previewUrl}
+                  href={currentSession.previewUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="btn-action-tool"
@@ -232,9 +336,9 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
                 </a>
               ) : null}
 
-              {activeProject.latestSession.repository ? (
+              {currentSession.repository ? (
                 <a
-                  href={activeProject.latestSession.repository.replace(/\.git$/, "")}
+                  href={currentSession.repository.replace(/\.git$/, "")}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="btn-action-tool"
@@ -469,24 +573,10 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
           )}
         </section>
 
-        {/* Real Tasks Tracking (Contextual ao Projeto Ativo) */}
+        {/* P2.2 — Real Tasks Tracking (Contextual à Sessão Selecionada) */}
         {(() => {
-          // Contextual tasks filter:
-          // 1. Matched by prototypeSessionId === activeSession.id
-          // 2. Fallback: task.project normalized === activeProject.project normalized
-          const activeProjNorm = activeProject?.normalizedProject;
-          const activeSessionId = activeProject?.latestSession?.id;
-
-          const contextualTasks = activeProject
-            ? tasks.filter((t: Task) => {
-                if (activeSessionId && t.prototypeSessionId === activeSessionId) return true;
-                if (activeProjNorm && t.project) {
-                  const tNorm = t.project.trim().toLowerCase().replace(/\s+/g, " ");
-                  return tNorm === activeProjNorm;
-                }
-                return false;
-              })
-            : tasks;
+          // Strict session isolation: tasks of currentSession
+          const contextualTasks = activeProject ? sessionTasks : tasks;
 
           const contextRunning = contextualTasks.filter((t: Task) => ["RUNNING", "TESTING"].includes(t.status));
           const contextQueued = contextualTasks.filter((t: Task) => ["QUEUED", "ASSIGNED"].includes(t.status));
@@ -498,7 +588,7 @@ export const SidePanel: React.FC<Props> = ({ selectedAgent, onClose }) => {
             <>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "16px", marginBottom: "4px" }}>
                 <span style={{ fontSize: "11px", fontWeight: 600, color: "#93c5fd", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                  {activeProject ? `Tarefas de: ${activeProject.project}` : "Tarefas Globais"}
+                  {activeProject && currentSession ? `Tarefas (Sessão ${currentSession.id.slice(0, 8)})` : "Tarefas Globais"}
                 </span>
                 <span style={{ fontSize: "11px", color: "#64748b" }}>
                   {contextualTasks.length} de {tasks.length} total

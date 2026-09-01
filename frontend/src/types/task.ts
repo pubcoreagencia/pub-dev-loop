@@ -44,11 +44,16 @@ export interface PrototypeSession {
   id: string;
   project: string;
   status: string;
+  createdAt?: string;
   updatedAt: string;
   repository?: string;
   previewUrl?: string | null;
+  previewRuntime?: string | null;
+  workspacePath?: string | null;
   branch?: string;
   lastCheckpointSha?: string | null;
+  promptCount?: number;
+  mode?: string;
 }
 
 export interface LogicalProject {
