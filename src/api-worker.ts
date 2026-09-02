@@ -28,9 +28,12 @@ export interface Env {
   OPENROUTER_FALLBACK_MODELS?: string;
   PRIMARY_GATEWAY?: string;
   FALLBACK_GATEWAY?: string;
+
   AGENT_PROVIDER?: string;
   OPENROUTER_STREAM_ENABLED?: string;
   ROUTER_STREAM_ENABLED?: string;
+  API_VERSION?: string;
+  COMMIT_SHA?: string;
   PUB_DEV_LOOP_API_KEY?: string;
   PROTOTYPE_TEMPLATE_REPOSITORY?: string;
   PROTOTYPE_PROTOTYPES_REPO?: string;
@@ -411,7 +414,8 @@ export default {
         return jsonResponse({
           status: 'ok',
           runtime: 'cloudflare-worker',
-          version: '0.1.11-p5.5',
+          version: env.API_VERSION || 'v0.1.12-p5.6-routing-hierarchy',
+          commitSha: env.COMMIT_SHA || null,
           databaseConfigured: Boolean(env.DATABASE_URL && env.DATABASE_URL.trim().length > 0),
           hyperdriveConfigured: Boolean(env.HYPERDRIVE?.connectionString),
           openrouterConfigured: Boolean(env.OPENROUTER_API_KEY && env.OPENROUTER_API_KEY.trim().length > 0),
