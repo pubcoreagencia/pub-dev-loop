@@ -110,7 +110,14 @@ export interface AttemptTrace {
   totalTokens?: number;
   /** Actual cost in USD if available or 0 for verified free models */
   costUsd?: number;
+  /** Gateway used for this attempt (e.g., 'openrouter', '9router') */
+  gateway?: string;
+  /** Action derived from task.objective (if available) */
+  action?: string;
+  /** Real chain of attempts as "gateway/model" strings */
+  fallbackChain?: string[];
 }
+
 
 /**
  * Full execution trace for diagnostic purposes.

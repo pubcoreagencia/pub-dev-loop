@@ -253,6 +253,9 @@ export class RouterWorker extends BaseWorker {
     const deadline = globalStart + config.timeoutTotalMs;
 
     const attemptTraces: AttemptTrace[] = [];
+// Initialize per-task structures
+const executedAttempts: string[] = [];
+const action = typeof task.objective === 'string' && task.objective.trim() !== '' ? task.objective : undefined;
     const errors: { provider: string; status: string; message: string; attempt: number }[] = [];
 
     for (let attempt = 0; attempt < effectiveProviders.length; attempt++) {
@@ -443,6 +446,7 @@ export class RouterWorker extends BaseWorker {
           }
         }
 
+        
         const trace: AttemptTrace = {
           attempt,
           provider: String(provider.kind),
@@ -468,7 +472,13 @@ export class RouterWorker extends BaseWorker {
           completionTokens: subResult.completionTokens,
           totalTokens: subResult.totalTokens,
           costUsd: subResult.costUsd,
+          // New fields
+          gateway: provider.kind,
+          action,
+          fallbackChain: [...executedAttempts, `${provider.kind}/${provider.model ?? 'unknown'}`],
         };
+        // Record this attempt in executedAttempts after creating trace
+        executedAttempts.push(`${provider.kind}/${provider.model ?? 'unknown'}`);
         attemptTraces.push(trace);
 
         if (!this.active) {
