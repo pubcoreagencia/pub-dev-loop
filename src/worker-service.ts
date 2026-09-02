@@ -116,6 +116,15 @@ export interface AttemptTrace {
   action?: string;
   /** Real chain of attempts as "gateway/model" strings */
   fallbackChain?: string[];
+  /**
+   * true → gateway fallback was invoked (regardless of success).
+   * false / undefined → no gateway fallback.
+   */
+  fallbackUsed?: boolean;
+  /** Validation result – currently always null; placeholder for future */
+  validationResult?: string | null;
+  /** Formal error classification – currently always null; placeholder */
+  errorClass?: string | null;
 }
 
 

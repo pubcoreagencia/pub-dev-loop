@@ -35,6 +35,17 @@ export interface ProviderTaskResult {
   completionTokens?: number;
   totalTokens?: number;
   costUsd?: number;
+  // New field: ordered list of model identifiers attempted by the provider
+  modelAttempts?: string[];
+  /**
+   * true → gateway fallback was invoked (regardless of success).
+   * false / undefined → no gateway fallback.
+   */
+  fallbackUsed?: boolean;
+  /** Validation result (currently always null; placeholder for future). */
+  validationResult?: string | null;
+  /** Formal error classification (currently always null; placeholder). */
+  errorClass?: string | null;
 }
 
 export interface AgentProvider {

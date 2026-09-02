@@ -99,7 +99,10 @@ export class DualGatewayProvider implements AgentProvider {
     // Attempt fallback gateway (safe: 0 tool calls, 0 changed files)
     try {
       const fallbackResult = await this.fallback.execute(task, workspace, options);
-      return fallbackResult;
+      return {
+        ...fallbackResult,
+        fallbackUsed: true,
+      };
     } catch (fallbackError) {
       const message = fallbackError instanceof Error ? fallbackError.message : 'Fallback gateway failed';
       return {
@@ -116,6 +119,7 @@ export class DualGatewayProvider implements AgentProvider {
         errorMessage: `Primary gateway (${this.primary.kind}) failed: ${primaryResult.errorMessage || primaryResult.stderr || 'unknown'}; Fallback (${this.fallback.kind}) error: ${message}`,
         toolCalls: primaryResult.toolCalls ?? 0,
         toolRounds: primaryResult.toolRounds ?? 0,
+        fallbackUsed: true,
       };
     }
   }

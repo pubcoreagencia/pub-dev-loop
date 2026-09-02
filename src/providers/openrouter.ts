@@ -141,6 +141,8 @@ export class OpenRouterProvider implements AgentProvider {
     let accumulatedTotalTokens = 0;
     let accumulatedCostUsd: number | undefined = undefined;
     let paidAttemptsUsed = 0;
+    // Ordered list of model identifiers that will be attempted (one entry per candidate model)
+    const modelAttempts: string[] = [];
 
     const candidateEntries = cfg.candidateModels || modelQueue.map(m => {
       const isFree = m.includes(':free') || m.endsWith('/free');
@@ -170,7 +172,8 @@ export class OpenRouterProvider implements AgentProvider {
           if (isPaid) {
             paidAttemptsUsed++;
           }
-
+          // Record this candidate model as attempted (once per model)
+          modelAttempts.push(entry.model);
           let attempt = 0;
           const retriesForModel = isPaid ? 1 : entry.maxRetries;
 
@@ -240,6 +243,7 @@ export class OpenRouterProvider implements AgentProvider {
                         completionTokens: accumulatedCompletionTokens || undefined,
                         totalTokens: accumulatedTotalTokens || undefined,
                         costUsd: accumulatedCostUsd,
+                        modelAttempts: modelAttempts,
                       };
                     }
                     break; // → next model
@@ -304,6 +308,7 @@ export class OpenRouterProvider implements AgentProvider {
                     completionTokens: accumulatedCompletionTokens || undefined,
                     totalTokens: accumulatedTotalTokens || undefined,
                     costUsd: accumulatedCostUsd,
+                    modelAttempts: modelAttempts,
                   };
                 }
                 break;
@@ -455,6 +460,7 @@ export class OpenRouterProvider implements AgentProvider {
                   completionTokens: accumulatedCompletionTokens || undefined,
                   totalTokens: accumulatedTotalTokens || undefined,
                   costUsd: accumulatedCostUsd,
+                  modelAttempts: modelAttempts,
                 };
               }
 
@@ -580,6 +586,7 @@ export class OpenRouterProvider implements AgentProvider {
         completionTokens: accumulatedCompletionTokens || undefined,
         totalTokens: accumulatedTotalTokens || undefined,
         costUsd: accumulatedCostUsd,
+        modelAttempts: modelAttempts,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'OpenRouter request failed';

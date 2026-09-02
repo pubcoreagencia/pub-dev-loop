@@ -445,8 +445,12 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
             fallbackType = 'model_switch';
           }
         }
+        // Gather per-model attempts from provider result
+        const modelAttempts = subResult.modelAttempts ?? [];
+        const modelChain = modelAttempts.length > 0
+          ? modelAttempts.map(m => `${provider.kind}/${m}`)
+          : [`${provider.kind}/${subResult.model ?? provider.model ?? 'unknown'}`];
 
-        
         const trace: AttemptTrace = {
           attempt,
           provider: String(provider.kind),
@@ -475,10 +479,14 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
           // New fields
           gateway: provider.kind,
           action,
-          fallbackChain: [...executedAttempts, `${provider.kind}/${provider.model ?? 'unknown'}`],
+          fallbackChain: [...executedAttempts, ...modelChain],
+          // Observability fields
+          fallbackUsed: subResult.fallbackUsed,
+          validationResult: subResult.validationResult ?? null,
+          errorClass: subResult.errorClass ?? null,
         };
         // Record this attempt in executedAttempts after creating trace
-        executedAttempts.push(`${provider.kind}/${provider.model ?? 'unknown'}`);
+        executedAttempts.push(...modelChain);
         attemptTraces.push(trace);
 
         if (!this.active) {
@@ -680,7 +688,6 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
             return this.createTotalTimeoutResult(globalStart, config.timeoutTotalMs, attemptTraces, effectiveProviders.length);
           }
         }
-
       } catch (error) {
         // FIX: remainingBudget is scoped to the for-loop body; use deadline for timeout check
         await rm(attemptWS, { recursive: true, force: true }).catch(() => {});
