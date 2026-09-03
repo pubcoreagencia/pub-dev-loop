@@ -237,7 +237,7 @@ export interface CodeReviewFinding {
 export interface CodeReviewResult {
   reviewId: string;
   taskId: string;
-  status: 'APPROVED' | 'CHANGES_REQUESTED';
+  status: 'APPROVED' | 'CHANGES_REQUESTED' | 'BLOCKED';
   iteration: number;
   findings: CodeReviewFinding[];
   summary: string;
@@ -282,6 +282,7 @@ export type OfficeEventType =
   | 'REVIEW_FINDING'
   | 'REVIEW_CHANGES_REQUESTED'
   | 'REVIEW_APPROVED'
+  | 'REVIEW_BLOCKED'
   | 'APPROVAL_REQUESTED'
   | 'APPROVAL_GRANTED'
   | 'APPROVAL_REJECTED';

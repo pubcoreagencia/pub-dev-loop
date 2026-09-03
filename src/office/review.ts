@@ -27,7 +27,7 @@ export interface CodeReviewEvaluationInput {
 export interface CodeReviewResult {
   reviewId: string;
   taskId: string;
-  status: 'APPROVED' | 'CHANGES_REQUESTED';
+  status: 'APPROVED' | 'CHANGES_REQUESTED' | 'BLOCKED';
   iteration: number;
   findings: CodeReviewFinding[];
   summary: string;
@@ -121,9 +121,57 @@ export class CodeReviewManager {
 
     const hasBlockingErrors = findings.some((f) => f.severity === 'ERROR');
 
-    // Se houver erros e não atingiu o limite de guardrail
-    if (hasBlockingErrors && currentIteration <= MAX_REVIEW_ITERATIONS) {
+    // Caso 1: Inconformidades detectadas
+    if (hasBlockingErrors) {
       const topFinding = findings.find((f) => f.severity === 'ERROR') || findings[0];
+
+      // Se atingiu ou excedeu o limite máximo de iterações -> HARD BLOCK (NUNCA AUTO-APROVA)
+      if (currentIteration >= MAX_REVIEW_ITERATIONS) {
+        const blockedSummary = `Revisão BLOQUEADA: Limite máximo de ${MAX_REVIEW_ITERATIONS} ciclos atingido com inconformidades pendentes (${topFinding.message}). Encaminhado para escalonamento/decisão do CEO.`;
+
+        // 1. Emitir evento de bloqueio/escalonamento
+        this.eventBus.publish({
+          type: 'REVIEW_BLOCKED',
+          actorId: reviewerId,
+          targetId: developerId,
+          taskId,
+          planId: input.planId,
+          project,
+          summary: blockedSummary,
+          payload: {
+            iteration: currentIteration,
+            maxIterations: MAX_REVIEW_ITERATIONS,
+            findings,
+            requiresEscalation: true,
+          },
+        });
+
+        // 2. Emitir mensagem direta informando o bloqueio
+        this.eventBus.publish({
+          type: 'MESSAGE_SENT',
+          actorId: reviewerId,
+          targetId: developerId,
+          taskId,
+          project,
+          summary: `[Code Review] ${blockedSummary}`,
+          payload: {
+            isDirectCommunication: true,
+            finding: topFinding,
+            blocked: true,
+          },
+        });
+
+        return {
+          reviewId: `rev-${Date.now()}`,
+          taskId,
+          status: 'BLOCKED',
+          iteration: currentIteration,
+          findings,
+          summary: blockedSummary,
+        };
+      }
+
+      // Se ainda dentro do limite de iterações -> CHANGES_REQUESTED
       const summary = `Revisão detectou ${findings.length} inconformidade(s): ${topFinding.message}`;
 
       // 1. Emitir evento de finding
@@ -166,10 +214,8 @@ export class CodeReviewManager {
       };
     }
 
-    // Se aprovado ou limite de iterações atingido
-    const approvedSummary = currentIteration > MAX_REVIEW_ITERATIONS
-      ? `Aprovado com ressalvas após atingir limite de ${MAX_REVIEW_ITERATIONS} ciclos de revisão.`
-      : 'Código revisado, conformidade arquitetural e testes validados com sucesso.';
+    // Caso 2: Sem erros bloqueantes -> APROVADO
+    const approvedSummary = 'Código revisado, conformidade arquitetural e testes validados com sucesso.';
 
     this.eventBus.publish({
       type: 'REVIEW_APPROVED',

@@ -55,8 +55,10 @@ describe('P5.8 / Phase 7 — Real Inter-Agent Code Review & CEO Approval Suite',
     expect(events.some((e) => e.type === 'MESSAGE_SENT' && e.actorId === 'reviewer' && e.targetId === 'developer')).toBe(true);
   });
 
-  it('3. enforces MAX_REVIEW_ITERATIONS guardrail to prevent infinite review cycles', () => {
+  it('3. enforces MAX_REVIEW_ITERATIONS hard block: iteration 3 FAIL -> BLOCKED (never auto-approved)', () => {
     const taskId = 'task-loop-test';
+    const events: any[] = [];
+    bus.subscribe(undefined, (e) => events.push(e));
 
     // Iteration 1: changes requested
     const r1 = reviewManager.evaluateReview({ taskId, testPassed: false });
@@ -68,16 +70,16 @@ describe('P5.8 / Phase 7 — Real Inter-Agent Code Review & CEO Approval Suite',
     expect(r2.status).toBe('CHANGES_REQUESTED');
     expect(r2.iteration).toBe(2);
 
-    // Iteration 3: changes requested
+    // Iteration 3: hard block at max iterations (no auto-approval)
     const r3 = reviewManager.evaluateReview({ taskId, testPassed: false });
-    expect(r3.status).toBe('CHANGES_REQUESTED');
+    expect(r3.status).toBe('BLOCKED');
     expect(r3.iteration).toBe(3);
+    expect(r3.summary).toContain('BLOQUEADA');
 
-    // Iteration 4: guardrail breaks loop and approves with caveats
-    const r4 = reviewManager.evaluateReview({ taskId, testPassed: false });
-    expect(r4.status).toBe('APPROVED');
-    expect(r4.iteration).toBe(4);
-    expect(r4.summary).toContain('limite');
+    // Confirm that REVIEW_BLOCKED was emitted and NEVER REVIEW_APPROVED
+    expect(events.some((e) => e.type === 'REVIEW_BLOCKED')).toBe(true);
+    expect(events.some((e) => e.type === 'REVIEW_APPROVED')).toBe(false);
+    expect(events.some((e) => e.type === 'APPROVAL_GRANTED')).toBe(false);
   });
 
   it('4. emits APPROVAL_REQUESTED to CEO for critical architectural decisions', () => {
