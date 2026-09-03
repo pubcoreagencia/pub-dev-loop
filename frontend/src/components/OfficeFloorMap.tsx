@@ -2,6 +2,7 @@ import React from 'react';
 import { useStore } from '../store/useStore';
 import type { AgentDefinition, CeoIdentity } from '../types/office';
 import { OPERATIONAL_STATE_LABELS_PT } from '../config/officeLayout';
+import { EmployeeAvatar } from './EmployeeAvatar';
 
 export const OfficeFloorMap: React.FC = () => {
   const { agents, ceo, meetingRoom, selectedAgent, selectAgent, speechBubbles } = useStore();
@@ -49,11 +50,13 @@ export const OfficeFloorMap: React.FC = () => {
   ) => {
     if (!employee) return null;
     const isSelected = selectedAgent?.id === employee.id;
+    const agentDef = employee as AgentDefinition;
     const stateInfo = isCeo
       ? { label: 'Comandante Ativo', tagCls: 'state-idle' }
-      : OPERATIONAL_STATE_LABELS_PT[(employee as AgentDefinition).operationalState || 'idle'];
+      : OPERATIONAL_STATE_LABELS_PT[agentDef.operationalState || 'idle'];
 
     const avatar = employee.avatar || {
+      avatarId: `avatar-${employee.id}`,
       badgeIcon: isCeo ? '👑' : '💼',
       displayName: employee.name,
       roleLabel: employee.title,
@@ -69,13 +72,12 @@ export const OfficeFloorMap: React.FC = () => {
           onClick={() => selectAgent(employee)}
           title={`Clique para inspecionar a estação de ${employee.name}`}
         >
-          <div
-            className="avatar-badge-avatar"
-            style={{ borderColor: avatar.accentColor }}
-          >
-            <span className="avatar-icon">{avatar.badgeIcon}</span>
-            <span className="avatar-initials">{avatar.initials}</span>
-          </div>
+          {/* PERSONAGEM RETRO VETORIAL + MONITOR CRT */}
+          <EmployeeAvatar
+            avatar={avatar}
+            operationalState={agentDef.operationalState || 'idle'}
+            isCeo={isCeo}
+          />
 
           <div className="workstation-info">
             <div className="workstation-header-line">
@@ -85,6 +87,15 @@ export const OfficeFloorMap: React.FC = () => {
               </span>
             </div>
             <span className="agent-card-title">{avatar.roleLabel}</span>
+
+            {/* HANDOFF OPERACIONAL REAL */}
+            {agentDef.lastHandoffFrom && (
+              <div className="handoff-indicator-badge" title={`Recebeu dependência de ${agentDef.lastHandoffFrom.toUpperCase()}`}>
+                <span className="handoff-arrow">➔</span>
+                <span className="handoff-text">Handoff de <strong>{agentDef.lastHandoffFrom.toUpperCase()}</strong></span>
+              </div>
+            )}
+
             <div className="status-indicator-row">
               <span className="status-pulse-dot"></span>
               <span className="status-label-text">{stateInfo.label}</span>
@@ -142,9 +153,16 @@ export const OfficeFloorMap: React.FC = () => {
             <div className="meeting-conference-table">
               <span className="table-label">MESA DE CONFERÊNCIA</span>
               {meetingRoom.status === 'EM_REUNIAO' ? (
-                <span className="meeting-topic-text">
-                  📋 {meetingRoom.topic || 'Alinhamento Estratégico'}
-                </span>
+                <div className="meeting-active-block">
+                  <span className="meeting-topic-text">
+                    📋 {meetingRoom.topic || 'Alinhamento Estratégico'}
+                  </span>
+                  <div className="meeting-attendees-row">
+                    <span className="attendee-pill">👑 CEO</span>
+                    <span className="attendee-separator">⚡</span>
+                    <span className="attendee-pill">👔 CHIEF OF STAFF</span>
+                  </div>
+                </div>
               ) : (
                 <span className="meeting-idle-text">
                   Aguardando convocação de alinhamento pelo Chief of Staff

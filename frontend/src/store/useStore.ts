@@ -69,8 +69,8 @@ const INITIAL_MESSAGES: ChatMessage[] = [
   },
 ];
 
-// Registro interno de transições de tarefas já notificadas para evitar disparos repetidos no polling
 const observedTaskStatuses = new Map<string, string>();
+const activeHandoffs = new Map<string, string>();
 
 function deriveOperationalState(agentId: string, tasks: Task[], actionLoading: boolean, isChiefOfStaff: boolean): EmployeeOperationalState {
   if (isChiefOfStaff && actionLoading) {
@@ -140,13 +140,11 @@ export const useStore = create<OfficeState>((set, get) => ({
 
       const state = get();
 
-      // Processar transições reais de tarefas e emitir eventos/balões
       for (const task of tasksData) {
         const prevStatus = observedTaskStatuses.get(task.id);
 
         if (!prevStatus) {
           observedTaskStatuses.set(task.id, task.status);
-          // Primeira observação da tarefa
           if (task.status === 'RUNNING' && task.agentId) {
             state.recordOfficeEvent({
               type: 'AGENT_STARTED_WORK',
@@ -219,6 +217,7 @@ export const useStore = create<OfficeState>((set, get) => ({
             deskId: `mesa-${agent.id}`,
             deskLabel: `Mesa de ${agent.name}`,
             floor: 3,
+            facingDirection: 'SOUTH',
           };
           const avatar = AGENT_AVATAR_PROFILES[agent.id] || {
             avatarId: `avatar-${agent.id}`,
@@ -240,6 +239,7 @@ export const useStore = create<OfficeState>((set, get) => ({
             position,
             avatar,
             operationalState,
+            lastHandoffFrom: activeHandoffs.get(agent.id),
           };
         });
 
@@ -324,7 +324,6 @@ export const useStore = create<OfficeState>((set, get) => ({
       timestamp: new Date().toLocaleTimeString('pt-BR'),
     };
 
-    // Substituir balão existente do mesmo emissor para evitar sobreposição caótica
     set((state) => ({
       speechBubbles: [
         ...state.speechBubbles.filter((b) => b.senderId !== bubble.senderId),
@@ -356,7 +355,6 @@ export const useStore = create<OfficeState>((set, get) => ({
     const state = get();
     set({ actionLoading: true, error: undefined });
 
-    // 1. Registrar mensagem do CEO
     state.addMessage({
       sender: 'CEO',
       senderName: 'CEO (Você)',
@@ -364,7 +362,6 @@ export const useStore = create<OfficeState>((set, get) => ({
       type: 'TEXT',
     });
 
-    // 2. Registrar evento e balão de fala do CEO
     state.recordOfficeEvent({
       type: 'OBJECTIVE_SUBMITTED',
       actorId: 'ceo',
@@ -383,12 +380,10 @@ export const useStore = create<OfficeState>((set, get) => ({
     });
 
     try {
-      // 3. Invocar Chief of Staff no backend
       const plan = await createPlan(objectiveText, {
         project: state.activeProject,
       });
 
-      // 4. Registrar mensagem e evento do plano formulado
       state.addMessage({
         sender: 'CHIEF_OF_STAFF',
         senderName: 'Chief of Staff',
@@ -472,17 +467,23 @@ export const useStore = create<OfficeState>((set, get) => ({
           type: 'TASK',
         });
 
-        // Se houver dependência de outro agente, registrar evento de colaboração
+        // Registrar handoff operacional se houver dependência
         if (step.dependsOn && step.dependsOn.length > 0) {
           const prevStepId = step.dependsOn[0];
           const prevStep = plan.steps.find((s) => s.id === prevStepId);
           if (prevStep?.agentId && prevStep.agentId !== step.agentId) {
+            activeHandoffs.set(step.agentId, prevStep.agentId);
+
             state.recordOfficeEvent({
-              type: 'AGENT_COLLABORATING',
+              type: 'AGENT_HANDOFF',
               actorId: prevStep.agentId,
               targetId: step.agentId,
               summary: `Handoff de ${prevStep.agentId.toUpperCase()} para ${step.agentId.toUpperCase()}`,
             });
+
+            setTimeout(() => {
+              activeHandoffs.delete(step.agentId!);
+            }, 12000);
           }
         }
       }

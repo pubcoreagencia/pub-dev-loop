@@ -37,6 +37,8 @@ export interface OfficePosition {
   deskId: string;
   deskLabel: string;
   floor: number;
+  facingDirection?: 'NORTH' | 'SOUTH' | 'EAST' | 'WEST';
+  coordinates?: { x: number; y: number };
 }
 
 export interface AvatarProfile {
@@ -46,6 +48,11 @@ export interface AvatarProfile {
   badgeIcon: string;
   accentColor: string;
   initials: string;
+  hairColor?: string;
+  suitColor?: string;
+  tieColor?: string;
+  accessory?: string;
+  avatarStyle?: 'EXECUTIVE' | 'STRATEGY' | 'ARCHITECT' | 'CODER' | 'REVIEWER' | 'QA';
 }
 
 export interface AgentDefinition {
@@ -67,6 +74,7 @@ export interface AgentDefinition {
   position?: OfficePosition;
   avatar?: AvatarProfile;
   operationalState?: EmployeeOperationalState;
+  lastHandoffFrom?: string;
 }
 
 export interface CeoIdentity {
@@ -203,6 +211,8 @@ export type OfficeEventType =
   | 'AGENT_FINISHED_WORK'
   | 'AGENT_FAILED_WORK'
   | 'AGENT_COLLABORATING'
+  | 'AGENT_HANDOFF'
+  | 'AGENT_COMMUNICATION'
   | 'MEETING_STARTED'
   | 'MEETING_ENDED'
   | 'APPROVAL_REQUESTED'

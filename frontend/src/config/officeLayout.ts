@@ -20,6 +20,8 @@ export const CEO_IDENTITY: CeoIdentity = {
     deskId: 'mesa-executiva-ceo',
     deskLabel: 'Mesa Principal do CEO',
     floor: 3,
+    facingDirection: 'SOUTH',
+    coordinates: { x: 50, y: 15 },
   },
   avatar: {
     avatarId: 'avatar-ceo',
@@ -28,6 +30,10 @@ export const CEO_IDENTITY: CeoIdentity = {
     badgeIcon: '👑',
     accentColor: '#8b5cf6',
     initials: 'CEO',
+    hairColor: '#334155',
+    suitColor: '#1e1b4b',
+    tieColor: '#7c3aed',
+    avatarStyle: 'EXECUTIVE',
   },
 };
 
@@ -46,6 +52,11 @@ export const AGENT_AVATAR_PROFILES: Record<string, AvatarProfile> = {
     badgeIcon: '👔',
     accentColor: '#f59e0b',
     initials: 'CS',
+    hairColor: '#451a03',
+    suitColor: '#291e17',
+    tieColor: '#d97706',
+    accessory: '👓',
+    avatarStyle: 'STRATEGY',
   },
   architect: {
     avatarId: 'avatar-architect',
@@ -54,6 +65,11 @@ export const AGENT_AVATAR_PROFILES: Record<string, AvatarProfile> = {
     badgeIcon: '📐',
     accentColor: '#3b82f6',
     initials: 'AR',
+    hairColor: '#1e293b',
+    suitColor: '#172554',
+    tieColor: '#2563eb',
+    accessory: '📐',
+    avatarStyle: 'ARCHITECT',
   },
   developer: {
     avatarId: 'avatar-developer',
@@ -62,6 +78,11 @@ export const AGENT_AVATAR_PROFILES: Record<string, AvatarProfile> = {
     badgeIcon: '💻',
     accentColor: '#0ea5e9',
     initials: 'DV',
+    hairColor: '#0f172a',
+    suitColor: '#082f49',
+    tieColor: '#0284c7',
+    accessory: '🎧',
+    avatarStyle: 'CODER',
   },
   reviewer: {
     avatarId: 'avatar-reviewer',
@@ -70,6 +91,11 @@ export const AGENT_AVATAR_PROFILES: Record<string, AvatarProfile> = {
     badgeIcon: '🔍',
     accentColor: '#10b981',
     initials: 'RV',
+    hairColor: '#14532d',
+    suitColor: '#052e16',
+    tieColor: '#059669',
+    accessory: '🔍',
+    avatarStyle: 'REVIEWER',
   },
   'qa-engineer': {
     avatarId: 'avatar-qa-engineer',
@@ -78,6 +104,11 @@ export const AGENT_AVATAR_PROFILES: Record<string, AvatarProfile> = {
     badgeIcon: '🧪',
     accentColor: '#059669',
     initials: 'QA',
+    hairColor: '#064e3b',
+    suitColor: '#022c22',
+    tieColor: '#10b981',
+    accessory: '🧪',
+    avatarStyle: 'QA',
   },
 };
 
@@ -88,6 +119,8 @@ export const AGENT_OFFICE_POSITIONS: Record<string, OfficePosition> = {
     deskId: 'mesa-chief-of-staff',
     deskLabel: 'Estação da Chefia de Gabinete',
     floor: 3,
+    facingDirection: 'SOUTH',
+    coordinates: { x: 50, y: 35 },
   },
   architect: {
     zoneId: 'ENGINEERING',
@@ -95,6 +128,8 @@ export const AGENT_OFFICE_POSITIONS: Record<string, OfficePosition> = {
     deskId: 'mesa-architect',
     deskLabel: 'Bancada de Arquitetura',
     floor: 3,
+    facingDirection: 'EAST',
+    coordinates: { x: 30, y: 65 },
   },
   developer: {
     zoneId: 'ENGINEERING',
@@ -102,6 +137,8 @@ export const AGENT_OFFICE_POSITIONS: Record<string, OfficePosition> = {
     deskId: 'mesa-developer',
     deskLabel: 'Bancada de Desenvolvimento',
     floor: 3,
+    facingDirection: 'WEST',
+    coordinates: { x: 70, y: 65 },
   },
   reviewer: {
     zoneId: 'QA',
@@ -109,6 +146,8 @@ export const AGENT_OFFICE_POSITIONS: Record<string, OfficePosition> = {
     deskId: 'mesa-reviewer',
     deskLabel: 'Bancada de Code Review & Segurança',
     floor: 3,
+    facingDirection: 'EAST',
+    coordinates: { x: 30, y: 85 },
   },
   'qa-engineer': {
     zoneId: 'QA',
@@ -116,6 +155,8 @@ export const AGENT_OFFICE_POSITIONS: Record<string, OfficePosition> = {
     deskId: 'mesa-qa-engineer',
     deskLabel: 'Bancada de Testes & Automação',
     floor: 3,
+    facingDirection: 'WEST',
+    coordinates: { x: 70, y: 85 },
   },
 };
 
