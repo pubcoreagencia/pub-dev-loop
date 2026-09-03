@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { OfficeEventBus } from '../src/office/events.js';
 
-describe('P5.8 / Phase 5 — Office Event Bus & Live Stream Foundation', () => {
+describe('P5.8 / Phase 5.1 — Office Event Bus & Production Hardening Suite', () => {
   let bus: OfficeEventBus;
 
   beforeEach(() => {
@@ -58,7 +58,7 @@ describe('P5.8 / Phase 5 — Office Event Bus & Live Stream Foundation', () => {
       summary: 'Architect started work',
     });
 
-    expect(received).toHaveLength(1); // No further events delivered after unsubscribe
+    expect(received).toHaveLength(1);
   });
 
   it('3. filters events by project to prevent multi-tenant cross-talk', () => {
@@ -94,7 +94,6 @@ describe('P5.8 / Phase 5 — Office Event Bus & Live Stream Foundation', () => {
     bus.publish({ type: 'STEP_DELEGATED', actorId: 'chief-of-staff', targetId: 'architect', project: 'pub-dev-loop', summary: 'Evt 3' });
     bus.publish({ type: 'AGENT_STARTED_WORK', actorId: 'architect', project: 'pub-dev-loop', summary: 'Evt 4' });
 
-    // Client disconnected at seq 2 and reconnects requesting events since seq 2
     const missedEvents = bus.getEventsSince(2, { project: 'pub-dev-loop' });
     expect(missedEvents).toHaveLength(2);
     expect(missedEvents[0].sequence).toBe(3);
@@ -140,5 +139,96 @@ describe('P5.8 / Phase 5 — Office Event Bus & Live Stream Foundation', () => {
     expect(handoffEvt.payload?.isOperationalHandoff).toBe(true);
     expect(messageEvt.type).toBe('MESSAGE_SENT');
     expect(messageEvt.payload?.isDirectCommunication).toBe(true);
+  });
+
+  it('7. simulates cross-isolate event delivery via persistent storage bridge', async () => {
+    const mockDb: any[] = [];
+    const mockPool: any = {
+      query: async (sql: string, params: any[]) => {
+        if (sql.includes('INSERT INTO office_events')) {
+          mockDb.push({
+            id: params[0],
+            sequence: params[1],
+            project: params[2],
+            type: params[3],
+            actor_id: params[4],
+            target_id: params[5],
+            task_id: params[6],
+            plan_id: params[7],
+            step_id: params[8],
+            summary: params[9],
+            payload: params[10],
+            created_at: params[11],
+          });
+          return { rowCount: 1 };
+        }
+        if (sql.includes('SELECT * FROM office_events')) {
+          const project = params[0];
+          const seq = params[1];
+          const filtered = mockDb.filter((r) => r.project === project && r.sequence > seq);
+          return { rows: filtered };
+        }
+        return { rows: [] };
+      },
+    };
+
+    // Isolate A (Producer)
+    const isolateAPublisher = new OfficeEventBus(10, mockPool);
+    isolateAPublisher.publish({
+      type: 'STEP_DELEGATED',
+      actorId: 'chief-of-staff',
+      targetId: 'developer',
+      project: 'pub-dev-loop',
+      summary: 'Etapa despachada no Isolate A',
+    });
+
+    // Isolate B (Consumer holding SSE connection)
+    const isolateBConsumer = new OfficeEventBus(10, mockPool);
+    const syncedEvents = await isolateBConsumer.getEventsSinceDb(0, 'pub-dev-loop');
+
+    expect(syncedEvents).toHaveLength(1);
+    expect(syncedEvents[0].summary).toBe('Etapa despachada no Isolate A');
+    expect(syncedEvents[0].targetId).toBe('developer');
+  });
+
+  it('8. supports multiple concurrent client subscriptions without cross-talk or listener leak', () => {
+    const client1: any[] = [];
+    const client2: any[] = [];
+    const client3: any[] = [];
+
+    const unsub1 = bus.subscribe({ project: 'pdl' }, (e) => client1.push(e));
+    const unsub2 = bus.subscribe({ project: 'pdl' }, (e) => client2.push(e));
+    const unsub3 = bus.subscribe({ project: 'pdl' }, (e) => client3.push(e));
+
+    expect(bus.getSubscriberCount()).toBe(3);
+
+    bus.publish({
+      type: 'OBJECTIVE_SUBMITTED',
+      actorId: 'ceo',
+      project: 'pdl',
+      summary: 'Broadcast test',
+    });
+
+    expect(client1).toHaveLength(1);
+    expect(client2).toHaveLength(1);
+    expect(client3).toHaveLength(1);
+
+    unsub2();
+    expect(bus.getSubscriberCount()).toBe(2);
+
+    bus.publish({
+      type: 'PLAN_FORMULATED',
+      actorId: 'chief-of-staff',
+      project: 'pdl',
+      summary: 'Plan test',
+    });
+
+    expect(client1).toHaveLength(2);
+    expect(client2).toHaveLength(1); // Unsubscribed
+    expect(client3).toHaveLength(2);
+
+    unsub1();
+    unsub3();
+    expect(bus.getSubscriberCount()).toBe(0);
   });
 });

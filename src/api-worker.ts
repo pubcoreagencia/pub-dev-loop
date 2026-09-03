@@ -245,7 +245,22 @@ const SCHEMA_MIGRATIONS = [
     )
     WHERE (payload->>'taskId') IS NOT NULL
       AND (payload->>'attempt') IS NOT NULL
-      AND (payload->>'operationalSeq') IS NOT NULL;`
+      AND (payload->>'operationalSeq') IS NOT NULL;`,
+  `CREATE TABLE IF NOT EXISTS office_events (
+    id TEXT PRIMARY KEY,
+    sequence BIGSERIAL,
+    project TEXT NOT NULL,
+    type TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    target_id TEXT,
+    task_id TEXT,
+    plan_id TEXT,
+    step_id TEXT,
+    summary TEXT NOT NULL,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );`,
+  `CREATE INDEX IF NOT EXISTS office_events_project_seq_idx ON office_events (project, sequence ASC);`
 ];
 
 let migrationsChecked = false;
@@ -555,50 +570,99 @@ export default {
       // GET /office/stream (Server-Sent Events for The Office)
       if (method === 'GET' && path === '/office/stream') {
         const urlObj = new URL(request.url);
-        const project = urlObj.searchParams.get('project')?.trim() || undefined;
+        const project = urlObj.searchParams.get('project')?.trim() || 'pub-dev-loop';
         const lastEventIdHeader = request.headers.get('Last-Event-ID') || urlObj.searchParams.get('lastEventId');
         const initialSequence = lastEventIdHeader ? (parseInt(lastEventIdHeader, 10) || 0) : 0;
 
+        const pool = getPool(env);
+        defaultOfficeEventBus.setPool(pool);
+        await ensureMigrations(pool);
+
         const encoder = new TextEncoder();
         let unsubscribe: (() => void) | undefined;
-        let heartbeatInterval: any;
+        let pollInterval: any;
+        let lastSequence = initialSequence;
 
         const stream = new ReadableStream({
-          start(controller) {
+          async start(controller) {
             try {
               controller.enqueue(encoder.encode(': connected\n\n'));
 
-              // Replay de eventos perdidos com base no Last-Event-ID
-              if (initialSequence > 0) {
-                const missed = defaultOfficeEventBus.getEventsSince(initialSequence, { project });
-                for (const evt of missed) {
-                  controller.enqueue(encoder.encode(`id: ${evt.sequence}\nevent: office\ndata: ${JSON.stringify(evt)}\n\n`));
-                }
+              // 1. Initial replay from DB if reconnecting with Last-Event-ID
+              if (lastSequence > 0) {
+                try {
+                  const initialMissed = await pool.query(
+                    `SELECT * FROM office_events WHERE project = $1 AND sequence > $2 ORDER BY sequence ASC LIMIT 100`,
+                    [project, lastSequence]
+                  );
+                  for (const row of initialMissed.rows) {
+                    lastSequence = Math.max(lastSequence, Number(row.sequence));
+                    const evt = {
+                      id: row.id,
+                      sequence: Number(row.sequence),
+                      type: row.type,
+                      timestamp: row.created_at,
+                      actorId: row.actor_id,
+                      targetId: row.target_id || undefined,
+                      project: row.project,
+                      taskId: row.task_id || undefined,
+                      planId: row.plan_id || undefined,
+                      stepId: row.step_id || undefined,
+                      summary: row.summary,
+                      payload: typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload,
+                    };
+                    controller.enqueue(encoder.encode(`id: ${row.sequence}\nevent: office\ndata: ${JSON.stringify(evt)}\n\n`));
+                  }
+                } catch {}
               }
 
-              // Inscrição para eventos em tempo real
+              // 2. Real-time local isolate subscription
               unsubscribe = defaultOfficeEventBus.subscribe({ project }, (evt) => {
                 try {
+                  lastSequence = Math.max(lastSequence, evt.sequence);
                   controller.enqueue(encoder.encode(`id: ${evt.sequence}\nevent: office\ndata: ${JSON.stringify(evt)}\n\n`));
-                } catch {
-                  // Controller fechado
-                }
+                } catch {}
               });
 
-              // Heartbeat periódico (15s)
-              heartbeatInterval = setInterval(() => {
+              // 3. Cross-isolate database sync & heartbeat loop (2s)
+              let heartbeatCounter = 0;
+              pollInterval = setInterval(async () => {
                 try {
-                  controller.enqueue(encoder.encode(': heartbeat\n\n'));
-                } catch {
-                  if (heartbeatInterval) clearInterval(heartbeatInterval);
-                }
-              }, 15000);
+                  heartbeatCounter++;
+                  const res = await pool.query(
+                    `SELECT * FROM office_events WHERE project = $1 AND sequence > $2 ORDER BY sequence ASC LIMIT 50`,
+                    [project, lastSequence]
+                  );
+                  for (const row of res.rows) {
+                    lastSequence = Math.max(lastSequence, Number(row.sequence));
+                    const evt = {
+                      id: row.id,
+                      sequence: Number(row.sequence),
+                      type: row.type,
+                      timestamp: row.created_at,
+                      actorId: row.actor_id,
+                      targetId: row.target_id || undefined,
+                      project: row.project,
+                      taskId: row.task_id || undefined,
+                      planId: row.plan_id || undefined,
+                      stepId: row.step_id || undefined,
+                      summary: row.summary,
+                      payload: typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload,
+                    };
+                    controller.enqueue(encoder.encode(`id: ${row.sequence}\nevent: office\ndata: ${JSON.stringify(evt)}\n\n`));
+                  }
+
+                  if (heartbeatCounter % 7 === 0) {
+                    controller.enqueue(encoder.encode(': heartbeat\n\n'));
+                  }
+                } catch {}
+              }, 2000);
             } catch {
               try { controller.close(); } catch {}
             }
           },
           cancel() {
-            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            if (pollInterval) clearInterval(pollInterval);
             if (unsubscribe) unsubscribe();
           },
         });
