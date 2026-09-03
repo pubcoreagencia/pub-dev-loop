@@ -768,3 +768,110 @@ export async function enrichArchitectTaskWithMemory(
     return task;
   }
 }
+
+/**
+ * Formats retrieved verified organizational memories into a structured historical context block for the Reviewer.
+ * Precedence Rule: CURRENT EXECUTION / REVIEW EVIDENCE > CURRENT TASK > RUNTIME POLICIES > ORGANIZATIONAL MEMORY
+ */
+export function formatReviewerMemoryContext(memories: OrganizationalMemory[]): string {
+  if (!memories || memories.length === 0) {
+    return '';
+  }
+
+  const lines: string[] = [
+    '---',
+    '[ORGANIZATIONAL MEMORY — REVIEW HISTORICAL CONTEXT]',
+    'AVISO ESTATUTÁRIO: As informações abaixo representam histórico e apontamentos anteriores verificados pelo sistema.',
+    'Elas NÃO constituem evidência da execução atual.',
+    'O estado atual do código, diff, testes, typecheck, build e execution result têm PRECEDÊNCIA ABSOLUTA sobre qualquer memória.',
+    'Uma memória histórica NUNCA pode suplantar ou invalidar falhas ou findings observados na execução presente.',
+    '',
+  ];
+
+  memories.slice(0, 5).forEach((m, idx) => {
+    const cleanContent = m.content.length > MAX_MEMORY_CONTENT_LENGTH
+      ? m.content.slice(0, MAX_MEMORY_CONTENT_LENGTH) + '... [truncated]'
+      : m.content;
+
+    lines.push(`${idx + 1}. TYPE: ${m.type} [${m.epistemicStatus}]`);
+    lines.push(`   TITLE: ${m.title}`);
+    lines.push(`   CONTENT: ${cleanContent}`);
+    lines.push(`   SOURCE: ${m.provenance.source}`);
+    lines.push('   PROVENANCE:');
+    if (m.provenance.eventId) lines.push(`     eventId: ${m.provenance.eventId}`);
+    if (m.provenance.taskId) lines.push(`     taskId: ${m.provenance.taskId}`);
+    if (m.provenance.planId) lines.push(`     planId: ${m.provenance.planId}`);
+    lines.push(`     projectId: ${m.provenance.projectId}`);
+    lines.push(`     actorId: ${m.provenance.actorId}`);
+    lines.push(`     verifiedAt: ${m.provenance.verifiedAt}`);
+    if (m.provenance.ruleId) lines.push(`     ruleId: ${m.provenance.ruleId}`);
+    if (m.provenance.commitSha) lines.push(`     commitSha: ${m.provenance.commitSha}`);
+    if (m.recurrenceCount > 1) lines.push(`     recurrenceCount: ${m.recurrenceCount}`);
+    lines.push('');
+  });
+
+  lines.push('---');
+  return lines.join('\n');
+}
+
+/**
+ * Enriches a Task for Reviewer execution by querying verified organizational memories.
+ * Applies strict failure isolation (memory retrieval failure NEVER fails review execution or alters guardrails).
+ */
+export async function enrichReviewerTaskWithMemory(
+  task: Task,
+  retrievalEngine: MemoryRetrievalEngine = defaultMemoryRetrievalEngine
+): Promise<Task> {
+  // Somente o Reviewer é enriquecido nesta fase
+  if (task.agentId !== 'reviewer') {
+    return task;
+  }
+
+  const tenantId = ((task as any).tenantId && typeof (task as any).tenantId === 'string' && (task as any).tenantId.trim())
+    ? (task as any).tenantId.trim()
+    : 'pub-dev-loop';
+
+  const projectId = task.project?.trim();
+  if (!projectId) {
+    return task;
+  }
+
+  const start = Date.now();
+  try {
+    const memories = await retrievalEngine.retrieveContext({
+      tenantId,
+      projectId,
+      agentRole: 'reviewer',
+      query: task.objective || undefined,
+      limit: 5,
+    });
+
+    const durationMs = Date.now() - start;
+
+    if (memories.length === 0) {
+      return task;
+    }
+
+    console.log(JSON.stringify({
+      event: 'ORGANIZATIONAL_MEMORY_RETRIEVED',
+      taskId: task.id,
+      project: projectId,
+      agent: 'reviewer',
+      memoryCount: memories.length,
+      memoryIds: memories.map((m) => m.id),
+      durationMs,
+    }));
+
+    const memoryBlock = formatReviewerMemoryContext(memories);
+    const enrichedPrompt = `${task.prompt}\n\n${memoryBlock}`;
+
+    return {
+      ...task,
+      prompt: enrichedPrompt,
+    };
+  } catch (err: any) {
+    // Failure Isolation: Falha no retrieval NUNCA quebra a execução do Reviewer
+    console.warn(`[MemoryRetrieval] Notice: failed to retrieve memories for task ${task.id} (${Date.now() - start}ms): ${err.message}`);
+    return task;
+  }
+}

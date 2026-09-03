@@ -817,7 +817,8 @@ The system should distinguish durable institutional knowledge from temporary con
 * **Phase 8.1 (Real Memory Engine):** PostgreSQL `organizational_memories` table, `OrganizationalMemoryStore`, `MemoryIngestPipeline`, deterministic `MemoryRetrievalEngine`, authenticated `GET /office/memory` endpoint.
 * **Phase 8.2A / 8.2B (Developer Memory Integration):** `enrichDeveloperTaskWithMemory` connects verified organizational memories (`TASK_RESULT`, `REVIEW_FINDING`, `LESSON`, `PROJECT_CONTEXT`) to Developer execution before `provider.execute()` with strict tenant authority, project isolation, max 5 memories cap, 500 chars limit, failure isolation and precedence notice.
 * **Phase 8.3A (Architect Memory Integration):** `enrichArchitectTaskWithMemory` connects verified organizational memories (`DECISION`, `PLAN`, `REVIEW_FINDING`, `PROJECT_CONTEXT`) to Architect execution before `provider.execute()` adhering strictly to the same security boundaries.
-* **Pending Next Phases:** Reviewer, QA Engineer, Chief of Staff integration.
+* **Phase 8.3B (Reviewer Memory Integration):** `enrichReviewerTaskWithMemory` connects verified organizational memories (`REVIEW_FINDING`, `TASK_RESULT`, `PROJECT_CONTEXT`) to Reviewer execution before `provider.execute()` as supplementary historical context under absolute precedence of current execution/review evidence (`MAX_REVIEW_ITERATIONS = 3` guardrail strictly preserved).
+* **Pending Next Phases:** QA Engineer, Chief of Staff integration.
 
 ---
 
