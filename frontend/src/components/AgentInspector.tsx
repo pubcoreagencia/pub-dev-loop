@@ -1,91 +1,142 @@
 import React from 'react';
 import { useStore } from '../store/useStore';
+import type { AgentDefinition } from '../types/office';
+import { OPERATIONAL_STATE_LABELS_PT } from '../config/officeLayout';
 
 export const AgentInspector: React.FC = () => {
   const { selectedAgent, selectAgent, tasks } = useStore();
 
   if (!selectedAgent) return null;
 
-  const agentTasks = tasks.filter((t) => t.agentId === selectedAgent.id);
-  const activeTask = agentTasks.find((t) => t.status === 'RUNNING' || t.status === 'QUEUED');
-  const latestCompleted = agentTasks.find((t) => t.status === 'COMPLETED');
+  const isCeo = selectedAgent.role === 'CEO';
+  const agent = selectedAgent as AgentDefinition;
 
-  const getDepartmentColor = (dept: string) => {
-    switch (dept) {
-      case 'EXECUTIVE': return '#f59e0b';
-      case 'ENGINEERING': return '#3b82f6';
-      case 'QA': return '#10b981';
-      default: return '#94a3b8';
-    }
-  };
+  const activeTask = !isCeo
+    ? tasks.find((t) => t.agentId === agent.id && t.status === 'RUNNING')
+    : undefined;
+
+  const lastTask = !isCeo
+    ? tasks.find((t) => t.agentId === agent.id && t.status === 'COMPLETED')
+    : undefined;
+
+  const stateInfo = isCeo
+    ? { label: 'Comandante Ativo', tagCls: 'state-idle' }
+    : OPERATIONAL_STATE_LABELS_PT[agent.operationalState || 'idle'];
 
   return (
-    <div className="agent-inspector-overlay">
-      <div className="agent-dossier-card">
-        <div className="dossier-header" style={{ borderTop: `4px solid ${getDepartmentColor(selectedAgent.department)}` }}>
-          <div className="dossier-title-row">
-            <div>
-              <span className="dossier-dept">{selectedAgent.department} DEPARTMENT</span>
-              <h2 className="dossier-name">{selectedAgent.name}</h2>
-              <span className="dossier-job-title">{selectedAgent.title}</span>
+    <div className="agent-inspector-modal-backdrop" onClick={() => selectAgent(undefined)}>
+      <div className="agent-inspector-modal" onClick={(e) => e.stopPropagation()}>
+        {/* CABEÇALHO DO DOSSIÊ */}
+        <div className="inspector-header">
+          <div className="inspector-profile-header">
+            <div
+              className="inspector-avatar-badge"
+              style={{ borderColor: selectedAgent.avatar?.accentColor || '#f59e0b' }}
+            >
+              <span className="inspector-avatar-icon">
+                {selectedAgent.avatar?.badgeIcon || (isCeo ? '👑' : '💼')}
+              </span>
             </div>
-            <button className="btn-close-dossier" onClick={() => selectAgent(undefined)}>✕</button>
+            <div>
+              <h2 className="inspector-agent-name">{selectedAgent.name}</h2>
+              <span className="inspector-agent-title">{selectedAgent.title}</span>
+            </div>
           </div>
+
+          <button className="btn-close-inspector" onClick={() => selectAgent(undefined)}>
+            ✕
+          </button>
         </div>
 
-        <div className="dossier-body">
-          <div className="dossier-section">
-            <h4 className="section-heading">EMPLOYEE SUMMARY & PERSONALITY</h4>
-            <p className="personality-summary">{selectedAgent.personalitySummary}</p>
-            <div className="specialty-pill">Specialty: <strong>{selectedAgent.specialty}</strong></div>
+        {/* CONTEÚDO DO DOSSIÊ */}
+        <div className="inspector-body">
+          <div className="inspector-status-banner">
+            <span className="status-label">STATUS OPERACIONAL:</span>
+            <span className={`status-badge-inline ${stateInfo.tagCls}`}>
+              {stateInfo.label}
+            </span>
+            <span className="desk-location-tag">
+              📍 {selectedAgent.position?.zoneName || 'Escritório'} • {selectedAgent.position?.deskLabel || 'Bancada'}
+            </span>
           </div>
 
-          <div className="dossier-section">
-            <h4 className="section-heading">CORE RESPONSIBILITIES</h4>
-            <ul className="dossier-list">
-              {selectedAgent.responsibilities.map((r, i) => (
-                <li key={i}>{r}</li>
-              ))}
-            </ul>
+          <div className="inspector-section">
+            <h4 className="section-title">PERFIL &amp; PERSONALIDADE CORPORATIVA</h4>
+            <p className="section-text">{selectedAgent.personalitySummary}</p>
           </div>
 
-          <div className="dossier-section">
-            <h4 className="section-heading">DECLARED CAPABILITIES</h4>
-            <div className="caps-wrap">
-              {selectedAgent.capabilities.map((c, i) => (
-                <span key={i} className="cap-tag">{c}</span>
-              ))}
-            </div>
+          <div className="inspector-section">
+            <h4 className="section-title">ESPECIALIDADE PRINCIPAL</h4>
+            <p className="section-text-highlight">{selectedAgent.specialty}</p>
           </div>
 
-          <div className="dossier-section">
-            <h4 className="section-heading">COGNITIVE MODEL PROFILE</h4>
-            <div className="profile-grid">
-              <div>Routing Profile: <code>{selectedAgent.routingProfile}</code></div>
-              <div>Preferred Model: <code>{selectedAgent.preferredModel || 'Role-Based Gateway'}</code></div>
-              <div>Manager Authority: <code>{selectedAgent.isManager ? 'YES' : 'NO'}</code></div>
-              <div>Reports To: <code>{selectedAgent.reportsTo || 'Human CEO'}</code></div>
-            </div>
-          </div>
+          {!isCeo && (
+            <>
+              <div className="inspector-section">
+                <h4 className="section-title">RESPONSABILIDADES DE CARGO</h4>
+                <ul className="inspector-list">
+                  {agent.responsibilities?.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </div>
 
+              <div className="inspector-section">
+                <h4 className="section-title">CAPACIDADES TÉCNICAS DECLARADAS</h4>
+                <div className="capabilities-tag-cloud">
+                  {agent.capabilities?.map((c, i) => (
+                    <span key={i} className="capability-tag">{c}</span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="inspector-section">
+                <h4 className="section-title">PERFIL COGNITIVO &amp; MODELO</h4>
+                <div className="model-profile-details">
+                  <div className="detail-item">
+                    <span className="detail-key">Perfil de Roteamento:</span>
+                    <span className="detail-val">{agent.routingProfile}</span>
+                  </div>
+                  <div className="detail-item">
+                    <span className="detail-key">Modelo Preferencial:</span>
+                    <span className="detail-val">{agent.preferredModel || 'DualGateway Router'}</span>
+                  </div>
+                  <div className="detail-item">
+                    <span className="detail-key">Autoridade de Gestão:</span>
+                    <span className="detail-val">{agent.isManager ? 'Sim (Gerente)' : 'Especialista'}</span>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* TAREFA ATIVA */}
           {activeTask && (
-            <div className="dossier-section active-task-box">
-              <h4 className="section-heading" style={{ color: '#fbbf24' }}>CURRENT ACTIVE ASSIGNMENT</h4>
-              <div className="active-task-desc">{activeTask.objective}</div>
-              <div className="active-task-meta">
-                <span>Task #{activeTask.id.slice(0, 16)}</span>
-                <span>Status: <strong>{activeTask.status}</strong></span>
+            <div className="inspector-section active-task-section">
+              <h4 className="section-title">⚡ TAREFA EM EXECUÇÃO AGORA</h4>
+              <div className="active-task-card">
+                <div className="task-obj">{activeTask.objective}</div>
+                <div className="task-meta-row">
+                  <span>ID: {activeTask.id.slice(0, 16)}</span>
+                  <span>Worker: {activeTask.worker}</span>
+                </div>
               </div>
             </div>
           )}
 
-          {latestCompleted && !activeTask && (
-            <div className="dossier-section latest-completed-box">
-              <h4 className="section-heading" style={{ color: '#34d399' }}>LATEST COMPLETED DELIVERABLE</h4>
-              <div className="active-task-desc">{latestCompleted.objective}</div>
-              {latestCompleted.result?.summary && (
-                <div className="task-summary-text">{latestCompleted.result.summary}</div>
-              )}
+          {/* ÚLTIMA ENTREGA */}
+          {lastTask && (
+            <div className="inspector-section">
+              <h4 className="section-title">✅ ÚLTIMO ENTREGÁVEL CONCLUÍDO</h4>
+              <div className="completed-task-card">
+                <div className="task-obj">{lastTask.objective}</div>
+                {lastTask.result?.summary && (
+                  <p className="task-summary">{lastTask.result.summary}</p>
+                )}
+                <span className="task-completed-time">
+                  Concluído em: {new Date(lastTask.updatedAt).toLocaleTimeString('pt-BR')}
+                </span>
+              </div>
             </div>
           )}
         </div>

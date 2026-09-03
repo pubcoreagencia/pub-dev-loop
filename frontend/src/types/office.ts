@@ -5,7 +5,8 @@ export type AgentRole =
   | 'ARCHITECT'
   | 'DEVELOPER'
   | 'REVIEWER'
-  | 'QA_ENGINEER';
+  | 'QA_ENGINEER'
+  | 'CEO';
 
 export type AgentRoutingProfile =
   | 'reasoning'
@@ -15,6 +16,37 @@ export type AgentRoutingProfile =
   | 'general';
 
 export type AgentStatus = 'ACTIVE' | 'IDLE' | 'PAUSED' | 'DEPRECATED';
+
+export type EmployeeOperationalState =
+  | 'idle'
+  | 'working'
+  | 'thinking'
+  | 'reviewing'
+  | 'collaborating'
+  | 'in_meeting'
+  | 'waiting_for_dependency'
+  | 'waiting_for_approval'
+  | 'celebrating'
+  | 'learning'
+  | 'offline'
+  | 'blocked';
+
+export interface OfficePosition {
+  zoneId: 'CEO_SUITE' | 'LEADERSHIP' | 'ENGINEERING' | 'QA' | 'MEETING_ROOM';
+  zoneName: string;
+  deskId: string;
+  deskLabel: string;
+  floor: number;
+}
+
+export interface AvatarProfile {
+  avatarId: string;
+  displayName: string;
+  roleLabel: string;
+  badgeIcon: string;
+  accentColor: string;
+  initials: string;
+}
 
 export interface AgentDefinition {
   id: string;
@@ -32,6 +64,42 @@ export interface AgentDefinition {
   isManager?: boolean;
   reportsTo?: string | null;
   status: AgentStatus;
+  position?: OfficePosition;
+  avatar?: AvatarProfile;
+  operationalState?: EmployeeOperationalState;
+}
+
+export interface CeoIdentity {
+  id: 'ceo';
+  name: string;
+  title: string;
+  role: 'CEO';
+  status: 'ACTIVE';
+  personalitySummary: string;
+  specialty: string;
+  position: OfficePosition;
+  avatar: AvatarProfile;
+}
+
+export interface MeetingRoomState {
+  id: string;
+  name: string;
+  status: 'DISPONIVEL' | 'EM_REUNIAO';
+  topic?: string;
+  participants: string[];
+  activePlanId?: string;
+  startedAt?: string;
+}
+
+export interface SpeechBubbleItem {
+  id: string;
+  senderId: string;
+  senderName: string;
+  targetId?: string;
+  content: string;
+  timestamp: string;
+  durationMs: number;
+  type: 'CHAT' | 'PLAN' | 'TASK' | 'MEETING';
 }
 
 export type PlanStepStatus = 'PENDING' | 'READY' | 'ASSIGNED' | 'UNRESOLVED';

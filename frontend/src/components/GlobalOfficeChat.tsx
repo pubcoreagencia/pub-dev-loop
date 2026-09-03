@@ -4,88 +4,117 @@ import { PlanViewer } from './PlanViewer';
 
 export const GlobalOfficeChat: React.FC = () => {
   const { messages, submitObjective, actionLoading } = useStore();
-  const [inputObjective, setInputObjective] = useState('');
+  const [inputText, setInputText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, actionLoading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputObjective.trim() || actionLoading) return;
-    const obj = inputObjective;
-    setInputObjective('');
-    await submitObjective(obj);
+    if (!inputText.trim() || actionLoading) return;
+    const objective = inputText.trim();
+    setInputText('');
+    await submitObjective(objective);
   };
 
   return (
     <div className="office-chat-container">
+      {/* CABEÇALHO DO CHAT */}
       <div className="chat-header">
         <div className="chat-title-group">
           <span className="terminal-prompt-icon">📟</span>
-          <h2 className="chat-title">GLOBAL OFFICE CHAT • CEO COMMAND SURFACE</h2>
+          <span className="chat-title">CHAT GLOBAL DO ESCRITÓRIO • SUPERFÍCIE DE COMANDO DO CEO</span>
         </div>
-        <span className="chat-status-pill">DIRECT LINE • CHIEF OF STAFF</span>
+        <div className="chat-status-pill">
+          LINHA DIRETA • CHIEF OF STAFF
+        </div>
       </div>
 
+      {/* ÁREA DE HISTÓRICO DE MENSAGENS */}
       <div className="chat-messages-area">
         {messages.map((msg) => (
-          <div key={msg.id} className={`chat-bubble-row ${msg.sender.toLowerCase()}`}>
+          <div
+            key={msg.id}
+            className={`chat-bubble-row ${msg.sender.toLowerCase()}`}
+          >
             <div className="chat-bubble-wrapper">
               <div className="chat-sender-header">
                 <span className="sender-tag">{msg.senderName}</span>
-                {msg.senderRole && <span className="sender-role">({msg.senderRole})</span>}
+                {msg.senderRole && (
+                  <span className="sender-role">({msg.senderRole})</span>
+                )}
                 <span className="msg-time">{msg.timestamp}</span>
               </div>
 
-              <div className="chat-content-body">
-                <p className="chat-text">{msg.content}</p>
-                {msg.type === 'PLAN' && msg.plan && (
+              {msg.type === 'TEXT' && (
+                <div className="chat-text">{msg.content}</div>
+              )}
+
+              {msg.type === 'PLAN' && msg.plan && (
+                <div className="chat-plan-block">
+                  <div className="plan-intro-text">{msg.content}</div>
                   <PlanViewer plan={msg.plan} />
-                )}
-                {msg.type === 'EXECUTION' && msg.task && (
-                  <div className="task-execution-snippet">
-                    <span className="snippet-badge">TASK #{msg.task.id.slice(0, 18)}</span>
-                    <span className="snippet-agent">Agent: <strong>{msg.task.agentId || 'unassigned'}</strong></span>
-                    <span className="snippet-worker">Worker: <code>{msg.task.worker}</code></span>
-                    <span className={`snippet-status ${msg.task.status.toLowerCase()}`}>{msg.task.status}</span>
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
+
+              {msg.type === 'EXECUTION' && (
+                <div className="chat-execution-block">
+                  <div className="chat-text">{msg.content}</div>
+                  {msg.task && (
+                    <div className="task-execution-snippet">
+                      <span className="snippet-icon">⚙️</span>
+                      <span className="snippet-worker">Worker: {msg.task.worker}</span>
+                      <span className="snippet-status">Status: {msg.task.status === 'RUNNING' ? 'Em Execução' : msg.task.status}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {msg.type === 'ERROR' && (
+                <div className="chat-error-text">⚠️ {msg.content}</div>
+              )}
+
+              {msg.type === 'SYSTEM' && (
+                <div className="chat-system-text">📢 {msg.content}</div>
+              )}
             </div>
           </div>
         ))}
+
         {actionLoading && (
-          <div className="chat-bubble-row chief_of_staff thinking">
-            <div className="chat-bubble-wrapper">
-              <div className="chat-sender-header">
-                <span className="sender-tag">Chief of Staff</span>
-                <span className="sender-role">(Analyzing & Formulating Plan...)</span>
-              </div>
-              <p className="chat-text blink">Decomposing objective into specialist plan steps...</p>
+          <div className="chat-bubble-row chief_of_staff">
+            <div className="chat-bubble-wrapper thinking-bubble">
+              <span className="thinking-dots">🧠 Chief of Staff formulando plano e alocando especialistas...</span>
             </div>
           </div>
         )}
+
         <div ref={messagesEndRef} />
       </div>
 
-      <form className="chat-input-bar" onSubmit={handleSubmit}>
-        <div className="input-prompt-label">CEO &gt;</div>
+      {/* BARRA DE ENTRADA DO CEO (FIXA NO RODAPÉ DO CHAT) */}
+      <form onSubmit={handleSubmit} className="chat-input-bar">
+        <span className="input-prompt-label">CEO &gt;</span>
         <input
           type="text"
           className="chat-text-input"
-          placeholder="Give the office an objective... (e.g. Implement checkout feature for PUB ECOM)"
-          value={inputObjective}
-          onChange={(e) => setInputObjective(e.target.value)}
+          placeholder="Envie um objetivo estratégico para o escritório (ex: Implementar tela de checkout)..."
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
           disabled={actionLoading}
         />
         <button
           type="submit"
           className="btn-dispatch-objective"
-          disabled={!inputObjective.trim() || actionLoading}
+          disabled={actionLoading || !inputText.trim()}
         >
-          {actionLoading ? 'ORCHESTRATING...' : 'DISPATCH TO OFFICE ⏎'}
+          {actionLoading ? 'PLANEJANDO...' : 'DESPACHAR AO ESCRITÓRIO'}
         </button>
       </form>
     </div>
