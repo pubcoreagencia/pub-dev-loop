@@ -10,11 +10,13 @@ import {
   MeetingRoomArea,
   LoungeCoffeeArea,
   OfficePlant,
+  ClassicWatercooler,
 } from './Office3DFurniture';
 import { TurntableVinyl } from './TurntableVinyl';
 import { Office3DAvatar } from './Office3DAvatar';
 import { AGENT_AVATAR_PROFILES } from '../config/officeLayout';
 import { VinylJukeboxModal, VINYL_ALBUMS, type VinylAlbum } from '../components/VinylJukeboxModal';
+import { defaultAudioEngine } from '../services/audioEngine';
 
 export const Office3DScene: React.FC = () => {
   const { agents, ceo, selectedAgent, selectAgent, speechBubbles } = useStore();
@@ -161,11 +163,20 @@ export const Office3DScene: React.FC = () => {
         <OfficePlant position={[-16, 0, 6]} />
         <OfficePlant position={[16, 0, 6]} />
 
+        {/* O Clássico Bebedouro / Watercooler The Office */}
+        <ClassicWatercooler position={[-8, 0, 2]} />
+
         {/* Toca-Discos de Vinil Interativo */}
         <TurntableVinyl
           isPlaying={isPlayingVinyl}
           labelColor={activeAlbum.labelColor}
-          onClick={() => setIsJukeboxOpen(true)}
+          onClick={() => {
+            setIsJukeboxOpen(true);
+            if (!isPlayingVinyl) {
+              setIsPlayingVinyl(true);
+              defaultAudioEngine.play(activeAlbum.id);
+            }
+          }}
         />
 
         {/* 1. MESA E AVATAR DO CEO (Matheus Paes) */}
@@ -278,9 +289,18 @@ export const Office3DScene: React.FC = () => {
         onSelectAlbum={(album) => {
           setActiveAlbum(album);
           setIsPlayingVinyl(true);
+          defaultAudioEngine.play(album.id);
         }}
         isPlaying={isPlayingVinyl}
-        onTogglePlay={() => setIsPlayingVinyl(!isPlayingVinyl)}
+        onTogglePlay={() => {
+          const next = !isPlayingVinyl;
+          setIsPlayingVinyl(next);
+          if (next) {
+            defaultAudioEngine.play(activeAlbum.id);
+          } else {
+            defaultAudioEngine.stop();
+          }
+        }}
       />
     </div>
   );

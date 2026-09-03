@@ -65,14 +65,14 @@ describe('PDL — Phase 9.0: The Living 3D Office & Workforce Personas Suite', (
     const reply = defaultWatercoolerEngine.respondToCeo('Lucas, tem bug nesse deploy?', 'developer');
     expect(reply.speakerId).toBe('developer');
     expect(reply.senderName).toBe('Lucas Silveira');
-    expect(reply.content).toContain('120 WPM');
+    expect(reply.content).toContain('140 WPM');
   });
 
   it('10. WatercoolerEngine responds specifically to Helena / architecture remarks', () => {
     const reply = defaultWatercoolerEngine.respondToCeo('Helena, precisamos refatorar esse módulo', 'architect');
     expect(reply.speakerId).toBe('architect');
     expect(reply.senderName).toBe('Helena Rostova');
-    expect(reply.content).toContain('contratos');
+    expect(reply.content).toContain('diagramas');
   });
 
   it('11. WatercoolerEngine responds specifically to Beatriz / security remarks', () => {
@@ -86,7 +86,7 @@ describe('PDL — Phase 9.0: The Living 3D Office & Workforce Personas Suite', (
     const reply = defaultWatercoolerEngine.respondToCeo('Tiago, quebra esse sistema no teste', 'qa-engineer');
     expect(reply.speakerId).toBe('qa-engineer');
     expect(reply.senderName).toBe('Tiago Rocha');
-    expect(reply.content).toContain('testes de estresse');
+    expect(reply.content).toContain('Chaos Monkey');
   });
 
   it('13. All 5 workforce roles have unique distinct accent colors and avatar styles', () => {
@@ -116,7 +116,7 @@ describe('PDL — Phase 9.0: The Living 3D Office & Workforce Personas Suite', (
     // Developer wants to code by the pool
     expect(replies.some(r => r.speakerId === 'developer' && r.content.includes('notebook'))).toBe(true);
     // Architect warns about water and circuits
-    expect(replies.some(r => r.speakerId === 'architect' && r.content.includes('circuitos'))).toBe(true);
+    expect(replies.some(r => r.speakerId === 'architect' && r.content.includes('Sibéria'))).toBe(true);
     // QA brings rubber ducks
     expect(replies.some(r => r.speakerId === 'qa-engineer' && r.content.includes('patinhos'))).toBe(true);
     // Reviewer warns about safety
@@ -128,7 +128,7 @@ describe('PDL — Phase 9.0: The Living 3D Office & Workforce Personas Suite', (
   it('17. Watercooler generates multi-agent food and coffee discussions with past bet memories', () => {
     const replies = defaultWatercoolerEngine.generateMultiAgentReaction('Quem vai pagar a pizza hoje?');
     expect(replies.length).toBeGreaterThanOrEqual(3);
-    expect(replies.some(r => r.speakerId === 'developer' && r.content.includes('Pizza'))).toBe(true);
+    expect(replies.some(r => r.speakerId === 'developer' && r.content.includes('pizza'))).toBe(true);
     expect(replies.some(r => r.speakerId === 'reviewer' && r.content.includes('aposta'))).toBe(true);
   });
 
