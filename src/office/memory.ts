@@ -437,7 +437,12 @@ export class MemoryIngestPipeline {
 
         case 'REVIEW_FINDING': {
           const findings = event.payload?.findings || [];
-          const topFinding = findings[0] || {};
+          const topFinding = findings[0] || {
+            file: event.payload?.component || 'code_review',
+            ruleId: event.payload?.ruleId,
+            message: event.payload?.findingText || event.summary,
+            suggestion: event.payload?.remediationText,
+          };
           const memory = await this.store.create({
             tenantId,
             projectId,
@@ -469,16 +474,18 @@ export class MemoryIngestPipeline {
             await defaultPatternDetectionEngine.processObservation({
               tenantId,
               projectId,
-              component: topFinding.file || 'code_review',
+              component: topFinding.file || event.payload?.component || 'code_review',
               taskType: 'review',
-              ruleId: topFinding.ruleId,
-              findingText: topFinding.message || event.summary,
-              remediationText: topFinding.suggestion,
+              ruleId: topFinding.ruleId || event.payload?.ruleId,
+              findingText: topFinding.message || event.payload?.findingText || event.summary,
+              remediationText: topFinding.suggestion || event.payload?.remediationText,
               memoryId: memory.id,
               eventId: event.id,
               taskId: event.taskId,
               actorId: event.actorId || 'reviewer',
-              reviewerConfirmed: true,
+              reviewerConfirmed: event.payload?.reviewerConfirmed !== false,
+              qaConfirmed: Boolean(event.payload?.qaConfirmed),
+              remediationVerified: Boolean(event.payload?.remediationVerified),
               source: 'REVIEW_INSPECTION',
               timestamp: event.timestamp,
             });
