@@ -63,6 +63,26 @@ import {
   type ContextAssemblyDiagnostics,
   type RawAssemblyInput,
 } from './context-assembly.js';
+import {
+  defaultDecisionContextEngine,
+  DecisionContextEngine,
+  ROLE_AUTHORITY_BOUNDARIES,
+  ROLE_RESPONSIBILITY_CONTRACTS,
+  type DecisionConfidenceLevel,
+  type DecisionObjective,
+  type RoleResponsibilityContract,
+  type DecisionEvidence,
+  type DecisionConstraint,
+  type DecisionOption,
+  type DecisionRecommendation,
+  type DecisionNextStep,
+  type DecisionGovernanceCheck,
+  type AgentAuthorityBoundary,
+  type DecisionConflict,
+  type DecisionProvenance,
+  type AgentDecisionContext,
+  type RawDecisionInput,
+} from './decision-context.js';
 
 export {
   defaultMemoryGovernanceEngine,
@@ -115,6 +135,24 @@ export {
   type ContextAssemblyResult,
   type ContextAssemblyDiagnostics,
   type RawAssemblyInput,
+  defaultDecisionContextEngine,
+  DecisionContextEngine,
+  ROLE_AUTHORITY_BOUNDARIES,
+  ROLE_RESPONSIBILITY_CONTRACTS,
+  type DecisionConfidenceLevel,
+  type DecisionObjective,
+  type RoleResponsibilityContract,
+  type DecisionEvidence,
+  type DecisionConstraint,
+  type DecisionOption,
+  type DecisionRecommendation,
+  type DecisionNextStep,
+  type DecisionGovernanceCheck,
+  type AgentAuthorityBoundary,
+  type DecisionConflict,
+  type DecisionProvenance,
+  type AgentDecisionContext,
+  type RawDecisionInput,
 };
 
 export type MemoryType =
