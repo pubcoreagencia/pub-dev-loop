@@ -8,6 +8,7 @@ import type { CodingAgent } from './agent.js';
 import type { TaskRepository, Task } from './domain.js';
 import { TaskFinalizer, type FinalizeResult, type WorkspaceSnapshot, WorkspaceValidator } from './finalizer.js';
 import { captureWorkspaceSnapshot } from './finalizer.js';
+import { createAgentExecutionContext, type AgentExecutionContext } from './office/execution-context.js';
 
 const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
 const HEARTBEAT_INTERVAL_MS = Number(process.env.WORKER_HEARTBEAT_MS ?? 10000);
@@ -278,6 +279,14 @@ export abstract class BaseWorker implements Worker {
   /** The status of the last finalize() call, or 'SKIPPED_AGENT_FAILED' if agent failed. */
   get lastFinalize(): 'SKIPPED_AGENT_FAILED' | 'COMPLETED' | 'FAILED' | null {
     return this.lastFinalizeStatus;
+  }
+
+  /**
+   * Resolve the organizational AgentExecutionContext for a task, if assigned.
+   * Returns null for legacy tasks without agentId or unknown IDs.
+   */
+  protected getAgentContext(task: Task): AgentExecutionContext | null {
+    return createAgentExecutionContext(task.agentId);
   }
 
   async cancel(): Promise<void> {
