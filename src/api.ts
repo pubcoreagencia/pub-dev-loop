@@ -13,6 +13,7 @@ import { PrototypeComparisonPreviewManager } from './prototype/comparison-previe
 import { LocalPreviewRuntime } from './prototype/local-preview-runtime.js';
 import { PublicPreviewRuntime } from './prototype/public-preview-runtime.js';
 import { PrototypeHandoffService, type PrototypeHandoffInput } from './prototype/handoff.js';
+import { defaultAgentRegistry } from './office/registry.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const prototypeEvents = new PrototypeEventStream();
@@ -43,6 +44,12 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
   const handoff = new PrototypeHandoffService(tasks, prototypes, prototypeEvents);
 
   app.get('/health', (_q,res)=>res.json({status:'ok'}));
+  app.get('/office/agents', (_req, res) => res.json({ agents: defaultAgentRegistry.listAgents() }));
+  app.get('/office/agents/:id', (req, res) => {
+    const agent = defaultAgentRegistry.getAgent(req.params.id);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+    return res.json({ agent });
+  });
   app.get(['/prototype', '/prototype/sessions/:id/view'], (_req,res)=>res.status(200).type('html').send(prototypeUiHtml()+prototypeHistoryUiScript()));
 
   app.post('/tasks', async(req,res,next)=>{ try { const {project,repository,objective,prompt,priority}=req.body??{}; if(!project||!repository||!objective||!prompt)return res.status(400).json({error:'project, repository, objective and prompt are required'}); return res.status(201).json(await tasks.create({project,repository,objective,prompt,priority})); } catch(e){return next(e);} });

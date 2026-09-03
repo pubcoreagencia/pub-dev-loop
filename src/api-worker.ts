@@ -8,6 +8,7 @@ import { PrototypeEventStream } from './prototype/events.js';
 import { PreviewRecoveryService } from './prototype/preview-recovery.js';
 import { prototypeUiHtml } from './prototype/ui.js';
 import { prototypeHistoryUiScript } from './prototype/history-ui.js';
+import { defaultAgentRegistry } from './office/registry.js';
 
 export interface HyperdriveBinding {
   connectionString: string;
@@ -427,6 +428,23 @@ export default {
             router: env.ROUTER_STREAM_ENABLED === 'true',
           },
         });
+      }
+
+      // Office Agent Registry routes
+      if (method === 'GET' && path === '/office/agents') {
+        return jsonResponse({
+          agents: defaultAgentRegistry.listAgents(),
+        });
+      }
+
+      const officeAgentMatch = path.match(/^\/office\/agents\/([^\/]+)$/);
+      if (method === 'GET' && officeAgentMatch) {
+        const id = officeAgentMatch[1];
+        const agent = defaultAgentRegistry.getAgent(id);
+        if (!agent) {
+          return jsonResponse({ error: 'Agent not found' }, 404);
+        }
+        return jsonResponse({ agent });
       }
 
       // POST /migrate (Synchronously run schema migrations)
