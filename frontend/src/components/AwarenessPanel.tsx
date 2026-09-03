@@ -2,7 +2,17 @@ import React, { useEffect } from 'react';
 import { useStore } from '../store/useStore';
 
 export const AwarenessPanel: React.FC = () => {
-  const { awareness, skills, isAwarenessPanelOpen, toggleAwarenessPanel, fetchAwarenessData, fetchSkillsData } = useStore();
+  const {
+    awareness,
+    skills,
+    pipelines,
+    isAwarenessPanelOpen,
+    toggleAwarenessPanel,
+    fetchAwarenessData,
+    fetchSkillsData,
+    fetchPipelinesData,
+    decidePipelineCheckpointAction,
+  } = useStore();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -77,6 +87,7 @@ export const AwarenessPanel: React.FC = () => {
               onClick={() => {
                 fetchAwarenessData();
                 fetchSkillsData();
+                fetchPipelinesData();
               }}
               title="Atualizar dados"
               style={{
@@ -325,6 +336,99 @@ export const AwarenessPanel: React.FC = () => {
                     <div style={{ marginTop: '4px', color: '#cbd5e1' }}>{sk.description}</div>
                     <div style={{ marginTop: '6px', fontSize: '11px', color: '#94a3b8' }}>
                       Papéis: <span style={{ color: '#f8fafc' }}>{sk.applicableRoles.join(', ')}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Section 7: Autonomous Pipelines & Adaptive Flow */}
+          <div>
+            <h3 style={{ fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#94a3b8', margin: '0 0 10px 0' }}>
+              🚀 Pipelines Autônomos & Fluxo Adaptativo ({pipelines?.length || 0})
+            </h3>
+            {(!pipelines || pipelines.length === 0) ? (
+              <div style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
+                Nenhum pipeline ativo no momento. O Chief of Staff orquestra objetivos estratégicos do CEO em DAGs de execução.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {pipelines.map((pipe) => (
+                  <div key={pipe.id} style={{
+                    background: 'rgba(30, 41, 59, 0.4)',
+                    border: '1px solid #334155',
+                    borderRadius: '6px',
+                    padding: '12px',
+                    fontSize: '12px',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <strong style={{ color: '#38bdf8', fontSize: '13px' }}>📋 {pipe.title}</strong>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        backgroundColor: pipe.status === 'COMPLETED' ? 'rgba(52, 211, 153, 0.2)' :
+                          pipe.status === 'WAITING_APPROVAL' ? 'rgba(251, 191, 36, 0.2)' :
+                          pipe.status === 'FAILED' ? 'rgba(248, 113, 113, 0.2)' : 'rgba(56, 189, 248, 0.2)',
+                        color: pipe.status === 'COMPLETED' ? '#34d399' :
+                          pipe.status === 'WAITING_APPROVAL' ? '#fbbf24' :
+                          pipe.status === 'FAILED' ? '#f87171' : '#38bdf8',
+                      }}>
+                        {pipe.status} ({pipe.completedSteps}/{pipe.totalSteps})
+                      </span>
+                    </div>
+                    <p style={{ margin: '0 0 8px 0', color: '#cbd5e1' }}>{pipe.ceoObjective}</p>
+
+                    {/* Steps list */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid #1e293b', paddingTop: '8px' }}>
+                      {pipe.steps.map((st) => (
+                        <div key={st.id} style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '4px 8px',
+                          background: 'rgba(15, 23, 42, 0.5)',
+                          borderRadius: '4px',
+                        }}>
+                          <div>
+                            <span style={{ color: '#f8fafc', fontWeight: 500 }}>{st.title}</span>
+                            <span style={{ color: '#94a3b8', fontSize: '11px', marginLeft: '8px' }}>({st.targetRole})</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{
+                              fontSize: '10px',
+                              padding: '1px 6px',
+                              borderRadius: '3px',
+                              backgroundColor: st.status === 'COMPLETED' ? '#065f46' :
+                                st.status === 'WAITING_APPROVAL' ? '#78350f' :
+                                st.status === 'READY' ? '#1e3a8a' : '#1e293b',
+                              color: st.status === 'COMPLETED' ? '#6ee7b7' :
+                                st.status === 'WAITING_APPROVAL' ? '#fde68a' :
+                                st.status === 'READY' ? '#93c5fd' : '#94a3b8',
+                            }}>
+                              {st.status}
+                            </span>
+                            {st.checkpoint && st.checkpoint.status === 'PENDING' && (
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <button
+                                  onClick={() => decidePipelineCheckpointAction(pipe.id, st.id, 'GRANT')}
+                                  style={{ background: '#10b981', color: '#fff', border: 'none', borderRadius: '3px', padding: '2px 6px', fontSize: '10px', cursor: 'pointer' }}
+                                >
+                                  Aprovar
+                                </button>
+                                <button
+                                  onClick={() => decidePipelineCheckpointAction(pipe.id, st.id, 'REJECT')}
+                                  style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: '3px', padding: '2px 6px', fontSize: '10px', cursor: 'pointer' }}
+                                >
+                                  Rejeitar
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))}

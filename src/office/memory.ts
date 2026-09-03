@@ -147,6 +147,18 @@ import {
   type SkillProvenance,
   type SkillFilter,
 } from './skills.js';
+import {
+  defaultAutonomousPipelineEngine,
+  AutonomousPipelineEngine,
+  AdaptiveTaskFlowEngine,
+  type AutonomousPipeline,
+  type PipelineStep,
+  type PipelineStatus,
+  type StepStatus,
+  type PipelineCheckpoint,
+  type CheckpointType,
+  type CreatePipelineInput,
+} from './autonomous-pipeline.js';
 
 export {
   defaultMemoryGovernanceEngine,
@@ -273,6 +285,16 @@ export {
   type SkillStatus,
   type SkillProvenance,
   type SkillFilter,
+  defaultAutonomousPipelineEngine,
+  AutonomousPipelineEngine,
+  AdaptiveTaskFlowEngine,
+  type AutonomousPipeline,
+  type PipelineStep,
+  type PipelineStatus,
+  type StepStatus,
+  type PipelineCheckpoint,
+  type CheckpointType,
+  type CreatePipelineInput,
 };
 
 export type MemoryType =

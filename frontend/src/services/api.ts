@@ -233,3 +233,76 @@ export async function fetchSkillById(id: string): Promise<any> {
   const data = await res.json();
   return data.skill;
 }
+
+export async function createPipeline(input: {
+  title: string;
+  ceoObjective: string;
+  steps: any[];
+  project?: string;
+}): Promise<any> {
+  const res = await fetch(`${API_BASE}office/pipelines/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to create pipeline: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.pipeline;
+}
+
+export async function fetchPipelines(project?: string, status?: string): Promise<any[]> {
+  const params = new URLSearchParams();
+  if (project) params.set('project', project);
+  if (status) params.set('status', status);
+  const query = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`${API_BASE}office/pipelines${query}`);
+  if (!res.ok) throw new Error(`Failed to fetch pipelines: ${res.status}`);
+  if (!isJsonResponse(res)) throw new Error('Pipelines response not JSON');
+  const data = await res.json();
+  return (data.pipelines || []) as any[];
+}
+
+export async function fetchPipelineById(id: string): Promise<any> {
+  const res = await fetch(`${API_BASE}office/pipelines/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error(`Failed to fetch pipeline: ${res.status}`);
+  if (!isJsonResponse(res)) throw new Error('Pipeline response not JSON');
+  const data = await res.json();
+  return data.pipeline;
+}
+
+export async function tickPipeline(id: string): Promise<any> {
+  const res = await fetch(`${API_BASE}office/pipelines/${encodeURIComponent(id)}/tick`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to tick pipeline: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.pipeline;
+}
+
+export async function decidePipelineCheckpoint(
+  id: string,
+  stepId: string,
+  decision: 'GRANT' | 'REJECT',
+  decidedBy: string = 'CEO'
+): Promise<any> {
+  const res = await fetch(
+    `${API_BASE}office/pipelines/${encodeURIComponent(id)}/checkpoints/${encodeURIComponent(stepId)}/decide`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision, decidedBy }),
+    }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to decide checkpoint: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.pipeline;
+}

@@ -430,3 +430,76 @@ export interface SkillRecord {
     validatedBy?: string;
   };
 }
+
+export type PipelineStatus =
+  | 'PLANNING'
+  | 'RUNNING'
+  | 'PAUSED'
+  | 'WAITING_APPROVAL'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELLED';
+
+export type StepStatus =
+  | 'PENDING'
+  | 'WAITING_DEPENDENCY'
+  | 'WAITING_APPROVAL'
+  | 'READY'
+  | 'ASSIGNED'
+  | 'RUNNING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'SKIPPED';
+
+export type CheckpointType =
+  | 'SECURITY_AUDIT'
+  | 'SCHEMA_MIGRATION'
+  | 'ARCHITECTURE_GATE'
+  | 'PRODUCTION_DEPLOY'
+  | 'BUDGET_THRESHOLD';
+
+export interface PipelineCheckpoint {
+  id: string;
+  stepId: string;
+  type: CheckpointType;
+  title: string;
+  rationale: string;
+  requiresCEOApproval: true;
+  approvalId?: string;
+  status: 'PENDING' | 'GRANTED' | 'REJECTED';
+  createdAt: string;
+  decidedAt?: string;
+  decidedBy?: string;
+}
+
+export interface PipelineStep {
+  id: string;
+  title: string;
+  description: string;
+  targetRole: string;
+  assignedAgentId?: string;
+  requiredSkills: string[];
+  dependsOnStepIds: string[];
+  status: StepStatus;
+  taskId?: string;
+  checkpoint?: PipelineCheckpoint;
+  outputSummary?: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+export interface AutonomousPipeline {
+  id: string;
+  tenantId: string;
+  projectId: string;
+  title: string;
+  ceoObjective: string;
+  status: PipelineStatus;
+  steps: PipelineStep[];
+  totalSteps: number;
+  completedSteps: number;
+  currentStepId?: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}

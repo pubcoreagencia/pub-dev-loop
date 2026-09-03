@@ -15,7 +15,7 @@ import { defaultOfficeEventBus } from './office/events.js';
 import { defaultCodeReviewManager } from './office/review.js';
 import { defaultApprovalManager } from './office/approval.js';
 import { authenticateOfficeRequest } from './office/auth.js';
-import { defaultMemoryStore, defaultMemoryRetrievalEngine, defaultOrganizationalAwarenessEngine, defaultDailySkillEngine } from './office/memory.js';
+import { defaultMemoryStore, defaultMemoryRetrievalEngine, defaultOrganizationalAwarenessEngine, defaultDailySkillEngine, defaultAutonomousPipelineEngine } from './office/memory.js';
 
 export interface HyperdriveBinding {
   connectionString: string;
@@ -832,6 +832,146 @@ export default {
           return jsonResponse({ skill }, 200);
         } catch (err: any) {
           return jsonResponse({ error: err.message }, 500);
+        }
+      }
+
+      // POST /office/pipelines/create
+      if (method === 'POST' && path === '/office/pipelines/create') {
+        try {
+          let principal;
+          try {
+            principal = authenticateOfficeRequest(request.headers, env);
+          } catch (authErr: any) {
+            return jsonResponse({ error: authErr.message }, 401);
+          }
+
+          const body = (await request.json().catch(() => ({}))) as any;
+          const { title, ceoObjective, steps, project } = body;
+          if (!title || !ceoObjective || !steps) {
+            return jsonResponse({ error: 'title, ceoObjective, and steps are required' }, 400);
+          }
+
+          const tenantId = principal.tenantId || 'pub-dev-loop';
+          const projectId = project || 'pub-dev-loop';
+
+          const pipeline = defaultAutonomousPipelineEngine.createPipeline({
+            tenantId,
+            projectId,
+            title,
+            ceoObjective,
+            steps,
+          });
+
+          return jsonResponse({ pipeline }, 201);
+        } catch (err: any) {
+          return jsonResponse({ error: err.message }, 400);
+        }
+      }
+
+      // GET /office/pipelines
+      if (method === 'GET' && path === '/office/pipelines') {
+        try {
+          let principal;
+          try {
+            principal = authenticateOfficeRequest(request.headers, env);
+          } catch (authErr: any) {
+            return jsonResponse({ error: authErr.message }, 401);
+          }
+
+          const urlObj = new URL(request.url);
+          const project = urlObj.searchParams.get('project')?.trim() || undefined;
+          const status = (urlObj.searchParams.get('status')?.trim() as any) || undefined;
+          const tenantId = principal.tenantId || 'pub-dev-loop';
+
+          const pipelines = defaultAutonomousPipelineEngine.listPipelines({
+            tenantId,
+            projectId: project,
+            status,
+          });
+
+          return jsonResponse({ pipelines }, 200);
+        } catch (err: any) {
+          return jsonResponse({ error: err.message }, 500);
+        }
+      }
+
+      // GET /office/pipelines/:id
+      if (method === 'GET' && path.startsWith('/office/pipelines/') && !path.includes('/tick') && !path.includes('/checkpoints/')) {
+        try {
+          let principal;
+          try {
+            principal = authenticateOfficeRequest(request.headers, env);
+          } catch (authErr: any) {
+            return jsonResponse({ error: authErr.message }, 401);
+          }
+
+          const id = path.replace('/office/pipelines/', '').trim();
+          const tenantId = principal.tenantId || 'pub-dev-loop';
+
+          const pipeline = defaultAutonomousPipelineEngine.getPipeline(id, tenantId);
+          if (!pipeline) {
+            return jsonResponse({ error: `Pipeline '${id}' not found` }, 404);
+          }
+
+          return jsonResponse({ pipeline }, 200);
+        } catch (err: any) {
+          return jsonResponse({ error: err.message }, 500);
+        }
+      }
+
+      // POST /office/pipelines/:id/tick
+      if (method === 'POST' && path.startsWith('/office/pipelines/') && path.endsWith('/tick')) {
+        try {
+          let principal;
+          try {
+            principal = authenticateOfficeRequest(request.headers, env);
+          } catch (authErr: any) {
+            return jsonResponse({ error: authErr.message }, 401);
+          }
+
+          const id = path.replace('/office/pipelines/', '').replace('/tick', '').trim();
+          const tenantId = principal.tenantId || 'pub-dev-loop';
+
+          const pipeline = defaultAutonomousPipelineEngine.tickPipeline(id, tenantId);
+          return jsonResponse({ pipeline }, 200);
+        } catch (err: any) {
+          return jsonResponse({ error: err.message }, 400);
+        }
+      }
+
+      // POST /office/pipelines/:id/checkpoints/:stepId/decide
+      if (method === 'POST' && path.startsWith('/office/pipelines/') && path.includes('/checkpoints/') && path.endsWith('/decide')) {
+        try {
+          let principal;
+          try {
+            principal = authenticateOfficeRequest(request.headers, env);
+          } catch (authErr: any) {
+            return jsonResponse({ error: authErr.message }, 401);
+          }
+
+          const parts = path.split('/');
+          // path format: /office/pipelines/:id/checkpoints/:stepId/decide
+          const id = parts[3];
+          const stepId = parts[5];
+          const tenantId = principal.tenantId || 'pub-dev-loop';
+
+          const body = (await request.json().catch(() => ({}))) as any;
+          const { decision, decidedBy } = body;
+          if (!decision || !['GRANT', 'REJECT'].includes(decision)) {
+            return jsonResponse({ error: 'decision must be GRANT or REJECT' }, 400);
+          }
+
+          const pipeline = defaultAutonomousPipelineEngine.decideCheckpoint(
+            id,
+            stepId,
+            decision,
+            decidedBy || 'CEO',
+            tenantId
+          );
+
+          return jsonResponse({ pipeline }, 200);
+        } catch (err: any) {
+          return jsonResponse({ error: err.message }, 400);
         }
       }
 

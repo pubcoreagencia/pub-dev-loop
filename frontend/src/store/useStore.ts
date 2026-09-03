@@ -16,6 +16,7 @@ import type {
   CodeReviewFinding,
   OrganizationAwareness,
   SkillRecord,
+  AutonomousPipeline,
 } from '../types/office';
 import {
   fetchAgents,
@@ -29,6 +30,10 @@ import {
   fetchApprovals,
   fetchAwareness,
   fetchSkills,
+  createPipeline,
+  fetchPipelines,
+  tickPipeline,
+  decidePipelineCheckpoint,
 } from '../services/api';
 import {
   CEO_IDENTITY,
@@ -58,6 +63,8 @@ export interface OfficeState {
   activeProject: string;
   awareness?: OrganizationAwareness;
   skills: SkillRecord[];
+  pipelines: AutonomousPipeline[];
+  activePipeline?: AutonomousPipeline;
   isAwarenessPanelOpen: boolean;
   loading: boolean;
   actionLoading: boolean;
@@ -70,6 +77,10 @@ export interface OfficeState {
   loadData: () => Promise<void>;
   fetchAwarenessData: () => Promise<void>;
   fetchSkillsData: () => Promise<void>;
+  fetchPipelinesData: () => Promise<void>;
+  startAutonomousPipeline: (title: string, ceoObjective: string, steps: any[]) => Promise<AutonomousPipeline>;
+  triggerPipelineTick: (id: string) => Promise<void>;
+  decidePipelineCheckpointAction: (id: string, stepId: string, decision: 'GRANT' | 'REJECT') => Promise<void>;
   toggleAwarenessPanel: (open?: boolean) => void;
   selectAgent: (agent?: AgentDefinition | CeoIdentity) => void;
   selectTask: (task?: Task) => void;
@@ -163,6 +174,8 @@ export const useStore = create<OfficeState>((set, get) => ({
   activeProject: 'pub-dev-loop',
   awareness: undefined,
   skills: [],
+  pipelines: [],
+  activePipeline: undefined,
   isAwarenessPanelOpen: false,
   loading: false,
   actionLoading: false,
@@ -189,6 +202,82 @@ export const useStore = create<OfficeState>((set, get) => ({
       set({ skills });
     } catch {
       // Graceful fallback - never breaks office
+    }
+  },
+
+  fetchPipelinesData: async () => {
+    try {
+      const pipelines = await fetchPipelines(get().activeProject);
+      set({
+        pipelines,
+        activePipeline: pipelines.length > 0 ? (get().activePipeline || pipelines[0]) : undefined,
+      });
+    } catch {
+      // Graceful fallback - never breaks office
+    }
+  },
+
+  startAutonomousPipeline: async (title: string, ceoObjective: string, steps: any[]) => {
+    set({ actionLoading: true });
+    try {
+      const pipeline = await createPipeline({
+        title,
+        ceoObjective,
+        steps,
+        project: get().activeProject,
+      });
+      set((s) => ({
+        pipelines: [pipeline, ...s.pipelines],
+        activePipeline: pipeline,
+      }));
+      get().addMessage({
+        sender: 'CHIEF_OF_STAFF',
+        senderName: 'Chief of Staff',
+        senderRole: 'Orquestração & Autonomia',
+        content: `Iniciei o pipeline autônomo governado '${pipeline.title}' com ${pipeline.totalSteps} etapas orquestradas via DAG.`,
+        type: 'SYSTEM',
+      });
+      return pipeline;
+    } catch (err: any) {
+      set({ error: err.message });
+      throw err;
+    } finally {
+      set({ actionLoading: false });
+    }
+  },
+
+  triggerPipelineTick: async (id: string) => {
+    try {
+      const pipeline = await tickPipeline(id);
+      set((s) => ({
+        pipelines: s.pipelines.map((p) => (p.id === id ? pipeline : p)),
+        activePipeline: s.activePipeline?.id === id ? pipeline : s.activePipeline,
+      }));
+    } catch (err: any) {
+      set({ error: err.message });
+    }
+  },
+
+  decidePipelineCheckpointAction: async (id: string, stepId: string, decision: 'GRANT' | 'REJECT') => {
+    set({ actionLoading: true });
+    try {
+      const pipeline = await decidePipelineCheckpoint(id, stepId, decision, 'CEO');
+      set((s) => ({
+        pipelines: s.pipelines.map((p) => (p.id === id ? pipeline : p)),
+        activePipeline: s.activePipeline?.id === id ? pipeline : s.activePipeline,
+      }));
+      get().addMessage({
+        sender: 'CEO',
+        senderName: 'CEO',
+        senderRole: 'Comandante Soberano',
+        content: `Decisão de Checkpoint de Governança para etapa ${stepId}: ${decision === 'GRANT' ? 'AUTORIZADO ✅' : 'REJEITADO ❌'}`,
+        type: 'SYSTEM',
+      });
+    } catch (err: any) {
+      set({ error: err.message });
+      throw err;
+    } finally {
+      set({ actionLoading: false });
     }
   },
 
@@ -638,6 +727,7 @@ export const useStore = create<OfficeState>((set, get) => ({
       });
       void get().fetchAwarenessData();
       void get().fetchSkillsData();
+      void get().fetchPipelinesData();
     } catch (err: any) {
       set({ error: err.message });
     }
@@ -656,6 +746,7 @@ export const useStore = create<OfficeState>((set, get) => ({
     get().initStream();
     void get().fetchAwarenessData();
     void get().fetchSkillsData();
+    void get().fetchPipelinesData();
   },
 
   runCodeReview: async (taskId, planId, findings, testPassed, typecheckPassed, buildPassed) => {

@@ -20,7 +20,7 @@ import { defaultOfficeEventBus } from './office/events.js';
 import { defaultCodeReviewManager } from './office/review.js';
 import { defaultApprovalManager } from './office/approval.js';
 import { authenticateOfficeRequest } from './office/auth.js';
-import { defaultMemoryStore, defaultMemoryRetrievalEngine, defaultOrganizationalAwarenessEngine, defaultDailySkillEngine } from './office/memory.js';
+import { defaultMemoryStore, defaultMemoryRetrievalEngine, defaultOrganizationalAwarenessEngine, defaultDailySkillEngine, defaultAutonomousPipelineEngine } from './office/memory.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const prototypeEvents = new PrototypeEventStream();
@@ -363,6 +363,135 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
       return res.status(200).json({ skill });
     } catch (err: any) {
       return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/office/pipelines/create', async (req, res) => {
+    try {
+      let principal;
+      try {
+        principal = authenticateOfficeRequest(req.headers);
+      } catch (authErr: any) {
+        return res.status(401).json({ error: authErr.message });
+      }
+
+      const { title, ceoObjective, steps, project } = req.body ?? {};
+      if (!title || !ceoObjective || !steps) {
+        return res.status(400).json({ error: 'title, ceoObjective, and steps are required' });
+      }
+
+      const tenantId = principal.tenantId || 'pub-dev-loop';
+      const projectId = project || 'pub-dev-loop';
+
+      const pipeline = defaultAutonomousPipelineEngine.createPipeline({
+        tenantId,
+        projectId,
+        title,
+        ceoObjective,
+        steps,
+      });
+
+      return res.status(201).json({ pipeline });
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/office/pipelines', async (req, res) => {
+    try {
+      let principal;
+      try {
+        principal = authenticateOfficeRequest(req.headers);
+      } catch (authErr: any) {
+        return res.status(401).json({ error: authErr.message });
+      }
+
+      const project = typeof req.query.project === 'string' ? req.query.project.trim() : undefined;
+      const status = typeof req.query.status === 'string' ? (req.query.status.trim() as any) : undefined;
+      const tenantId = principal.tenantId || 'pub-dev-loop';
+
+      const pipelines = defaultAutonomousPipelineEngine.listPipelines({
+        tenantId,
+        projectId: project,
+        status,
+      });
+
+      return res.status(200).json({ pipelines });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/office/pipelines/:id', async (req, res) => {
+    try {
+      let principal;
+      try {
+        principal = authenticateOfficeRequest(req.headers);
+      } catch (authErr: any) {
+        return res.status(401).json({ error: authErr.message });
+      }
+
+      const id = req.params.id;
+      const tenantId = principal.tenantId || 'pub-dev-loop';
+
+      const pipeline = defaultAutonomousPipelineEngine.getPipeline(id, tenantId);
+      if (!pipeline) {
+        return res.status(404).json({ error: `Pipeline '${id}' not found` });
+      }
+
+      return res.status(200).json({ pipeline });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/office/pipelines/:id/tick', async (req, res) => {
+    try {
+      let principal;
+      try {
+        principal = authenticateOfficeRequest(req.headers);
+      } catch (authErr: any) {
+        return res.status(401).json({ error: authErr.message });
+      }
+
+      const id = req.params.id;
+      const tenantId = principal.tenantId || 'pub-dev-loop';
+
+      const pipeline = defaultAutonomousPipelineEngine.tickPipeline(id, tenantId);
+      return res.status(200).json({ pipeline });
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/office/pipelines/:id/checkpoints/:stepId/decide', async (req, res) => {
+    try {
+      let principal;
+      try {
+        principal = authenticateOfficeRequest(req.headers);
+      } catch (authErr: any) {
+        return res.status(401).json({ error: authErr.message });
+      }
+
+      const { decision, decidedBy } = req.body ?? {};
+      if (!decision || !['GRANT', 'REJECT'].includes(decision)) {
+        return res.status(400).json({ error: 'decision must be GRANT or REJECT' });
+      }
+
+      const { id, stepId } = req.params;
+      const tenantId = principal.tenantId || 'pub-dev-loop';
+
+      const pipeline = defaultAutonomousPipelineEngine.decideCheckpoint(
+        id,
+        stepId,
+        decision,
+        decidedBy || 'CEO',
+        tenantId
+      );
+
+      return res.status(200).json({ pipeline });
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
     }
   });
 
