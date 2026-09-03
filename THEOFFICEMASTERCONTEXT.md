@@ -3,7 +3,7 @@
 ## PUB DEV LOOP — The Office
 
 **Status:** Product vision / master context
-**Version:** 1.1
+**Version:** 1.2
 **Role:** Source of truth for the next evolution of PUB DEV LOOP product, UX, agent orchestration, model routing, memory, learning and virtual-office experience.
 
 ---
@@ -16,7 +16,7 @@ The core product metaphor is an **AI company operating as a living shared office
 
 Each AI agent is an employee with a specialty, desk, personality, responsibilities, memory and evolving skills. Agents collaborate, debate, delegate, execute projects, review work and learn from what happens.
 
-The human operator is the **CEO / decision maker**. The CEO does not micromanage ordinary execution. Agents autonomously move work forward and request human authorization only when a defined sensitivity or risk threshold is reached.
+The human operator is the **CEO / decision maker**. The CEO is also a visible participant in the office through a persistent CEO avatar. The CEO does not micromanage ordinary execution. Agents autonomously move work forward and request human authorization only when a defined sensitivity or risk threshold is reached.
 
 ### Core promise
 
@@ -48,7 +48,7 @@ to:
 
 ---
 
-## 3. CURRENT PROBLEM TO SOLVE
+## 3. CURRENT PRODUCT DIRECTION
 
 The existing dashboard is visually confusing, task-heavy and operationally dense. A conventional list of tasks does not communicate:
 
@@ -64,6 +64,12 @@ The existing dashboard is visually confusing, task-heavy and operationally dense
 The redesign transforms the mental model from **task dashboard** into **living AI workplace**.
 
 Task data remains available, but becomes a secondary operational layer rather than the main visual experience.
+
+### Current priority
+
+The immediate product evolution is to make **The Office** a real-time visual representation of the agent workforce rather than a static dashboard with decorative characters.
+
+The office must communicate real organizational activity: work, thinking, collaboration, conversations, delegation, waiting, approvals, meetings and project progress.
 
 ---
 
@@ -96,6 +102,15 @@ The office should be rich, atmospheric and alive while the interaction layer rem
 ### 4.9 Model independence
 An agent is not a model. The agent owns identity, memory, skills, permissions and relationships; the model is the cognitive engine selected to perform a role.
 
+### 4.10 Real-time truth
+Visual activity must be driven by actual runtime state and events whenever available. The renderer must not invent work, conversations or progress merely to make the office look busy.
+
+### 4.11 CEO presence
+The CEO is a first-class office actor, not merely an external controller. The CEO has a persistent avatar and can eventually move through the office, approach employees and participate spatially in conversations and meetings.
+
+### 4.12 Portuguese-first interface
+The entire user-facing Office experience must be in **Brazilian Portuguese (pt-BR)**. Internal identifiers, APIs and code may remain in English when appropriate, but visible labels, statuses, controls, empty states, system messages and interaction copy must not be inconsistently mixed with English.
+
 ---
 
 ## 5. THE OFFICE WORLD
@@ -106,11 +121,12 @@ The office is a shared virtual workplace inspired by:
 - vintage corporate interiors;
 - rock'n'roll culture of the era;
 - desks, CRT-era visual references, papers, coffee, posters and personal objects;
-- ensemble workplace-comedy energy without copying copyrighted characters, sets or exact assets.
+- ensemble workplace-comedy energy without copying copyrighted characters, sets or exact assets;
+- spatial virtual-office experiences such as Gather for avatar presence, movement, desks and social interaction.
 
-The aesthetic should feel authentic, warm, slightly imperfect and lived-in, not sterile or futuristic.
+The product may take **UX inspiration from Gather**, especially the sense of presence created by avatars, personal desks, spatial proximity and lightweight conversation. It must not copy Gather's proprietary assets, branding or exact visual implementation.
 
-The rendering technology may be 3D, 2.5D, isometric or hybrid. **The office metaphor is mandatory; literal rendering technology is not.**
+The rendering technology may be 3D, 2.5D, isometric or hybrid. **The office metaphor is mandatory; literal rendering technology is not.** The first implementation decision must be based on an audit of the renderer already present in the repository, not on an assumption that the project must use a new graphics engine.
 
 Visual direction:
 
@@ -121,7 +137,11 @@ Visual direction:
 - subtle ambient animation;
 - believable lighting and depth;
 - spatial department separation;
-- restrained UI overlays.
+- restrained UI overlays;
+- readable characters at normal desktop zoom;
+- speech bubbles that are legible without dominating the scene.
+
+The office should feel like a real workplace that happens to be operated by autonomous AI employees.
 
 ---
 
@@ -164,6 +184,8 @@ Visual direction:
 
 Departments and employees must be configurable. The orchestration engine must not hard-code the initial roster.
 
+Every employee should have a stable office identity and a configurable desk/location. Desk position must not be treated as merely decorative metadata: it is part of the visual identity of the employee and can later support spatial interaction.
+
 ---
 
 ## 7. AGENT MODEL
@@ -192,6 +214,8 @@ Minimum agent model:
 - `learningHistory`
 - `relationships`
 - `preferences`
+- `officePosition`
+- `avatarProfile`
 
 Agent states include:
 
@@ -209,6 +233,8 @@ Agent states include:
 - `blocked`
 
 The visual state must correspond to real runtime state whenever possible. Never animate an agent as working if the backend knows it is idle.
+
+The renderer should expose a mapping from runtime state to visual state/animation, but the backend remains the source of truth for whether work is actually occurring.
 
 ---
 
@@ -244,7 +270,7 @@ This prevents vendor/model lock-in and makes the workforce durable.
 
 For the current free-first phase, OpenRouter is the model access layer and the workforce uses **role-based model assignment**, not one model for every employee.
 
-OpenRouter currently lists NVIDIA Nemotron 3 Ultra as a free model with up to 1M context, tool calling and explicit suitability for long-running agentic workflows, orchestration, coding agents, deep research and complex tasks. urlOpenRouter — Nemotron 3 Ultra freehttps://openrouter.ai/nvidia/nemotron-3-ultra-550b-a55b:free
+OpenRouter currently lists NVIDIA Nemotron 3 Ultra as a free model with up to 1M context, tool calling and explicit suitability for long-running agentic workflows, orchestration, coding agents, deep research and complex tasks.
 
 ### 9.1 Chief of Staff / Orchestrator
 
@@ -265,8 +291,6 @@ Responsibilities:
 - synthesize results;
 - update project state;
 - trigger memory and learning.
-
-Nemotron 3 Ultra is the preferred free-first cognitive engine for this role because its published positioning directly targets reasoning, planning and agent orchestration. It also supports tool calling. citeturn0search10turn0search14
 
 ### 9.2 Engineering workforce
 
@@ -453,9 +477,212 @@ Chat distinguishes:
 
 Low-value internal chatter is summarized for the CEO while the full audit trail remains available.
 
+### 13.1 Chat-to-office event contract
+
+Every meaningful chat message should be representable as a first-class event that the Office renderer can consume.
+
+At minimum:
+
+```text
+MESSAGE_SENT
+MESSAGE_RECEIVED
+AGENT_STARTED_WORK
+AGENT_FINISHED_WORK
+AGENT_DELEGATED
+AGENT_RESPONDED
+AGENT_STATUS_CHANGED
+MEETING_STARTED
+MEETING_ENDED
+APPROVAL_REQUESTED
+APPROVAL_GRANTED
+APPROVAL_REJECTED
+```
+
+The visual layer must subscribe to these events without becoming responsible for orchestration logic.
+
 ---
 
-## 14. AUTOMATIC ALIGNMENT MEETING
+## 14. REAL-TIME OFFICE SIMULATION
+
+The Office is a **live visualization of organizational state**, not a pre-scripted animation.
+
+### 14.1 Runtime → visual pipeline
+
+```text
+Agent Runtime
+    ↓
+Runtime State / Events
+    ↓
+Office State Store
+    ↓
+Office Renderer
+    ↓
+Avatar State + Animation + Movement + Speech Bubble
+```
+
+The office should update in near real time when an agent changes state, receives work, sends a message, starts a meeting, delegates work or completes a meaningful action.
+
+### 14.2 Agent visual states
+
+At minimum the visual system should support:
+
+- idle — seated/available;
+- thinking — reasoning/considering;
+- working — actively executing work;
+- collaborating — interacting with another employee;
+- in meeting — participating in a meeting;
+- reviewing — inspecting another agent's work;
+- waiting for dependency — blocked on another employee/system;
+- waiting for approval — awaiting CEO authorization;
+- learning — processing a validated lesson/skill update;
+- celebrating — successful meaningful outcome;
+- blocked — execution cannot continue;
+- offline — unavailable.
+
+Visual animations must be subtle and informative. They must never imply an execution state that the runtime does not support.
+
+### 14.3 Conversations in the physical office
+
+When a meaningful message is sent by the CEO or an agent, a **speech/message bubble appears above the corresponding character**.
+
+Examples:
+
+```text
+CEO → Agent
+Agent → CEO
+Agent → Agent
+Agent → Department
+Agent → Project Team
+```
+
+The bubble should:
+
+- identify the speaker when necessary;
+- show concise message content;
+- appear near the character who sent it;
+- have a short, readable display lifetime;
+- avoid covering important UI or characters;
+- allow the full message to remain available in the chat/audit trail;
+- be driven by the real message event rather than scripted text.
+
+If several messages occur rapidly, the renderer should queue, collapse or summarize bubbles rather than creating visual noise.
+
+### 14.4 Agent-to-agent interaction
+
+The visual office must eventually represent real collaboration between agents.
+
+Conceptual flow:
+
+```text
+CEO objective
+    ↓
+Chief of Staff
+    ↓
+Developer
+    ↕
+Designer
+    ↕
+QA
+    ↓
+Project result
+```
+
+The physical representation may initially be lightweight (look/gesture/bubble/status) and later evolve into spatial movement between desks, meeting areas and departments.
+
+### 14.5 CEO avatar
+
+The CEO must have a persistent avatar with a dedicated position in the office.
+
+The CEO avatar should be visually distinguishable from AI employees while fitting the same world.
+
+The architecture must allow future capabilities such as:
+
+- keyboard/click movement;
+- camera following;
+- approaching an employee;
+- opening a direct conversation;
+- participating in meetings;
+- observing a workstation;
+- selecting/interacting with desks and rooms.
+
+The CEO avatar is part of the Office state model, not merely a decorative overlay.
+
+---
+
+## 15. CHARACTER / AVATAR SYSTEM
+
+Characters should be inspired by the **functional UX of virtual-office platforms such as Gather**: recognizable avatar identity, personal presence, spatial positioning, desk ownership and lightweight social interaction.
+
+Do not copy proprietary Gather assets or exact character designs.
+
+### Avatar requirements
+
+Each agent avatar should have:
+
+- stable identity;
+- role/personality visual cues;
+- configurable appearance;
+- persistent office position;
+- animation states mapped to runtime state;
+- speech bubble anchor point;
+- interaction target;
+- accessibility-friendly label/name.
+
+The visual system must support adding/removing/reassigning employees without requiring hard-coded character logic.
+
+### Character rendering decision
+
+Before introducing a new rendering engine, the implementation agent must audit the current repository and determine whether the existing renderer can support the desired experience.
+
+Preferred order:
+
+1. reuse existing renderer and architecture when viable;
+2. extend the existing renderer with the minimum necessary primitives;
+3. introduce a new graphics dependency only when justified by concrete limitations.
+
+The choice between 3D, 2.5D, isometric and hybrid must be evidence-based.
+
+---
+
+## 16. OFFICE STATE MODEL
+
+The frontend should have a normalized office state derived from durable backend state and live events.
+
+Conceptual model:
+
+```text
+OfficeState
+  ├── employees[]
+  ├── ceo
+  ├── departments[]
+  ├── rooms[]
+  ├── projects[]
+  ├── activeConversations[]
+  ├── speechBubbles[]
+  ├── meetings[]
+  ├── officeEvents[]
+  └── lastUpdated
+```
+
+An employee visual record may contain:
+
+```text
+employeeId
+position
+facing
+status
+currentProject
+currentTask
+activeConversation
+avatarProfile
+speechBubble
+```
+
+This state should be derived from the existing canonical agent/project/chat stores where possible rather than duplicated as a second source of truth.
+
+---
+
+## 17. AUTOMATIC ALIGNMENT MEETING
 
 A meaningful CEO objective triggers automatic organizational intake.
 
@@ -478,9 +705,11 @@ Every meeting creates a durable artifact containing:
 
 The meeting is not cosmetic. It is the organizational planning boundary before autonomous execution.
 
+The Office should eventually visualize active meetings as real spatial events rather than merely as text in the chat.
+
 ---
 
-## 15. PROJECTS ARE THE ORGANIZATIONAL UNIT
+## 18. PROJECTS ARE THE ORGANIZATIONAL UNIT
 
 Each project maintains:
 
@@ -501,9 +730,11 @@ Each project maintains:
 
 Tasks exist inside project context.
 
+The Office should make the active project visible without turning the entire screen into a task board.
+
 ---
 
-## 16. AUTONOMY MODEL
+## 19. AUTONOMY MODEL
 
 Agents may normally perform without approval:
 
@@ -540,7 +771,7 @@ Approval policy is configurable by project, agent, action, environment and risk.
 
 ---
 
-## 17. DECISION SYSTEM
+## 20. DECISION SYSTEM
 
 Agents should:
 
@@ -558,7 +789,7 @@ Disagreements should remain attributable and auditable. The Orchestrator is resp
 
 ---
 
-## 18. MEMORY ENGINE
+## 21. MEMORY ENGINE
 
 Memory classes:
 
@@ -584,7 +815,7 @@ The system should distinguish durable institutional knowledge from temporary con
 
 ---
 
-## 19. DAILY SKILL LEARNING
+## 22. DAILY SKILL LEARNING
 
 Work becomes organizational learning.
 
@@ -619,7 +850,7 @@ Goal: **organizational compounding**.
 
 ---
 
-## 20. MUSIC SYSTEM — THE OFFICE TURNTABLE
+## 23. MUSIC SYSTEM — THE OFFICE TURNTABLE
 
 The office has a shared virtual turntable.
 
@@ -632,533 +863,175 @@ CEO capabilities:
 
 Agents may have musical preferences and lightweight reactions. Reactions are ambient and non-blocking.
 
-The system may learn team favorites and contextual associations such as focus or celebration music.
-
-Audio remains subject to storage, access and copyright policies. The product must not imply licensing rights that do not exist.
+The system may learn team favorites and adapt ambient behavior without affecting execution logic.
 
 ---
 
-## 21. OFFICE PERSONALITY
+## 24. UI / LANGUAGE STANDARD
 
-The office should feel alive but never fake operational activity.
+The Office user experience is **pt-BR first**.
+
+Visible text must be translated consistently, including:
+
+- navigation;
+- buttons;
+- chat labels;
+- agent statuses;
+- project labels;
+- timeline labels;
+- empty states;
+- errors;
+- approval prompts;
+- system events;
+- tooltips;
+- accessibility labels;
+- onboarding/help copy.
 
 Examples:
 
-- agents ask one another questions;
-- specialists review work;
-- designers show drafts;
-- QA reports regressions;
-- finance comments on proposed spend;
-- agents react to milestones;
-- agents become idle or learning;
-- the Orchestrator calls meetings.
-
-Ambient behavior must originate from real state, relationships or permitted personality behavior.
-
----
-
-## 22. AGENT RELATIONSHIPS
-
-Relationships may represent actual collaboration:
-
-- frequent collaborators;
-- reviewer/reviewee;
-- mentor/learner;
-- dependency partners;
-- department colleagues.
-
-Relationships influence communication and collaboration routing but never override permissions or objective-based assignment.
-
----
-
-## 23. VISUAL TASK SYSTEM
-
-Tasks move into contextual views:
-
-- project timeline;
-- active work at desks;
-- task details when selecting an agent;
-- dependency visualization;
-- project war room;
-- compact status overlays;
-- filters/search.
-
-Default CEO question:
-
-> **What is everyone doing, what matters now, and do you need me?**
-
-Not:
-
-> **How many task cards are in each column?**
-
----
-
-## 24. CEO CONTROL SURFACE
-
-Minimal persistent controls:
-
-- project selector;
-- global chat;
-- new objective;
-- office map;
-- approvals;
-- alerts;
-- search;
-- memory/knowledge;
-- projects;
-- settings.
-
-Approval inbox exposes:
-
-- requested action;
-- requesting agent;
-- reason;
-- impact;
-- risk;
-- evidence/context;
-- approve/reject/modify.
-
----
-
-## 25. OBSERVABILITY WITHOUT NOISE
-
-Backend telemetry remains complete while frontend uses progressive disclosure.
-
-### Ambient
-Simple status and visual cues.
-
-### Project
-Objective, progress, active agents and blockers.
-
-### Agent
-Task, model, tools, dependencies, recent decisions.
-
-### Audit
-Full event history, execution logs, model selection, retries, validation and Git artifacts.
-
-The office UI is not the source of truth. **Durable backend state and event history are the source of truth.**
-
----
-
-## 26. EVENT-DRIVEN OFFICE
-
-Core events include:
-
-- `PROJECT_CREATED`
-- `OBJECTIVE_RECEIVED`
-- `MEETING_CREATED`
-- `AGENT_INVITED`
-- `TASK_ASSIGNED`
-- `TASK_STARTED`
-- `TASK_BLOCKED`
-- `AGENT_MESSAGE`
-- `DECISION_PROPOSED`
-- `DECISION_RECORDED`
-- `APPROVAL_REQUESTED`
-- `APPROVAL_GRANTED`
-- `APPROVAL_REJECTED`
-- `ARTIFACT_CREATED`
-- `REVIEW_REQUESTED`
-- `REVIEW_COMPLETED`
-- `TASK_COMPLETED`
-- `PROJECT_MILESTONE`
-- `PROJECT_COMPLETED`
-- `LEARNING_CAPTURED`
-- `SKILL_PROMOTED`
-- `MODEL_SELECTED`
-- `MODEL_FALLBACK`
-- `MODEL_ERROR`
-- `MUSIC_STARTED`
-- `MUSIC_CHANGED`
-
-Events must be attributable, durable and replayable where practical.
-
----
-
-## 27. MULTI-AGENT COLLABORATION
-
-Collaboration requires:
-
-- attributable messages;
-- clear ownership;
-- turn limits where appropriate;
-- dependency tracking;
-- escalation rules;
-- timeouts;
-- retries;
-- conflict resolution;
-- duplicate-work prevention;
-- context boundaries.
-
-Agents should not endlessly debate. The Orchestrator must enforce convergence and escalate meaningful uncertainty.
-
----
-
-## 28. QUALITY CONTROL
-
-A successful task requires verified outcome, not merely model output.
-
-Validation may include:
-
-- typecheck;
-- unit tests;
-- integration tests;
-- build;
-- lint;
-- browser validation;
-- API contract validation;
-- visual validation;
-- security checks;
-- Git diff inspection.
-
-Reviews and validation results become project evidence and learning input.
-
----
-
-## 29. GIT AND ARTIFACTS
-
-Git remains the engineering audit mechanism.
-
-The office should expose Git context only when useful:
-
-- branch;
-- commit;
-- changed files;
-- validation result;
-- review status;
-- merge readiness.
-
-Agents must never claim a commit, deployment, test or external action that did not actually occur.
-
----
-
-## 30. PROJECT HANDOFFS
-
-Every completed or paused work package should preserve:
-
-- completed work;
-- remaining work;
-- files/artifacts;
-- assumptions;
-- risks;
-- tests;
-- validation evidence;
-- next action.
-
-Handoffs must be structured enough for another agent to continue without reconstructing the entire history.
-
----
-
-## 31. FAILURE AND RECOVERY
-
-Failures are first-class organizational events.
-
-The system should:
-
-1. record the failure;
-2. classify it;
-3. determine whether retry is safe;
-4. retry with bounded policy when appropriate;
-5. consult another specialist/model when useful;
-6. preserve evidence;
-7. escalate meaningful blockers;
-8. capture reusable lessons.
-
-Repeated failures should influence model routing, skills and future planning.
-
----
-
-## 32. SECURITY AND TRUST
-
-Principles:
-
-- least privilege;
-- explicit tools;
-- project-scoped credentials;
-- environment separation;
-- approval gates;
-- auditability;
-- secret redaction;
-- provenance;
-- durable decisions;
-- no fabricated execution claims.
-
-**Important free-model rule:** confidential information, secrets, personal data and sensitive project material must not be sent to free endpoints unless the applicable privacy/data-processing policy explicitly permits it. OpenRouter's current Nemotron 3 Ultra free endpoint page explicitly warns users not to upload confidential or personal information and states that free-endpoint use is logged for security/improvement purposes. citeturn0search12
-
-Therefore the PDL must implement data classification before model routing.
-
-Conceptually:
-
 ```text
-PUBLIC / NON-SENSITIVE
-  → free models allowed
-
-INTERNAL
-  → free only if policy allows
-
-CONFIDENTIAL / PERSONAL / SECRETS
-  → restricted provider/model or local execution
+Office → Escritório
+Agents → Agentes / Funcionários
+Working → Trabalhando
+Thinking → Pensando
+Idle → Ocioso
+Reviewing → Revisando
+Collaborating → Colaborando
+Waiting for approval → Aguardando aprovação
+Projects → Projetos
+Activity → Atividade
+Timeline → Linha do tempo
+Send → Enviar
 ```
 
-This policy is mandatory before production autonomy.
+English may remain in code-level identifiers and technical metadata when that is the project's established convention.
 
 ---
 
-## 33. MODEL HEALTH AND FALLBACK
+## 25. IMPLEMENTATION RULES FOR THE OFFICE
 
-Free models are useful for prototyping and early validation but are rate-limited and availability can vary. OpenRouter documents a broad free-model roster and common free-model constraints. citeturn0search11turn0search16
+### 25.1 Audit before rewriting
+Before changing the rendering architecture, inspect:
 
-The PDL must therefore treat model availability as runtime state.
+- `THEOFFICEMASTERCONTEXT.md`;
+- frontend entry points;
+- `scenes/`;
+- `components/`;
+- `store/`;
+- chat implementation;
+- agent state implementation;
+- event/state synchronization;
+- existing graphics dependencies;
+- CSS/layout constraints;
+- current browser/runtime validation tooling.
 
-Fallback chain:
+### 25.2 Do not create fake activity
+No random “working” loops, fake conversations or fake progress should be presented as real agent activity.
 
-`Primary → validated fallback → alternate specialist → emergency router → human escalation`
+Ambient animations are allowed only when clearly decorative and must not be confused with execution state.
 
-Fallback must preserve:
+### 25.3 Keep the office and orchestration decoupled
+The renderer observes organizational state/events. It must not become the owner of agent orchestration, model routing, task execution or business rules.
 
-- agent identity;
-- project context;
-- task ownership;
-- tool permissions;
-- audit trail.
+### 25.4 Preserve existing execution infrastructure
+The Office evolution must not replace the proven queue/worker/provider/finalization foundation merely to achieve visual effects.
 
-Only the cognitive engine changes.
+### 25.5 Prefer incremental implementation
+The recommended sequence is:
 
-The system must record whether fallback was used and why.
+`Audit → Renderer Contract → Office State → CEO Avatar → Agent Avatars → Real-time Status → Chat Bubbles → Agent-to-Agent Events → Spatial Movement → Meetings/Rooms → Polish`
 
----
-
-## 34. TECHNICAL ARCHITECTURE DIRECTION
-
-The target architecture is:
-
-```text
-CEO / Office UI
-      ↓
-Global Office Chat
-      ↓
-Project Context
-      ↓
-Chief of Staff / Orchestrator
-      ↓
-Alignment Meeting + Planning
-      ↓
-Delegation / Dependency Graph
-      ↓
-Agent Runtime
-      ↓
-Model Registry + Model Router
-      ↓
-Tools / Repositories / APIs / Browsers / Execution
-      ↓
-Validation / Review / Finalization
-      ↓
-Project State + Audit Events
-      ↓
-Memory + Skill Learning
-      ↺
-```
-
-The existing PUB DEV LOOP queue/worker/provider foundation remains underneath this organizational layer.
-
-The 3D/2.5D office UI is a projection of state, not the state itself.
+### 25.6 Validate at real desktop resolutions
+The Office must be validated at multiple desktop resolutions and browser conditions. Layout changes must preserve the already-fixed CEO chat input behavior.
 
 ---
 
-## 35. MVP PHASES
+## 26. CURRENT P5.8 BASELINE
 
-### Phase A — Foundation
+The most recent completed Office hotfix is:
 
-- office shell;
-- agent registry;
-- project/team state;
-- global chat;
-- real backend task state;
-- model registry;
-- role-based model profiles.
+**P5.8 — THE OFFICE GLOBAL CHAT INPUT VISIBILITY**
 
-### Phase B — Orchestration
+Commit:
 
-- objective intake;
-- specialist selection;
-- automatic meetings;
-- decomposition;
-- assignment;
-- dependencies;
-- communication.
+`9633e70300cfadcd2e8307d51605576357542602`
 
-### Phase C — Autonomous execution
+The fix corrected Grid/Flex sizing so the CEO chat input remains visible across desktop resolutions.
 
-- workers;
-- permissions;
-- model routing;
-- tool execution;
-- validation;
-- handoffs;
-- recovery;
-- approval gates.
+Validated resolutions:
 
-### Phase D — Memory and learning
+- 1920×1080;
+- 1650×900;
+- 1366×768.
 
-- project memory;
-- agent memory;
-- organizational memory;
-- lesson extraction;
-- skill promotion;
-- model-performance learning.
+Validation included frontend/backend builds, typecheck, 178/178 tests and browser DOM measurements.
 
-### Phase E — Living Office
+The working tree was clean and `origin/main` matched HEAD at completion.
 
-- desks;
-- animations;
-- personalities;
-- relationships;
-- music/turntable;
-- environmental events;
-- customization.
-
-### Phase F — Advanced organization
-
-- dynamic hiring/specialist creation;
-- role evolution;
-- performance analytics;
-- knowledge graph;
-- adaptive orchestration;
-- model optimization by role and workload.
+**This baseline must be preserved while implementing the next Office evolution.**
 
 ---
 
-## 36. NON-GOALS
+## 27. CURRENT NEXT PHASE — LIVE VIRTUAL WORKFORCE
 
-The Office must not become:
+The next Office phase is not a generic visual redesign.
 
-- a decorative 3D screensaver;
-- a game that hides operational truth;
-- a Slack clone;
-- a Kanban board with avatars;
-- a collection of fake agents;
-- a system that asks approval for every tiny action;
-- an uncontrolled autonomous loop;
-- a model-dependent identity system.
+### Objective
 
----
+Transform the existing Office visualization into a **live virtual workplace where the CEO and AI employees visibly exist, work and communicate in real time**.
 
-## 37. SUCCESS CRITERIA
+### Required capabilities
 
-The CEO should quickly answer:
+1. Entire visible Office interface in pt-BR.
+2. Audit and reuse the existing renderer where technically viable.
+3. Persistent character for every configured agent.
+4. Persistent CEO character.
+5. Persistent desk/location for each employee.
+6. Runtime-driven employee states.
+7. Real-time synchronization between backend events and Office state.
+8. CEO chat messages represented visually above the CEO avatar.
+9. Agent messages represented visually above the sending agent.
+10. Agent-to-agent communication represented visually.
+11. Speech bubbles with sensible queuing/collapsing to avoid clutter.
+12. Future-ready movement and spatial interaction inspired by Gather's UX patterns.
+13. Office view remains the primary interface; operational panels remain secondary.
+14. No fake execution state.
+15. No unnecessary renderer rewrite without an audit and technical justification.
 
-- What projects are active?
-- What is the office working on?
-- Which agents are responsible?
-- What decisions were made?
-- What is blocked?
-- Does the office need me?
-- What did the organization learn?
-- Which model actually executed the work?
-- Was fallback required?
-- Was the result validated?
+### First engineering task
 
-The CEO should be able to initiate meaningful work using natural language without constructing a technical task graph manually.
+Before implementing the full experience, the implementation agent must perform a repository-level audit and return:
 
----
+- current renderer technology;
+- relevant renderer files;
+- current agent data model;
+- current office/scene model;
+- current chat/event flow;
+- current store architecture;
+- existing animation/character support;
+- existing dependencies that can be reused;
+- gaps between current implementation and this Master Context;
+- recommended implementation architecture;
+- incremental migration plan;
+- risks and compatibility concerns.
 
-## 38. THE OFFICE NORTH STAR
-
-The CEO opens the office.
-
-The CEO selects a project and states an objective.
-
-The Orchestrator acknowledges the objective, creates the alignment meeting, selects specialists and divides the work.
-
-Agents move to their desks, collaborate, execute, review and communicate.
-
-The CEO observes the organization without micromanaging it.
-
-A sensitive action triggers an approval request.
-
-The CEO approves, rejects or modifies it.
-
-Agents continue.
-
-The project reaches validation.
-
-The Orchestrator synthesizes the result.
-
-The organization records what it learned.
-
-The office returns to a calm working state, ready for the next objective.
+The audit should **not modify production code** unless explicitly instructed after the plan is approved.
 
 ---
 
-## 39. MASTER PRODUCT PRINCIPLE
+## 28. NON-NEGOTIABLE PRODUCT RULES
 
-> **The office is the body.**
->
-> **Agents are the employees.**
->
-> **The global chat is the communication system.**
->
-> **The Chief of Staff is the organizational brain.**
->
-> **Projects are the missions.**
->
-> **Memory is institutional knowledge.**
->
-> **Skills are accumulated capability.**
->
-> **Models are replaceable cognitive engines.**
->
-> **Git and execution logs are the audit trail.**
->
-> **The CEO is the human authority.**
->
-> **Music and personality give the workplace life.**
->
-> **The backend remains the source of truth.**
->
-> **The organization learns from every verified experience.**
-
----
-
-## 40. DECISION LOCK
-
-Every major product, UX or architecture decision should be evaluated by one question:
-
-> **Does this make PUB DEV LOOP more like a clear, trustworthy autonomous AI workplace, or does it merely add another dashboard feature?**
-
-If a feature increases visual complexity without increasing organizational clarity, autonomy, collaboration, memory, learning or trust, it should not be prioritized.
-
-If a feature strengthens the organization's ability to understand objectives, select the right specialists, execute work, verify outcomes and compound knowledge, it belongs in The Office.
-
----
-
-## 41. IMPLEMENTATION PRIORITY AFTER THIS CONTEXT
-
-The immediate engineering priority is **not** to build every visual detail at once.
-
-First establish the organizational contract:
-
-1. Agent Registry
-2. Project Context
-3. Model Registry
-4. Model Profile / Role Routing
-5. Global Office Chat
-6. Objective Intake
-7. Chief of Staff / Orchestrator
-8. Alignment Meeting artifact
-9. Task decomposition + dependencies
-10. Real agent execution state
-11. Approval gates
-12. Event/audit stream
-13. Memory hooks
-14. Skill-learning hooks
-15. Office visual projection
-16. Personality/music/ambient systems
-
-The office UI should grow on top of real state rather than inventing state first.
-
----
-
-## 42. FINAL RULE
-
-**Never optimize The Office to look intelligent. Optimize it to actually become an increasingly capable organization, then make that reality visible.**
+1. **The Office is the product experience, not decoration.**
+2. **Agents are employees, not interchangeable chat sessions.**
+3. **The CEO is a visible participant with an avatar.**
+4. **Runtime truth drives visual state.**
+5. **Meaningful messages create visible communication events.**
+6. **Agent-to-agent collaboration must be observable.**
+7. **The global chat remains the CEO command surface.**
+8. **Portuguese is the user-facing language.**
+9. **Gather is a UX inspiration, not an asset/source-code dependency.**
+10. **Do not rewrite the renderer before auditing what already exists.**
+11. **Do not fake agent activity.**
+12. **Do not compromise the proven execution/runtime foundation for visual effects.**
+13. **Every visual interaction must remain secondary to organizational truth and usability.**
+14. **The office should become more alive as the underlying workforce becomes more autonomous, not through artificial animation.**
