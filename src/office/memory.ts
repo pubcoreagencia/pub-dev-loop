@@ -83,6 +83,23 @@ import {
   type AgentDecisionContext,
   type RawDecisionInput,
 } from './decision-context.js';
+import {
+  defaultLearningFeedbackEngine,
+  LearningFeedbackEngine,
+  type ActionExecutionType,
+  type AgentAction,
+  type ExecutionStatus,
+  type ExecutionOutcome,
+  type ReviewStatus,
+  type ReviewOutcome,
+  type QAStatus,
+  type QAOutcome,
+  type EvaluationConfidence,
+  type OutcomeEvaluation,
+  type LearningFeedbackSignal,
+  type LearningFeedbackInput,
+  type LearningFeedbackResult,
+} from './learning-feedback.js';
 
 export {
   defaultMemoryGovernanceEngine,
@@ -153,6 +170,21 @@ export {
   type DecisionProvenance,
   type AgentDecisionContext,
   type RawDecisionInput,
+  defaultLearningFeedbackEngine,
+  LearningFeedbackEngine,
+  type ActionExecutionType,
+  type AgentAction,
+  type ExecutionStatus,
+  type ExecutionOutcome,
+  type ReviewStatus,
+  type ReviewOutcome,
+  type QAStatus,
+  type QAOutcome,
+  type EvaluationConfidence,
+  type OutcomeEvaluation,
+  type LearningFeedbackSignal,
+  type LearningFeedbackInput,
+  type LearningFeedbackResult,
 };
 
 export type MemoryType =
