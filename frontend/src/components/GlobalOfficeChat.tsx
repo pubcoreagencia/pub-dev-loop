@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { PlanViewer } from './PlanViewer';
 import { defaultWatercoolerEngine } from '../services/watercoolerEngine';
+import { defaultAiChatService, OFFICE_AGENTS_AI_PROFILES } from '../services/aiChatService';
 
 export const GlobalOfficeChat: React.FC = () => {
   const {
@@ -10,13 +11,16 @@ export const GlobalOfficeChat: React.FC = () => {
     submitObjective,
     actionLoading,
     pendingApprovals,
-    decideCeoApproval,
     triggerSpeechBubble,
     selectedAgent,
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<'COMMAND' | 'WATERCOOLER'>('COMMAND');
   const [inputText, setInputText] = useState('');
+  const [isAiConfigOpen, setIsAiConfigOpen] = useState(false);
+  const [aiKeyInput, setAiKeyInput] = useState(defaultAiChatService.getApiKey());
+  const [selectedModel, setSelectedModel] = useState(defaultAiChatService.getModel());
+  const [isAiResponding, setIsAiResponding] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -25,11 +29,18 @@ export const GlobalOfficeChat: React.FC = () => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, actionLoading, pendingApprovals, activeTab]);
+  }, [messages, actionLoading, pendingApprovals, activeTab, isAiResponding]);
+
+  const handleSaveAiConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    defaultAiChatService.setApiKey(aiKeyInput);
+    defaultAiChatService.setModel(selectedModel);
+    setIsAiConfigOpen(false);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim() || actionLoading) return;
+    if (!inputText.trim() || actionLoading || isAiResponding) return;
     const text = inputText.trim();
     setInputText('');
 
@@ -46,27 +57,73 @@ export const GlobalOfficeChat: React.FC = () => {
         type: 'TEXT',
       });
 
-      // Dispara thread multi-agente autêntica com respostas em cascata
-      const replies = defaultWatercoolerEngine.generateMultiAgentReaction(text, selectedAgent?.id);
-      replies.forEach((reply) => {
-        setTimeout(() => {
-          addMessage({
-            sender: reply.speakerId.toUpperCase().replace(/-/g, '_') as any,
-            senderName: reply.senderName,
-            senderRole: reply.senderRole,
-            content: reply.content,
-            type: 'TEXT',
-          });
+      // SE GROK / OPENROUTER ESTIVER CONFIGURADO, USA LLM REAL!
+      if (defaultAiChatService.isConfigured()) {
+        setIsAiResponding(true);
+        const agentKeys = selectedAgent && selectedAgent.id !== 'ceo'
+          ? [selectedAgent.id]
+          : ['developer', 'architect', 'reviewer', 'qa-engineer', 'chief-of-staff'];
 
-          triggerSpeechBubble({
-            senderId: reply.speakerId,
-            senderName: reply.senderName,
-            content: reply.content.slice(0, 55) + (reply.content.length > 55 ? '...' : ''),
-            durationMs: 7000,
-            type: 'TASK',
-          });
-        }, reply.delayMs || 600);
-      });
+        for (let i = 0; i < agentKeys.length; i++) {
+          const agentId = agentKeys[i];
+          const profile = OFFICE_AGENTS_AI_PROFILES[agentId];
+          if (!profile) continue;
+
+          try {
+            const aiContent = await defaultAiChatService.callLlmForAgent(agentId, text);
+            addMessage({
+              sender: agentId.toUpperCase().replace(/-/g, '_') as any,
+              senderName: profile.name,
+              senderRole: profile.role,
+              content: aiContent,
+              type: 'TEXT',
+            });
+            triggerSpeechBubble({
+              senderId: agentId,
+              senderName: profile.name,
+              content: aiContent.slice(0, 60) + (aiContent.length > 60 ? '...' : ''),
+              durationMs: 7000,
+              type: 'TASK',
+            });
+          } catch (err: any) {
+            console.error(`AI error for ${agentId}:`, err);
+            // Fallback para o motor consciente
+            const fallbackReplies = defaultWatercoolerEngine.generateMultiAgentReaction(text, agentId);
+            if (fallbackReplies[0]) {
+              addMessage({
+                sender: agentId.toUpperCase().replace(/-/g, '_') as any,
+                senderName: profile.name,
+                senderRole: profile.role,
+                content: fallbackReplies[0].content,
+                type: 'TEXT',
+              });
+            }
+          }
+        }
+        setIsAiResponding(false);
+      } else {
+        // Dispara thread multi-agente consciente com respostas em cascata
+        const replies = defaultWatercoolerEngine.generateMultiAgentReaction(text, selectedAgent?.id);
+        replies.forEach((reply) => {
+          setTimeout(() => {
+            addMessage({
+              sender: reply.speakerId.toUpperCase().replace(/-/g, '_') as any,
+              senderName: reply.senderName,
+              senderRole: reply.senderRole,
+              content: reply.content,
+              type: 'TEXT',
+            });
+
+            triggerSpeechBubble({
+              senderId: reply.speakerId,
+              senderName: reply.senderName,
+              content: reply.content.slice(0, 55) + (reply.content.length > 55 ? '...' : ''),
+              durationMs: 7000,
+              type: 'TASK',
+            });
+          }, reply.delayMs || 600);
+        });
+      }
     }
   };
 
@@ -101,9 +158,9 @@ export const GlobalOfficeChat: React.FC = () => {
 
   return (
     <div className="office-chat-container">
-      {/* CABEÇALHO COM ABAS DE NAVEGAÇÃO */}
+      {/* CABEÇALHO COM ABAS E BOTÃO GROK AI */}
       <div className="chat-header">
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <button
             onClick={() => setActiveTab('COMMAND')}
             style={{
@@ -138,94 +195,177 @@ export const GlobalOfficeChat: React.FC = () => {
               gap: '6px',
             }}
           >
-            <span>☕</span> CORREDOR &amp; WATERCOOLER
+            <span>☕</span> WATERCOOLER
           </button>
         </div>
 
-        {activeTab === 'WATERCOOLER' ? (
-          <button
-            onClick={handleTriggerWatercoolerDialogue}
-            style={{
-              background: 'linear-gradient(135deg, #d97706, #b45309)',
-              border: 'none',
-              borderRadius: '4px',
-              color: '#fff',
-              padding: '4px 10px',
-              fontSize: '11px',
-              cursor: 'pointer',
-              fontWeight: 600,
-            }}
-          >
-            🎲 Puxar Conversa no Café
-          </button>
-        ) : (
-          <div className="chat-status-pill">
-            LINHA DIRETA • CHIEF OF STAFF
-          </div>
-        )}
+        {/* BOTÃO DE CONFIGURAÇÃO DE GROK / IA */}
+        <button
+          onClick={() => setIsAiConfigOpen(!isAiConfigOpen)}
+          title="Configurar Provedor de IA (Grok / OpenRouter)"
+          style={{
+            background: defaultAiChatService.isConfigured() ? 'rgba(34, 197, 94, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+            border: `1px solid ${defaultAiChatService.isConfigured() ? '#22c55e' : '#f59e0b'}`,
+            borderRadius: '6px',
+            padding: '3px 8px',
+            color: defaultAiChatService.isConfigured() ? '#22c55e' : '#f59e0b',
+            fontSize: '11px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+          }}
+        >
+          <span>⚡</span> {defaultAiChatService.isConfigured() ? 'Grok AI Ativo' : 'Conectar Grok'}
+        </button>
       </div>
 
-      {/* ÁREA DE HISTÓRICO DE MENSAGENS */}
-      <div className="chat-messages-area">
-        {messages.map((msg) => (
+      {/* MODAL / POPOVER DE CONFIGURAÇÃO DO GROK / OPENROUTER */}
+      {isAiConfigOpen && (
+        <div
+          style={{
+            background: '#090d16',
+            border: '1.5px solid #38bdf8',
+            borderRadius: '8px',
+            padding: '12px',
+            margin: '8px 12px',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.8)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: '#38bdf8' }}>
+              🤖 Provedor de Conversação IA (Grok / xAI / OpenRouter)
+            </span>
+            <button
+              onClick={() => setIsAiConfigOpen(false)}
+              style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+            >
+              ✕
+            </button>
+          </div>
+          <form onSubmit={handleSaveAiConfig} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div>
+              <label style={{ fontSize: '10px', color: '#94a3b8' }}>Chave API (OpenRouter ou xAI):</label>
+              <input
+                type="password"
+                placeholder="sk-or-v1-... ou sua chave de IA"
+                value={aiKeyInput}
+                onChange={(e) => setAiKeyInput(e.target.value)}
+                style={{
+                  width: '100%',
+                  background: '#1e293b',
+                  border: '1px solid #475569',
+                  borderRadius: '4px',
+                  color: '#f8fafc',
+                  padding: '5px 8px',
+                  fontSize: '11px',
+                  marginTop: '2px',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: '10px', color: '#94a3b8' }}>Modelo de Conversação:</label>
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                style={{
+                  width: '100%',
+                  background: '#1e293b',
+                  border: '1px solid #475569',
+                  borderRadius: '4px',
+                  color: '#f8fafc',
+                  padding: '5px 8px',
+                  fontSize: '11px',
+                  marginTop: '2px',
+                  boxSizing: 'border-box',
+                }}
+              >
+                <option value="x-ai/grok-2-1212">x-ai/grok-2-1212 (Grok Oficial)</option>
+                <option value="x-ai/grok-beta">x-ai/grok-beta</option>
+                <option value="google/gemini-2.0-flash-exp:free">Google Gemini 2.0 Flash (Free)</option>
+                <option value="meta-llama/llama-3.3-70b-instruct:free">Meta Llama 3.3 70B (Free)</option>
+                <option value="mistralai/mistral-small-24b-instruct-2501:free">Mistral Small 24B (Free)</option>
+              </select>
+            </div>
+            <button
+              type="submit"
+              style={{
+                background: '#0284c7',
+                border: 'none',
+                borderRadius: '4px',
+                color: '#fff',
+                padding: '6px',
+                fontSize: '11px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                marginTop: '4px',
+              }}
+            >
+              Salvar Configuração de IA
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* ÁREA DE MENSAGENS */}
+      <div className="chat-messages">
+        {activeTab === 'WATERCOOLER' && (
           <div
-            key={msg.id}
-            className={`chat-bubble-row ${msg.sender.toLowerCase()}`}
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '6px 12px',
+              background: 'rgba(245, 158, 11, 0.1)',
+              borderBottom: '1px solid rgba(245, 158, 11, 0.2)',
+              fontSize: '11px',
+              color: '#f59e0b',
+            }}
           >
-            <div className="chat-bubble-wrapper">
-              <div className="chat-sender-header">
-                <span className="sender-tag">{msg.senderName}</span>
-                {msg.senderRole && (
-                  <span className="sender-role">({msg.senderRole})</span>
-                )}
-                <span className="msg-timestamp">{msg.timestamp}</span>
-              </div>
+            <span>💬 Conversa de Corredor &amp; Humor Negro</span>
+            <button
+              onClick={handleTriggerWatercoolerDialogue}
+              style={{
+                background: 'transparent',
+                border: '1px solid #f59e0b',
+                color: '#f59e0b',
+                borderRadius: '4px',
+                padding: '2px 8px',
+                fontSize: '10px',
+                cursor: 'pointer',
+                fontWeight: 600,
+              }}
+            >
+              Fofoca no Café ☕
+            </button>
+          </div>
+        )}
 
-              <div className="chat-bubble-content">{msg.content}</div>
-
-              {msg.plan && (
-                <div className="plan-attachment-container">
-                  <PlanViewer plan={msg.plan} />
-                </div>
-              )}
+        {messages.map((msg) => (
+          <div key={msg.id} className={`chat-message-item ${msg.sender.toLowerCase()}`}>
+            <div className="message-header">
+              <span className="sender-name">{msg.senderName || msg.sender}</span>
+              {msg.senderRole && <span className="sender-role">{msg.senderRole}</span>}
+              <span className="message-time">{msg.timestamp}</span>
             </div>
+            <div className="message-body">{msg.content}</div>
+
+            {msg.plan && <PlanViewer plan={msg.plan} />}
           </div>
         ))}
 
-        {/* CARDS DE APROVAÇÃO PENDENTE DO CEO */}
-        {pendingApprovals.map((appr) => (
-          <div className="chat-bubble-row approval-request-row" key={appr.id}>
-            <div className="approval-card-box">
-              <div className="approval-card-header">
-                <span className="approval-badge">👑 DECISÃO ESTRATÉGICA DO CEO</span>
-                <span className="approval-type-tag">{appr.type}</span>
-              </div>
-              <h4 className="approval-title">{appr.title}</h4>
-              <p className="approval-rationale">{appr.rationale}</p>
-              <div className="approval-actions-row">
-                <button
-                  type="button"
-                  className="btn-approve-action"
-                  onClick={() => decideCeoApproval(appr.id, 'GRANT', 'Aprovado pelo CEO')}
-                >
-                  ✓ APROVAR DIRETRIZ
-                </button>
-                <button
-                  type="button"
-                  className="btn-reject-action"
-                  onClick={() => decideCeoApproval(appr.id, 'REJECT', 'Rejeitado pelo CEO')}
-                >
-                  ✕ REJEITAR
-                </button>
-              </div>
-            </div>
+        {isAiResponding && (
+          <div style={{ padding: '8px 12px', fontSize: '11px', color: '#38bdf8', fontStyle: 'italic' }}>
+            ⚡ Os especialistas do escritório estão pensando com IA...
           </div>
-        ))}
+        )}
 
         {actionLoading && (
-          <div className="chat-bubble-row chief_of_staff">
-            <div className="chat-bubble-wrapper thinking-bubble">
-              <span className="thinking-dots">🧠 Dr. Arthur Vance formulando plano e alocando especialistas...</span>
+          <div className="chat-message-item system loading">
+            <div className="message-body">
+              <span>⚡ O Chief of Staff e os Especialistas estão deliberando...</span>
             </div>
           </div>
         )}
@@ -233,47 +373,27 @@ export const GlobalOfficeChat: React.FC = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* BARRA DE ENTRADA DO CEO */}
-      <form onSubmit={handleSubmit} className="chat-input-bar">
-        <span className="input-prompt-label">CEO &gt;</span>
+      {/* ÁREA DE SUBMISSÃO / INPUT */}
+      <form onSubmit={handleSubmit} className="chat-input-form">
         <input
           type="text"
-          className="chat-text-input"
           placeholder={
             activeTab === 'COMMAND'
-              ? 'Envie um objetivo estratégico para o escritório (ex: Implementar tela de checkout)...'
-              : selectedAgent
-              ? `Fale diretamente com ${selectedAgent.name} (ou faça uma piada de café)...`
-              : 'Converse livremente com a equipe no corredor (ou selecione um agente na mesa)...'
+              ? 'Defina a diretriz para a equipe autônoma...'
+              : 'Fale qualquer coisa com o escritório (humor negro, perguntas, piadas)...'
           }
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          disabled={actionLoading}
+          disabled={actionLoading || isAiResponding}
         />
         <button
           type="submit"
-          className={activeTab === 'COMMAND' ? 'btn-dispatch-objective' : 'btn-watercooler-send'}
-          style={
-            activeTab === 'WATERCOOLER'
-              ? {
-                  background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                  color: '#000',
-                  fontWeight: 700,
-                  border: 'none',
-                  borderRadius: '4px',
-                  padding: '0 16px',
-                  cursor: 'pointer',
-                  fontSize: '11px',
-                }
-              : undefined
-          }
-          disabled={actionLoading || !inputText.trim()}
+          disabled={actionLoading || isAiResponding || !inputText.trim()}
+          style={{
+            background: activeTab === 'COMMAND' ? '#0284c7' : '#d97706',
+          }}
         >
-          {actionLoading
-            ? 'PLANEJANDO...'
-            : activeTab === 'COMMAND'
-            ? 'DESPACHAR OBJETIVO'
-            : 'FALAR COM TIME'}
+          {actionLoading || isAiResponding ? '...' : activeTab === 'COMMAND' ? 'DESPACHAR' : 'FALAR'}
         </button>
       </form>
     </div>

@@ -3,41 +3,65 @@ import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 
-// 1. Chão Corporativo e Piso Cerâmico da Cafeteria
+// 1. Chão Corporativo e Pisos/Tapetes Ricos em Detalhes
 export const OfficeFloor: React.FC = () => {
   return (
     <group>
-      {/* Piso Geral de Concreto Polido / Carpete Corporativo Escuro */}
+      {/* 1.1 Piso Principal de Madeira Nobre Aconchegante (Warm Oak Hardwood) */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
-        <planeGeometry args={[42, 32]} />
-        <meshStandardMaterial color="#0b0f19" roughness={0.7} metalness={0.2} />
+        <planeGeometry args={[44, 34]} />
+        <meshStandardMaterial
+          color="#382216"
+          roughness={0.45}
+          metalness={0.15}
+        />
       </mesh>
 
-      {/* Grid de Linhas Sutis */}
-      <gridHelper args={[42, 42, '#1e293b', '#111827']} position={[0, 0.001, 0]} />
+      {/* Grid de Tábuas de Madeira */}
+      <gridHelper args={[44, 44, '#4a2e1f', '#2c180e']} position={[0, 0.002, 0]} />
 
-      {/* Carpete Executivo do Gabinete do CEO */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, -8]} receiveShadow>
-        <planeGeometry args={[14, 9]} />
-        <meshStandardMaterial color="#1e1b4b" roughness={0.9} />
-      </mesh>
+      {/* 1.2 Tapete Executivo Azul-Marinho do Gabinete do CEO (com Borda Dourada) */}
+      <group position={[0, 0.015, -7.5]}>
+        {/* Borda Dourada Externa */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+          <planeGeometry args={[14.2, 9.2]} />
+          <meshStandardMaterial color="#f59e0b" roughness={0.6} metalness={0.4} />
+        </mesh>
+        {/* Corpo Azul-Marinho */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0.002]} receiveShadow>
+          <planeGeometry args={[13.6, 8.6]} />
+          <meshStandardMaterial color="#1e3a8a" roughness={0.9} />
+        </mesh>
+      </group>
 
-      {/* Piso da Cafeteria / Breakroom Dunder Mifflin (Ladrilho Claro) */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[12, 0.015, 0]} receiveShadow>
-        <planeGeometry args={[10, 12]} />
-        <meshStandardMaterial color="#1f2937" roughness={0.4} metalness={0.1} />
-      </mesh>
+      {/* 1.3 Tapete Persa / Vinho Vintage no Lounge do Toca-Discos */}
+      <group position={[-12, 0.015, 0]}>
+        {/* Borda Dourada Externa */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+          <planeGeometry args={[9.4, 9.4]} />
+          <meshStandardMaterial color="#d97706" roughness={0.6} metalness={0.3} />
+        </mesh>
+        {/* Centro Vermelho Rubi / Borgonha Texturizado */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0.002]} receiveShadow>
+          <planeGeometry args={[8.8, 8.8]} />
+          <meshStandardMaterial color="#881337" roughness={0.88} />
+        </mesh>
+      </group>
 
-      {/* Carpete Aconchegante do Lounge do Toca-Discos */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-12, 0.015, 0]} receiveShadow>
-        <planeGeometry args={[9, 9]} />
-        <meshStandardMaterial color="#31102b" roughness={0.9} />
-      </mesh>
+      {/* 1.4 Piso Cerâmico Quadriculado da Cafeteria / Breakroom Dunder Mifflin */}
+      <group position={[12, 0.015, 0]}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+          <planeGeometry args={[11, 13]} />
+          <meshStandardMaterial color="#e2e8f0" roughness={0.3} metalness={0.1} />
+        </mesh>
+        {/* Grid dos Azulejos */}
+        <gridHelper args={[11, 11, '#94a3b8', '#cbd5e1']} position={[0, 0.005, 0]} />
+      </group>
     </group>
   );
 };
 
-// 2. Paredes, Persianas Verticais de Escritório e Letreiro Neon
+// 2. Paredes com Painéis Ripados de Madeira, Persianas e Quadros
 export const OfficeWalls: React.FC = () => {
   const neonRef = useRef<THREE.Mesh>(null);
 
@@ -51,40 +75,80 @@ export const OfficeWalls: React.FC = () => {
     }
   });
 
-  // Geração das Persianas Verticais (Vertical Blinds estilo The Office)
+  // Painéis Ripados de Madeira Vertical (Acoustic Slat Wood Wall) atrás do CEO
+  const woodSlats = [];
+  for (let x = -13; x <= 13; x += 0.45) {
+    woodSlats.push(
+      <mesh key={`slat-${x}`} position={[x, 3.2, -14.65]} castShadow>
+        <boxGeometry args={[0.22, 6.2, 0.06]} />
+        <meshStandardMaterial color="#5c3826" roughness={0.5} />
+      </mesh>
+    );
+  }
+
+  // Persianas Verticais (Vertical Blinds) ao longo de todas as janelas
   const blindSlats = [];
-  for (let z = -14; z <= 14; z += 0.85) {
+  for (let z = -14; z <= 14; z += 0.8) {
     blindSlats.push(
-      <mesh key={`blind-${z}`} position={[19.6, 3, z]} rotation={[0, 0.35, 0]} castShadow>
-        <boxGeometry args={[0.02, 4.8, 0.22]} />
-        <meshStandardMaterial color="#cbd5e1" roughness={0.5} />
+      <mesh key={`blind-${z}`} position={[20.6, 3.2, z]} rotation={[0, 0.35, 0]} castShadow>
+        <boxGeometry args={[0.02, 5.2, 0.22]} />
+        <meshStandardMaterial color="#f1f5f9" roughness={0.4} />
       </mesh>
     );
   }
 
   return (
     <group>
-      {/* Parede Norte (Atrás do Gabinete do CEO) */}
+      {/* Parede Norte Principal */}
       <mesh position={[0, 3.2, -15]} receiveShadow>
-        <boxGeometry args={[42, 6.4, 0.5]} />
-        <meshStandardMaterial color="#090d16" roughness={0.8} />
+        <boxGeometry args={[44, 6.4, 0.6]} />
+        <meshStandardMaterial color="#0f172a" roughness={0.9} />
       </mesh>
 
+      {/* Painéis Ripados de Madeira Acústica */}
+      {woodSlats}
+
       {/* Letreiro Neon Holográfico PUB DEV LOOP */}
-      <mesh ref={neonRef} position={[0, 5.0, -14.7]}>
-        <planeGeometry args={[12, 1.4]} />
+      <mesh ref={neonRef} position={[0, 5.2, -14.5]}>
+        <planeGeometry args={[13, 1.4]} />
         <meshBasicMaterial color="#38bdf8" transparent opacity={0.9} />
       </mesh>
 
-      {/* Parede Oeste (Atrás do Lounge) */}
-      <mesh position={[-20.5, 3.2, 0]} receiveShadow>
-        <boxGeometry args={[0.5, 6.4, 32]} />
-        <meshStandardMaterial color="#090d16" roughness={0.8} />
+      {/* Quadro Motivacional The Office 1 */}
+      <group position={[-6, 4.2, -14.55]}>
+        <mesh castShadow>
+          <boxGeometry args={[2.2, 1.4, 0.05]} />
+          <meshStandardMaterial color="#1e293b" />
+        </mesh>
+        <Html position={[0, 0, 0.04]} center distanceFactor={14}>
+          <div style={{ background: '#020617', border: '1px solid #f59e0b', color: '#f8fafc', padding: '6px 10px', fontSize: '10px', fontWeight: 800, textAlign: 'center', whiteSpace: 'nowrap' }}>
+            DUNDER MIFFLIN / PUB DEV LOOP<br/><span style={{ color: '#f59e0b', fontSize: '8px' }}>"IN CODE WE TRUST"</span>
+          </div>
+        </Html>
+      </group>
+
+      {/* Quadro Motivacional The Office 2 */}
+      <group position={[6, 4.2, -14.55]}>
+        <mesh castShadow>
+          <boxGeometry args={[2.2, 1.4, 0.05]} />
+          <meshStandardMaterial color="#1e293b" />
+        </mesh>
+        <Html position={[0, 0, 0.04]} center distanceFactor={14}>
+          <div style={{ background: '#020617', border: '1px solid #38bdf8', color: '#f8fafc', padding: '6px 10px', fontSize: '10px', fontWeight: 800, textAlign: 'center', whiteSpace: 'nowrap' }}>
+            SOVEREIGN ARCHITECTURE<br/><span style={{ color: '#38bdf8', fontSize: '8px' }}>"ZERO ANY IN TYPESCRIPT"</span>
+          </div>
+        </Html>
+      </group>
+
+      {/* Parede Oeste (Lounge) */}
+      <mesh position={[-21.5, 3.2, 0]} receiveShadow>
+        <boxGeometry args={[0.6, 6.4, 34]} />
+        <meshStandardMaterial color="#0f172a" roughness={0.9} />
       </mesh>
 
-      {/* Janelas de Vidro Leste */}
-      <mesh position={[20, 3.2, 0]}>
-        <boxGeometry args={[0.2, 6, 30]} />
+      {/* Janelas de Vidro Leste com Persianas */}
+      <mesh position={[21, 3.2, 0]}>
+        <boxGeometry args={[0.2, 6, 32]} />
         <meshPhysicalMaterial
           color="#38bdf8"
           transmission={0.8}
@@ -94,19 +158,11 @@ export const OfficeWalls: React.FC = () => {
           metalness={0.1}
         />
       </mesh>
-
-      {/* Persianas Verticais de Escritório Reais */}
       {blindSlats}
 
-      {/* Trilho Superior das Persianas */}
-      <mesh position={[19.6, 5.5, 0]}>
-        <boxGeometry args={[0.1, 0.1, 29]} />
-        <meshStandardMaterial color="#64748b" metalness={0.8} />
-      </mesh>
-
-      {/* Divisória de Vidro com Caixilhos do Gabinete do CEO */}
-      <mesh position={[0, 2.2, -4]}>
-        <boxGeometry args={[28, 4.4, 0.08]} />
+      {/* Divisória de Vidro com Molduras do Gabinete do CEO */}
+      <mesh position={[0, 2.2, -3.5]}>
+        <boxGeometry args={[30, 4.4, 0.08]} />
         <meshPhysicalMaterial
           color="#94a3b8"
           transmission={0.88}
@@ -115,16 +171,15 @@ export const OfficeWalls: React.FC = () => {
           roughness={0.1}
         />
       </mesh>
-      {/* Caixilho de Alumínio da Divisória */}
-      <mesh position={[0, 4.4, -4]}>
-        <boxGeometry args={[28, 0.1, 0.12]} />
+      <mesh position={[0, 4.4, -3.5]}>
+        <boxGeometry args={[30, 0.1, 0.12]} />
         <meshStandardMaterial color="#1e293b" metalness={0.9} />
       </mesh>
     </group>
   );
 };
 
-// 3. Estação de Trabalho com Monitor CRT com Scanlines e Caneca "World's Best Boss"
+// 3. Estação de Trabalho com Cadeira e Computador
 interface WorkstationProps {
   position: [number, number, number];
   rotation?: [number, number, number];
@@ -142,9 +197,9 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
   accessoryType = 'NONE',
   onClick,
 }) => {
-  const tableWidth = isCeo ? 4.0 : 2.6;
-  const tableDepth = isCeo ? 1.8 : 1.3;
-  const tableHeight = 0.9;
+  const tableWidth = isCeo ? 4.2 : 2.6;
+  const tableDepth = isCeo ? 1.9 : 1.3;
+  const tableHeight = 0.88;
 
   const scanlineRef = useRef<THREE.Mesh>(null);
   const lightRef = useRef<THREE.PointLight>(null);
@@ -152,105 +207,100 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
   useFrame(({ clock }) => {
     const t = clock.getElapsedTime() + (position[0] * 1.7);
     if (scanlineRef.current) {
-      scanlineRef.current.position.y = (Math.sin(t * 8) * 0.18);
+      scanlineRef.current.position.y = (Math.sin(t * 7) * 0.18);
     }
     if (lightRef.current) {
-      lightRef.current.intensity = 1.0 + Math.sin(t * 12) * 0.25;
+      lightRef.current.intensity = 1.1 + Math.sin(t * 11) * 0.2;
     }
   });
 
   return (
     <group position={position} rotation={rotation} onClick={onClick}>
-      {/* Tampo da Mesa com Madeira Maciça */}
+      {/* Tampo da Mesa com Madeira Maciça Nobre */}
       <mesh position={[0, tableHeight, 0]} castShadow receiveShadow>
         <boxGeometry args={[tableWidth, 0.08, tableDepth]} />
-        <meshStandardMaterial color={isCeo ? '#1e293b' : '#334155'} roughness={0.4} metalness={0.1} />
+        <meshStandardMaterial color={isCeo ? '#1e293b' : '#3b2518'} roughness={0.35} metalness={0.1} />
       </mesh>
 
-      {/* Pernas Metálicas da Mesa */}
+      {/* Pernas Metálicas */}
       <mesh position={[-tableWidth / 2 + 0.12, tableHeight / 2, -tableDepth / 2 + 0.12]} castShadow>
         <cylinderGeometry args={[0.04, 0.04, tableHeight, 16]} />
-        <meshStandardMaterial color="#0f172a" metalness={0.85} roughness={0.2} />
+        <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.2} />
       </mesh>
       <mesh position={[tableWidth / 2 - 0.12, tableHeight / 2, -tableDepth / 2 + 0.12]} castShadow>
         <cylinderGeometry args={[0.04, 0.04, tableHeight, 16]} />
-        <meshStandardMaterial color="#0f172a" metalness={0.85} roughness={0.2} />
+        <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.2} />
       </mesh>
       <mesh position={[-tableWidth / 2 + 0.12, tableHeight / 2, tableDepth / 2 - 0.12]} castShadow>
         <cylinderGeometry args={[0.04, 0.04, tableHeight, 16]} />
-        <meshStandardMaterial color="#0f172a" metalness={0.85} roughness={0.2} />
+        <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.2} />
       </mesh>
       <mesh position={[tableWidth / 2 - 0.12, tableHeight / 2, tableDepth / 2 - 0.12]} castShadow>
         <cylinderGeometry args={[0.04, 0.04, tableHeight, 16]} />
-        <meshStandardMaterial color="#0f172a" metalness={0.85} roughness={0.2} />
+        <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.2} />
       </mesh>
 
-      {/* Monitor CRT com Carcaça Vintage e Scanlines Ativas */}
+      {/* Monitor CRT com Carcaça e Scanlines Ativas */}
       <group position={[0, tableHeight + 0.45, -tableDepth / 3]}>
-        {/* Suporte Metálico */}
         <mesh position={[0, -0.22, 0]}>
           <cylinderGeometry args={[0.03, 0.08, 0.4, 16]} />
           <meshStandardMaterial color="#1e293b" metalness={0.8} />
         </mesh>
-        {/* Moldura do Monitor */}
         <mesh castShadow>
           <boxGeometry args={[isCeo ? 1.7 : 1.2, 0.72, 0.1]} />
           <meshStandardMaterial color="#090d16" metalness={0.7} />
         </mesh>
-        {/* Tela com Brilho do Monitor CRT */}
+        {/* Tela CRT */}
         <mesh position={[0, 0, 0.055]}>
           <planeGeometry args={[isCeo ? 1.58 : 1.1, 0.62]} />
           <meshBasicMaterial color={glowColor} />
         </mesh>
-        {/* Linhas de Scanline Animadas Varrendo a Tela */}
+        {/* Scanlines Animadas */}
         <mesh ref={scanlineRef} position={[0, 0, 0.06]}>
           <planeGeometry args={[isCeo ? 1.54 : 1.05, 0.08]} />
           <meshBasicMaterial color="#ffffff" transparent opacity={0.35} />
         </mesh>
-        {/* Código Matrix/Terminal Verde/Azul simulado na tela */}
+        {/* Código Matrix no Monitor */}
         <Html position={[0, 0, 0.07]} center transform distanceFactor={7}>
           <div
             style={{
               fontFamily: 'monospace',
               fontSize: '11px',
               color: '#000',
-              fontWeight: 800,
+              fontWeight: 900,
               letterSpacing: '1px',
-              opacity: 0.8,
+              opacity: 0.85,
               textAlign: 'center',
               userSelect: 'none',
-              textShadow: '0 0 4px rgba(255,255,255,0.8)',
+              textShadow: '0 0 5px rgba(255,255,255,0.9)',
             }}
           >
-            {isCeo ? 'PUB_DEV_LOOP::SOVEREIGN_CEO' : 'WPM:140 > COMPILING...'}
+            {isCeo ? 'PUB_DEV_LOOP::CEO' : 'WPM:140 > COMPILING...'}
           </div>
         </Html>
         <pointLight ref={lightRef} color={glowColor} intensity={1.2} distance={3.0} position={[0, 0, 0.3]} />
       </group>
 
       {/* Teclado e Mouse */}
-      <mesh position={[0, tableHeight + 0.05, 0.12]}>
+      <mesh position={[0, tableHeight + 0.05, 0.1]}>
         <boxGeometry args={[0.55, 0.02, 0.2]} />
         <meshStandardMaterial color="#090d16" />
       </mesh>
-      <mesh position={[0.38, tableHeight + 0.05, 0.12]}>
+      <mesh position={[0.38, tableHeight + 0.05, 0.1]}>
         <boxGeometry args={[0.09, 0.02, 0.13]} />
         <meshStandardMaterial color="#090d16" />
       </mesh>
 
-      {/* A LENDÁRIA CANECA "WORLD'S BEST BOSS" (OU CANECA CORPORATIVA) */}
-      <group position={[-tableWidth / 2 + 0.45, tableHeight + 0.1, 0.25]}>
-        {/* Corpo da Caneca Amarela / Branca */}
+      {/* A LENDÁRIA CANECA "WORLD'S BEST BOSS" */}
+      <group position={[-tableWidth / 2 + 0.45, tableHeight + 0.1, 0.2]}>
         <mesh castShadow>
           <cylinderGeometry args={[0.075, 0.065, 0.14, 24]} />
           <meshStandardMaterial color={isCeo ? '#facc15' : '#f8fafc'} roughness={0.15} />
         </mesh>
-        {/* Alça da Caneca */}
         <mesh position={[0.08, 0, 0]}>
           <torusGeometry args={[0.045, 0.012, 8, 16]} />
           <meshStandardMaterial color={isCeo ? '#facc15' : '#f8fafc'} />
         </mesh>
-        {/* Rótulo "WORLD'S BEST BOSS" Nítido e Legível */}
         {isCeo && (
           <Html position={[0, 0.02, 0.085]} center transform distanceFactor={4}>
             <div
@@ -304,16 +354,19 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
         </mesh>
       )}
 
-      {/* Cadeira Executiva Giratória */}
-      <group position={[0, 0, 0.75]}>
+      {/* CADEIRA GIRATÓRIA (Posicionada exatamente onde o avatar senta: z = 0.72) */}
+      <group position={[0, 0, 0.72]}>
+        {/* Assento da Cadeira */}
         <mesh position={[0, 0.45, 0]} castShadow>
           <boxGeometry args={[0.58, 0.08, 0.58]} />
           <meshStandardMaterial color={isCeo ? '#090d16' : '#1e293b'} />
         </mesh>
-        <mesh position={[0, 0.9, -0.25]} castShadow>
-          <boxGeometry args={[0.58, 0.75, 0.08]} />
+        {/* Encosto da Cadeira */}
+        <mesh position={[0, 0.9, 0.26]} castShadow>
+          <boxGeometry args={[0.58, 0.78, 0.08]} />
           <meshStandardMaterial color={isCeo ? '#090d16' : '#1e293b'} />
         </mesh>
+        {/* Coluna e Rodinhas */}
         <mesh position={[0, 0.22, 0]}>
           <cylinderGeometry args={[0.04, 0.04, 0.45, 16]} />
           <meshStandardMaterial color="#475569" metalness={0.9} />
@@ -323,16 +376,14 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
   );
 };
 
-// 4. O Clássico Bebedouro / Watercooler The Office
+// 4. O Bebedouro / Watercooler The Office
 export const ClassicWatercooler: React.FC<{ position: [number, number, number] }> = ({ position }) => {
   return (
     <group position={position}>
-      {/* Corpo Branco do Bebedouro */}
       <mesh position={[0, 0.65, 0]} castShadow receiveShadow>
         <boxGeometry args={[0.5, 1.3, 0.5]} />
         <meshStandardMaterial color="#f8fafc" roughness={0.2} />
       </mesh>
-      {/* Torneiras Azul e Vermelha */}
       <mesh position={[-0.08, 0.78, 0.27]}>
         <boxGeometry args={[0.04, 0.06, 0.06]} />
         <meshStandardMaterial color="#38bdf8" />
@@ -341,7 +392,6 @@ export const ClassicWatercooler: React.FC<{ position: [number, number, number] }
         <boxGeometry args={[0.04, 0.06, 0.06]} />
         <meshStandardMaterial color="#ef4444" />
       </mesh>
-      {/* Garrafão Azul Translúcido de 20L de Água Mineral */}
       <mesh position={[0, 1.6, 0]} castShadow>
         <cylinderGeometry args={[0.22, 0.24, 0.6, 32]} />
         <meshPhysicalMaterial
@@ -394,7 +444,6 @@ export const DunderBreakroom: React.FC<{ position: [number, number, number] }> =
 
   return (
     <group position={position}>
-      {/* Placa "THE OFFICE BREAKROOM" */}
       <Html position={[0, 3.2, -1.8]} center distanceFactor={14}>
         <div
           style={{
@@ -413,36 +462,33 @@ export const DunderBreakroom: React.FC<{ position: [number, number, number] }> =
         </div>
       </Html>
 
-      {/* Balcão Principal de Granito e Madeira */}
+      {/* Balcão Principal */}
       <mesh position={[0, 0.85, -1.8]} castShadow receiveShadow>
         <boxGeometry args={[4.2, 0.9, 1.2]} />
         <meshStandardMaterial color="#1f2937" roughness={0.4} />
       </mesh>
-      {/* Tampo de Granito Polido */}
       <mesh position={[0, 1.32, -1.8]} castShadow receiveShadow>
         <boxGeometry args={[4.4, 0.06, 1.3]} />
         <meshStandardMaterial color="#111827" roughness={0.2} metalness={0.3} />
       </mesh>
 
-      {/* Máquina de Café Expresso Italiana Profissional */}
+      {/* Máquina de Expresso */}
       <group position={[0, 1.45, -1.8]}>
         <mesh castShadow>
           <boxGeometry args={[1.0, 0.65, 0.6]} />
           <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.1} />
         </mesh>
-        {/* Bandeja Coletora Cromada */}
         <mesh position={[0, -0.28, 0.15]}>
           <boxGeometry args={[0.9, 0.05, 0.3]} />
           <meshStandardMaterial color="#d4d4d8" metalness={0.95} />
         </mesh>
-        {/* Xícara de Expresso na Bandeja */}
         <mesh position={[0, -0.2, 0.15]}>
           <cylinderGeometry args={[0.05, 0.04, 0.08, 16]} />
           <meshStandardMaterial color="#ffffff" />
         </mesh>
       </group>
 
-      {/* Sistema de Vapor Volumétrico Animado */}
+      {/* Partículas de Vapor */}
       <mesh ref={p1} position={[0, 1.6, -1.65]}>
         <sphereGeometry args={[0.08, 12, 12]} />
         <meshBasicMaterial color="#ffffff" transparent opacity={0.6} />
@@ -457,19 +503,19 @@ export const DunderBreakroom: React.FC<{ position: [number, number, number] }> =
       </mesh>
       <pointLight color="#f59e0b" intensity={1.5} distance={3.0} position={[0, 1.8, -1.5]} />
 
-      {/* Geladeira Corporativa com Recados */}
+      {/* Geladeira */}
       <mesh position={[-2.8, 1.6, -1.8]} castShadow receiveShadow>
         <boxGeometry args={[1.0, 2.4, 1.0]} />
         <meshStandardMaterial color="#94a3b8" metalness={0.7} roughness={0.3} />
       </mesh>
 
-      {/* Micro-ondas na Bancada */}
+      {/* Micro-ondas */}
       <mesh position={[1.4, 1.5, -1.8]} castShadow>
         <boxGeometry args={[0.7, 0.4, 0.45]} />
         <meshStandardMaterial color="#0f172a" metalness={0.6} />
       </mesh>
 
-      {/* Mesa Redonda de Descanso e Cadeiras */}
+      {/* Mesa Redonda de Almoço */}
       <group position={[0, 0, 1.8]}>
         <mesh position={[0, 0.75, 0]} castShadow receiveShadow>
           <cylinderGeometry args={[1.1, 1.1, 0.06, 24]} />
@@ -480,7 +526,6 @@ export const DunderBreakroom: React.FC<{ position: [number, number, number] }> =
           <meshStandardMaterial color="#0f172a" metalness={0.8} />
         </mesh>
 
-        {/* 3 Cadeiras da Cafeteria */}
         {[-Math.PI / 3, Math.PI / 3, Math.PI].map((ang, i) => (
           <group key={`chair-${i}`} position={[Math.sin(ang) * 1.5, 0, Math.cos(ang) * 1.5]} rotation={[0, ang + Math.PI, 0]}>
             <mesh position={[0, 0.42, 0]} castShadow>
@@ -520,7 +565,6 @@ export const MeetingRoomArea: React.FC = () => {
 
   return (
     <group position={[-11, 0, -8]}>
-      {/* Mesa Oval de Reunião */}
       <mesh position={[0, 0.9, 0]} castShadow receiveShadow>
         <cylinderGeometry args={[2.4, 2.4, 0.08, 32]} />
         <meshPhysicalMaterial
@@ -536,7 +580,6 @@ export const MeetingRoomArea: React.FC = () => {
         <meshStandardMaterial color="#0f172a" metalness={0.8} roughness={0.3} />
       </mesh>
 
-      {/* Holograma 3D Flutuante */}
       <group ref={holoRef} position={[0, 1.4, 0]}>
         <mesh>
           <octahedronGeometry args={[0.26, 0]} />
@@ -569,7 +612,6 @@ export const LoungeSofa: React.FC<{ position: [number, number, number] }> = ({ p
         <boxGeometry args={[2.8, 0.5, 0.22]} />
         <meshStandardMaterial color="#451a03" roughness={0.8} />
       </mesh>
-      {/* Almofadas */}
       <mesh position={[-0.8, 0.58, 0.2]}>
         <boxGeometry args={[0.4, 0.35, 0.15]} />
         <meshStandardMaterial color="#d97706" />

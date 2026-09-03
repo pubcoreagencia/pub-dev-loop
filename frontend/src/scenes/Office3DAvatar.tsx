@@ -6,6 +6,7 @@ import type { AvatarProfile, EmployeeOperationalState } from '../types/office';
 
 interface Office3DAvatarProps {
   position: [number, number, number];
+  rotation?: [number, number, number];
   avatar: AvatarProfile;
   operationalState: EmployeeOperationalState;
   isCeo?: boolean;
@@ -16,6 +17,7 @@ interface Office3DAvatarProps {
 
 export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
   position,
+  rotation = [0, 0, 0],
   avatar,
   operationalState,
   isCeo = false,
@@ -28,15 +30,17 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
   const leftArmRef = useRef<THREE.Mesh>(null);
   const rightArmRef = useRef<THREE.Mesh>(null);
 
-  // Animação procedural rica e expressiva
+  // Animação procedural rica preservando a rotação base
   useFrame(({ clock }) => {
     const t = clock.getElapsedTime() + (position[0] * 2.1);
 
-    // Balanço sutil de respiração do tronco
+    // Balanço sutil de respiração do tronco e oscilação da cadeira
     if (groupRef.current) {
       groupRef.current.position.y = position[1] + Math.sin(t * 1.8) * 0.012;
-      // Cadeira oscila ligeiramente
-      groupRef.current.rotation.y = Math.sin(t * 0.5) * 0.04;
+      // Respeita a rotação base (rotation[1]) e adiciona oscilação sutil
+      groupRef.current.rotation.y = rotation[1] + Math.sin(t * 0.6) * 0.04;
+      groupRef.current.rotation.x = rotation[0];
+      groupRef.current.rotation.z = rotation[2];
     }
 
     // Movimentação da cabeça: olha para tela e de vez em quando olha para os lados
@@ -55,9 +59,9 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
       if (leftArmRef.current) leftArmRef.current.rotation.x = -0.4 + Math.sin(t * 1.5) * 0.05;
       if (rightArmRef.current) rightArmRef.current.rotation.x = -0.9; // mão no queixo pensando
     } else {
-      // Idle relaxado
-      if (leftArmRef.current) leftArmRef.current.rotation.x = -0.3 + Math.sin(t * 1.2) * 0.04;
-      if (rightArmRef.current) rightArmRef.current.rotation.x = -0.3 + Math.cos(t * 1.2) * 0.04;
+      // Idle relaxado com mãos na mesa
+      if (leftArmRef.current) leftArmRef.current.rotation.x = -0.45 + Math.sin(t * 1.2) * 0.04;
+      if (rightArmRef.current) rightArmRef.current.rotation.x = -0.45 + Math.cos(t * 1.2) * 0.04;
     }
   });
 
@@ -66,49 +70,71 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
   const skinColor = '#fed7aa';
 
   return (
-    <group ref={groupRef} position={position} onClick={onClick}>
+    <group ref={groupRef} position={position} rotation={rotation} onClick={onClick}>
       {/* Luz focal e halo de seleção quando clicado */}
       {isSelected && (
-        <pointLight color={avatar.accentColor} intensity={2.0} distance={3.0} position={[0, 2.0, 0]} />
+        <pointLight color={avatar.accentColor} intensity={2.2} distance={3.2} position={[0, 2.0, 0]} />
       )}
 
-      {/* Tronco / Corpo com Terno/Roupa da Persona */}
-      <mesh position={[0, 0.85, 0.2]} castShadow>
-        <boxGeometry args={[0.55, 0.7, 0.35]} />
+      {/* Pernas Sentadas na Cadeira */}
+      <group position={[0, 0.45, -0.2]}>
+        {/* Coxas horizontais repousando na cadeira */}
+        <mesh position={[-0.15, 0, -0.2]} castShadow>
+          <boxGeometry args={[0.18, 0.14, 0.45]} />
+          <meshStandardMaterial color={suitColor} roughness={0.7} />
+        </mesh>
+        <mesh position={[0.15, 0, -0.2]} castShadow>
+          <boxGeometry args={[0.18, 0.14, 0.45]} />
+          <meshStandardMaterial color={suitColor} roughness={0.7} />
+        </mesh>
+        {/* Pernas verticais para o chão */}
+        <mesh position={[-0.15, -0.22, -0.4]} castShadow>
+          <boxGeometry args={[0.14, 0.4, 0.14]} />
+          <meshStandardMaterial color={suitColor} roughness={0.7} />
+        </mesh>
+        <mesh position={[0.15, -0.22, -0.4]} castShadow>
+          <boxGeometry args={[0.14, 0.4, 0.14]} />
+          <meshStandardMaterial color={suitColor} roughness={0.7} />
+        </mesh>
+      </group>
+
+      {/* Tronco / Corpo com Terno da Persona */}
+      <mesh position={[0, 0.88, 0]} castShadow>
+        <boxGeometry args={[0.55, 0.72, 0.35]} />
         <meshStandardMaterial color={suitColor} roughness={0.7} />
       </mesh>
 
-      {/* Gravata / Detalhe Central */}
-      <mesh position={[0, 0.88, 0.38]}>
+      {/* Gravata / Detalhe Central (aponta para frente em -z) */}
+      <mesh position={[0, 0.9, -0.18]}>
         <boxGeometry args={[0.1, 0.45, 0.02]} />
         <meshStandardMaterial color={avatar.tieColor || avatar.accentColor} roughness={0.3} />
       </mesh>
 
       {/* Braço Esquerdo */}
-      <mesh ref={leftArmRef} position={[-0.35, 0.85, 0.15]} castShadow>
+      <mesh ref={leftArmRef} position={[-0.35, 0.85, -0.05]} castShadow>
         <boxGeometry args={[0.15, 0.55, 0.15]} />
         <meshStandardMaterial color={suitColor} />
       </mesh>
 
       {/* Braço Direito */}
-      <mesh ref={rightArmRef} position={[0.35, 0.85, 0.15]} castShadow>
+      <mesh ref={rightArmRef} position={[0.35, 0.85, -0.05]} castShadow>
         <boxGeometry args={[0.15, 0.55, 0.15]} />
         <meshStandardMaterial color={suitColor} />
       </mesh>
 
       {/* Cabeça e Cabelo */}
-      <group ref={headRef} position={[0, 1.35, 0.15]}>
+      <group ref={headRef} position={[0, 1.35, 0]}>
         {/* Rosto */}
         <mesh castShadow>
           <boxGeometry args={[0.42, 0.42, 0.38]} />
           <meshStandardMaterial color={skinColor} roughness={0.6} />
         </mesh>
         {/* Cabelo */}
-        <mesh position={[0, 0.15, -0.04]}>
+        <mesh position={[0, 0.15, 0.04]}>
           <boxGeometry args={[0.46, 0.22, 0.42]} />
           <meshStandardMaterial color={hairColor} roughness={0.9} />
         </mesh>
-        {/* Olhos estilizados */}
+        {/* Olhos estilizados (olhando para a tela em -z) */}
         <mesh position={[-0.1, 0, -0.2]}>
           <boxGeometry args={[0.06, 0.04, 0.02]} />
           <meshBasicMaterial color="#090d16" />
@@ -176,7 +202,7 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
               padding: '8px 12px',
               color: '#f8fafc',
               fontSize: '12px',
-              maxWidth: '240px',
+              maxWidth: '250px',
               boxShadow: '0 8px 24px rgba(0,0,0,0.7)',
               animation: 'popIn 0.2s ease-out',
               lineHeight: '1.4',

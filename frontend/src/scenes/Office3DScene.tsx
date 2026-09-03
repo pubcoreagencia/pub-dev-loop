@@ -36,37 +36,51 @@ export const Office3DScene: React.FC = () => {
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const activeAlbum = VINYL_ALBUMS.find((a) => a.id === activeAlbumId) || VINYL_ALBUMS[0];
 
-  // Posições das estações
-  const positions: Record<string, { table: [number, number, number]; avatar: [number, number, number]; rot?: [number, number, number] }> = {
+  // Coordenadas calculadas milimetricamente para cada personagem sentar NA CADEIRA e de FRENTE PARA O PC
+  const positions: Record<
+    string,
+    {
+      table: [number, number, number];
+      avatar: [number, number, number];
+      tableRot?: [number, number, number];
+      avatarRot: [number, number, number];
+    }
+  > = {
     ceo: {
       table: [0, 0, -8],
-      avatar: [0, 0, -8.6],
-      rot: [0, 0, 0],
+      avatar: [0, 0, -7.28], // Sentado na cadeira do CEO (z = -7.28), de frente para o monitor (olhando em -z)
+      tableRot: [0, 0, 0],
+      avatarRot: [0, 0, 0],
     },
     'chief-of-staff': {
       table: [0, 0, -1],
-      avatar: [0, 0, -1.6],
-      rot: [0, 0, 0],
+      avatar: [0, 0, -0.28], // Sentado na cadeira do Chief (z = -0.28), de frente para o monitor
+      tableRot: [0, 0, 0],
+      avatarRot: [0, 0, 0],
     },
     architect: {
       table: [-6, 0, 5],
-      avatar: [-6, 0, 4.4],
-      rot: [0, Math.PI, 0],
+      avatar: [-6, 0, 4.28], // Sentado na cadeira (z = 4.28), rotacionado 180° olhando em +z para o monitor
+      tableRot: [0, Math.PI, 0],
+      avatarRot: [0, Math.PI, 0],
     },
     developer: {
       table: [6, 0, 5],
-      avatar: [6, 0, 4.4],
-      rot: [0, Math.PI, 0],
+      avatar: [6, 0, 4.28], // Sentado na cadeira (z = 4.28), rotacionado 180° olhando em +z para o monitor
+      tableRot: [0, Math.PI, 0],
+      avatarRot: [0, Math.PI, 0],
     },
     reviewer: {
       table: [-6, 0, 10],
-      avatar: [-6, 0, 9.4],
-      rot: [0, Math.PI, 0],
+      avatar: [-6, 0, 9.28], // Sentado na cadeira (z = 9.28), rotacionado 180° olhando em +z para o monitor
+      tableRot: [0, Math.PI, 0],
+      avatarRot: [0, Math.PI, 0],
     },
     'qa-engineer': {
       table: [6, 0, 10],
-      avatar: [6, 0, 9.4],
-      rot: [0, Math.PI, 0],
+      avatar: [6, 0, 9.28], // Sentado na cadeira (z = 9.28), rotacionado 180° olhando em +z para o monitor
+      tableRot: [0, Math.PI, 0],
+      avatarRot: [0, Math.PI, 0],
     },
   };
 
@@ -90,7 +104,7 @@ export const Office3DScene: React.FC = () => {
 
   return (
     <div className="office-3d-viewport" style={{ width: '100%', height: '100%', position: 'relative', background: '#020617' }}>
-      {/* Barra Superior de Câmeras Rápida com Zoom para Detalhes */}
+      {/* Barra Superior de Câmeras com Foco Imediato e Ultra-Zoom */}
       <div
         style={{
           position: 'absolute',
@@ -100,12 +114,12 @@ export const Office3DScene: React.FC = () => {
           zIndex: 10,
           display: 'flex',
           gap: '6px',
-          background: 'rgba(15, 23, 42, 0.85)',
-          backdropFilter: 'blur(12px)',
-          padding: '6px 12px',
+          background: 'rgba(15, 23, 42, 0.88)',
+          backdropFilter: 'blur(16px)',
+          padding: '6px 14px',
           borderRadius: '24px',
           border: '1px solid #334155',
-          boxShadow: '0 8px 30px rgba(0,0,0,0.6)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.65)',
         }}
       >
         <button
@@ -115,26 +129,26 @@ export const Office3DScene: React.FC = () => {
           🌐 Visão Geral
         </button>
         <button
-          onClick={() => handleCameraFocus([0, 1.0, -8], [0, 2.2, -5.5])}
+          onClick={() => handleCameraFocus([0, 1.0, -7.6], [0, 2.3, -5.2])}
           style={{ background: 'transparent', border: 'none', color: '#facc15', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
           title="Zoom na Caneca World's Best Boss do CEO"
         >
           👑 Gabinete CEO &amp; Caneca
         </button>
         <button
-          onClick={() => handleCameraFocus([0, 1.0, -1], [0, 2.2, 1.5])}
+          onClick={() => handleCameraFocus([0, 1.0, -0.6], [0, 2.2, 1.8])}
           style={{ background: 'transparent', border: 'none', color: '#cbd5e1', fontSize: '11px', cursor: 'pointer' }}
         >
           👔 Chief of Staff
         </button>
         <button
-          onClick={() => handleCameraFocus([6, 1.1, 5], [6, 2.2, 7.5])}
+          onClick={() => handleCameraFocus([6, 1.1, 4.8], [6, 2.2, 2.8])}
           style={{ background: 'transparent', border: 'none', color: '#cbd5e1', fontSize: '11px', cursor: 'pointer' }}
         >
           💻 Bancada Dev &amp; CRT
         </button>
         <button
-          onClick={() => handleCameraFocus([12, 1.2, 0], [12, 2.8, 3.8])}
+          onClick={() => handleCameraFocus([12, 1.2, 0], [12, 2.8, 4.2])}
           style={{ background: 'transparent', border: 'none', color: '#f97316', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
           title="Zoom na Cafeteria, Expresso, Vapor e Watercooler"
         >
@@ -142,7 +156,7 @@ export const Office3DScene: React.FC = () => {
         </button>
         <button
           onClick={() => {
-            handleCameraFocus([-12, 1.2, 0], [-12, 2.4, 2.8]);
+            handleCameraFocus([-12, 1.2, 0], [-12, 2.4, 3.2]);
           }}
           style={{ background: 'transparent', border: 'none', color: '#38bdf8', fontSize: '11px', cursor: 'pointer', fontWeight: 700 }}
           title="Zoom na Vitrola de Vinil, Braço Mecânico e Ondas Sonoras"
@@ -153,7 +167,7 @@ export const Office3DScene: React.FC = () => {
 
       <Canvas shadows>
         <PerspectiveCamera makeDefault position={[0, 18, 22]} fov={40} />
-        {/* OrbitControls com Zoom Mínimo de 0.5 para permitir ver qualquer parafuso e texto */}
+        {/* OrbitControls com Zoom Mínimo de 0.5 para permitir ver qualquer detalhe */}
         <OrbitControls
           ref={controlsRef}
           enableDamping
@@ -164,24 +178,24 @@ export const Office3DScene: React.FC = () => {
           target={[0, 1.0, 2]}
         />
 
-        {/* Iluminação Ambiente Suave e Luzes Direcionais */}
-        <ambientLight intensity={0.7} color="#e2e8f0" />
+        {/* Iluminação Quente de Design de Interiores */}
+        <ambientLight intensity={0.75} color="#fef3c7" />
         <directionalLight
-          position={[10, 22, 15]}
-          intensity={1.3}
+          position={[12, 24, 16]}
+          intensity={1.4}
           castShadow
           shadow-mapSize-width={2048}
           shadow-mapSize-height={2048}
         />
-        <directionalLight position={[-12, 15, -10]} intensity={0.5} color="#38bdf8" />
-        <directionalLight position={[14, 12, 5]} intensity={0.4} color="#f59e0b" />
+        <directionalLight position={[-12, 16, -10]} intensity={0.5} color="#38bdf8" />
+        <directionalLight position={[14, 14, 4]} intensity={0.6} color="#f59e0b" />
 
-        {/* Chão, Paredes e Persianas Dunder Mifflin */}
+        {/* Chão de Madeira Nobre, Tapetes Ricos, Persianas e Painéis Ripados */}
         <OfficeFloor />
         <OfficeWalls />
         <MeetingRoomArea />
 
-        {/* ☕ A CAFETERIA & BREAKROOM COMPLETA COM VAPOR ANIMADO */}
+        {/* ☕ A CAFETERIA & BREAKROOM DUNDER MIFFLIN */}
         <DunderBreakroom position={[12, 0, 0]} />
 
         {/* O Bebedouro / Watercooler The Office */}
@@ -190,28 +204,29 @@ export const Office3DScene: React.FC = () => {
         {/* Plantas Decorativas */}
         <OfficePlant position={[-5, 0, -3]} />
         <OfficePlant position={[5, 0, -3]} />
-        <OfficePlant position={[-17, 0, 6]} />
-        <OfficePlant position={[17, 0, 6]} />
+        <OfficePlant position={[-18, 0, 6]} />
+        <OfficePlant position={[18, 0, 6]} />
 
-        {/* 🎵 O TOCA-DISCOS DE VINIL VINTAGE COM FÍSICA DE BRAÇO E ONDAS SONORAS */}
+        {/* 🎵 O TOCA-DISCOS DE VINIL VINTAGE */}
         <TurntableVinyl
           isPlaying={isPlayingVinyl}
           labelColor={activeAlbum.labelColor}
           albumTitle={activeAlbum.title}
           onClick={() => setJukeboxOpen(true)}
         />
-        {/* Sofá de Couro no Lounge do Vinil */}
         <LoungeSofa position={[-12, 0, 3.2]} />
 
-        {/* 1. MESA E AVATAR DO CEO (Matheus Paes) com Caneca World's Best Boss */}
+        {/* 1. MESA E AVATAR DO CEO (Matheus Paes) */}
         <WorkstationTable
           position={positions.ceo.table}
+          rotation={positions.ceo.tableRot}
           glowColor="#8b5cf6"
           isCeo={true}
           onClick={() => selectAgent(ceo)}
         />
         <Office3DAvatar
           position={positions.ceo.avatar}
+          rotation={positions.ceo.avatarRot}
           avatar={ceo.avatar || AGENT_AVATAR_PROFILES['chief-of-staff']}
           operationalState={ceo.operationalState || 'idle'}
           isCeo={true}
@@ -223,12 +238,14 @@ export const Office3DScene: React.FC = () => {
         {/* 2. MESA E AVATAR DO CHIEF OF STAFF (Dr. Arthur Vance) */}
         <WorkstationTable
           position={positions['chief-of-staff'].table}
+          rotation={positions['chief-of-staff'].tableRot}
           glowColor="#f59e0b"
           accessoryType="CLIPBOARD"
           onClick={() => selectAgent(agents.find((a) => a.id === 'chief-of-staff'))}
         />
         <Office3DAvatar
           position={positions['chief-of-staff'].avatar}
+          rotation={positions['chief-of-staff'].avatarRot}
           avatar={AGENT_AVATAR_PROFILES['chief-of-staff']}
           operationalState={getAgentOperationalState('chief-of-staff')}
           speechBubble={getSpeechForEntity('chief-of-staff')}
@@ -239,13 +256,14 @@ export const Office3DScene: React.FC = () => {
         {/* 3. MESA E AVATAR DA PRINCIPAL ARCHITECT (Helena Rostova) */}
         <WorkstationTable
           position={positions.architect.table}
-          rotation={positions.architect.rot}
+          rotation={positions.architect.tableRot}
           glowColor="#3b82f6"
           accessoryType="NONE"
           onClick={() => selectAgent(agents.find((a) => a.id === 'architect'))}
         />
         <Office3DAvatar
           position={positions.architect.avatar}
+          rotation={positions.architect.avatarRot}
           avatar={AGENT_AVATAR_PROFILES.architect}
           operationalState={getAgentOperationalState('architect')}
           speechBubble={getSpeechForEntity('architect')}
@@ -256,13 +274,14 @@ export const Office3DScene: React.FC = () => {
         {/* 4. MESA E AVATAR DO SENIOR DEVELOPER (Lucas Silveira) */}
         <WorkstationTable
           position={positions.developer.table}
-          rotation={positions.developer.rot}
+          rotation={positions.developer.tableRot}
           glowColor="#0ea5e9"
           accessoryType="HEADPHONES"
           onClick={() => selectAgent(agents.find((a) => a.id === 'developer'))}
         />
         <Office3DAvatar
           position={positions.developer.avatar}
+          rotation={positions.developer.avatarRot}
           avatar={AGENT_AVATAR_PROFILES.developer}
           operationalState={getAgentOperationalState('developer')}
           speechBubble={getSpeechForEntity('developer')}
@@ -273,13 +292,14 @@ export const Office3DScene: React.FC = () => {
         {/* 5. MESA E AVATAR DA CODE REVIEWER (Beatriz Mendes) */}
         <WorkstationTable
           position={positions.reviewer.table}
-          rotation={positions.reviewer.rot}
+          rotation={positions.reviewer.tableRot}
           glowColor="#10b981"
           accessoryType="NONE"
           onClick={() => selectAgent(agents.find((a) => a.id === 'reviewer'))}
         />
         <Office3DAvatar
           position={positions.reviewer.avatar}
+          rotation={positions.reviewer.avatarRot}
           avatar={AGENT_AVATAR_PROFILES.reviewer}
           operationalState={getAgentOperationalState('reviewer')}
           speechBubble={getSpeechForEntity('reviewer')}
@@ -290,13 +310,14 @@ export const Office3DScene: React.FC = () => {
         {/* 6. MESA E AVATAR DO QA ENGINEER (Tiago Rocha) */}
         <WorkstationTable
           position={positions['qa-engineer'].table}
-          rotation={positions['qa-engineer'].rot}
+          rotation={positions['qa-engineer'].tableRot}
           glowColor="#059669"
           accessoryType="RUBBER_DUCKS"
           onClick={() => selectAgent(agents.find((a) => a.id === 'qa-engineer'))}
         />
         <Office3DAvatar
           position={positions['qa-engineer'].avatar}
+          rotation={positions['qa-engineer'].avatarRot}
           avatar={AGENT_AVATAR_PROFILES['qa-engineer']}
           operationalState={getAgentOperationalState('qa-engineer')}
           speechBubble={getSpeechForEntity('qa-engineer')}
