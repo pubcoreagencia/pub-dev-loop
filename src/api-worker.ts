@@ -9,6 +9,7 @@ import { PreviewRecoveryService } from './prototype/preview-recovery.js';
 import { prototypeUiHtml } from './prototype/ui.js';
 import { prototypeHistoryUiScript } from './prototype/history-ui.js';
 import { defaultAgentRegistry } from './office/registry.js';
+import { defaultOfficeOrganization } from './office/organization.js';
 
 export interface HyperdriveBinding {
   connectionString: string;
@@ -434,6 +435,13 @@ export default {
       if (method === 'GET' && path === '/office/agents') {
         return jsonResponse({
           agents: defaultAgentRegistry.listAgents(),
+        });
+      }
+
+      // Office Organization route
+      if (method === 'GET' && path === '/office/organization') {
+        return jsonResponse({
+          organization: defaultOfficeOrganization.getOrganization(),
         });
       }
 

@@ -14,6 +14,7 @@ import { LocalPreviewRuntime } from './prototype/local-preview-runtime.js';
 import { PublicPreviewRuntime } from './prototype/public-preview-runtime.js';
 import { PrototypeHandoffService, type PrototypeHandoffInput } from './prototype/handoff.js';
 import { defaultAgentRegistry } from './office/registry.js';
+import { defaultOfficeOrganization } from './office/organization.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const prototypeEvents = new PrototypeEventStream();
@@ -44,6 +45,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
   const handoff = new PrototypeHandoffService(tasks, prototypes, prototypeEvents);
 
   app.get('/health', (_q,res)=>res.json({status:'ok'}));
+  app.get('/office/organization', (_req, res) => res.json({ organization: defaultOfficeOrganization.getOrganization() }));
   app.get('/office/agents', (_req, res) => res.json({ agents: defaultAgentRegistry.listAgents() }));
   app.get('/office/agents/:id', (req, res) => {
     const agent = defaultAgentRegistry.getAgent(req.params.id);
