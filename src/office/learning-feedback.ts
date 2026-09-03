@@ -163,12 +163,12 @@ export class LearningFeedbackEngine {
       reason = 'Remediação executada com êxito e confirmada por testes de QA';
       confidence = 'HIGH';
     }
-    // Priority 6: Execution & QA Success
-    else if (execution?.status === 'SUCCESS' && (qa?.status === 'PASSED' || review?.status === 'PASSED')) {
+    // Priority 6: Execution Success
+    else if (execution?.status === 'SUCCESS') {
       signal = 'SUCCESSFUL_EXECUTION';
       evalStatus = 'SUCCESS';
-      reason = 'Execução concluída com êxito e confirmada por inspeção/testes';
-      confidence = 'HIGH';
+      reason = 'Execução concluída com êxito e confirmada por evidência do runtime';
+      confidence = qa?.status === 'PASSED' || review?.status === 'PASSED' ? 'HIGH' : 'MEDIUM';
     }
     // Priority 7: Partial Success
     else if (execution?.status === 'PARTIAL') {
@@ -276,6 +276,105 @@ export class LearningFeedbackEngine {
       },
     };
   }
+}
+
+/**
+ * Builds ExecutionOutcome strictly from real runtime observables.
+ * Never guesses or optimistically marks SUCCESS without proof.
+ */
+export function buildExecutionOutcomeFromRuntime(params: {
+  exitCode?: number | null;
+  stdout?: string;
+  stderr?: string;
+  changedFiles?: string[];
+  durationMs?: number;
+  status?: ExecutionStatus;
+}): ExecutionOutcome {
+  let status: ExecutionStatus = params.status || 'UNKNOWN';
+
+  if (params.exitCode !== undefined && params.exitCode !== null) {
+    if (params.exitCode === 0) {
+      status = 'SUCCESS';
+    } else {
+      status = 'FAILURE';
+    }
+  } else if (params.status) {
+    status = params.status;
+  }
+
+  return {
+    status,
+    exitCode: params.exitCode ?? null,
+    stdout: params.stdout,
+    stderr: params.stderr,
+    changedFiles: params.changedFiles || [],
+    durationMs: params.durationMs,
+  };
+}
+
+/**
+ * Builds ReviewOutcome strictly from real review manager inspection events.
+ */
+export function buildReviewOutcomeFromReview(params: {
+  iteration: number;
+  findings?: Array<{ severity?: string; message?: string; blocker?: boolean }>;
+  blocked?: boolean;
+  passed?: boolean;
+}): ReviewOutcome {
+  const findings = params.findings || [];
+  const blockerFindings = findings
+    .filter((f) => f.blocker || f.severity === 'HIGH' || f.severity === 'CRITICAL')
+    .map((f) => f.message || 'Blocker finding');
+
+  let status: ReviewStatus = 'IN_PROGRESS';
+  const maxIterationsReached = params.iteration >= 3;
+
+  if (params.blocked || (maxIterationsReached && blockerFindings.length > 0)) {
+    status = 'BLOCKED';
+  } else if (params.passed || (findings.length === 0 && params.iteration > 0)) {
+    status = 'PASSED';
+  }
+
+  return {
+    status,
+    iteration: params.iteration,
+    findingsCount: findings.length,
+    blockerFindings,
+    maxIterationsReached,
+  };
+}
+
+/**
+ * Builds QAOutcome strictly from real test execution assertions.
+ */
+export function buildQAOutcomeFromTests(params: {
+  exitCode?: number | null;
+  totalTests?: number;
+  passedTests?: number;
+  failedTests?: number;
+  regressionsDetected?: boolean;
+}): QAOutcome {
+  const total = params.totalTests ?? 0;
+  const passed = params.passedTests ?? 0;
+  const failed = params.failedTests ?? (params.exitCode !== 0 && params.exitCode !== null && params.exitCode !== undefined ? 1 : 0);
+
+  let status: QAStatus = 'NOT_RUN';
+  if (total > 0 || params.exitCode !== undefined) {
+    if (failed === 0 && (params.exitCode === 0 || params.exitCode === undefined) && !params.regressionsDetected) {
+      status = 'PASSED';
+    } else {
+      status = 'FAILED';
+    }
+  }
+
+  return {
+    status,
+    totalTests: total,
+    passedTests: passed,
+    failedTests: failed,
+    exitCode: params.exitCode ?? null,
+    regressionsDetected: Boolean(params.regressionsDetected),
+  };
 }
 
 export const defaultLearningFeedbackEngine = new LearningFeedbackEngine();
