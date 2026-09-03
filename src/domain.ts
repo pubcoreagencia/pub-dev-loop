@@ -23,8 +23,10 @@ export interface Task {
   workspacePath: string | null;
   /** Non-null only for Prototype Mode tasks that must reuse the same session workspace. */
   prototypeSessionId: string | null;
+  /** Optional assigned organizational agent ID from The Office (P5.7.4) */
+  agentId?: string | null;
 }
-export type CreateTask = Pick<Task, 'project'|'repository'|'objective'|'prompt'> & Partial<Pick<Task,'priority'|'prototypeSessionId'>>;
+export type CreateTask = Pick<Task, 'project'|'repository'|'objective'|'prompt'> & Partial<Pick<Task,'priority'|'prototypeSessionId'|'agentId'>>;
 export interface TaskRepository {
   create(input: CreateTask): Promise<Task>;
   list(): Promise<Task[]>;

@@ -8,7 +8,7 @@ import { PrototypeEventStream } from './prototype/events.js';
 import { PreviewRecoveryService } from './prototype/preview-recovery.js';
 import { prototypeUiHtml } from './prototype/ui.js';
 import { prototypeHistoryUiScript } from './prototype/history-ui.js';
-import { defaultAgentRegistry } from './office/registry.js';
+import { defaultAgentRegistry, isValidAgentId } from './office/registry.js';
 import { defaultOfficeOrganization } from './office/organization.js';
 
 export interface HyperdriveBinding {
@@ -1081,7 +1081,7 @@ export default {
           );
         }
 
-        const allowedFields = new Set(['project', 'repository', 'objective', 'prompt', 'priority']);
+        const allowedFields = new Set(['project', 'repository', 'objective', 'prompt', 'priority', 'agentId']);
         const unknownFields = Object.keys(body).filter(k => !allowedFields.has(k));
         if (unknownFields.length > 0) {
           console.log(JSON.stringify({ event: 'TASK_REQUEST_REJECTED', reason: `Unknown fields: ${unknownFields.join(', ')}`, clientIp, path, timestamp: new Date().toISOString() }));
@@ -1091,6 +1091,16 @@ export default {
           );
         }
 
+        if (body.agentId !== undefined && body.agentId !== null) {
+          if (!isValidAgentId(body.agentId)) {
+            console.log(JSON.stringify({ event: 'TASK_REQUEST_REJECTED', reason: `Invalid agentId: ${body.agentId}`, clientIp, path, timestamp: new Date().toISOString() }));
+            return new Response(
+              JSON.stringify({ error: `Invalid agentId: '${body.agentId}'. Must be a registered agent in The Office.` }),
+              { status: 400, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
+        }
+
         const repo = getRepository(env);
         const task = await repo.create({
           project: body.project.trim(),
@@ -1098,6 +1108,7 @@ export default {
           objective: body.objective.trim(),
           prompt: body.prompt.trim(),
           priority: typeof body.priority === 'number' ? body.priority : undefined,
+          agentId: typeof body.agentId === 'string' ? body.agentId.trim() : undefined,
         });
 
         console.log(JSON.stringify({ event: 'TASK_REQUEST_ACCEPTED', taskId: task.id, project: task.project, clientIp, timestamp: new Date().toISOString() }));

@@ -1,4 +1,4 @@
-﻿import type { AgentDefinition, AgentDepartment, AgentRole } from './types.js';
+import type { AgentDefinition, AgentDepartment, AgentRole } from './types.js';
 
 export const INITIAL_STAFF: AgentDefinition[] = [
   {
@@ -186,3 +186,17 @@ export const getAgent = (id: string) => defaultAgentRegistry.getAgent(id);
 export const listAgents = () => defaultAgentRegistry.listAgents();
 export const getAgentsByDepartment = (department: AgentDepartment) => defaultAgentRegistry.getAgentsByDepartment(department);
 export const getAgentsByRole = (role: AgentRole) => defaultAgentRegistry.getAgentsByRole(role);
+
+/**
+ * Validate whether an agentId corresponds to a registered agent in The Office.
+ * Rejects undefined, null, unknown IDs, and non-agent roles such as 'ceo'.
+ */
+export function isValidAgentId(
+  agentId: unknown,
+  registry: AgentRegistry = defaultAgentRegistry
+): agentId is string {
+  if (typeof agentId !== 'string' || !agentId.trim()) return false;
+  const normalized = agentId.trim().toLowerCase();
+  if (normalized === 'ceo') return false;
+  return registry.getAgent(agentId.trim()) !== undefined;
+}

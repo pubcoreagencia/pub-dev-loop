@@ -22,12 +22,14 @@ const map = (r: Record<string, unknown>): Task => ({
   heartbeatAt: r.heartbeat_at as Date | null,
   workspacePath: r.workspace_path as string | null,
   prototypeSessionId: r.prototype_session_id as string | null,
+  agentId: (r.agent_id as string | null) ?? (r.agentId as string | null) ?? null,
 });
 
 const toColumn = (key: string): string => ({
   commitSha: 'commit_sha', gitStatus: 'git_status', createdAt: 'created_at', updatedAt: 'updated_at',
   leaseOwner: 'lease_owner', leaseDeadline: 'lease_deadline', heartbeatAt: 'heartbeat_at',
   workspacePath: 'workspace_path', prototypeSessionId: 'prototype_session_id',
+  agentId: 'agent_id',
 }[key] ?? key);
 
 export class PostgresTaskRepository implements TaskRepository {

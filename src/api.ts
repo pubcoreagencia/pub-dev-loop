@@ -13,7 +13,7 @@ import { PrototypeComparisonPreviewManager } from './prototype/comparison-previe
 import { LocalPreviewRuntime } from './prototype/local-preview-runtime.js';
 import { PublicPreviewRuntime } from './prototype/public-preview-runtime.js';
 import { PrototypeHandoffService, type PrototypeHandoffInput } from './prototype/handoff.js';
-import { defaultAgentRegistry } from './office/registry.js';
+import { defaultAgentRegistry, isValidAgentId } from './office/registry.js';
 import { defaultOfficeOrganization } from './office/organization.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -54,7 +54,25 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
   });
   app.get(['/prototype', '/prototype/sessions/:id/view'], (_req,res)=>res.status(200).type('html').send(prototypeUiHtml()+prototypeHistoryUiScript()));
 
-  app.post('/tasks', async(req,res,next)=>{ try { const {project,repository,objective,prompt,priority}=req.body??{}; if(!project||!repository||!objective||!prompt)return res.status(400).json({error:'project, repository, objective and prompt are required'}); return res.status(201).json(await tasks.create({project,repository,objective,prompt,priority})); } catch(e){return next(e);} });
+  app.post('/tasks', async(req,res,next)=>{
+    try {
+      const {project,repository,objective,prompt,priority,agentId}=req.body??{};
+      if(!project||!repository||!objective||!prompt) return res.status(400).json({error:'project, repository, objective and prompt are required'});
+      if(agentId !== undefined && agentId !== null) {
+        if(!isValidAgentId(agentId)) {
+          return res.status(400).json({error:`Invalid agentId: '${agentId}'. Must be a registered agent in The Office.`});
+        }
+      }
+      return res.status(201).json(await tasks.create({
+        project,
+        repository,
+        objective,
+        prompt,
+        priority,
+        agentId: typeof agentId === 'string' ? agentId.trim() : undefined,
+      }));
+    } catch(e){return next(e);}
+  });
   app.get('/tasks',async(_q,res,next)=>{try{return res.json(await tasks.list())}catch(e){return next(e)}});
   app.get('/tasks/:id',async(req,res,next)=>{try{const t=await tasks.get(req.params.id);return t?res.json(t):res.sendStatus(404)}catch(e){return next(e)}});
   app.post('/tasks/:id/cancel',async(req,res,next)=>{try{const t=await tasks.cancel(req.params.id);return t?res.json(t):res.status(409).json({error:'Task cannot be cancelled'})}catch(e){return next(e)}});
