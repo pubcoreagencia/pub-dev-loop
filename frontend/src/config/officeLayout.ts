@@ -2,6 +2,7 @@ import type {
   AvatarProfile,
   CeoIdentity,
   EmployeeOperationalState,
+  EmployeeSpatialState,
   MeetingRoomState,
   OfficePosition,
 } from '../types/office';
@@ -14,6 +15,9 @@ export const CEO_IDENTITY: CeoIdentity = {
   status: 'ACTIVE',
   specialty: 'Direção Estratégica & Autoridade Final',
   personalitySummary: 'Líder estratégico focado em objetivos organizacionais e aprovação de decisões de alto impacto.',
+  operationalState: 'idle',
+  spatialState: 'idle',
+  facingDirection: 'SOUTH',
   position: {
     zoneId: 'CEO_SUITE',
     zoneName: 'Gabinete Executivo do CEO',
@@ -173,4 +177,12 @@ export const OPERATIONAL_STATE_LABELS_PT: Record<EmployeeOperationalState, { lab
   learning: { label: 'Consolidando Aprendizado', tagCls: 'state-learning' },
   offline: { label: 'Desconectado', tagCls: 'state-offline' },
   blocked: { label: 'Bloqueado', tagCls: 'state-blocked' },
+};
+
+export const SPATIAL_STATE_LABELS_PT: Record<EmployeeSpatialState, { label: string; tagCls: string }> = {
+  idle: { label: 'Na Estação', tagCls: 'spatial-idle' },
+  walking: { label: 'Em Deslocamento', tagCls: 'spatial-walking' },
+  approaching: { label: 'Aproximando-se', tagCls: 'spatial-approaching' },
+  interacting: { label: 'Em Interação', tagCls: 'spatial-interacting' },
+  returning: { label: 'Retornando ao Posto', tagCls: 'spatial-returning' },
 };

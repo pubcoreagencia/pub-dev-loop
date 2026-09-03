@@ -1,7 +1,7 @@
 import React from 'react';
 import { useStore } from '../store/useStore';
 import type { AgentDefinition, CeoIdentity } from '../types/office';
-import { OPERATIONAL_STATE_LABELS_PT } from '../config/officeLayout';
+import { OPERATIONAL_STATE_LABELS_PT, SPATIAL_STATE_LABELS_PT } from '../config/officeLayout';
 import { EmployeeAvatar } from './EmployeeAvatar';
 
 export const OfficeFloorMap: React.FC = () => {
@@ -23,6 +23,8 @@ export const OfficeFloorMap: React.FC = () => {
       routingProfile: 'general',
       status: 'ACTIVE',
       operationalState: 'idle',
+      spatialState: 'idle',
+      facingDirection: 'SOUTH',
     };
   };
 
@@ -55,6 +57,9 @@ export const OfficeFloorMap: React.FC = () => {
       ? { label: 'Comandante Ativo', tagCls: 'state-idle' }
       : OPERATIONAL_STATE_LABELS_PT[agentDef.operationalState || 'idle'];
 
+    const spatialState = employee.spatialState || 'idle';
+    const spatialInfo = SPATIAL_STATE_LABELS_PT[spatialState] || { label: 'Na Estação', tagCls: 'spatial-idle' };
+
     const avatar = employee.avatar || {
       avatarId: `avatar-${employee.id}`,
       badgeIcon: isCeo ? '👑' : '💼',
@@ -68,7 +73,7 @@ export const OfficeFloorMap: React.FC = () => {
       <div className="workstation-anchor-wrapper" key={employee.id}>
         {renderSpeechBubble(employee.id)}
         <div
-          className={`agent-workstation ${isSelected ? 'selected' : ''} ${stateInfo.tagCls} ${isCeo ? 'ceo-workstation' : ''}`}
+          className={`agent-workstation ${isSelected ? 'selected' : ''} ${stateInfo.tagCls} ${spatialInfo.tagCls} ${isCeo ? 'ceo-workstation' : ''}`}
           onClick={() => selectAgent(employee)}
           title={`Clique para inspecionar a estação de ${employee.name}`}
         >
@@ -76,6 +81,8 @@ export const OfficeFloorMap: React.FC = () => {
           <EmployeeAvatar
             avatar={avatar}
             operationalState={agentDef.operationalState || 'idle'}
+            spatialState={spatialState}
+            facingDirection={employee.facingDirection || 'SOUTH'}
             isCeo={isCeo}
           />
 
@@ -93,6 +100,14 @@ export const OfficeFloorMap: React.FC = () => {
               <div className="handoff-indicator-badge" title={`Recebeu dependência de ${agentDef.lastHandoffFrom.toUpperCase()}`}>
                 <span className="handoff-arrow">➔</span>
                 <span className="handoff-text">Handoff de <strong>{agentDef.lastHandoffFrom.toUpperCase()}</strong></span>
+              </div>
+            )}
+
+            {/* ESTADO ESPACIAL REAL (QUANDO EM DESLOCAMENTO OU INTERAÇÃO) */}
+            {spatialState !== 'idle' && (
+              <div className={`spatial-movement-tag ${spatialInfo.tagCls}`}>
+                <span className="spatial-dot"></span>
+                <span>{spatialInfo.label}</span>
               </div>
             )}
 

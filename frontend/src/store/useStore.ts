@@ -3,6 +3,7 @@ import type {
   AgentDefinition,
   CeoIdentity,
   EmployeeOperationalState,
+  EmployeeSpatialState,
   MeetingRoomState,
   OrganizationalPlan,
   SpeechBubbleItem,
@@ -61,6 +62,7 @@ export interface OfficeState {
   addMessage: (msg: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
   recordOfficeEvent: (event: Omit<OfficeEvent, 'id' | 'timestamp'>) => OfficeEvent;
   handleIncomingStreamEvent: (event: OfficeEvent) => void;
+  triggerSpatialMovement: (agentId: string, targetAgentId?: string, purpose?: 'HANDOFF' | 'MEETING' | 'APPROVAL', durationMs?: number) => void;
   triggerSpeechBubble: (bubble: Omit<SpeechBubbleItem, 'id' | 'timestamp'>) => void;
   dismissSpeechBubble: (id: string) => void;
 }
@@ -79,6 +81,7 @@ const INITIAL_MESSAGES: ChatMessage[] = [
 
 const observedTaskStatuses = new Map<string, string>();
 const activeHandoffs = new Map<string, string>();
+const activeSpatialStates = new Map<string, { spatialState: EmployeeSpatialState; facingDirection: 'NORTH' | 'SOUTH' | 'EAST' | 'WEST' }>();
 const processedEventIds = new Set<string>();
 
 let streamClient: OfficeEventStreamClient | null = null;
@@ -169,9 +172,69 @@ export const useStore = create<OfficeState>((set, get) => ({
     set({ streamStatus: 'disconnected' });
   },
 
+  triggerSpatialMovement: (agentId, targetAgentId, _purpose = 'HANDOFF', durationMs = 5000) => {
+    // 1. Fase: Aproximando-se do destino espacial
+    activeSpatialStates.set(agentId, {
+      spatialState: 'approaching',
+      facingDirection: targetAgentId === 'architect' || targetAgentId === 'reviewer' ? 'WEST' : 'EAST',
+    });
+    set((s) => ({
+      agents: s.agents.map((a) => {
+        if (a.id !== agentId) return a;
+        const sp = activeSpatialStates.get(agentId)!;
+        return { ...a, spatialState: sp.spatialState, facingDirection: sp.facingDirection };
+      }),
+      ceo: agentId === 'ceo' ? { ...s.ceo, spatialState: 'approaching' } : s.ceo,
+    }));
+
+    // 2. Fase: Interagindo no ponto de interação (após 1.4s)
+    setTimeout(() => {
+      activeSpatialStates.set(agentId, {
+        spatialState: 'interacting',
+        facingDirection: targetAgentId === 'architect' || targetAgentId === 'reviewer' ? 'WEST' : 'EAST',
+      });
+      set((s) => ({
+        agents: s.agents.map((a) => {
+          if (a.id !== agentId) return a;
+          const sp = activeSpatialStates.get(agentId)!;
+          return { ...a, spatialState: sp.spatialState, facingDirection: sp.facingDirection };
+        }),
+        ceo: agentId === 'ceo' ? { ...s.ceo, spatialState: 'interacting' } : s.ceo,
+      }));
+    }, 1400);
+
+    // 3. Fase: Retornando ao posto de trabalho (após 3.8s)
+    setTimeout(() => {
+      activeSpatialStates.set(agentId, {
+        spatialState: 'returning',
+        facingDirection: 'SOUTH',
+      });
+      set((s) => ({
+        agents: s.agents.map((a) => {
+          if (a.id !== agentId) return a;
+          const sp = activeSpatialStates.get(agentId)!;
+          return { ...a, spatialState: sp.spatialState, facingDirection: sp.facingDirection };
+        }),
+        ceo: agentId === 'ceo' ? { ...s.ceo, spatialState: 'returning' } : s.ceo,
+      }));
+    }, 3800);
+
+    // 4. Fase: Na bancada / idle (após durationMs)
+    setTimeout(() => {
+      activeSpatialStates.delete(agentId);
+      set((s) => ({
+        agents: s.agents.map((a) => {
+          if (a.id !== agentId) return a;
+          return { ...a, spatialState: 'idle', facingDirection: a.position?.facingDirection || 'SOUTH' };
+        }),
+        ceo: agentId === 'ceo' ? { ...s.ceo, spatialState: 'idle', facingDirection: 'SOUTH' } : s.ceo,
+      }));
+    }, durationMs);
+  },
+
   handleIncomingStreamEvent: (event: OfficeEvent) => {
     if (processedEventIds.has(event.id)) {
-      return; // Deduplicação
+      return;
     }
     processedEventIds.add(event.id);
 
@@ -182,7 +245,7 @@ export const useStore = create<OfficeState>((set, get) => ({
       officeEvents: [event, ...s.officeEvents.filter((e) => e.id !== event.id).slice(0, 99)],
     }));
 
-    // 2. Processar efeitos semânticos
+    // 2. Processar efeitos semânticos e espaciais
     switch (event.type) {
       case 'OBJECTIVE_SUBMITTED':
         state.triggerSpeechBubble({
@@ -193,6 +256,8 @@ export const useStore = create<OfficeState>((set, get) => ({
           durationMs: 4000,
           type: 'CHAT',
         });
+        state.triggerSpatialMovement('chief-of-staff', undefined, 'MEETING', 6000);
+        state.triggerSpatialMovement('ceo', undefined, 'MEETING', 6000);
         break;
 
       case 'PLAN_FORMULATED':
@@ -257,11 +322,37 @@ export const useStore = create<OfficeState>((set, get) => ({
       case 'AGENT_HANDOFF':
         if (event.targetId && event.actorId) {
           activeHandoffs.set(event.targetId, event.actorId);
+          // Disparo de movimento espacial determinístico para o handoff real
+          state.triggerSpatialMovement(event.targetId, event.actorId, 'HANDOFF', 6000);
           setTimeout(() => {
             activeHandoffs.delete(event.targetId!);
             get().loadData();
           }, 12000);
         }
+        break;
+
+      case 'MEETING_STARTED':
+        set((s) => ({
+          meetingRoom: {
+            ...s.meetingRoom,
+            status: 'EM_REUNIAO',
+            topic: event.summary,
+            participants: event.payload?.participants || ['ceo', 'chief-of-staff'],
+          },
+        }));
+        state.triggerSpatialMovement('chief-of-staff', undefined, 'MEETING', 8000);
+        state.triggerSpatialMovement('ceo', undefined, 'MEETING', 8000);
+        break;
+
+      case 'MEETING_ENDED':
+        set((s) => ({
+          meetingRoom: {
+            ...s.meetingRoom,
+            status: 'DISPONIVEL',
+            topic: undefined,
+            participants: [],
+          },
+        }));
         break;
 
       case 'MESSAGE_SENT':
@@ -348,12 +439,18 @@ export const useStore = create<OfficeState>((set, get) => ({
             s.actionLoading,
             agent.id === 'chief-of-staff'
           );
+          const spatialInfo = activeSpatialStates.get(agent.id) || {
+            spatialState: 'idle' as EmployeeSpatialState,
+            facingDirection: position.facingDirection || 'SOUTH',
+          };
 
           return {
             ...agent,
             position,
             avatar,
             operationalState,
+            spatialState: spatialInfo.spatialState,
+            facingDirection: spatialInfo.facingDirection,
             lastHandoffFrom: activeHandoffs.get(agent.id),
           };
         });
@@ -394,8 +491,18 @@ export const useStore = create<OfficeState>((set, get) => ({
           participants: s.actionLoading ? ['ceo', 'chief-of-staff'] : [],
         };
 
+        const ceoSpatial = activeSpatialStates.get('ceo') || {
+          spatialState: 'idle' as EmployeeSpatialState,
+          facingDirection: 'SOUTH' as const,
+        };
+
         return {
           agents: enrichedAgents,
+          ceo: {
+            ...s.ceo,
+            spatialState: ceoSpatial.spatialState,
+            facingDirection: ceoSpatial.facingDirection,
+          },
           tasks: tasksData,
           health: healthData,
           meetingRoom,

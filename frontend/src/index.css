@@ -588,6 +588,70 @@ code, pre, .mono-font, .crt-text, .sender-tag, .snippet-worker, .dep-tag {
   50% { border-color: #c084fc; box-shadow: 0 0 8px rgba(192, 132, 252, 0.5); }
 }
 
+/* Spatial Movement & Presence Styles */
+.employee-avatar-wrapper.spatial-walking,
+.employee-avatar-wrapper.spatial-approaching,
+.employee-avatar-wrapper.spatial-returning {
+  animation: employeeBobbing 0.6s infinite ease-in-out;
+}
+
+@keyframes employeeBobbing {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+.employee-avatar-wrapper.spatial-interacting .character-portrait-box {
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.6);
+  border-color: #f59e0b;
+}
+
+.employee-avatar-wrapper.facing-west .character-svg {
+  transform: scaleX(-1);
+}
+
+.spatial-movement-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 8px;
+  font-weight: 700;
+  margin-top: 2px;
+  width: fit-content;
+}
+
+.spatial-movement-tag.spatial-approaching {
+  background: #1e1b4b;
+  border: 1px solid #6366f1;
+  color: #c7d2fe;
+}
+
+.spatial-movement-tag.spatial-interacting {
+  background: #2d1808;
+  border: 1px solid #f59e0b;
+  color: #fef08a;
+  animation: interactingPulse 1.2s infinite ease-in-out;
+}
+
+.spatial-movement-tag.spatial-returning {
+  background: #1c1917;
+  border: 1px solid #78716c;
+  color: #d6d3d1;
+}
+
+.spatial-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+@keyframes interactingPulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(245, 158, 11, 0.3); }
+  50% { box-shadow: 0 0 8px rgba(245, 158, 11, 0.7); }
+}
+
 .workstation-info {
   display: flex;
   flex-direction: column;

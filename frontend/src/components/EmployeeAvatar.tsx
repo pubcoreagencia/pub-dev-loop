@@ -1,9 +1,11 @@
 import React from 'react';
-import type { AvatarProfile, EmployeeOperationalState } from '../types/office';
+import type { AvatarProfile, EmployeeOperationalState, EmployeeSpatialState } from '../types/office';
 
 interface EmployeeAvatarProps {
   avatar: AvatarProfile;
   operationalState?: EmployeeOperationalState;
+  spatialState?: EmployeeSpatialState;
+  facingDirection?: 'NORTH' | 'SOUTH' | 'EAST' | 'WEST';
   isCeo?: boolean;
   compact?: boolean;
 }
@@ -11,6 +13,8 @@ interface EmployeeAvatarProps {
 export const EmployeeAvatar: React.FC<EmployeeAvatarProps> = ({
   avatar,
   operationalState = 'idle',
+  spatialState = 'idle',
+  facingDirection = 'SOUTH',
   isCeo = false,
   compact = false,
 }) => {
@@ -20,7 +24,9 @@ export const EmployeeAvatar: React.FC<EmployeeAvatarProps> = ({
   const accentColor = avatar.accentColor || '#f59e0b';
 
   return (
-    <div className={`employee-avatar-wrapper ${compact ? 'compact' : ''} state-${operationalState}`}>
+    <div
+      className={`employee-avatar-wrapper ${compact ? 'compact' : ''} state-${operationalState} spatial-${spatialState} facing-${facingDirection.toLowerCase()}`}
+    >
       {/* RETRO VECTOR CHARACTER */}
       <div className="character-portrait-box" style={{ borderColor: accentColor }}>
         <svg
@@ -37,15 +43,18 @@ export const EmployeeAvatar: React.FC<EmployeeAvatarProps> = ({
           {/* Cabeça / Rosto */}
           <rect x="22" y="20" width="20" height="22" rx="10" fill="#fed7aa" />
 
-          {/* Olhos / Óculos */}
+          {/* Olhos / Óculos (Orientados com facingDirection) */}
           {avatar.accessory === '👓' ? (
-            <g>
+            <g transform={facingDirection === 'EAST' ? 'translate(2, 0)' : facingDirection === 'WEST' ? 'translate(-2, 0)' : ''}>
               <rect x="24" y="26" width="6" height="4" rx="1" fill="none" stroke="#0f172a" strokeWidth="1.5" />
               <rect x="34" y="26" width="6" height="4" rx="1" fill="none" stroke="#0f172a" strokeWidth="1.5" />
               <line x1="30" y1="28" x2="34" y2="28" stroke="#0f172a" strokeWidth="1.5" />
             </g>
           ) : (
-            <g fill="#1e293b">
+            <g
+              fill="#1e293b"
+              transform={facingDirection === 'EAST' ? 'translate(2, 0)' : facingDirection === 'WEST' ? 'translate(-2, 0)' : ''}
+            >
               <circle cx="27" cy="28" r="1.5" />
               <circle cx="37" cy="28" r="1.5" />
             </g>

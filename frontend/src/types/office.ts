@@ -31,6 +31,23 @@ export type EmployeeOperationalState =
   | 'offline'
   | 'blocked';
 
+export type EmployeeSpatialState =
+  | 'idle'
+  | 'walking'
+  | 'approaching'
+  | 'interacting'
+  | 'returning';
+
+export interface SpatialTarget {
+  targetDeskId?: string;
+  targetAgentId?: string;
+  targetZoneId?: 'CEO_SUITE' | 'LEADERSHIP' | 'ENGINEERING' | 'QA' | 'MEETING_ROOM';
+  coordinates?: { x: number; y: number };
+  purpose?: 'HANDOFF' | 'MEETING' | 'APPROVAL' | 'RETURN';
+  startedAt: number;
+  durationMs: number;
+}
+
 export interface OfficePosition {
   zoneId: 'CEO_SUITE' | 'LEADERSHIP' | 'ENGINEERING' | 'QA' | 'MEETING_ROOM';
   zoneName: string;
@@ -74,6 +91,9 @@ export interface AgentDefinition {
   position?: OfficePosition;
   avatar?: AvatarProfile;
   operationalState?: EmployeeOperationalState;
+  spatialState?: EmployeeSpatialState;
+  spatialTarget?: SpatialTarget;
+  facingDirection?: 'NORTH' | 'SOUTH' | 'EAST' | 'WEST';
   lastHandoffFrom?: string;
 }
 
@@ -87,6 +107,10 @@ export interface CeoIdentity {
   specialty: string;
   position: OfficePosition;
   avatar: AvatarProfile;
+  operationalState?: EmployeeOperationalState;
+  spatialState?: EmployeeSpatialState;
+  spatialTarget?: SpatialTarget;
+  facingDirection?: 'NORTH' | 'SOUTH' | 'EAST' | 'WEST';
 }
 
 export interface MeetingRoomState {
