@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import type { OfficeEvent } from './events.js';
+import type { Task } from '../domain.js';
 
 export type MemoryType =
   | 'DECISION'
@@ -274,10 +275,15 @@ export class OrganizationalMemoryStore {
 
       // 6. Keyword search (Deterministic)
       if (filter.query && filter.query.trim()) {
-        const q = filter.query.toLowerCase();
-        const matchesTitle = m.title.toLowerCase().includes(q);
-        const matchesContent = m.content.toLowerCase().includes(q);
-        if (!matchesTitle && !matchesContent) return false;
+        const tokens = filter.query
+          .toLowerCase()
+          .split(/[^a-z0-9_-]+/i)
+          .filter((t) => t.length >= 3);
+        if (tokens.length > 0) {
+          const text = (m.title + ' ' + m.content).toLowerCase();
+          const matches = tokens.some((t) => text.includes(t));
+          if (!matches && !filter.agentRole) return false;
+        }
       }
 
       return true;
@@ -545,3 +551,85 @@ export async function replayHistoricalEvents(
 export const defaultMemoryStore = new OrganizationalMemoryStore();
 export const defaultMemoryIngestPipeline = new MemoryIngestPipeline(defaultMemoryStore);
 export const defaultMemoryRetrievalEngine = new MemoryRetrievalEngine(defaultMemoryStore);
+
+/**
+ * Formats retrieved verified organizational memories into a structured historical context block.
+ * Precedence Rule: CURRENT TASK > RUNTIME POLICIES > ORGANIZATIONAL MEMORY
+ */
+export function formatDeveloperMemoryContext(memories: OrganizationalMemory[]): string {
+  if (!memories || memories.length === 0) {
+    return '';
+  }
+
+  const lines: string[] = [
+    '---',
+    '[ORGANIZATIONAL MEMORY — VERIFIED HISTORICAL CONTEXT]',
+    'AVISO ESTATUTÁRIO: As informações abaixo representam contexto histórico de tarefas, decisões e revisões passadas.',
+    'A instrução da tarefa atual, requisitos explícitos e políticas do runtime têm PRECEDÊNCIA ABSOLUTA sobre qualquer memória.',
+    'Verifique sempre contra o estado real do repositório antes de aplicar qualquer padrão histórico.',
+    '',
+  ];
+
+  memories.slice(0, 5).forEach((m, idx) => {
+    lines.push(`${idx + 1}. TYPE: ${m.type} [${m.epistemicStatus}]`);
+    lines.push(`   TITLE: ${m.title}`);
+    lines.push(`   CONTENT: ${m.content}`);
+    lines.push(`   SOURCE: ${m.provenance.source}`);
+    lines.push('   PROVENANCE:');
+    if (m.provenance.eventId) lines.push(`     eventId: ${m.provenance.eventId}`);
+    if (m.provenance.taskId) lines.push(`     taskId: ${m.provenance.taskId}`);
+    if (m.provenance.planId) lines.push(`     planId: ${m.provenance.planId}`);
+    lines.push(`     projectId: ${m.provenance.projectId}`);
+    lines.push(`     actorId: ${m.provenance.actorId}`);
+    lines.push(`     verifiedAt: ${m.provenance.verifiedAt}`);
+    if (m.provenance.ruleId) lines.push(`     ruleId: ${m.provenance.ruleId}`);
+    if (m.recurrenceCount > 1) lines.push(`     recurrenceCount: ${m.recurrenceCount}`);
+    lines.push('');
+  });
+
+  lines.push('---');
+  return lines.join('\n');
+}
+
+/**
+ * Enriches a Task for Developer execution by querying verified organizational memories.
+ * Applies strict failure isolation (memory retrieval failure NEVER fails task execution).
+ */
+export async function enrichDeveloperTaskWithMemory(
+  task: Task,
+  retrievalEngine: MemoryRetrievalEngine = defaultMemoryRetrievalEngine
+): Promise<Task> {
+  // Somente o Developer é enriquecido nesta fase
+  if (task.agentId !== 'developer') {
+    return task;
+  }
+
+  const start = Date.now();
+  try {
+    const memories = await retrievalEngine.retrieveContext({
+      tenantId: 'pub-dev-loop',
+      projectId: task.project || 'pub-dev-loop',
+      agentRole: 'developer',
+      query: task.objective || undefined,
+      limit: 5,
+    });
+
+    const durationMs = Date.now() - start;
+
+    if (memories.length === 0) {
+      return task;
+    }
+
+    const memoryBlock = formatDeveloperMemoryContext(memories);
+    const enrichedPrompt = `${task.prompt}\n\n${memoryBlock}`;
+
+    return {
+      ...task,
+      prompt: enrichedPrompt,
+    };
+  } catch (err: any) {
+    // Failure Isolation: Falha no retrieval NUNCA quebra a execução principal
+    console.warn(`[MemoryRetrieval] Notice: failed to retrieve memories for task ${task.id} (${Date.now() - start}ms): ${err.message}`);
+    return task;
+  }
+}

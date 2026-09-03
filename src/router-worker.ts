@@ -7,6 +7,7 @@ import { RouterProvider } from './providers/router.js';
 import { OpenRouterProvider } from './providers/openrouter.js';
 import { StreamEventSink, type OperationalEventEnvelope, type OperationalEventType } from './providers/streaming/index.js';
 import { classifyTaskProfile } from './routing/index.js';
+import { enrichDeveloperTaskWithMemory } from './office/memory.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -244,6 +245,7 @@ export class RouterWorker extends BaseWorker {
     repository: string,
   ): Promise<AttemptResult> {
     this.active = true;
+    const effectiveTask = await enrichDeveloperTaskWithMemory(task);
     const config = getRetryConfig();
     const providers = this.getProviderChain();
     const maxAttempts = Math.min(config.maxAttempts, providers.length);
@@ -387,7 +389,7 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
           let timeoutTimer: NodeJS.Timeout | undefined;
           try {
             subResult = await Promise.race([
-              provider.execute(task, repo, {
+              provider.execute(effectiveTask, repo, {
                 signal: attemptController.signal,
                 consumer: attemptSink,
               }),
