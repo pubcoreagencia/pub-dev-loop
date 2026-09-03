@@ -10,6 +10,16 @@ import {
   type TransitionContext,
   type TransitionResult,
 } from './memory-governance.js';
+import {
+  defaultPatternDetectionEngine,
+  PatternDetectionEngine,
+  normalizeFindingText,
+  computePatternSignature,
+  type OrganizationalPattern,
+  type PatternObservationInput,
+  type CorroborationMetadata,
+  type PatternStatus,
+} from './pattern-detection.js';
 
 export {
   defaultMemoryGovernanceEngine,
@@ -19,6 +29,14 @@ export {
   type ContradictionAnalysis,
   type TransitionContext,
   type TransitionResult,
+  defaultPatternDetectionEngine,
+  PatternDetectionEngine,
+  normalizeFindingText,
+  computePatternSignature,
+  type OrganizationalPattern,
+  type PatternObservationInput,
+  type CorroborationMetadata,
+  type PatternStatus,
 };
 
 export type MemoryType =
@@ -370,7 +388,7 @@ export class MemoryIngestPipeline {
         case 'REVIEW_FINDING': {
           const findings = event.payload?.findings || [];
           const topFinding = findings[0] || {};
-          return await this.store.create({
+          const memory = await this.store.create({
             tenantId,
             projectId,
             type: 'REVIEW_FINDING',
@@ -396,10 +414,33 @@ export class MemoryIngestPipeline {
               ruleId: topFinding.ruleId,
             },
           });
+
+          try {
+            await defaultPatternDetectionEngine.processObservation({
+              tenantId,
+              projectId,
+              component: topFinding.file || 'code_review',
+              taskType: 'review',
+              ruleId: topFinding.ruleId,
+              findingText: topFinding.message || event.summary,
+              remediationText: topFinding.suggestion,
+              memoryId: memory.id,
+              eventId: event.id,
+              taskId: event.taskId,
+              actorId: event.actorId || 'reviewer',
+              reviewerConfirmed: true,
+              source: 'REVIEW_INSPECTION',
+              timestamp: event.timestamp,
+            });
+          } catch {
+            // Failure isolation
+          }
+
+          return memory;
         }
 
         case 'REVIEW_BLOCKED': {
-          return await this.store.create({
+          const memory = await this.store.create({
             tenantId,
             projectId,
             type: 'REVIEW_FINDING',
@@ -424,10 +465,31 @@ export class MemoryIngestPipeline {
               planId: event.planId,
             },
           });
+
+          try {
+            await defaultPatternDetectionEngine.processObservation({
+              tenantId,
+              projectId,
+              component: 'code_review',
+              taskType: 'review_blocked',
+              findingText: event.summary,
+              memoryId: memory.id,
+              eventId: event.id,
+              taskId: event.taskId,
+              actorId: event.actorId || 'reviewer',
+              reviewerConfirmed: true,
+              source: 'REVIEW_INSPECTION',
+              timestamp: event.timestamp,
+            });
+          } catch {
+            // Failure isolation
+          }
+
+          return memory;
         }
 
         case 'AGENT_FINISHED_WORK': {
-          return await this.store.create({
+          const memory = await this.store.create({
             tenantId,
             projectId,
             type: 'TASK_RESULT',
@@ -451,10 +513,31 @@ export class MemoryIngestPipeline {
               planId: event.planId,
             },
           });
+
+          try {
+            await defaultPatternDetectionEngine.processObservation({
+              tenantId,
+              projectId,
+              component: 'task_execution',
+              taskType: 'agent_work',
+              findingText: event.summary,
+              memoryId: memory.id,
+              eventId: event.id,
+              taskId: event.taskId,
+              actorId: event.actorId,
+              remediationVerified: true,
+              source: 'RUNTIME_EXECUTION',
+              timestamp: event.timestamp,
+            });
+          } catch {
+            // Failure isolation
+          }
+
+          return memory;
         }
 
         case 'AGENT_FAILED_WORK': {
-          return await this.store.create({
+          const memory = await this.store.create({
             tenantId,
             projectId,
             type: 'TASK_RESULT',
@@ -479,6 +562,26 @@ export class MemoryIngestPipeline {
               planId: event.planId,
             },
           });
+
+          try {
+            await defaultPatternDetectionEngine.processObservation({
+              tenantId,
+              projectId,
+              component: 'task_execution',
+              taskType: 'agent_work_failed',
+              findingText: event.summary,
+              memoryId: memory.id,
+              eventId: event.id,
+              taskId: event.taskId,
+              actorId: event.actorId,
+              source: 'RUNTIME_EXECUTION',
+              timestamp: event.timestamp,
+            });
+          } catch {
+            // Failure isolation
+          }
+
+          return memory;
         }
 
         case 'PLAN_FORMULATED': {
