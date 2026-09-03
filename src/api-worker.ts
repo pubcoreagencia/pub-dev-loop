@@ -774,12 +774,13 @@ Humor The Office (Dwight Schrute + Creed Bratton). Responda dizendo como você v
 
           const openRouterKey = env.OPENROUTER_API_KEY || (process.env as any)?.OPENROUTER_API_KEY || '';
           const openRouterUrl = env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+          // 100% FREE MODELS NO OPENROUTER - Zero custos de API
           const openRouterModels = [
-            'x-ai/grok-2-1212',
-            'x-ai/grok-beta',
             'meta-llama/llama-3.3-70b-instruct:free',
             'google/gemini-2.0-flash-exp:free',
             'deepseek/deepseek-chat:free',
+            'mistralai/mistral-small-24b-instruct-2501:free',
+            'qwen/qwen-2.5-coder-32b-instruct:free',
           ];
 
           let reply: string | null = null;
@@ -826,9 +827,11 @@ Humor The Office (Dwight Schrute + Creed Bratton). Responda dizendo como você v
           if (!reply) {
             const routerUrl = env.ROUTER_BASE_URL || 'https://pub-9router.contato-pubcore.workers.dev/v1';
             const routerKey = env.ROUTER_API_KEY || '';
+            // 100% FREE MODELS NO 9ROUTER (Google AI Studio Free Tier & Qwen)
             const routerModels = [
               'gemini/gemini-2.5-flash',
-              'nvidia/minimaxai/minimax-m2.7',
+              'gemini/gemini-2.0-flash',
+              'gemini/gemini-1.5-flash',
               'qwen/qwen-2.5-coder-32b-instruct',
             ];
 

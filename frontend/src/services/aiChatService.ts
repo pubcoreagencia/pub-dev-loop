@@ -76,17 +76,20 @@ Responda diretamente ao prompt do CEO Matheus Paes dizendo como você vai testar
 };
 
 export class AiChatService {
+  // 100% FREE MODELS - Zero custo de API
   private primaryOpenRouterModels = [
-    'x-ai/grok-2-1212',
-    'x-ai/grok-beta',
     'meta-llama/llama-3.3-70b-instruct:free',
     'google/gemini-2.0-flash-exp:free',
     'deepseek/deepseek-chat:free',
+    'mistralai/mistral-small-24b-instruct-2501:free',
+    'qwen/qwen-2.5-coder-32b-instruct:free',
   ];
 
+  // 100% FREE FALLBACK MODELS NO 9ROUTER (Google AI Studio Free Tier & Qwen)
   private fallback9RouterModels = [
     'gemini/gemini-2.5-flash',
-    'nvidia/minimaxai/minimax-m2.7',
+    'gemini/gemini-2.0-flash',
+    'gemini/gemini-1.5-flash',
     'qwen/qwen-2.5-coder-32b-instruct',
   ];
 
@@ -101,7 +104,7 @@ export class AiChatService {
   }
 
   public getActiveGatewayInfo(): string {
-    return 'OpenRouter (Grok/Llama/Gemini) ➔ 9Router Gateway';
+    return '100% Free Gateways: Llama 3.3 70B Free / Gemini 2.0 Flash Free ➔ 9Router Free';
   }
 
   public async callLlmForAgent(agentId: string, ceoPrompt: string): Promise<string> {

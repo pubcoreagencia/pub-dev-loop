@@ -164,8 +164,8 @@ export const GlobalOfficeChat: React.FC = () => {
         </div>
 
         {/* STATUS DISCRETO DO GATEWAY AUTOMÁTICO */}
-        <div className="chat-status-pill" title="Gateways automáticos ativos: OpenRouter (Grok) ➔ 9Router Cloudflare">
-          <span>●</span> GROK &amp; 9ROUTER ATIVOS
+        <div className="chat-status-pill" title="Gateways 100% Free: OpenRouter Free (Llama 3.3 70B / Gemini 2.0 Flash) ➔ 9Router Free">
+          <span>●</span> 100% FREE (LLAMA 3.3 / GEMINI ➔ 9ROUTER)
         </div>
       </div>
 
