@@ -12,6 +12,7 @@ import {
   enrichArchitectTaskWithMemory,
   enrichReviewerTaskWithMemory,
   enrichQaTaskWithMemory,
+  enrichChiefOfStaffTaskWithMemory,
 } from './office/memory.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -254,6 +255,7 @@ export class RouterWorker extends BaseWorker {
     effectiveTask = await enrichArchitectTaskWithMemory(effectiveTask);
     effectiveTask = await enrichReviewerTaskWithMemory(effectiveTask);
     effectiveTask = await enrichQaTaskWithMemory(effectiveTask);
+    effectiveTask = await enrichChiefOfStaffTaskWithMemory(effectiveTask);
     const config = getRetryConfig();
     const providers = this.getProviderChain();
     const maxAttempts = Math.min(config.maxAttempts, providers.length);

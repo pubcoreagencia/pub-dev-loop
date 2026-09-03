@@ -210,12 +210,12 @@ When memories are retrieved for Chief of Staff, an event is logged in standard s
 
 ---
 
-## 14. Implementation Boundary for Future Phase 8.3D-B
+## 14. Implementation Details (Phase 8.3D-B Implementation Complete)
 
-Phase 8.3D-B will implement:
-1. `formatChiefOfStaffMemoryContext(memories: OrganizationalMemory[]): string`
-2. `enrichChiefOfStaffTaskWithMemory(task: Task, retrievalEngine?: MemoryRetrievalEngine): Promise<Task>`
-3. Chaining in `RouterWorker.executeWithRetry()`:
+Implemented in codebase:
+1. `formatChiefOfStaffMemoryContext(memories: OrganizationalMemory[]): string` in `src/office/memory.ts`.
+2. `enrichChiefOfStaffTaskWithMemory(task: Task, retrievalEngine?: MemoryRetrievalEngine): Promise<Task>` in `src/office/memory.ts`.
+3. Chaining in `RouterWorker.executeWithRetry()` in `src/router-worker.ts`:
    ```typescript
    let effectiveTask = await enrichDeveloperTaskWithMemory(task);
    effectiveTask = await enrichArchitectTaskWithMemory(effectiveTask);
@@ -223,23 +223,23 @@ Phase 8.3D-B will implement:
    effectiveTask = await enrichQaTaskWithMemory(effectiveTask);
    effectiveTask = await enrichChiefOfStaffTaskWithMemory(effectiveTask);
    ```
-4. Comprehensive test suite `tests/office-cos-memory-context.test.ts` implementing the 14 mandatory test cases.
+4. Comprehensive test suite `tests/office-cos-memory-context.test.ts` (14 tests `PASS`).
 
 ---
 
-## 15. Mandatory Test Plan for Phase 8.3D-B
+## 15. Validation Test Suite (Phase 8.3D-B Verified)
 
-1. **CEO Objective Precedence:** CEO objective beats contradictory historical `DECISION`.
-2. **Current Project State Precedence:** Current repository state beats historical `PLAN`.
-3. **Current Approval Precedence:** Current pending/rejected approval state beats memory.
-4. **Review Guardrail Precedence:** Active `REVIEW_BLOCKED` beats historical approval.
-5. **Tenant Isolation:** Tenant A task cannot retrieve Tenant B memories.
-6. **Project Isolation:** Project A task cannot retrieve Project B memories.
-7. **Empty Project Guard:** Missing `task.project` returns empty array cleanly.
-8. **Authorized Memory Scoping:** CoS receives `DECISION`, `PLAN`, `PROJECT_CONTEXT`.
-9. **Negative Scoping:** CoS does NOT receive `TASK_RESULT`, `REVIEW_FINDING`, or `LESSON`.
-10. **Superseded Memories:** CoS does not receive `SUPERSEDED` or `BLOCKED` records.
-11. **Context Limits:** Maximum 5 memories capped; maximum 500 chars truncated per memory.
-12. **Failure Isolation:** Database outage does not break CoS planning/execution.
-13. **Provenance Integrity:** Full provenance fields preserved without fabrication.
-14. **Real Execution Integration:** Provider receives enriched CoS task prompt.
+1. **CEO Objective Precedence:** CEO objective beats contradictory historical `DECISION`. (`PASS`)
+2. **Current Project State Precedence:** Current repository state beats historical `PLAN`. (`PASS`)
+3. **Current Approval Precedence:** Current pending/rejected approval state beats memory. (`PASS`)
+4. **Review Guardrail Precedence:** Active `REVIEW_BLOCKED` beats historical approval. (`PASS`)
+5. **Tenant Isolation:** Tenant A task cannot retrieve Tenant B memories. (`PASS`)
+6. **Project Isolation:** Project A task cannot retrieve Project B memories. (`PASS`)
+7. **Empty Project Guard:** Missing `task.project` returns empty array cleanly. (`PASS`)
+8. **Authorized Memory Scoping:** CoS receives `DECISION`, `PLAN`, `PROJECT_CONTEXT`. (`PASS`)
+9. **Negative Scoping:** CoS does NOT receive `TASK_RESULT`, `REVIEW_FINDING`, or `LESSON`. (`PASS`)
+10. **Superseded Memories:** CoS does not receive `SUPERSEDED` or `BLOCKED` records. (`PASS`)
+11. **Context Limits:** Maximum 5 memories capped; maximum 500 chars truncated per memory. (`PASS`)
+12. **Failure Isolation:** Database outage does not break CoS planning/execution. (`PASS`)
+13. **Provenance Integrity:** Full provenance fields preserved without fabrication. (`PASS`)
+14. **Real Execution Integration:** Provider receives enriched CoS task prompt. (`PASS`)
