@@ -20,6 +20,18 @@ import {
   type CorroborationMetadata,
   type PatternStatus,
 } from './pattern-detection.js';
+import {
+  defaultLessonCandidateEngine,
+  LessonCandidateEngine,
+  generateSafeCandidateStatement,
+  evaluateCandidateEligibility,
+  type LessonCandidate,
+  type CandidateStatus,
+  type CandidateType,
+  type CandidateScope,
+  type CandidateContradictionStatus,
+  type EligibilityEvaluation,
+} from './lesson-candidate.js';
 
 export {
   defaultMemoryGovernanceEngine,
@@ -37,6 +49,16 @@ export {
   type PatternObservationInput,
   type CorroborationMetadata,
   type PatternStatus,
+  defaultLessonCandidateEngine,
+  LessonCandidateEngine,
+  generateSafeCandidateStatement,
+  evaluateCandidateEligibility,
+  type LessonCandidate,
+  type CandidateStatus,
+  type CandidateType,
+  type CandidateScope,
+  type CandidateContradictionStatus,
+  type EligibilityEvaluation,
 };
 
 export type MemoryType =

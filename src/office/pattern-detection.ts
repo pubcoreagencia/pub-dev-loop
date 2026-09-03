@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type { Pool } from 'pg';
+import { defaultLessonCandidateEngine } from './lesson-candidate.js';
 
 export type PatternStatus = 'ACTIVE' | 'SUPERSEDED' | 'BLOCKED';
 
@@ -224,6 +225,13 @@ export class PatternDetectionEngine {
         }
       }
 
+      // Background candidate evaluation (failure isolated)
+      try {
+        await defaultLessonCandidateEngine.evaluateAndUpsertCandidate(existing);
+      } catch {
+        // Failure isolation
+      }
+
       return existing;
     }
 
@@ -316,6 +324,13 @@ export class PatternDetectionEngine {
       } catch (err: any) {
         console.error('[PatternDetection] Notice: Failed to insert DB pattern:', err.message);
       }
+    }
+
+    // Background candidate evaluation (failure isolated)
+    try {
+      await defaultLessonCandidateEngine.evaluateAndUpsertCandidate(pattern);
+    } catch {
+      // Failure isolation
     }
 
     return pattern;
