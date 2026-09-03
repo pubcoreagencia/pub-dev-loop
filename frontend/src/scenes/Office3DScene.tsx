@@ -9,15 +9,19 @@ import {
   WorkstationTable,
   MeetingRoomArea,
   LoungeCoffeeArea,
+  OfficePlant,
 } from './Office3DFurniture';
 import { TurntableVinyl } from './TurntableVinyl';
 import { Office3DAvatar } from './Office3DAvatar';
 import { AGENT_AVATAR_PROFILES } from '../config/officeLayout';
+import { VinylJukeboxModal, VINYL_ALBUMS, type VinylAlbum } from '../components/VinylJukeboxModal';
 
 export const Office3DScene: React.FC = () => {
   const { agents, ceo, selectedAgent, selectAgent, speechBubbles } = useStore();
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const [isPlayingVinyl, setIsPlayingVinyl] = useState(true);
+  const [isJukeboxOpen, setIsJukeboxOpen] = useState(false);
+  const [activeAlbum, setActiveAlbum] = useState<VinylAlbum>(VINYL_ALBUMS[0]);
 
   // Mapeamento das posições 3D no espaço do escritório
   const positions: Record<string, { table: [number, number, number]; avatar: [number, number, number]; rot?: [number, number, number] }> = {
@@ -70,19 +74,19 @@ export const Office3DScene: React.FC = () => {
 
   return (
     <div className="office-3d-viewport" style={{ width: '100%', height: '100%', position: 'relative', background: '#020617' }}>
-      {/* Botões Flutuantes de Câmera Rápida */}
+      {/* Botões Flutuantes de Câmera Rápida no Topo Central */}
       <div
         style={{
           position: 'absolute',
-          bottom: 20,
+          top: 16,
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 10,
           display: 'flex',
           gap: '8px',
           background: 'rgba(15, 23, 42, 0.75)',
-          backdropFilter: 'blur(8px)',
-          padding: '6px 12px',
+          backdropFilter: 'blur(10px)',
+          padding: '6px 14px',
           borderRadius: '24px',
           border: '1px solid #334155',
         }}
@@ -112,8 +116,11 @@ export const Office3DScene: React.FC = () => {
           💻 Bancada Dev
         </button>
         <button
-          onClick={() => handleCameraFocus([-12, 0, -2])}
-          style={{ background: 'transparent', border: 'none', color: '#cbd5e1', fontSize: '11px', cursor: 'pointer' }}
+          onClick={() => {
+            handleCameraFocus([-12, 0, -2]);
+            setIsJukeboxOpen(true);
+          }}
+          style={{ background: 'transparent', border: 'none', color: '#f59e0b', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
         >
           🎵 Lounge &amp; Vinil
         </button>
@@ -131,7 +138,7 @@ export const Office3DScene: React.FC = () => {
           target={[0, 1.0, 2]}
         />
 
-        {/* Iluminação Ambiente Suave */}
+        {/* Iluminação Ambiente Suave e Luzes Direcionais */}
         <ambientLight intensity={0.65} color="#e2e8f0" />
         <directionalLight
           position={[10, 20, 15]}
@@ -148,10 +155,17 @@ export const Office3DScene: React.FC = () => {
         <MeetingRoomArea />
         <LoungeCoffeeArea />
 
+        {/* Plantas de Escritório Decorativas */}
+        <OfficePlant position={[-6, 0, -3]} />
+        <OfficePlant position={[6, 0, -3]} />
+        <OfficePlant position={[-16, 0, 6]} />
+        <OfficePlant position={[16, 0, 6]} />
+
         {/* Toca-Discos de Vinil Interativo */}
         <TurntableVinyl
           isPlaying={isPlayingVinyl}
-          onClick={() => setIsPlayingVinyl(!isPlayingVinyl)}
+          labelColor={activeAlbum.labelColor}
+          onClick={() => setIsJukeboxOpen(true)}
         />
 
         {/* 1. MESA E AVATAR DO CEO (Matheus Paes) */}
@@ -255,6 +269,19 @@ export const Office3DScene: React.FC = () => {
           onClick={() => selectAgent(agents.find((a) => a.id === 'qa-engineer'))}
         />
       </Canvas>
+
+      {/* Modal Jukebox de Vinis */}
+      <VinylJukeboxModal
+        isOpen={isJukeboxOpen}
+        onClose={() => setIsJukeboxOpen(false)}
+        selectedAlbumId={activeAlbum.id}
+        onSelectAlbum={(album) => {
+          setActiveAlbum(album);
+          setIsPlayingVinyl(true);
+        }}
+        isPlaying={isPlayingVinyl}
+        onTogglePlay={() => setIsPlayingVinyl(!isPlayingVinyl)}
+      />
     </div>
   );
 };

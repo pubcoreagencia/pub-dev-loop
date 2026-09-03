@@ -46,15 +46,15 @@ export const Home: React.FC = () => {
             position: 'absolute',
             top: '70px',
             left: '20px',
-            width: '420px',
-            height: 'calc(100vh - 90px)',
-            zIndex: 10,
-            boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+            width: '430px',
+            height: 'calc(100vh - 145px)',
+            zIndex: 20,
+            boxShadow: '0 20px 50px rgba(0,0,0,0.7)',
             borderRadius: '12px',
             overflow: 'hidden',
             border: '1px solid #334155',
-            background: 'rgba(15, 23, 42, 0.82)',
-            backdropFilter: 'blur(12px)',
+            background: 'rgba(15, 23, 42, 0.88)',
+            backdropFilter: 'blur(16px)',
             display: 'flex',
             flexDirection: 'column',
           }}
@@ -71,45 +71,47 @@ export const Home: React.FC = () => {
             top: '70px',
             right: '20px',
             width: '360px',
-            maxHeight: 'calc(100vh - 90px)',
-            zIndex: 10,
-            boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+            maxHeight: 'calc(100vh - 145px)',
+            zIndex: 20,
+            boxShadow: '0 20px 50px rgba(0,0,0,0.7)',
             borderRadius: '12px',
             overflow: 'hidden',
             border: '1px solid #334155',
-            background: 'rgba(15, 23, 42, 0.82)',
-            backdropFilter: 'blur(12px)',
+            background: 'rgba(15, 23, 42, 0.88)',
+            backdropFilter: 'blur(16px)',
           }}
         >
           <ActivityTimeline />
         </div>
       )}
 
-      {/* 5. MODAL / GAVETA DA PLANTA BAIXA 2D (OPCIONAL) */}
+      {/* 5. MODAL DA PLANTA BAIXA 2D */}
       {isFloorMapOpen && (
         <div
           style={{
             position: 'fixed',
-            top: '80px',
+            top: '75px',
             left: '50%',
             transform: 'translateX(-50%)',
-            width: '600px',
-            maxHeight: '80vh',
-            zIndex: 20,
-            boxShadow: '0 25px 60px rgba(0,0,0,0.8)',
-            borderRadius: '12px',
+            width: '640px',
+            maxHeight: '82vh',
+            zIndex: 100,
+            boxShadow: '0 25px 60px rgba(0,0,0,0.85)',
+            borderRadius: '14px',
             overflow: 'auto',
-            border: '1px solid #38bdf8',
-            background: 'rgba(15, 23, 42, 0.95)',
-            backdropFilter: 'blur(16px)',
-            padding: '16px',
+            border: '1.5px solid #38bdf8',
+            background: 'rgba(15, 23, 42, 0.96)',
+            backdropFilter: 'blur(20px)',
+            padding: '18px',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-            <h3 style={{ margin: 0, color: '#38bdf8', fontSize: '14px' }}>🗺️ PLANTA BAIXA 2D DO ESCRITÓRIO</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <h3 style={{ margin: 0, color: '#38bdf8', fontSize: '14px', fontWeight: 700 }}>
+              🗺️ PLANTA BAIXA 2D DO ESCRITÓRIO
+            </h3>
             <button
               onClick={() => setIsFloorMapOpen(false)}
-              style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px' }}
+              style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '18px' }}
             >
               ✕
             </button>
@@ -118,69 +120,85 @@ export const Home: React.FC = () => {
         </div>
       )}
 
-      {/* 6. BOTÕES RÁPIDOS DE CONTROLE DO HUD (CANTO INFERIOR ESQUERDO) */}
+      {/* 6. DOCK BAR FLUTUANTE INFERIOR CENTRAL (NÃO COBRE NENHUM PAINEL) */}
       <div
         style={{
           position: 'absolute',
-          bottom: '20px',
-          left: '20px',
-          zIndex: 15,
+          bottom: '16px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 40,
           display: 'flex',
-          gap: '8px',
+          gap: '10px',
+          background: 'rgba(15, 23, 42, 0.85)',
+          backdropFilter: 'blur(16px)',
+          padding: '8px 16px',
+          borderRadius: '30px',
+          border: '1px solid #334155',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
         }}
       >
         <button
           onClick={() => setIsChatOpen(!isChatOpen)}
-          title="Alternar Chat do Escritório"
+          title="Alternar Visibilidade do Chat"
           style={{
-            background: isChatOpen ? 'rgba(56, 189, 248, 0.2)' : 'rgba(15, 23, 42, 0.8)',
-            border: `1px solid ${isChatOpen ? '#38bdf8' : '#334155'}`,
-            borderRadius: '8px',
-            padding: '8px 12px',
+            background: isChatOpen ? 'rgba(56, 189, 248, 0.25)' : 'transparent',
+            border: `1px solid ${isChatOpen ? '#38bdf8' : 'transparent'}`,
+            borderRadius: '20px',
+            padding: '6px 14px',
             color: isChatOpen ? '#38bdf8' : '#94a3b8',
             fontSize: '12px',
             fontWeight: 600,
             cursor: 'pointer',
-            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            transition: 'all 0.2s ease',
           }}
         >
-          💬 Chat {isChatOpen ? 'Visível' : 'Oculto'}
+          <span>💬</span> Chat {isChatOpen ? 'Aberto' : 'Minimizado'}
         </button>
 
         <button
           onClick={() => setIsTimelineOpen(!isTimelineOpen)}
-          title="Alternar Linha do Tempo"
+          title="Alternar Visibilidade das Atividades"
           style={{
-            background: isTimelineOpen ? 'rgba(56, 189, 248, 0.2)' : 'rgba(15, 23, 42, 0.8)',
-            border: `1px solid ${isTimelineOpen ? '#38bdf8' : '#334155'}`,
-            borderRadius: '8px',
-            padding: '8px 12px',
+            background: isTimelineOpen ? 'rgba(56, 189, 248, 0.25)' : 'transparent',
+            border: `1px solid ${isTimelineOpen ? '#38bdf8' : 'transparent'}`,
+            borderRadius: '20px',
+            padding: '6px 14px',
             color: isTimelineOpen ? '#38bdf8' : '#94a3b8',
             fontSize: '12px',
             fontWeight: 600,
             cursor: 'pointer',
-            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            transition: 'all 0.2s ease',
           }}
         >
-          ⚡ Atividades {isTimelineOpen ? 'Visível' : 'Oculto'}
+          <span>⚡</span> Atividades {isTimelineOpen ? 'Aberto' : 'Minimizado'}
         </button>
 
         <button
           onClick={() => setIsFloorMapOpen(!isFloorMapOpen)}
           title="Abrir Planta Baixa 2D"
           style={{
-            background: isFloorMapOpen ? 'rgba(56, 189, 248, 0.2)' : 'rgba(15, 23, 42, 0.8)',
-            border: `1px solid ${isFloorMapOpen ? '#38bdf8' : '#334155'}`,
-            borderRadius: '8px',
-            padding: '8px 12px',
+            background: isFloorMapOpen ? 'rgba(56, 189, 248, 0.25)' : 'transparent',
+            border: `1px solid ${isFloorMapOpen ? '#38bdf8' : 'transparent'}`,
+            borderRadius: '20px',
+            padding: '6px 14px',
             color: isFloorMapOpen ? '#38bdf8' : '#94a3b8',
             fontSize: '12px',
             fontWeight: 600,
             cursor: 'pointer',
-            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            transition: 'all 0.2s ease',
           }}
         >
-          🗺️ Planta 2D
+          <span>🗺️</span> Planta 2D
         </button>
       </div>
 

@@ -4,16 +4,31 @@ import * as THREE from 'three';
 
 interface TurntableVinylProps {
   isPlaying?: boolean;
+  labelColor?: string;
   onClick?: () => void;
 }
 
-export const TurntableVinyl: React.FC<TurntableVinylProps> = ({ isPlaying = true, onClick }) => {
+export const TurntableVinyl: React.FC<TurntableVinylProps> = ({
+  isPlaying = true,
+  labelColor = '#38bdf8',
+  onClick,
+}) => {
   const discRef = useRef<THREE.Mesh>(null);
+  const wave1Ref = useRef<THREE.Mesh>(null);
+  const wave2Ref = useRef<THREE.Mesh>(null);
 
-  // Animação de rotação do disco de vinil a 33 RPM
+  // Rotação do disco e ondas sonoras
   useFrame((_, delta) => {
     if (isPlaying && discRef.current) {
-      discRef.current.rotation.y += delta * 2.2;
+      discRef.current.rotation.y += delta * 2.4;
+    }
+    if (isPlaying && wave1Ref.current) {
+      const s = 1 + (Math.sin(Date.now() * 0.006) + 1) * 0.2;
+      wave1Ref.current.scale.set(s, s, s);
+    }
+    if (isPlaying && wave2Ref.current) {
+      const s = 1 + (Math.cos(Date.now() * 0.006) + 1) * 0.2;
+      wave2Ref.current.scale.set(s, s, s);
     }
   });
 
@@ -49,20 +64,18 @@ export const TurntableVinyl: React.FC<TurntableVinylProps> = ({ isPlaying = true
         <meshStandardMaterial color="#09090b" roughness={0.15} metalness={0.4} />
       </mesh>
 
-      {/* Rótulo Central do Vinil (Selo Dourado) */}
+      {/* Rótulo Central do Vinil (Selo Dinâmico por Álbum) */}
       <mesh position={[-0.1, 1.12, 0]}>
         <cylinderGeometry args={[0.11, 0.11, 0.012, 32]} />
-        <meshBasicMaterial color="#eab308" />
+        <meshBasicMaterial color={labelColor} />
       </mesh>
 
       {/* Braço da Agulha (Tonearm) */}
       <group position={[0.32, 1.12, 0.2]}>
-        {/* Base do Braço */}
         <mesh>
           <cylinderGeometry args={[0.03, 0.03, 0.05, 16]} />
           <meshStandardMaterial color="#a1a1aa" metalness={0.9} />
         </mesh>
-        {/* Haste do Braço apontando para o disco */}
         <mesh position={[-0.2, 0.03, -0.2]} rotation={[0, 0.4, 0]}>
           <cylinderGeometry args={[0.008, 0.008, 0.4, 8]} />
           <meshStandardMaterial color="#a1a1aa" metalness={0.9} />
@@ -74,19 +87,35 @@ export const TurntableVinyl: React.FC<TurntableVinylProps> = ({ isPlaying = true
         <boxGeometry args={[0.3, 0.16, 0.5]} />
         <meshStandardMaterial color="#09090b" metalness={0.7} />
       </mesh>
-      {/* Válvulas brilhando com luz âmbar suave */}
-      <pointLight color="#f59e0b" intensity={isPlaying ? 1.0 : 0.2} distance={2.0} position={[0.7, 1.25, 0]} />
+      <pointLight color="#f59e0b" intensity={isPlaying ? 1.2 : 0.2} distance={2.5} position={[0.7, 1.25, 0]} />
 
       {/* Caixa de Som Acústica Esquerda */}
-      <mesh position={[-1.2, 0.6, 0]} castShadow>
-        <boxGeometry args={[0.4, 0.9, 0.4]} />
-        <meshStandardMaterial color="#3b1f14" roughness={0.7} />
-      </mesh>
+      <group position={[-1.2, 0.6, 0]}>
+        <mesh castShadow>
+          <boxGeometry args={[0.4, 0.9, 0.4]} />
+          <meshStandardMaterial color="#3b1f14" roughness={0.7} />
+        </mesh>
+        {isPlaying && (
+          <mesh ref={wave1Ref} position={[0, 0.2, 0.22]}>
+            <ringGeometry args={[0.08, 0.12, 16]} />
+            <meshBasicMaterial color="#38bdf8" transparent opacity={0.4} side={THREE.DoubleSide} />
+          </mesh>
+        )}
+      </group>
+
       {/* Caixa de Som Acústica Direita */}
-      <mesh position={[1.2, 0.6, 0]} castShadow>
-        <boxGeometry args={[0.4, 0.9, 0.4]} />
-        <meshStandardMaterial color="#3b1f14" roughness={0.7} />
-      </mesh>
+      <group position={[1.2, 0.6, 0]}>
+        <mesh castShadow>
+          <boxGeometry args={[0.4, 0.9, 0.4]} />
+          <meshStandardMaterial color="#3b1f14" roughness={0.7} />
+        </mesh>
+        {isPlaying && (
+          <mesh ref={wave2Ref} position={[0, 0.2, 0.22]}>
+            <ringGeometry args={[0.08, 0.12, 16]} />
+            <meshBasicMaterial color="#38bdf8" transparent opacity={0.4} side={THREE.DoubleSide} />
+          </mesh>
+        )}
+      </group>
     </group>
   );
 };

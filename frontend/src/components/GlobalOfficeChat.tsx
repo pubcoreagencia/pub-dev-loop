@@ -46,25 +46,27 @@ export const GlobalOfficeChat: React.FC = () => {
         type: 'TEXT',
       });
 
-      // Dispara resposta autêntica de personalidade após breve delay
-      setTimeout(() => {
-        const reply = defaultWatercoolerEngine.respondToCeo(text, selectedAgent?.id);
-        addMessage({
-          sender: reply.speakerId.toUpperCase().replace(/-/g, '_') as any,
-          senderName: reply.senderName,
-          senderRole: reply.senderRole,
-          content: reply.content,
-          type: 'TEXT',
-        });
+      // Dispara thread multi-agente autêntica com respostas em cascata
+      const replies = defaultWatercoolerEngine.generateMultiAgentReaction(text, selectedAgent?.id);
+      replies.forEach((reply) => {
+        setTimeout(() => {
+          addMessage({
+            sender: reply.speakerId.toUpperCase().replace(/-/g, '_') as any,
+            senderName: reply.senderName,
+            senderRole: reply.senderRole,
+            content: reply.content,
+            type: 'TEXT',
+          });
 
-        triggerSpeechBubble({
-          senderId: reply.speakerId,
-          senderName: reply.senderName,
-          content: reply.content.slice(0, 50) + (reply.content.length > 50 ? '...' : ''),
-          durationMs: 6000,
-          type: 'TASK',
-        });
-      }, 700);
+          triggerSpeechBubble({
+            senderId: reply.speakerId,
+            senderName: reply.senderName,
+            content: reply.content.slice(0, 55) + (reply.content.length > 55 ? '...' : ''),
+            durationMs: 7000,
+            type: 'TASK',
+          });
+        }, reply.delayMs || 600);
+      });
     }
   };
 

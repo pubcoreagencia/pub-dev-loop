@@ -28,23 +28,36 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
   const leftArmRef = useRef<THREE.Mesh>(null);
   const rightArmRef = useRef<THREE.Mesh>(null);
 
-  // Animação procedural suave
+  // Animação procedural rica e expressiva
   useFrame(({ clock }) => {
-    const t = clock.getElapsedTime();
+    const t = clock.getElapsedTime() + (position[0] * 2.1);
 
-    // Balanço sutil de respiração/idle
-    if (headRef.current) {
-      headRef.current.position.y = 1.35 + Math.sin(t * 2) * 0.015;
-      headRef.current.rotation.y = Math.sin(t * 0.8) * 0.08;
+    // Balanço sutil de respiração do tronco
+    if (groupRef.current) {
+      groupRef.current.position.y = position[1] + Math.sin(t * 1.8) * 0.012;
+      // Cadeira oscila ligeiramente
+      groupRef.current.rotation.y = Math.sin(t * 0.5) * 0.04;
     }
 
-    // Digitação frenética quando trabalhando
+    // Movimentação da cabeça: olha para tela e de vez em quando olha para os lados
+    if (headRef.current) {
+      headRef.current.position.y = 1.35 + Math.sin(t * 1.8) * 0.01;
+      headRef.current.rotation.y = Math.sin(t * 0.9) * 0.12;
+      headRef.current.rotation.x = 0.05 + Math.sin(t * 1.4) * 0.04;
+    }
+
+    // Digitação dinâmica de acordo com o estado do funcionário
     if (operationalState === 'working' || operationalState === 'reviewing') {
-      if (leftArmRef.current) leftArmRef.current.rotation.x = -0.7 + Math.sin(t * 14) * 0.12;
-      if (rightArmRef.current) rightArmRef.current.rotation.x = -0.7 + Math.cos(t * 14) * 0.12;
+      const typingSpeed = avatar.avatarId.includes('developer') ? 18 : 12;
+      if (leftArmRef.current) leftArmRef.current.rotation.x = -0.7 + Math.sin(t * typingSpeed) * 0.14;
+      if (rightArmRef.current) rightArmRef.current.rotation.x = -0.7 + Math.cos(t * typingSpeed) * 0.14;
+    } else if (operationalState === 'thinking' || operationalState === 'learning') {
+      if (leftArmRef.current) leftArmRef.current.rotation.x = -0.4 + Math.sin(t * 1.5) * 0.05;
+      if (rightArmRef.current) rightArmRef.current.rotation.x = -0.9; // mão no queixo pensando
     } else {
-      if (leftArmRef.current) leftArmRef.current.rotation.x = -0.3 + Math.sin(t * 1.5) * 0.03;
-      if (rightArmRef.current) rightArmRef.current.rotation.x = -0.3 + Math.cos(t * 1.5) * 0.03;
+      // Idle relaxado
+      if (leftArmRef.current) leftArmRef.current.rotation.x = -0.3 + Math.sin(t * 1.2) * 0.04;
+      if (rightArmRef.current) rightArmRef.current.rotation.x = -0.3 + Math.cos(t * 1.2) * 0.04;
     }
   });
 
@@ -118,7 +131,7 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
       <Html position={[0, 2.1, 0]} center distanceFactor={14}>
         <div
           style={{
-            background: 'rgba(15, 23, 42, 0.88)',
+            background: 'rgba(15, 23, 42, 0.92)',
             border: `1.5px solid ${avatar.accentColor}`,
             borderRadius: '6px',
             padding: '3px 8px',
@@ -154,20 +167,24 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
 
       {/* Balão de Fala 3D quando houver mensagem */}
       {speechBubble && (
-        <Html position={[0, 2.7, 0]} center distanceFactor={12}>
+        <Html position={[0, 2.8, 0]} center distanceFactor={12}>
           <div
             style={{
-              background: '#1e293b',
-              border: '1px solid #38bdf8',
+              background: '#0f172a',
+              border: `1.5px solid ${avatar.accentColor || '#38bdf8'}`,
               borderRadius: '8px',
-              padding: '6px 12px',
+              padding: '8px 12px',
               color: '#f8fafc',
               fontSize: '12px',
-              maxWidth: '220px',
-              boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+              maxWidth: '240px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.7)',
               animation: 'popIn 0.2s ease-out',
+              lineHeight: '1.4',
             }}
           >
+            <div style={{ fontSize: '10px', color: avatar.accentColor, fontWeight: 700, marginBottom: '2px' }}>
+              {avatar.displayName}
+            </div>
             💬 {speechBubble}
           </div>
         </Html>
