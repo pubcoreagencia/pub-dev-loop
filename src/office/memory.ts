@@ -1,6 +1,25 @@
 import type { Pool } from 'pg';
 import type { OfficeEvent } from './events.js';
 import type { Task } from '../domain.js';
+import {
+  defaultMemoryGovernanceEngine,
+  MemoryGovernanceEngine,
+  type MemoryQualityMetadata,
+  type ContradictionClassification,
+  type ContradictionAnalysis,
+  type TransitionContext,
+  type TransitionResult,
+} from './memory-governance.js';
+
+export {
+  defaultMemoryGovernanceEngine,
+  MemoryGovernanceEngine,
+  type MemoryQualityMetadata,
+  type ContradictionClassification,
+  type ContradictionAnalysis,
+  type TransitionContext,
+  type TransitionResult,
+};
 
 export type MemoryType =
   | 'DECISION'
@@ -133,6 +152,7 @@ export class OrganizationalMemoryStore {
     if (existing) {
       existing.recurrenceCount += 1;
       existing.updatedAt = new Date().toISOString();
+      // Governance: preserve current status (do NOT resurrect SUPERSEDED or BLOCKED on duplicate/replay)
       return existing;
     }
 
@@ -156,6 +176,9 @@ export class OrganizationalMemoryStore {
       createdAt: now,
       updatedAt: now,
     };
+
+    const quality = defaultMemoryGovernanceEngine.computeQualityMetadata(memory);
+    memory.metadata.quality = quality;
 
     this.memories.set(id, memory);
 
@@ -223,7 +246,13 @@ export class OrganizationalMemoryStore {
 
   async supersede(oldId: string, newId: string, tenantId = 'pub-dev-loop'): Promise<boolean> {
     const oldMemory = this.memories.get(oldId);
-    if (!oldMemory || oldMemory.tenantId !== tenantId) return false;
+    if (!oldMemory) return false;
+
+    const newMemory = this.memories.get(newId);
+    const validation = defaultMemoryGovernanceEngine.validateSupersession(oldMemory, newMemory || newId, tenantId);
+    if (!validation.valid) {
+      return false;
+    }
 
     oldMemory.status = 'SUPERSEDED';
     oldMemory.metadata = { ...oldMemory.metadata, supersededBy: newId };
