@@ -48,6 +48,21 @@ import {
   formatInstitutionalLessonContext,
   type LessonRetrievalQuery,
 } from './lesson-retrieval.js';
+import {
+  defaultContextAssemblyEngine,
+  ContextAssemblyEngine,
+  ROLE_PROFILES,
+  DEFAULT_CONTEXT_BUDGET,
+  type ContextAuthority,
+  type ContextSource,
+  type OfficeAgentRole,
+  type ContextBlock,
+  type ContextBudget,
+  type AgentRoleProfile,
+  type ContextAssemblyResult,
+  type ContextAssemblyDiagnostics,
+  type RawAssemblyInput,
+} from './context-assembly.js';
 
 export {
   defaultMemoryGovernanceEngine,
@@ -87,6 +102,19 @@ export {
   InstitutionalLessonRetrievalEngine,
   formatInstitutionalLessonContext,
   type LessonRetrievalQuery,
+  defaultContextAssemblyEngine,
+  ContextAssemblyEngine,
+  ROLE_PROFILES,
+  DEFAULT_CONTEXT_BUDGET,
+  type ContextAuthority,
+  type ContextSource,
+  type OfficeAgentRole,
+  type ContextBlock,
+  type ContextBudget,
+  type AgentRoleProfile,
+  type ContextAssemblyResult,
+  type ContextAssemblyDiagnostics,
+  type RawAssemblyInput,
 };
 
 export type MemoryType =
