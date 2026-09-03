@@ -243,8 +243,11 @@ export class OrganizationalMemoryStore {
   }
 
   async search(filter: MemorySearchFilter): Promise<OrganizationalMemory[]> {
-    const tenantId = filter.tenantId || 'pub-dev-loop';
-    const projectId = filter.projectId;
+    const tenantId = filter.tenantId?.trim() || 'pub-dev-loop';
+    const projectId = filter.projectId?.trim();
+    if (!projectId) {
+      return [];
+    }
     const targetStatus = filter.status || 'ACTIVE';
     const cappedLimit = Math.min(filter.limit || 5, 5);
 
@@ -552,6 +555,8 @@ export const defaultMemoryStore = new OrganizationalMemoryStore();
 export const defaultMemoryIngestPipeline = new MemoryIngestPipeline(defaultMemoryStore);
 export const defaultMemoryRetrievalEngine = new MemoryRetrievalEngine(defaultMemoryStore);
 
+export const MAX_MEMORY_CONTENT_LENGTH = 500;
+
 /**
  * Formats retrieved verified organizational memories into a structured historical context block.
  * Precedence Rule: CURRENT TASK > RUNTIME POLICIES > ORGANIZATIONAL MEMORY
@@ -571,9 +576,13 @@ export function formatDeveloperMemoryContext(memories: OrganizationalMemory[]): 
   ];
 
   memories.slice(0, 5).forEach((m, idx) => {
+    const cleanContent = m.content.length > MAX_MEMORY_CONTENT_LENGTH
+      ? m.content.slice(0, MAX_MEMORY_CONTENT_LENGTH) + '... [truncated]'
+      : m.content;
+
     lines.push(`${idx + 1}. TYPE: ${m.type} [${m.epistemicStatus}]`);
     lines.push(`   TITLE: ${m.title}`);
-    lines.push(`   CONTENT: ${m.content}`);
+    lines.push(`   CONTENT: ${cleanContent}`);
     lines.push(`   SOURCE: ${m.provenance.source}`);
     lines.push('   PROVENANCE:');
     if (m.provenance.eventId) lines.push(`     eventId: ${m.provenance.eventId}`);
@@ -583,6 +592,7 @@ export function formatDeveloperMemoryContext(memories: OrganizationalMemory[]): 
     lines.push(`     actorId: ${m.provenance.actorId}`);
     lines.push(`     verifiedAt: ${m.provenance.verifiedAt}`);
     if (m.provenance.ruleId) lines.push(`     ruleId: ${m.provenance.ruleId}`);
+    if (m.provenance.commitSha) lines.push(`     commitSha: ${m.provenance.commitSha}`);
     if (m.recurrenceCount > 1) lines.push(`     recurrenceCount: ${m.recurrenceCount}`);
     lines.push('');
   });
@@ -604,11 +614,20 @@ export async function enrichDeveloperTaskWithMemory(
     return task;
   }
 
+  const tenantId = ((task as any).tenantId && typeof (task as any).tenantId === 'string' && (task as any).tenantId.trim())
+    ? (task as any).tenantId.trim()
+    : 'pub-dev-loop';
+
+  const projectId = task.project?.trim();
+  if (!projectId) {
+    return task;
+  }
+
   const start = Date.now();
   try {
     const memories = await retrievalEngine.retrieveContext({
-      tenantId: 'pub-dev-loop',
-      projectId: task.project || 'pub-dev-loop',
+      tenantId,
+      projectId,
       agentRole: 'developer',
       query: task.objective || undefined,
       limit: 5,
@@ -619,6 +638,16 @@ export async function enrichDeveloperTaskWithMemory(
     if (memories.length === 0) {
       return task;
     }
+
+    console.log(JSON.stringify({
+      event: 'ORGANIZATIONAL_MEMORY_RETRIEVED',
+      taskId: task.id,
+      project: projectId,
+      agent: 'developer',
+      memoryCount: memories.length,
+      memoryIds: memories.map((m) => m.id),
+      durationMs,
+    }));
 
     const memoryBlock = formatDeveloperMemoryContext(memories);
     const enrichedPrompt = `${task.prompt}\n\n${memoryBlock}`;

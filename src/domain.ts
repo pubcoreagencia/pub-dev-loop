@@ -25,8 +25,10 @@ export interface Task {
   prototypeSessionId: string | null;
   /** Optional assigned organizational agent ID from The Office (P5.7.4) */
   agentId?: string | null;
+  /** Optional tenant ID for multi-tenant isolation (Phase 8.1) */
+  tenantId?: string;
 }
-export type CreateTask = Pick<Task, 'project'|'repository'|'objective'|'prompt'> & Partial<Pick<Task,'priority'|'prototypeSessionId'|'agentId'>>;
+export type CreateTask = Pick<Task, 'project'|'repository'|'objective'|'prompt'> & Partial<Pick<Task,'priority'|'prototypeSessionId'|'agentId'|'tenantId'>>;
 export interface TaskRepository {
   create(input: CreateTask): Promise<Task>;
   list(): Promise<Task[]>;

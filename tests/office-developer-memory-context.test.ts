@@ -5,11 +5,12 @@ import {
   MemoryRetrievalEngine,
   enrichDeveloperTaskWithMemory,
   formatDeveloperMemoryContext,
+  MAX_MEMORY_CONTENT_LENGTH,
   type OrganizationalMemory,
 } from '../src/office/memory.js';
 import type { AgentProvider, ProviderTaskResult } from '../src/providers/types.js';
 
-describe('PDL — Phase 8.2A: Developer Organizational Memory Context Suite', () => {
+describe('PDL — Phase 8.2A & 8.2B: Developer Organizational Memory Context & Hardening Suite', () => {
   let store: OrganizationalMemoryStore;
   let retrieval: MemoryRetrievalEngine;
 
@@ -329,6 +330,7 @@ describe('PDL — Phase 8.2A: Developer Organizational Memory Context Suite', ()
         taskId: 'task-old-9',
         planId: 'plan-old-9',
         ruleId: 'SEC_SQL_INJ',
+        commitSha: 'sha-verified-123',
       },
       createdAt: '2026-09-03T14:00:00Z',
       updatedAt: '2026-09-03T14:00:00Z',
@@ -339,6 +341,7 @@ describe('PDL — Phase 8.2A: Developer Organizational Memory Context Suite', ()
     expect(block).toContain('taskId: task-old-9');
     expect(block).toContain('planId: plan-old-9');
     expect(block).toContain('ruleId: SEC_SQL_INJ');
+    expect(block).toContain('commitSha: sha-verified-123');
     expect(block).toContain('recurrenceCount: 3');
   });
 
@@ -520,5 +523,162 @@ describe('PDL — Phase 8.2A: Developer Organizational Memory Context Suite', ()
     expect(receivedTask?.prompt).toContain('Evitar Any em Tipagem');
     expect(receivedTask?.prompt).toContain('NO_IMPLICIT_ANY');
     expect(receivedTask?.prompt).toContain('Implementar POST /orders');
+  });
+
+  it('17. Content truncation cleanly caps long text at MAX_MEMORY_CONTENT_LENGTH (500 chars)', () => {
+    const longContent = 'A'.repeat(700);
+    const memory: OrganizationalMemory = {
+      id: 'mem-long',
+      tenantId: 'pub-dev-loop',
+      projectId: 'pub-dev-loop',
+      type: 'TASK_RESULT',
+      title: 'Long Result',
+      content: longContent,
+      status: 'ACTIVE',
+      epistemicStatus: 'OBSERVED',
+      scope: 'TASK',
+      actorId: 'developer',
+      recurrenceCount: 1,
+      metadata: {},
+      provenance: {
+        projectId: 'pub-dev-loop',
+        actorId: 'developer',
+        source: 'RUNTIME_EXECUTION',
+        verifiedAt: '2026-09-03T14:00:00Z',
+      },
+      createdAt: '2026-09-03T14:00:00Z',
+      updatedAt: '2026-09-03T14:00:00Z',
+    };
+
+    const block = formatDeveloperMemoryContext([memory]);
+    expect(block).toContain('... [truncated]');
+    expect(block).not.toContain('A'.repeat(501));
+  });
+
+  it('18. Explicit task.tenantId prevents cross-tenant contamination', async () => {
+    // Memory created in tenant-CORP-A
+    await store.create({
+      tenantId: 'tenant-CORP-A',
+      projectId: 'shared-name-project',
+      type: 'TASK_RESULT',
+      title: 'Credencial Secreta Corp A',
+      content: 'Chave interna A',
+      epistemicStatus: 'OBSERVED',
+      actorId: 'developer',
+      provenance: {
+        projectId: 'shared-name-project',
+        actorId: 'developer',
+        source: 'RUNTIME_EXECUTION',
+        verifiedAt: '2026-09-03T14:00:00Z',
+      },
+    });
+
+    // Task belonging to tenant-CORP-B
+    const taskCorpB: Task = {
+      id: 'task-corp-b-1',
+      project: 'shared-name-project',
+      repository: 'repo-b',
+      objective: 'Trabalho Corp B',
+      prompt: 'Executar tarefa B',
+      status: 'QUEUED',
+      priority: 1,
+      worker: null,
+      result: null,
+      error: null,
+      branch: null,
+      commitSha: null,
+      gitStatus: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      leaseOwner: null,
+      leaseDeadline: null,
+      heartbeatAt: null,
+      workspacePath: null,
+      prototypeSessionId: null,
+      agentId: 'developer',
+      tenantId: 'tenant-CORP-B',
+    };
+
+    const enriched = await enrichDeveloperTaskWithMemory(taskCorpB, retrieval);
+    expect(enriched.prompt).not.toContain('Credencial Secreta Corp A');
+    expect(enriched.prompt).toBe('Executar tarefa B');
+  });
+
+  it('19. Contradictory historical memory does not override explicit task instruction', async () => {
+    // Historical memory saying "Always use MySQL"
+    await store.create({
+      tenantId: 'pub-dev-loop',
+      projectId: 'pub-dev-loop',
+      type: 'LESSON',
+      title: 'Padrão Histórico Legado',
+      content: 'Usar banco MySQL para persistencia de dados.',
+      epistemicStatus: 'DERIVED',
+      actorId: 'developer',
+      provenance: {
+        projectId: 'pub-dev-loop',
+        actorId: 'developer',
+        source: 'RUNTIME_EXECUTION',
+        verifiedAt: '2026-08-01T10:00:00Z',
+      },
+    });
+
+    // New task explicitly demanding PostgreSQL
+    const task: Task = {
+      id: 'task-postgres-mandate',
+      project: 'pub-dev-loop',
+      repository: 'repo',
+      objective: 'Migrar persistencia para PostgreSQL',
+      prompt: 'Configurar pool de conexao PostgreSQL.',
+      status: 'QUEUED',
+      priority: 1,
+      worker: null,
+      result: null,
+      error: null,
+      branch: null,
+      commitSha: null,
+      gitStatus: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      leaseOwner: null,
+      leaseDeadline: null,
+      heartbeatAt: null,
+      workspacePath: null,
+      prototypeSessionId: null,
+      agentId: 'developer',
+    };
+
+    const enriched = await enrichDeveloperTaskWithMemory(task, retrieval);
+    expect(enriched.objective).toBe('Migrar persistencia para PostgreSQL');
+    expect(enriched.prompt).toContain('Configurar pool de conexao PostgreSQL.');
+    expect(enriched.prompt).toContain('A instrução da tarefa atual, requisitos explícitos e políticas do runtime têm PRECEDÊNCIA ABSOLUTA');
+  });
+
+  it('20. Empty or missing task.project returns empty memory without fallback', async () => {
+    const taskNoProj: Task = {
+      id: 'task-no-proj',
+      project: '',
+      repository: 'repo',
+      objective: 'Obj',
+      prompt: 'Prompt sem projeto',
+      status: 'QUEUED',
+      priority: 1,
+      worker: null,
+      result: null,
+      error: null,
+      branch: null,
+      commitSha: null,
+      gitStatus: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      leaseOwner: null,
+      leaseDeadline: null,
+      heartbeatAt: null,
+      workspacePath: null,
+      prototypeSessionId: null,
+      agentId: 'developer',
+    };
+
+    const enriched = await enrichDeveloperTaskWithMemory(taskNoProj, retrieval);
+    expect(enriched.prompt).toBe('Prompt sem projeto');
   });
 });
