@@ -7,13 +7,22 @@ import { ActivityTimeline } from '../components/ActivityTimeline';
 import { AgentInspector } from '../components/AgentInspector';
 
 export const Home: React.FC = () => {
-  const { loadData } = useStore();
+  const { loadData, initStream, closeStream, streamStatus } = useStore();
 
   useEffect(() => {
     loadData();
-    const timer = setInterval(loadData, 3500);
-    return () => clearInterval(timer);
+    initStream();
+    return () => {
+      closeStream();
+    };
   }, []);
+
+  // Polling adaptativo: 20s como reconciliação quando SSE está saudável; 3.5s como fallback de contingência
+  useEffect(() => {
+    const intervalMs = streamStatus === 'connected' ? 20000 : 3500;
+    const timer = setInterval(loadData, intervalMs);
+    return () => clearInterval(timer);
+  }, [streamStatus]);
 
   return (
     <div className="the-office-app">

@@ -2,7 +2,7 @@ import React from 'react';
 import { useStore } from '../store/useStore';
 
 export const OfficeHeader: React.FC = () => {
-  const { agents, tasks, health, activeProject, setActiveProject } = useStore();
+  const { agents, tasks, health, activeProject, setActiveProject, streamStatus } = useStore();
 
   const runningTasks = tasks.filter((t) => t.status === 'RUNNING').length;
   const completedTasks = tasks.filter((t) => t.status === 'COMPLETED').length;
@@ -20,6 +20,10 @@ export const OfficeHeader: React.FC = () => {
       </div>
 
       <div className="header-status-ribbon">
+        <div className="status-badge" title="Canal de Eventos em Tempo Real">
+          <span className={`status-dot ${streamStatus === 'connected' ? 'green' : streamStatus === 'connecting' ? 'amber' : 'red'}`}></span>
+          <span>STREAM: <strong>{streamStatus === 'connected' ? 'LIVE (SSE)' : streamStatus === 'connecting' ? 'CONECTANDO...' : 'FALLBACK'}</strong></span>
+        </div>
         <div className="status-badge" title="Hierarquia de Roteamento de Modelos">
           <span className="status-dot green"></span>
           <span>GATEWAY: <strong>DUAL (OR+9R)</strong></span>

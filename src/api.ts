@@ -16,6 +16,7 @@ import { PrototypeHandoffService, type PrototypeHandoffInput } from './prototype
 import { defaultAgentRegistry, isValidAgentId } from './office/registry.js';
 import { defaultOfficeOrganization } from './office/organization.js';
 import { createOrganizationalPlan, planStepToTask } from './office/planning.js';
+import { defaultOfficeEventBus } from './office/events.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const prototypeEvents = new PrototypeEventStream();
@@ -55,19 +56,41 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
   });
   app.post('/office/plans', (req, res) => {
     try {
-      const { objective, project, repository, context, steps } = req.body ?? {};
+      const { objective, project = 'pub-dev-loop', repository, context, steps } = req.body ?? {};
       if (!objective || typeof objective !== 'string' || !objective.trim()) {
         return res.status(400).json({ error: 'objective is required' });
       }
+
+      defaultOfficeEventBus.publish({
+        type: 'OBJECTIVE_SUBMITTED',
+        actorId: 'ceo',
+        targetId: 'chief-of-staff',
+        project,
+        summary: `Objetivo submetido pelo CEO: ${objective.slice(0, 50)}...`,
+        payload: { objective },
+      });
+
       const plan = createOrganizationalPlan(
         { objective, project, repository, context },
         { steps }
       );
+
+      defaultOfficeEventBus.publish({
+        type: 'PLAN_FORMULATED',
+        actorId: 'chief-of-staff',
+        targetId: 'ceo',
+        project,
+        planId: plan.id,
+        summary: `Plano organizacional formulado com ${plan.steps.length} etapas delegadas.`,
+        payload: { stepCount: plan.steps.length },
+      });
+
       return res.status(201).json({ plan });
     } catch (err: any) {
       return res.status(500).json({ error: err.message });
     }
   });
+
   app.post('/office/plans/execute-step', async (req, res, next) => {
     try {
       const { plan, stepId, overrides } = req.body ?? {};
@@ -80,10 +103,87 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
       }
       const taskPayload = planStepToTask(step, plan, overrides);
       const createdTask = await tasks.create(taskPayload);
+
+      if (step.agentId) {
+        defaultOfficeEventBus.publish({
+          type: 'STEP_DELEGATED',
+          actorId: 'chief-of-staff',
+          targetId: step.agentId,
+          project: plan.project,
+          planId: plan.id,
+          stepId: step.id,
+          taskId: createdTask.id,
+          summary: `Etapa '${step.id}' delegada a ${step.agentId.toUpperCase()}`,
+        });
+
+        defaultOfficeEventBus.publish({
+          type: 'AGENT_STARTED_WORK',
+          actorId: step.agentId,
+          project: plan.project,
+          taskId: createdTask.id,
+          summary: `Iniciou execução da etapa '${step.id}'`,
+        });
+
+        if (step.dependsOn && step.dependsOn.length > 0) {
+          const prevStepId = step.dependsOn[0];
+          const prevStep = plan.steps.find((s: any) => s.id === prevStepId);
+          if (prevStep?.agentId && prevStep.agentId !== step.agentId) {
+            defaultOfficeEventBus.publish({
+              type: 'AGENT_HANDOFF',
+              actorId: prevStep.agentId,
+              targetId: step.agentId,
+              project: plan.project,
+              summary: `Handoff de ${prevStep.agentId.toUpperCase()} para ${step.agentId.toUpperCase()}`,
+            });
+          }
+        }
+      }
+
       return res.status(201).json({ task: createdTask });
     } catch (err) {
       return next(err);
     }
+  });
+
+  app.get('/office/stream', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+
+    const project = typeof req.query.project === 'string' ? req.query.project.trim() : undefined;
+    const lastEventIdHeader = req.headers['last-event-id'] || req.query.lastEventId;
+    const lastSeq = typeof lastEventIdHeader === 'string' ? parseInt(lastEventIdHeader, 10) || 0 : 0;
+
+    res.write(': connected\n\n');
+
+    if (lastSeq > 0) {
+      const missed = defaultOfficeEventBus.getEventsSince(lastSeq, { project });
+      for (const evt of missed) {
+        res.write(`id: ${evt.sequence}\nevent: office\ndata: ${JSON.stringify(evt)}\n\n`);
+      }
+    }
+
+    const unsubscribe = defaultOfficeEventBus.subscribe({ project }, (evt) => {
+      try {
+        res.write(`id: ${evt.sequence}\nevent: office\ndata: ${JSON.stringify(evt)}\n\n`);
+      } catch {
+        // Conexão encerrada
+      }
+    });
+
+    const heartbeatTimer = setInterval(() => {
+      try {
+        res.write(': heartbeat\n\n');
+      } catch {
+        clearInterval(heartbeatTimer);
+      }
+    }, 15000);
+
+    req.on('close', () => {
+      clearInterval(heartbeatTimer);
+      unsubscribe();
+    });
   });
   app.get(['/prototype', '/prototype/sessions/:id/view'], (_req,res)=>res.status(200).type('html').send(prototypeUiHtml()+prototypeHistoryUiScript()));
 

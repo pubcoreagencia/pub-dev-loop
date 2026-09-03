@@ -204,6 +204,7 @@ export interface ChatMessage {
 export type OfficeEventType =
   | 'MESSAGE_SENT'
   | 'MESSAGE_RECEIVED'
+  | 'AGENT_RESPONDED'
   | 'OBJECTIVE_SUBMITTED'
   | 'PLAN_FORMULATED'
   | 'STEP_DELEGATED'
@@ -221,10 +222,12 @@ export type OfficeEventType =
 
 export interface OfficeEvent {
   id: string;
+  sequence?: number;
   type: OfficeEventType;
   timestamp: string;
   actorId: string;
   targetId?: string;
+  project?: string;
   taskId?: string;
   planId?: string;
   stepId?: string;

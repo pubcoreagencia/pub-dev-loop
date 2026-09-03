@@ -11,6 +11,7 @@ import { prototypeHistoryUiScript } from './prototype/history-ui.js';
 import { defaultAgentRegistry, isValidAgentId } from './office/registry.js';
 import { defaultOfficeOrganization } from './office/organization.js';
 import { createOrganizationalPlan, planStepToTask } from './office/planning.js';
+import { defaultOfficeEventBus } from './office/events.js';
 
 export interface HyperdriveBinding {
   connectionString: string;
@@ -459,14 +460,35 @@ export default {
       if (method === 'POST' && path === '/office/plans') {
         try {
           const body = (await request.json().catch(() => ({}))) as any;
-          const { objective, project, repository, context, steps } = body ?? {};
+          const { objective, project = 'pub-dev-loop', repository, context, steps } = body ?? {};
           if (!objective || typeof objective !== 'string' || !objective.trim()) {
             return jsonResponse({ error: 'objective is required' }, 400);
           }
+
+          defaultOfficeEventBus.publish({
+            type: 'OBJECTIVE_SUBMITTED',
+            actorId: 'ceo',
+            targetId: 'chief-of-staff',
+            project,
+            summary: `Objetivo submetido pelo CEO: ${objective.slice(0, 50)}...`,
+            payload: { objective },
+          });
+
           const plan = createOrganizationalPlan(
             { objective, project, repository, context },
             { steps }
           );
+
+          defaultOfficeEventBus.publish({
+            type: 'PLAN_FORMULATED',
+            actorId: 'chief-of-staff',
+            targetId: 'ceo',
+            project,
+            planId: plan.id,
+            summary: `Plano organizacional formulado com ${plan.steps.length} etapas delegadas.`,
+            payload: { stepCount: plan.steps.length },
+          });
+
           return jsonResponse({ plan }, 201);
         } catch (err: any) {
           return jsonResponse({ error: err.message }, 500);
@@ -488,10 +510,107 @@ export default {
           const pool = getPool(env);
           const tasksRepo = new PostgresTaskRepository(pool);
           const createdTask = await tasksRepo.create(taskPayload);
+
+          if (step.agentId) {
+            defaultOfficeEventBus.publish({
+              type: 'STEP_DELEGATED',
+              actorId: 'chief-of-staff',
+              targetId: step.agentId,
+              project: plan.project,
+              planId: plan.id,
+              stepId: step.id,
+              taskId: createdTask.id,
+              summary: `Etapa '${step.id}' delegada a ${step.agentId.toUpperCase()}`,
+            });
+
+            defaultOfficeEventBus.publish({
+              type: 'AGENT_STARTED_WORK',
+              actorId: step.agentId,
+              project: plan.project,
+              taskId: createdTask.id,
+              summary: `Iniciou execução da etapa '${step.id}'`,
+            });
+
+            if (step.dependsOn && step.dependsOn.length > 0) {
+              const prevStepId = step.dependsOn[0];
+              const prevStep = plan.steps?.find((s: any) => s.id === prevStepId);
+              if (prevStep?.agentId && prevStep.agentId !== step.agentId) {
+                defaultOfficeEventBus.publish({
+                  type: 'AGENT_HANDOFF',
+                  actorId: prevStep.agentId,
+                  targetId: step.agentId,
+                  project: plan.project,
+                  summary: `Handoff de ${prevStep.agentId.toUpperCase()} para ${step.agentId.toUpperCase()}`,
+                });
+              }
+            }
+          }
+
           return jsonResponse({ task: createdTask }, 201);
         } catch (err: any) {
           return jsonResponse({ error: err.message }, 500);
         }
+      }
+
+      // GET /office/stream (Server-Sent Events for The Office)
+      if (method === 'GET' && path === '/office/stream') {
+        const urlObj = new URL(request.url);
+        const project = urlObj.searchParams.get('project')?.trim() || undefined;
+        const lastEventIdHeader = request.headers.get('Last-Event-ID') || urlObj.searchParams.get('lastEventId');
+        const initialSequence = lastEventIdHeader ? (parseInt(lastEventIdHeader, 10) || 0) : 0;
+
+        const encoder = new TextEncoder();
+        let unsubscribe: (() => void) | undefined;
+        let heartbeatInterval: any;
+
+        const stream = new ReadableStream({
+          start(controller) {
+            try {
+              controller.enqueue(encoder.encode(': connected\n\n'));
+
+              // Replay de eventos perdidos com base no Last-Event-ID
+              if (initialSequence > 0) {
+                const missed = defaultOfficeEventBus.getEventsSince(initialSequence, { project });
+                for (const evt of missed) {
+                  controller.enqueue(encoder.encode(`id: ${evt.sequence}\nevent: office\ndata: ${JSON.stringify(evt)}\n\n`));
+                }
+              }
+
+              // Inscrição para eventos em tempo real
+              unsubscribe = defaultOfficeEventBus.subscribe({ project }, (evt) => {
+                try {
+                  controller.enqueue(encoder.encode(`id: ${evt.sequence}\nevent: office\ndata: ${JSON.stringify(evt)}\n\n`));
+                } catch {
+                  // Controller fechado
+                }
+              });
+
+              // Heartbeat periódico (15s)
+              heartbeatInterval = setInterval(() => {
+                try {
+                  controller.enqueue(encoder.encode(': heartbeat\n\n'));
+                } catch {
+                  if (heartbeatInterval) clearInterval(heartbeatInterval);
+                }
+              }, 15000);
+            } catch {
+              try { controller.close(); } catch {}
+            }
+          },
+          cancel() {
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            if (unsubscribe) unsubscribe();
+          },
+        });
+
+        return new Response(stream, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache, no-transform',
+            'Connection': 'keep-alive',
+          },
+        });
       }
 
       // POST /migrate (Synchronously run schema migrations)

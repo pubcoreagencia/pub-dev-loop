@@ -24,6 +24,10 @@ import {
   AGENT_AVATAR_PROFILES,
   AGENT_OFFICE_POSITIONS,
 } from '../config/officeLayout';
+import {
+  OfficeEventStreamClient,
+  type EventStreamStatus,
+} from '../services/eventStream';
 
 export interface OfficeState {
   ceo: CeoIdentity;
@@ -43,7 +47,10 @@ export interface OfficeState {
   actionLoading: boolean;
   error?: string;
   health?: { status: string; runtime?: string; [key: string]: any };
+  streamStatus: EventStreamStatus;
 
+  initStream: () => void;
+  closeStream: () => void;
   loadData: () => Promise<void>;
   selectAgent: (agent?: AgentDefinition | CeoIdentity) => void;
   selectTask: (task?: Task) => void;
@@ -53,6 +60,7 @@ export interface OfficeState {
   executeAllSteps: (plan: OrganizationalPlan) => Promise<void>;
   addMessage: (msg: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
   recordOfficeEvent: (event: Omit<OfficeEvent, 'id' | 'timestamp'>) => OfficeEvent;
+  handleIncomingStreamEvent: (event: OfficeEvent) => void;
   triggerSpeechBubble: (bubble: Omit<SpeechBubbleItem, 'id' | 'timestamp'>) => void;
   dismissSpeechBubble: (id: string) => void;
 }
@@ -71,6 +79,9 @@ const INITIAL_MESSAGES: ChatMessage[] = [
 
 const observedTaskStatuses = new Map<string, string>();
 const activeHandoffs = new Map<string, string>();
+const processedEventIds = new Set<string>();
+
+let streamClient: OfficeEventStreamClient | null = null;
 
 function deriveOperationalState(agentId: string, tasks: Task[], actionLoading: boolean, isChiefOfStaff: boolean): EmployeeOperationalState {
   if (isChiefOfStaff && actionLoading) {
@@ -129,6 +140,146 @@ export const useStore = create<OfficeState>((set, get) => ({
   actionLoading: false,
   error: undefined,
   health: undefined,
+  streamStatus: 'disconnected',
+
+  initStream: () => {
+    if (streamClient) {
+      streamClient.close();
+    }
+    const state = get();
+    streamClient = new OfficeEventStreamClient(
+      state.activeProject,
+      {
+        onEvent: (evt) => {
+          get().handleIncomingStreamEvent(evt);
+        },
+        onStatusChange: (status) => {
+          set({ streamStatus: status });
+        },
+      }
+    );
+    streamClient.connect();
+  },
+
+  closeStream: () => {
+    if (streamClient) {
+      streamClient.close();
+      streamClient = null;
+    }
+    set({ streamStatus: 'disconnected' });
+  },
+
+  handleIncomingStreamEvent: (event: OfficeEvent) => {
+    if (processedEventIds.has(event.id)) {
+      return; // Deduplicação
+    }
+    processedEventIds.add(event.id);
+
+    const state = get();
+
+    // 1. Registrar no stream de eventos do office
+    set((s) => ({
+      officeEvents: [event, ...s.officeEvents.filter((e) => e.id !== event.id).slice(0, 99)],
+    }));
+
+    // 2. Processar efeitos semânticos
+    switch (event.type) {
+      case 'OBJECTIVE_SUBMITTED':
+        state.triggerSpeechBubble({
+          senderId: 'ceo',
+          senderName: 'CEO',
+          targetId: 'chief-of-staff',
+          content: truncateText(event.payload?.objective || event.summary, 55),
+          durationMs: 4000,
+          type: 'CHAT',
+        });
+        break;
+
+      case 'PLAN_FORMULATED':
+        state.triggerSpeechBubble({
+          senderId: 'chief-of-staff',
+          senderName: 'Chief of Staff',
+          targetId: 'ceo',
+          content: `Plano de ${event.payload?.stepCount || 'múltiplas'} etapas formulado!`,
+          durationMs: 5000,
+          type: 'PLAN',
+        });
+        break;
+
+      case 'STEP_DELEGATED':
+        if (event.targetId) {
+          state.triggerSpeechBubble({
+            senderId: event.targetId,
+            senderName: event.targetId.toUpperCase(),
+            content: `Etapa delegada: ${truncateText(event.summary, 45)}`,
+            durationMs: 4000,
+            type: 'TASK',
+          });
+        }
+        break;
+
+      case 'AGENT_STARTED_WORK':
+        if (event.actorId) {
+          state.triggerSpeechBubble({
+            senderId: event.actorId,
+            senderName: event.actorId.toUpperCase(),
+            content: `Trabalhando: ${truncateText(event.summary, 45)}`,
+            durationMs: 4000,
+            type: 'TASK',
+          });
+        }
+        break;
+
+      case 'AGENT_FINISHED_WORK':
+        if (event.actorId) {
+          state.triggerSpeechBubble({
+            senderId: event.actorId,
+            senderName: event.actorId.toUpperCase(),
+            content: `Concluído: ${truncateText(event.summary, 45)}`,
+            durationMs: 5000,
+            type: 'TASK',
+          });
+        }
+        break;
+
+      case 'AGENT_FAILED_WORK':
+        if (event.actorId) {
+          state.triggerSpeechBubble({
+            senderId: event.actorId,
+            senderName: event.actorId.toUpperCase(),
+            content: `Erro: ${truncateText(event.summary, 40)}`,
+            durationMs: 4500,
+            type: 'TASK',
+          });
+        }
+        break;
+
+      case 'AGENT_HANDOFF':
+        if (event.targetId && event.actorId) {
+          activeHandoffs.set(event.targetId, event.actorId);
+          setTimeout(() => {
+            activeHandoffs.delete(event.targetId!);
+            get().loadData();
+          }, 12000);
+        }
+        break;
+
+      case 'MESSAGE_SENT':
+      case 'MESSAGE_RECEIVED':
+      case 'AGENT_RESPONDED':
+        if (event.actorId) {
+          state.triggerSpeechBubble({
+            senderId: event.actorId,
+            senderName: event.actorId.toUpperCase(),
+            targetId: event.targetId,
+            content: truncateText(event.summary, 55),
+            durationMs: 4500,
+            type: 'CHAT',
+          });
+        }
+        break;
+    }
+  },
 
   loadData: async () => {
     try {
@@ -145,21 +296,6 @@ export const useStore = create<OfficeState>((set, get) => ({
 
         if (!prevStatus) {
           observedTaskStatuses.set(task.id, task.status);
-          if (task.status === 'RUNNING' && task.agentId) {
-            state.recordOfficeEvent({
-              type: 'AGENT_STARTED_WORK',
-              actorId: task.agentId,
-              taskId: task.id,
-              summary: `Iniciou execução: ${truncateText(task.objective, 40)}`,
-            });
-            state.triggerSpeechBubble({
-              senderId: task.agentId,
-              senderName: task.agentId.toUpperCase(),
-              content: `Trabalhando: ${truncateText(task.objective, 45)}`,
-              durationMs: 4000,
-              type: 'TASK',
-            });
-          }
         } else if (prevStatus !== task.status) {
           observedTaskStatuses.set(task.id, task.status);
 
@@ -170,13 +306,6 @@ export const useStore = create<OfficeState>((set, get) => ({
               taskId: task.id,
               summary: `Concluiu com sucesso: ${truncateText(task.result?.summary || task.objective, 40)}`,
             });
-            state.triggerSpeechBubble({
-              senderId: task.agentId,
-              senderName: task.agentId.toUpperCase(),
-              content: `Concluído: ${truncateText(task.result?.summary || 'Entregável finalizado', 45)}`,
-              durationMs: 5000,
-              type: 'TASK',
-            });
           } else if (task.status === 'FAILED' && task.agentId) {
             state.recordOfficeEvent({
               type: 'AGENT_FAILED_WORK',
@@ -184,26 +313,12 @@ export const useStore = create<OfficeState>((set, get) => ({
               taskId: task.id,
               summary: `Falhou: ${truncateText(task.error || 'Erro na execução', 40)}`,
             });
-            state.triggerSpeechBubble({
-              senderId: task.agentId,
-              senderName: task.agentId.toUpperCase(),
-              content: `Erro: ${truncateText(task.error || 'Falha na tarefa', 40)}`,
-              durationMs: 4500,
-              type: 'TASK',
-            });
           } else if (task.status === 'RUNNING' && task.agentId) {
             state.recordOfficeEvent({
               type: 'AGENT_STARTED_WORK',
               actorId: task.agentId,
               taskId: task.id,
               summary: `Iniciou execução: ${truncateText(task.objective, 40)}`,
-            });
-            state.triggerSpeechBubble({
-              senderId: task.agentId,
-              senderName: task.agentId.toUpperCase(),
-              content: `Trabalhando: ${truncateText(task.objective, 45)}`,
-              durationMs: 4000,
-              type: 'TASK',
             });
           }
         }
@@ -303,6 +418,7 @@ export const useStore = create<OfficeState>((set, get) => ({
 
   setActiveProject: (project) => {
     set({ activeProject: project });
+    get().initStream();
   },
 
   recordOfficeEvent: (eventData) => {
@@ -311,9 +427,12 @@ export const useStore = create<OfficeState>((set, get) => ({
       id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       timestamp: new Date().toLocaleTimeString('pt-BR'),
     };
-    set((state) => ({
-      officeEvents: [fullEvent, ...state.officeEvents.slice(0, 99)],
-    }));
+    if (!processedEventIds.has(fullEvent.id)) {
+      processedEventIds.add(fullEvent.id);
+      set((state) => ({
+        officeEvents: [fullEvent, ...state.officeEvents.slice(0, 99)],
+      }));
+    }
     return fullEvent;
   },
 
@@ -362,23 +481,6 @@ export const useStore = create<OfficeState>((set, get) => ({
       type: 'TEXT',
     });
 
-    state.recordOfficeEvent({
-      type: 'OBJECTIVE_SUBMITTED',
-      actorId: 'ceo',
-      targetId: 'chief-of-staff',
-      summary: `Novo objetivo: ${truncateText(objectiveText, 50)}`,
-      payload: { objective: objectiveText },
-    });
-
-    state.triggerSpeechBubble({
-      senderId: 'ceo',
-      senderName: 'CEO',
-      targetId: 'chief-of-staff',
-      content: truncateText(objectiveText, 55),
-      durationMs: 4000,
-      type: 'CHAT',
-    });
-
     try {
       const plan = await createPlan(objectiveText, {
         project: state.activeProject,
@@ -391,24 +493,6 @@ export const useStore = create<OfficeState>((set, get) => ({
         content: `Objetivo estratégico compreendido. Formulei um Plano Organizacional com ${plan.steps.length} etapas delegadas aos especialistas.`,
         type: 'PLAN',
         plan,
-      });
-
-      state.recordOfficeEvent({
-        type: 'PLAN_FORMULATED',
-        actorId: 'chief-of-staff',
-        targetId: 'ceo',
-        planId: plan.id,
-        summary: `Plano formulado com ${plan.steps.length} etapas delegadas.`,
-        payload: { stepCount: plan.steps.length },
-      });
-
-      state.triggerSpeechBubble({
-        senderId: 'chief-of-staff',
-        senderName: 'Chief of Staff',
-        targetId: 'ceo',
-        content: `Plano de ${plan.steps.length} etapas formulado!`,
-        durationMs: 5000,
-        type: 'PLAN',
       });
 
       set((s) => ({
@@ -447,46 +531,6 @@ export const useStore = create<OfficeState>((set, get) => ({
         task,
         stepId,
       });
-
-      if (step?.agentId) {
-        state.recordOfficeEvent({
-          type: 'STEP_DELEGATED',
-          actorId: 'chief-of-staff',
-          targetId: step.agentId,
-          planId: plan.id,
-          stepId: step.id,
-          taskId: task.id,
-          summary: `Etapa '${step.id}' delegada a ${step.agentId.toUpperCase()}`,
-        });
-
-        state.triggerSpeechBubble({
-          senderId: step.agentId,
-          senderName: step.agentId.toUpperCase(),
-          content: `Iniciando: ${truncateText(step.description, 45)}`,
-          durationMs: 4000,
-          type: 'TASK',
-        });
-
-        // Registrar handoff operacional se houver dependência
-        if (step.dependsOn && step.dependsOn.length > 0) {
-          const prevStepId = step.dependsOn[0];
-          const prevStep = plan.steps.find((s) => s.id === prevStepId);
-          if (prevStep?.agentId && prevStep.agentId !== step.agentId) {
-            activeHandoffs.set(step.agentId, prevStep.agentId);
-
-            state.recordOfficeEvent({
-              type: 'AGENT_HANDOFF',
-              actorId: prevStep.agentId,
-              targetId: step.agentId,
-              summary: `Handoff de ${prevStep.agentId.toUpperCase()} para ${step.agentId.toUpperCase()}`,
-            });
-
-            setTimeout(() => {
-              activeHandoffs.delete(step.agentId!);
-            }, 12000);
-          }
-        }
-      }
 
       await state.loadData();
       set({ actionLoading: false });
