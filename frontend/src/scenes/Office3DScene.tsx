@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
@@ -8,24 +8,35 @@ import {
   OfficeWalls,
   WorkstationTable,
   MeetingRoomArea,
-  LoungeCoffeeArea,
-  OfficePlant,
+  DunderBreakroom,
   ClassicWatercooler,
+  LoungeSofa,
+  OfficePlant,
 } from './Office3DFurniture';
 import { TurntableVinyl } from './TurntableVinyl';
 import { Office3DAvatar } from './Office3DAvatar';
 import { AGENT_AVATAR_PROFILES } from '../config/officeLayout';
-import { VinylJukeboxModal, VINYL_ALBUMS, type VinylAlbum } from '../components/VinylJukeboxModal';
-import { defaultAudioEngine } from '../services/audioEngine';
+import { VinylJukeboxModal, VINYL_ALBUMS } from '../components/VinylJukeboxModal';
 
 export const Office3DScene: React.FC = () => {
-  const { agents, ceo, selectedAgent, selectAgent, speechBubbles } = useStore();
-  const controlsRef = useRef<OrbitControlsImpl>(null);
-  const [isPlayingVinyl, setIsPlayingVinyl] = useState(true);
-  const [isJukeboxOpen, setIsJukeboxOpen] = useState(false);
-  const [activeAlbum, setActiveAlbum] = useState<VinylAlbum>(VINYL_ALBUMS[0]);
+  const {
+    agents,
+    ceo,
+    selectedAgent,
+    selectAgent,
+    speechBubbles,
+    isPlayingVinyl,
+    activeAlbumId,
+    togglePlayVinyl,
+    selectVinylAlbum,
+    isJukeboxOpen,
+    setJukeboxOpen,
+  } = useStore();
 
-  // Mapeamento das posições 3D no espaço do escritório
+  const controlsRef = useRef<OrbitControlsImpl>(null);
+  const activeAlbum = VINYL_ALBUMS.find((a) => a.id === activeAlbumId) || VINYL_ALBUMS[0];
+
+  // Posições das estações
   const positions: Record<string, { table: [number, number, number]; avatar: [number, number, number]; rot?: [number, number, number] }> = {
     ceo: {
       table: [0, 0, -8],
@@ -38,23 +49,23 @@ export const Office3DScene: React.FC = () => {
       rot: [0, 0, 0],
     },
     architect: {
-      table: [-5.5, 0, 5],
-      avatar: [-5.5, 0, 4.4],
+      table: [-6, 0, 5],
+      avatar: [-6, 0, 4.4],
       rot: [0, Math.PI, 0],
     },
     developer: {
-      table: [5.5, 0, 5],
-      avatar: [5.5, 0, 4.4],
+      table: [6, 0, 5],
+      avatar: [6, 0, 4.4],
       rot: [0, Math.PI, 0],
     },
     reviewer: {
-      table: [-5.5, 0, 10],
-      avatar: [-5.5, 0, 9.4],
+      table: [-6, 0, 10],
+      avatar: [-6, 0, 9.4],
       rot: [0, Math.PI, 0],
     },
     'qa-engineer': {
-      table: [5.5, 0, 10],
-      avatar: [5.5, 0, 9.4],
+      table: [6, 0, 10],
+      avatar: [6, 0, 9.4],
       rot: [0, Math.PI, 0],
     },
   };
@@ -67,119 +78,132 @@ export const Office3DScene: React.FC = () => {
     return agents.find((a) => a.id === id)?.operationalState || 'idle';
   };
 
-  const handleCameraFocus = (target: [number, number, number]) => {
+  const handleCameraFocus = (target: [number, number, number], camPos?: [number, number, number]) => {
     if (controlsRef.current) {
-      controlsRef.current.target.set(target[0], target[1] + 1.0, target[2]);
+      controlsRef.current.target.set(target[0], target[1], target[2]);
+      if (camPos && controlsRef.current.object) {
+        controlsRef.current.object.position.set(camPos[0], camPos[1], camPos[2]);
+      }
       controlsRef.current.update();
     }
   };
 
   return (
     <div className="office-3d-viewport" style={{ width: '100%', height: '100%', position: 'relative', background: '#020617' }}>
-      {/* Botões Flutuantes de Câmera Rápida no Topo Central */}
+      {/* Barra Superior de Câmeras Rápida com Zoom para Detalhes */}
       <div
         style={{
           position: 'absolute',
-          top: 16,
+          top: 14,
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 10,
           display: 'flex',
-          gap: '8px',
-          background: 'rgba(15, 23, 42, 0.75)',
-          backdropFilter: 'blur(10px)',
-          padding: '6px 14px',
+          gap: '6px',
+          background: 'rgba(15, 23, 42, 0.85)',
+          backdropFilter: 'blur(12px)',
+          padding: '6px 12px',
           borderRadius: '24px',
           border: '1px solid #334155',
+          boxShadow: '0 8px 30px rgba(0,0,0,0.6)',
         }}
       >
         <button
-          onClick={() => handleCameraFocus([0, 0, 2])}
-          style={{ background: 'transparent', border: 'none', color: '#38bdf8', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
+          onClick={() => handleCameraFocus([0, 1.0, 2], [0, 18, 22])}
+          style={{ background: 'transparent', border: 'none', color: '#38bdf8', fontSize: '11px', cursor: 'pointer', fontWeight: 700 }}
         >
           🌐 Visão Geral
         </button>
         <button
-          onClick={() => handleCameraFocus([0, 0, -8])}
-          style={{ background: 'transparent', border: 'none', color: '#cbd5e1', fontSize: '11px', cursor: 'pointer' }}
+          onClick={() => handleCameraFocus([0, 1.0, -8], [0, 2.2, -5.5])}
+          style={{ background: 'transparent', border: 'none', color: '#facc15', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
+          title="Zoom na Caneca World's Best Boss do CEO"
         >
-          👑 Gabinete CEO
+          👑 Gabinete CEO &amp; Caneca
         </button>
         <button
-          onClick={() => handleCameraFocus([0, 0, -1])}
+          onClick={() => handleCameraFocus([0, 1.0, -1], [0, 2.2, 1.5])}
           style={{ background: 'transparent', border: 'none', color: '#cbd5e1', fontSize: '11px', cursor: 'pointer' }}
         >
           👔 Chief of Staff
         </button>
         <button
-          onClick={() => handleCameraFocus([5.5, 0, 5])}
+          onClick={() => handleCameraFocus([6, 1.1, 5], [6, 2.2, 7.5])}
           style={{ background: 'transparent', border: 'none', color: '#cbd5e1', fontSize: '11px', cursor: 'pointer' }}
         >
-          💻 Bancada Dev
+          💻 Bancada Dev &amp; CRT
+        </button>
+        <button
+          onClick={() => handleCameraFocus([12, 1.2, 0], [12, 2.8, 3.8])}
+          style={{ background: 'transparent', border: 'none', color: '#f97316', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
+          title="Zoom na Cafeteria, Expresso, Vapor e Watercooler"
+        >
+          ☕ Cafeteria &amp; Vapor
         </button>
         <button
           onClick={() => {
-            handleCameraFocus([-12, 0, -2]);
-            setIsJukeboxOpen(true);
+            handleCameraFocus([-12, 1.2, 0], [-12, 2.4, 2.8]);
           }}
-          style={{ background: 'transparent', border: 'none', color: '#f59e0b', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
+          style={{ background: 'transparent', border: 'none', color: '#38bdf8', fontSize: '11px', cursor: 'pointer', fontWeight: 700 }}
+          title="Zoom na Vitrola de Vinil, Braço Mecânico e Ondas Sonoras"
         >
-          🎵 Lounge &amp; Vinil
+          🎵 Lounge &amp; Vitrola
         </button>
       </div>
 
       <Canvas shadows>
         <PerspectiveCamera makeDefault position={[0, 18, 22]} fov={40} />
+        {/* OrbitControls com Zoom Mínimo de 0.5 para permitir ver qualquer parafuso e texto */}
         <OrbitControls
           ref={controlsRef}
           enableDamping
           dampingFactor={0.05}
-          maxPolarAngle={Math.PI / 2.1}
-          minDistance={6}
-          maxDistance={38}
+          maxPolarAngle={Math.PI / 2.05}
+          minDistance={0.5}
+          maxDistance={50}
           target={[0, 1.0, 2]}
         />
 
         {/* Iluminação Ambiente Suave e Luzes Direcionais */}
-        <ambientLight intensity={0.65} color="#e2e8f0" />
+        <ambientLight intensity={0.7} color="#e2e8f0" />
         <directionalLight
-          position={[10, 20, 15]}
-          intensity={1.2}
+          position={[10, 22, 15]}
+          intensity={1.3}
           castShadow
           shadow-mapSize-width={2048}
           shadow-mapSize-height={2048}
         />
-        <directionalLight position={[-10, 15, -10]} intensity={0.4} color="#38bdf8" />
+        <directionalLight position={[-12, 15, -10]} intensity={0.5} color="#38bdf8" />
+        <directionalLight position={[14, 12, 5]} intensity={0.4} color="#f59e0b" />
 
-        {/* Chão, Paredes e Áreas Corporativas */}
+        {/* Chão, Paredes e Persianas Dunder Mifflin */}
         <OfficeFloor />
         <OfficeWalls />
         <MeetingRoomArea />
-        <LoungeCoffeeArea />
 
-        {/* Plantas de Escritório Decorativas */}
-        <OfficePlant position={[-6, 0, -3]} />
-        <OfficePlant position={[6, 0, -3]} />
-        <OfficePlant position={[-16, 0, 6]} />
-        <OfficePlant position={[16, 0, 6]} />
+        {/* ☕ A CAFETERIA & BREAKROOM COMPLETA COM VAPOR ANIMADO */}
+        <DunderBreakroom position={[12, 0, 0]} />
 
-        {/* O Clássico Bebedouro / Watercooler The Office */}
-        <ClassicWatercooler position={[-8, 0, 2]} />
+        {/* O Bebedouro / Watercooler The Office */}
+        <ClassicWatercooler position={[10, 0, 2.4]} />
 
-        {/* Toca-Discos de Vinil Interativo */}
+        {/* Plantas Decorativas */}
+        <OfficePlant position={[-5, 0, -3]} />
+        <OfficePlant position={[5, 0, -3]} />
+        <OfficePlant position={[-17, 0, 6]} />
+        <OfficePlant position={[17, 0, 6]} />
+
+        {/* 🎵 O TOCA-DISCOS DE VINIL VINTAGE COM FÍSICA DE BRAÇO E ONDAS SONORAS */}
         <TurntableVinyl
           isPlaying={isPlayingVinyl}
           labelColor={activeAlbum.labelColor}
-          onClick={() => {
-            setIsJukeboxOpen(true);
-            if (!isPlayingVinyl) {
-              setIsPlayingVinyl(true);
-              defaultAudioEngine.play(activeAlbum.id);
-            }
-          }}
+          albumTitle={activeAlbum.title}
+          onClick={() => setJukeboxOpen(true)}
         />
+        {/* Sofá de Couro no Lounge do Vinil */}
+        <LoungeSofa position={[-12, 0, 3.2]} />
 
-        {/* 1. MESA E AVATAR DO CEO (Matheus Paes) */}
+        {/* 1. MESA E AVATAR DO CEO (Matheus Paes) com Caneca World's Best Boss */}
         <WorkstationTable
           position={positions.ceo.table}
           glowColor="#8b5cf6"
@@ -281,26 +305,16 @@ export const Office3DScene: React.FC = () => {
         />
       </Canvas>
 
-      {/* Modal Jukebox de Vinis */}
+      {/* Modal Jukebox de Vinis Conectado ao Store */}
       <VinylJukeboxModal
         isOpen={isJukeboxOpen}
-        onClose={() => setIsJukeboxOpen(false)}
+        onClose={() => setJukeboxOpen(false)}
         selectedAlbumId={activeAlbum.id}
         onSelectAlbum={(album) => {
-          setActiveAlbum(album);
-          setIsPlayingVinyl(true);
-          defaultAudioEngine.play(album.id);
+          selectVinylAlbum(album.id);
         }}
         isPlaying={isPlayingVinyl}
-        onTogglePlay={() => {
-          const next = !isPlayingVinyl;
-          setIsPlayingVinyl(next);
-          if (next) {
-            defaultAudioEngine.play(activeAlbum.id);
-          } else {
-            defaultAudioEngine.stop();
-          }
-        }}
+        onTogglePlay={togglePlayVinyl}
       />
     </div>
   );

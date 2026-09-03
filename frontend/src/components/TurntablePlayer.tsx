@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { defaultAudioEngine } from '../services/audioEngine';
+import React from 'react';
+import { useStore } from '../store/useStore';
 
 interface Track {
   id: string;
@@ -20,36 +20,27 @@ const PLAYLIST: Track[] = [
 ];
 
 export const TurntablePlayer: React.FC = () => {
-  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [volume, setVolume] = useState(65);
+  const {
+    isPlayingVinyl,
+    activeAlbumId,
+    vinylVolume,
+    togglePlayVinyl,
+    selectVinylAlbum,
+    setVinylVolume,
+    setJukeboxOpen,
+  } = useStore();
 
-  const currentTrack = PLAYLIST[currentTrackIndex];
+  const currentTrack = PLAYLIST.find((t) => t.albumId === activeAlbumId) || PLAYLIST[0];
+  const currentTrackIndex = PLAYLIST.findIndex((t) => t.albumId === currentTrack.albumId);
 
   const handleNext = () => {
     const nextIdx = (currentTrackIndex + 1) % PLAYLIST.length;
-    setCurrentTrackIndex(nextIdx);
-    if (isPlaying) {
-      defaultAudioEngine.play(PLAYLIST[nextIdx].albumId);
-    }
+    selectVinylAlbum(PLAYLIST[nextIdx].albumId);
   };
 
   const handlePrev = () => {
     const prevIdx = (currentTrackIndex - 1 + PLAYLIST.length) % PLAYLIST.length;
-    setCurrentTrackIndex(prevIdx);
-    if (isPlaying) {
-      defaultAudioEngine.play(PLAYLIST[prevIdx].albumId);
-    }
-  };
-
-  const handleTogglePlay = () => {
-    const nextState = !isPlaying;
-    setIsPlaying(nextState);
-    if (nextState) {
-      defaultAudioEngine.play(currentTrack.albumId);
-    } else {
-      defaultAudioEngine.stop();
-    }
+    selectVinylAlbum(PLAYLIST[prevIdx].albumId);
   };
 
   return (
@@ -68,11 +59,19 @@ export const TurntablePlayer: React.FC = () => {
         color: '#f8fafc',
       }}
     >
-      <span style={{ fontSize: '14px', animation: isPlaying ? 'spin 4s linear infinite' : 'none' }}>
+      <span
+        onClick={() => setJukeboxOpen(true)}
+        title="Abrir Jukebox de Vinil"
+        style={{ fontSize: '14px', animation: isPlayingVinyl ? 'spin 4s linear infinite' : 'none', cursor: 'pointer' }}
+      >
         📻
       </span>
 
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <div
+        onClick={() => setJukeboxOpen(true)}
+        style={{ display: 'flex', flexDirection: 'column', cursor: 'pointer' }}
+        title="Clique para escolher álbum"
+      >
         <span style={{ fontWeight: 600, color: '#38bdf8', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {currentTrack.title}
         </span>
@@ -90,11 +89,11 @@ export const TurntablePlayer: React.FC = () => {
           ⏮
         </button>
         <button
-          onClick={handleTogglePlay}
-          title={isPlaying ? 'Pausar' : 'Tocar'}
+          onClick={togglePlayVinyl}
+          title={isPlayingVinyl ? 'Pausar' : 'Tocar'}
           style={{ background: 'transparent', border: 'none', color: '#38bdf8', cursor: 'pointer', fontSize: '13px' }}
         >
-          {isPlaying ? '⏸' : '▶'}
+          {isPlayingVinyl ? '⏸' : '▶'}
         </button>
         <button
           onClick={handleNext}
@@ -111,11 +110,10 @@ export const TurntablePlayer: React.FC = () => {
           type="range"
           min="0"
           max="100"
-          value={volume}
+          value={vinylVolume}
           onChange={(e) => {
             const v = parseInt(e.target.value, 10);
-            setVolume(v);
-            defaultAudioEngine.setVolume(v / 100);
+            setVinylVolume(v);
           }}
           style={{ width: '50px', height: '3px', accentColor: '#38bdf8', cursor: 'pointer' }}
         />

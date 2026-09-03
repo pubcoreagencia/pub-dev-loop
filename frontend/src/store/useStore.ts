@@ -45,6 +45,7 @@ import {
   OfficeEventStreamClient,
   type EventStreamStatus,
 } from '../services/eventStream';
+import { defaultAudioEngine } from '../services/audioEngine';
 
 export interface OfficeState {
   ceo: CeoIdentity;
@@ -71,6 +72,15 @@ export interface OfficeState {
   error?: string;
   health?: { status: string; runtime?: string; [key: string]: any };
   streamStatus: EventStreamStatus;
+
+  isPlayingVinyl: boolean;
+  activeAlbumId: string;
+  vinylVolume: number;
+  isJukeboxOpen: boolean;
+  togglePlayVinyl: () => void;
+  selectVinylAlbum: (albumId: string) => void;
+  setVinylVolume: (volume: number) => void;
+  setJukeboxOpen: (open: boolean) => void;
 
   initStream: () => void;
   closeStream: () => void;
@@ -182,6 +192,35 @@ export const useStore = create<OfficeState>((set, get) => ({
   error: undefined,
   health: undefined,
   streamStatus: 'disconnected',
+
+  isPlayingVinyl: false,
+  activeAlbumId: 'album-synth',
+  vinylVolume: 65,
+  isJukeboxOpen: false,
+
+  togglePlayVinyl: () => {
+    const next = !get().isPlayingVinyl;
+    set({ isPlayingVinyl: next });
+    if (next) {
+      defaultAudioEngine.play(get().activeAlbumId);
+    } else {
+      defaultAudioEngine.stop();
+    }
+  },
+
+  selectVinylAlbum: (albumId: string) => {
+    set({ activeAlbumId: albumId, isPlayingVinyl: true });
+    defaultAudioEngine.play(albumId);
+  },
+
+  setVinylVolume: (volume: number) => {
+    set({ vinylVolume: volume });
+    defaultAudioEngine.setVolume(volume / 100);
+  },
+
+  setJukeboxOpen: (open: boolean) => {
+    set({ isJukeboxOpen: open });
+  },
 
   toggleAwarenessPanel: (open) => {
     set((s) => ({ isAwarenessPanelOpen: open !== undefined ? open : !s.isAwarenessPanelOpen }));

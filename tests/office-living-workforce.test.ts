@@ -150,7 +150,7 @@ describe('PDL — Phase 9.0: The Living 3D Office & Workforce Personas Suite', (
 
   it('20. Open-ended discussion generates multi-agent debate quoting the CEO prompt', () => {
     const replies = defaultWatercoolerEngine.generateMultiAgentReaction('O que vocês acham de adotar WebAssembly?');
-    expect(replies.length).toBe(4);
+    expect(replies.length).toBe(5);
     expect(replies.some(r => r.speakerId === 'developer')).toBe(true);
     expect(replies.some(r => r.speakerId === 'architect')).toBe(true);
   });

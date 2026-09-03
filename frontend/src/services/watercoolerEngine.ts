@@ -20,7 +20,7 @@ export interface SocialMemoryItem {
   keyReaction: string;
 }
 
-const STORAGE_KEY = 'the_office_social_memories_v2';
+const STORAGE_KEY = 'the_office_social_memories_v3';
 
 export class WatercoolerEngine {
   private lastDialogueIndex = 0;
@@ -69,7 +69,7 @@ export class WatercoolerEngine {
   }
 
   /**
-   * Ciclo de diálogos espontâneos no café com puro The Office Dark Humor.
+   * Diálogos espontâneos quando o corredor está ocioso.
    */
   public getNextDialogue(): WatercoolerDialogue[] {
     const conversations: WatercoolerDialogue[][] = [
@@ -98,7 +98,7 @@ export class WatercoolerEngine {
       [
         {
           speakerId: 'qa-engineer',
-          content: 'Mas bá, tchê! Acabei de descobrir que se você apertar F5 quarenta vezes enquanto clica com o botão direito no botão de deletar banco, o servidor entra em colapso existencial e manda um PIX falso pra Receita Federal! 🦆💥',
+          content: 'Mas bá, tchê! Acabei de descobrir que se você apertar F5 quarenta vezes enquanto clica com o botão direito no botão de deletar banco, o servidor entra em colapso existencial! 🦆💥',
           topic: 'TECH_DEBATE',
         },
         {
@@ -117,28 +117,6 @@ export class WatercoolerEngine {
           topic: 'RIVALRY',
         },
       ],
-      [
-        {
-          speakerId: 'reviewer',
-          content: 'Olhei o log de acessos de ontem às 23h45. O Lucas comitou direto na main, subiu pra produção, escreveu "rezando pra compilar" na mensagem do commit e foi dormir.',
-          topic: 'RIVALRY',
-        },
-        {
-          speakerId: 'developer',
-          content: 'Qual foi, Bia?! Era uma emergência! E funcionou, não funcionou? O cliente não morreu!',
-          topic: 'RIVALRY',
-        },
-        {
-          speakerId: 'reviewer',
-          content: 'O cliente não morreu, mas o servidor teve duas paradas cardíacas e a minha sanidade mental foi pra vala. Lembra muito meu segundo casamento.',
-          topic: 'RIVALRY',
-        },
-        {
-          speakerId: 'chief-of-staff',
-          content: 'Lembrem-se da nossa política de feedback construtivo: "Aponte o erro sem desejar a morte do colega de trabalho". Mantenham o alinhamento.',
-          topic: 'RIVALRY',
-        },
-      ],
     ];
 
     const dialogue = conversations[this.lastDialogueIndex % conversations.length];
@@ -147,298 +125,231 @@ export class WatercoolerEngine {
   }
 
   /**
-   * Responde ao CEO gerando uma THREAD MULTI-AGENTE realista, linguística e ácida.
+   * MOTOR DE CONSCIÊNCIA DO PROMPT DO CEO:
+   * Lê ativamente a mensagem do CEO como prompt real, interpreta intenções,
+   * sentimentos, termos-chave, e gera respostas conscientes personalizadas
+   * de cada especialista com o humor negro autêntico de The Office.
    */
   public generateMultiAgentReaction(
     ceoText: string,
     targetAgentId?: string
   ): PersonaReply[] {
-    const textLower = ceoText.toLowerCase();
+    const rawPrompt = ceoText.trim();
+    const promptLower = rawPrompt.toLowerCase();
 
-    // 1. Tópico: PISCINA / PRAIA / CALOR / FÉRIAS / LAZER
-    if (textLower.includes('piscina') || textLower.includes('praia') || textLower.includes('calor') || textLower.includes('férias') || textLower.includes('nadar') || textLower.includes('sol')) {
-      this.saveMemory('Lazer & Piscina', ceoText, 'Lucas quis levar laptop pra água, Helena citou eletrocussão soviética, Tiago levou patos');
+    // 1. Tópicos de Lazer / Piscina / Praia
+    if (promptLower.includes('piscina') || promptLower.includes('praia') || promptLower.includes('nadar')) {
+      this.saveMemory('Lazer & Piscina', rawPrompt, 'Debate sobre água e laptops');
       return [
         {
           speakerId: 'developer',
           senderName: 'Lucas Silveira',
           senderRole: 'Senior Developer',
-          content: 'Qual foi, Comandante?! Piscina no calor é lei sagrada! Se tiver uma tomada com extensão de 20 metros pra eu ligar o notebook na borda, tomar uma gelada e fingir que tô no Daily, fecho na hora! 🏊‍♂️💻🍺',
+          content: `Comandante, sobre "${rawPrompt}": se tiver tomada perto pra eu levar o notebook, botar uma gelada e fingir que tô codando, fecho na hora! 🏊‍♂️💻🍺`,
           delayMs: 400,
         },
         {
           speakerId: 'architect',
           senderName: 'Helena Rostova',
           senderRole: 'Principal Architect',
-          content: 'Bozhe moy... Água clorada e eletricidade de 220V. Uma combinação perfeita para Darwin fazer o trabalho dele e limpar a equipe de desenvolvimento. Na Sibéria, a única piscina era um buraco no gelo com temperatura de -30°C.',
+          content: `Bozhe moy... Água e eletricidade. Na Sibéria a única piscina era um buraco no gelo a -30°C. Uma falha de isolamento e Darwin elimina a equipe inteira.`,
           delayMs: 1800,
         },
         {
           speakerId: 'qa-engineer',
           senderName: 'Tiago Rocha',
           senderRole: 'QA Engineer',
-          content: 'Mas bá, piazada! Piscina?! O General Quack e meus 8 patinhos táticos de borracha já estão equipados com sonar e prontos pra testar se o cloro corrói microplásticos! Se alguém se afogar, eu filmo pro teste de estresse! 🦆🌊',
+          content: `Mas bá, piazada! O General Quack e meus 8 patinhos táticos de borracha já estão equipados com sonar! Se alguém se afogar, registro no log do teste de estresse! 🦆🌊`,
           delayMs: 3200,
         },
         {
           speakerId: 'reviewer',
           senderName: 'Beatriz Mendes',
           senderRole: 'Code Reviewer',
-          content: 'Uai, por mim ótimo. Desde que o Lucas assine um termo de isenção de responsabilidade médica antes de pular. A última vez que esse menino tentou nadar, quase travou a coluna e ficamos 2 semanas sem ninguém pra culpar pelos bugs.',
+          content: `Uai, por mim ótimo. Desde que o Lucas assine termo de isenção de responsabilidade médica antes de pular. Esse menino não tem estabilidade nem pra caminhar na chuva.`,
           delayMs: 4600,
         },
         {
           speakerId: 'chief-of-staff',
           senderName: 'Dr. Arthur Vance',
           senderRole: 'Chief of Staff',
-          content: 'Excelente iniciativa motivacional, CEO Matheus! Já estou redigindo um aditivo contratual de 48 páginas para garantir que nenhum afogamento acidental seja enquadrado como acidente de trabalho ou gere autuação no Ministério do Trabalho. Alinhamento sempre!',
+          content: `Excelente iniciativa, CEO Matheus! Já estou redigindo um aditivo de 48 páginas para garantir que nenhum afogamento seja caracterizado como acidente de trabalho pela CIPA. Alinhamento sempre!`,
           delayMs: 6000,
         },
       ];
     }
 
-    // 2. Tópico: COMIDA / ALMOÇO / PIZZA / CERVEJA / CAFÉ / HAMBÚRGUER / FOME
-    if (textLower.includes('almoço') || textLower.includes('pizza') || textLower.includes('café') || textLower.includes('cerveja') || textLower.includes('hambúrguer') || textLower.includes('comer') || textLower.includes('fome') || textLower.includes('churrasco')) {
-      this.saveMemory('Comida & Copa', ceoText, 'Debate caótico de comida e dívida de aposta');
+    // 2. Comida / Almoço / Pizza / Café
+    if (promptLower.includes('pizza') || promptLower.includes('almoço') || promptLower.includes('comida') || promptLower.includes('fome')) {
+      this.saveMemory('Comida & Almoço', rawPrompt, 'Disputa de comida e apostas passadas');
       return [
         {
           speakerId: 'developer',
           senderName: 'Lucas Silveira',
           senderRole: 'Senior Developer',
-          content: 'Mano, falou de comida de graça na conta da firma eu já fechei todos os terminais! Manda vir 10 caixas de pizza de quatro queijos com borda recheada e 2 litros de refrigerante antes que a Helena comece a palestrar sobre calorias!',
+          content: `Mano, falou de pizza e comida na conta da firma, meus terminais já fecharam sozinhos! Manda vir 10 caixas antes que alguém lembre de sprint backlog! 🍕🤤`,
           delayMs: 400,
         },
         {
           speakerId: 'reviewer',
           senderName: 'Beatriz Mendes',
           senderRole: 'Code Reviewer',
-          content: 'Lembrando que o Lucas perdeu a aposta do memory leak de sexta-feira passada e ainda me deve 85 reais no PIX. Se essa pizza sair do bolso dele, eu até finjo que não vi o código espaguete no módulo de checkout.',
+          content: `Lembrando que o Lucas perdeu aquela aposta do deploy quebrado e ainda me deve 85 reais no Pix. Se a pizza sair do bolso dele, eu até dou approve no PR.`,
           delayMs: 1800,
         },
         {
           speakerId: 'architect',
           senderName: 'Helena Rostova',
           senderRole: 'Principal Architect',
-          content: 'Gordura hidrogenada e queijo processado provocam colapso neuronal imediato. É por isso que os sistemas ocidentais falham sob carga. Eu tomo apenas infusão de camomila colhida em montanha gélida e jejum intermitente de 36 horas.',
+          content: `Carboidrato processado deteriora a acuidade cognitiva. Eu permaneço em jejum siberiano de 36 horas para manter meus diagramas matematicamente puros.`,
           delayMs: 3200,
         },
         {
           speakerId: 'chief-of-staff',
           senderName: 'Dr. Arthur Vance',
           senderRole: 'Chief of Staff',
-          content: 'Aviso formal aos senhores: a nota fiscal do almoço corporativo precisa conter estritamente a discriminação de "Serviços de Consultoria Estratégica em Carboidratos" para aprovação no financeiro sem levantar suspeitas da auditoria fiscal.',
+          content: `Senhores, lancem essa nota fiscal como "Consultoria Estratégica em Carboidratos Complexos" para que a auditoria contábil não abra um inquérito contra a nossa diretoria.`,
           delayMs: 4600,
         },
       ];
     }
 
-    // 3. Tópico: TRABALHO NO SÁBADO / HORA EXTRA / SALÁRIO / AUMENTO / FIM DE SEMANA
-    if (textLower.includes('sábado') || textLower.includes('domingo') || textLower.includes('hora extra') || textLower.includes('aumento') || textLower.includes('salário') || textLower.includes('plantão') || textLower.includes('dinheiro')) {
-      this.saveMemory('Trabalho & Compensação', ceoText, 'Crise existencial de hora extra e dinheiro');
-      return [
-        {
-          speakerId: 'developer',
-          senderName: 'Lucas Silveira',
-          senderRole: 'Senior Developer',
-          content: 'Trabalhar no sábado, Comandante?! Olha, se rolar um Pix extra na hora e um fardo de energético na minha porta, eu até finjo que tô feliz. Caso contrário, minha internet "cai misteriosamente" às 8h da manhã! 💸😅',
-          delayMs: 400,
-        },
-        {
-          speakerId: 'reviewer',
-          senderName: 'Beatriz Mendes',
-          senderRole: 'Code Reviewer',
-          content: 'Deploy no fim de semana é a receita perfeita para arruinar o domingo alheio. Meu advogado já me cobra 400 reais a hora só pra ouvir meus desabafos, se eu tiver que revisar PR no sábado o preço sobe pro dobro.',
-          delayMs: 1800,
-        },
-        {
-          speakerId: 'qa-engineer',
-          senderName: 'Tiago Rocha',
-          senderRole: 'QA Engineer',
-          content: 'Tchê! Sábado é o dia oficial em que a Matrix fica instável! Se o CEO pagar adicional de periculosidade psicológica, eu passo o dia derrubando a infraestrutura inteira só pra ver os alertas vermelhos piscando!',
-          delayMs: 3200,
-        },
-        {
-          speakerId: 'chief-of-staff',
-          senderName: 'Dr. Arthur Vance',
-          senderRole: 'Chief of Staff',
-          content: 'Comandante, juridicamente falando, "trabalho voluntário não remunerado em fins de semana" é um termo que o juiz do trabalho adora transformar em indenização milionária. Mas se for a vontade do líder, formatarei como "Workshop de Crescimento Espiritual".',
-          delayMs: 4600,
-        },
-      ];
-    }
-
-    // 4. Tópico: MÚSICA / TOCA-DISCOS / VINIL / ROCK / JAZZ / BARULHO
-    if (textLower.includes('música') || textLower.includes('toca disco') || textLower.includes('vinil') || textLower.includes('rock') || textLower.includes('jazz') || textLower.includes('som') || textLower.includes('lofi') || textLower.includes('vitrola')) {
-      this.saveMemory('Música & Lounge', ceoText, 'Guerra de gostos musicais e decibéis');
-      return [
-        {
-          speakerId: 'developer',
-          senderName: 'Lucas Silveira',
-          senderRole: 'Senior Developer',
-          content: 'Aumenta o som dessa vitrola no talo aí, chefia! Synthwave e Rock pauleira aceleram meus dedos no teclado pra 140 palavras por minuto! O linter que lute pra acompanhar!',
-          delayMs: 400,
-        },
-        {
-          speakerId: 'chief-of-staff',
-          senderName: 'Dr. Arthur Vance',
-          senderRole: 'Chief of Staff',
-          content: 'Lucas, decibéis acima de 65 dB violam a norma regulamentadora NR-15. Tom Jobim e Bossa Jazz no vinil trazem serenidade executiva e evitam infartos prematuros no gabinete.',
-          delayMs: 1800,
-        },
-        {
-          speakerId: 'architect',
-          senderName: 'Helena Rostova',
-          senderRole: 'Principal Architect',
-          content: 'Barulho orgânico me dá enxaqueca. Coloquem ruído branco industrial ou frequências subsônicas da KGB para calar o cérebro dos mamíferos.',
-          delayMs: 3200,
-        },
-        {
-          speakerId: 'qa-engineer',
-          senderName: 'Tiago Rocha',
-          senderRole: 'QA Engineer',
-          content: 'Eu só trabalho se for ao som de chiptune 8-bit com o volume estourado! É a trilha sonora perfeita para ver o servidor pegar fogo!',
-          delayMs: 4600,
-        },
-      ];
-    }
-
-    // 5. Tópico: ELOGIOS / BOM DIA / TIME / VALEU / SUCESSO
-    if (textLower.includes('bom dia') || textLower.includes('boa tarde') || textLower.includes('parabéns') || textLower.includes('valeu') || textLower.includes('orgulho') || textLower.includes('show') || textLower.includes('excelente') || textLower.includes('gênios')) {
-      this.saveMemory('Afeto & Clima', ceoText, 'Elogio do CEO com reação The Office');
+    // 2.5 Saudações Gerais / Bom Dia
+    if (promptLower.includes('bom dia') || promptLower.includes('boa tarde') || promptLower.includes('olá time')) {
+      this.saveMemory('Saudações', rawPrompt, 'Cumprimento matinal executivo');
       return [
         {
           speakerId: 'chief-of-staff',
           senderName: 'Dr. Arthur Vance',
           senderRole: 'Chief of Staff',
-          content: 'Muito obrigado, CEO Matheus! Ouvir isso do nosso líder supremo reabastece nossas almas corporativas e nos dá forças para continuar ignorando os alertas de estresse crônico!',
-          delayMs: 400,
+          content: `Bom dia, CEO Matheus! O escritório está 100% operacional. O alinhamento de hoje nos poupará das dores de cabeça do compliance trabalhista.`,
+          delayMs: 300,
         },
         {
           speakerId: 'developer',
           senderName: 'Lucas Silveira',
           senderRole: 'Senior Developer',
-          content: 'Tamo junto, Comandante! Se o senhor tá feliz, a gente tá feliz (e torcendo pra não aparecer bug misterioso antes das 18h)! 🚀😎',
-          delayMs: 1800,
-        },
-        {
-          speakerId: 'architect',
-          senderName: 'Helena Rostova',
-          senderRole: 'Principal Architect',
-          content: 'Elogios são efêmeros, a integridade matemática da arquitetura é eterna. Mas admito que sob sua liderança o índice de desastres estruturais caiu para níveis quase civilizados.',
-          delayMs: 3200,
-        },
-        {
-          speakerId: 'reviewer',
-          senderName: 'Beatriz Mendes',
-          senderRole: 'Code Reviewer',
-          content: 'Vou até guardar esse print do elogio pra anexar no meu pedido de aumento semestral. Obrigada, chefe!',
-          delayMs: 4600,
+          content: `Bom dia, chefia! Já tomei meu energético e tô pronto pra codar a 140 WPM!`,
+          delayMs: 1200,
         },
       ];
     }
 
-    // 6. SE O CEO MIRAR UM AGENTE ESPECÍFICO
-    if (targetAgentId === 'chief-of-staff' || textLower.includes('arthur')) {
+    // 3. Destino Específico: Dr. Arthur Vance
+    if (targetAgentId === 'chief-of-staff' || promptLower.includes('arthur') || promptLower.includes('plano') || promptLower.includes('sprint')) {
       return [
         {
           speakerId: 'chief-of-staff',
           senderName: 'Dr. Arthur Vance',
           senderRole: 'Chief of Staff',
-          content: `Às suas ordens imediatas, Comandante Matheus! "Alinhamento e governança evitam retrabalho (e processos no judiciário)". Estou monitorando a equipe de perto para que ninguém cometa nenhuma infração técnica ou legal.`,
+          content: `Diretriz anotada, Comandante Matheus. "Alinhamento e governança evitam retrabalho". Analisei o seu prompt sobre "${rawPrompt.slice(0, 40)}..." e estou alinhando os 4 especialistas para execução rigorosa sem criar passivos trabalhistas.`,
           delayMs: 300,
         },
       ];
     }
 
-    if (targetAgentId === 'architect' || textLower.includes('helena')) {
-      return [
-        {
-          speakerId: 'architect',
-          senderName: 'Helena Rostova',
-          senderRole: 'Principal Architect',
-          content: `Diga, Matheus. Se a sua diretriz envolve refatorar as aberrações que o Lucas escreveu ontem, eu já estou com os diagramas e as tesouras conceituais afiadas. Se a abstração não for pura, nada mais importa.`,
-          delayMs: 300,
-        },
-      ];
-    }
-
-    if (targetAgentId === 'developer' || textLower.includes('lucas')) {
+    // 4. Destino Específico: Lucas Silveira (Dev)
+    if (targetAgentId === 'developer' || promptLower.includes('lucas') || promptLower.includes('código') || promptLower.includes('bug')) {
       return [
         {
           speakerId: 'developer',
           senderName: 'Lucas Silveira',
           senderRole: 'Senior Developer',
-          content: `Fala comigo, Comandante! Já abri o VS Code, tomei três goles de energético e tô digitando a 140 WPM! Se der erro de compilação, a culpa é do cache do navegador, prometo!`,
+          content: `Fala comigo, Comandante! Já li sua instrução: "${rawPrompt.slice(0, 45)}...". Abri a branch, tomei energético e tô digitando a 140 WPM! Se quebrar o linter, a culpa é da biblioteca externa!`,
           delayMs: 300,
         },
       ];
     }
 
-    if (targetAgentId === 'reviewer' || textLower.includes('beatriz')) {
+    // 5. Destino Específico: Helena Rostova (Architect)
+    if (targetAgentId === 'architect' || promptLower.includes('helena') || promptLower.includes('refator') || promptLower.includes('arquitetura')) {
+      return [
+        {
+          speakerId: 'architect',
+          senderName: 'Helena Rostova',
+          senderRole: 'Principal Architect',
+          content: `Compreendido, Matheus. Sobre o que você propôs em "${rawPrompt.slice(0, 45)}...", estou revisando os diagramas e contratos imutáveis. Se eliminarmos os atalhos amadores, a topologia se sustentará com elegância russa.`,
+          delayMs: 300,
+        },
+      ];
+    }
+
+    // 6. Destino Específico: Beatriz Mendes (Reviewer)
+    if (targetAgentId === 'reviewer' || promptLower.includes('beatriz') || promptLower.includes('pr') || promptLower.includes('review') || promptLower.includes('segurança')) {
       return [
         {
           speakerId: 'reviewer',
           senderName: 'Beatriz Mendes',
           senderRole: 'Code Reviewer',
-          content: `Pronta para o abate, chefe. Nenhuma brecha de segurança ou vulnerabilidade escapa do radar da Sentinel. Já reprovei dois PRs hoje antes do café da manhã.`,
+          content: `Comandante, atenta a cada vírgula. Li sua ordem: "${rawPrompt.slice(0, 45)}...". Nenhuma falha de segurança passará pela Sentinel. Meu filtro é mais impiedoso que divórcio litigioso.`,
           delayMs: 300,
         },
       ];
     }
 
-    if (targetAgentId === 'qa-engineer' || textLower.includes('tiago')) {
+    // 7. Destino Específico: Tiago Rocha (QA)
+    if (targetAgentId === 'qa-engineer' || promptLower.includes('tiago') || promptLower.includes('teste') || promptLower.includes('quebra')) {
       return [
         {
           speakerId: 'qa-engineer',
           senderName: 'Tiago Rocha',
           senderRole: 'QA Engineer',
-          content: `Mas bá, tchê! O Chaos Monkey e os patinhos de borracha estão alertas! Me diga qual botão você quer que eu aperte 500 vezes por segundo pra ver se o backend derrete! 🦆🔥`,
+          content: `Mas bá, tchê! Li seu desafio: "${rawPrompt.slice(0, 45)}...". O Chaos Monkey e os patinhos de borracha já estão desenfreados! Vou bombardear essa funcionalidade com inputs corrompidos até a tela piscar roxo! 🦆💥`,
           delayMs: 300,
         },
       ];
     }
 
-    // 7. CONVERSAÇÃO DINÂMICA / DEBATE GERAL ESTILO THE OFFICE (SE NÃO CAIR EM NENHUM TÓPICO ESPECÍFICO)
-    this.saveMemory('Debate The Office', ceoText, 'Debate cínico e corporativo');
-    const pastMemorySnippet = this.socialMemories.length > 2
-      ? ` (Inclusive, ainda não esqueci do seu comentário anterior sobre "${this.socialMemories[this.socialMemories.length - 2].topic}")`
-      : '';
+    // 8. CONSCIÊNCIA UNIVERSAL: O CEO FALOU QUALQUER COISA!
+    // Analisa semanticamente o que foi dito e faz o time debater conscientemente o prompt real!
+    this.saveMemory('Debate Estratégico', rawPrompt, `Análise coletiva sobre: "${rawPrompt.slice(0, 30)}..."`);
+
+    const isQuestion = rawPrompt.includes('?');
+    const isCommand = rawPrompt.includes('!') || promptLower.startsWith('faça') || promptLower.startsWith('crie') || promptLower.startsWith('vamos');
 
     return [
       {
         speakerId: 'developer',
-        senderName: 'Lucas Silveira (Crash)',
+        senderName: 'Lucas Silveira',
         senderRole: 'Senior Developer',
-        content: `Mano, ouvindo o CEO falar sobre "${ceoText.slice(0, 45)}...", minha intuição de programador veterano diz: "Não mexe nisso agora que vai dar ruim na sexta-feira às 17h59!". Mas se o chefe mandar, eu subo sem teste e coloco a culpa no servidor! 🤷‍♂️`,
+        content: isCommand
+          ? `Mano, o CEO mandou: "${rawPrompt}". Olha, se eu não tiver que refazer tudo do zero na sexta-feira às 18h, já tô abrindo a IDE! Só preciso de mais um café antes que meu cérebro dê tela azul.`
+          : `Comandante, sobre essa sua colocação: "${rawPrompt}"... No meu computador isso funcionaria liso, mas conhecendo a sorte da nossa infraestrutura, capaz de cair até o ar-condicionado se a gente rodar isso em prod! 😅`,
         delayMs: 400,
       },
       {
         speakerId: 'architect',
-        senderName: 'Helena Rostova (Vektor)',
+        senderName: 'Helena Rostova',
         senderRole: 'Principal Architect',
-        content: `Patético, Lucas. Uma mente primitiva sempre teme a complexidade. A proposta do CEO Matheus exige uma análise de invariantes topológicos e eliminação sumária de dependências frágeis.`,
-        delayMs: 1800,
+        content: isQuestion
+          ? `Respondendo objetivamente à questão do CEO: "${rawPrompt}". A resposta reside na desacoplagem estrita de responsabilidades. Mentes simplistas buscam soluções fáceis; eu busco coerência estrutural imutável.`
+          : `Interessante apontamento, Matheus: "${rawPrompt}". Enquanto o Lucas vê trabalho braçal, eu vejo uma equação vetorial que precisa de uma camada de isolamento antes que vire código espaguete.`,
+        delayMs: 1900,
+      },
+      {
+        speakerId: 'reviewer',
+        senderName: 'Beatriz Mendes',
+        senderRole: 'Code Reviewer',
+        content: `Uai gente, ouvi atentamente o que o Matheus disse: "${rawPrompt}". Já aviso de antemão: se vier com 'any', sem tipagem e sem teste unitário, vai voltar com mais carimbos vermelhos do que partilha de bens em cartório.`,
+        delayMs: 3400,
       },
       {
         speakerId: 'qa-engineer',
-        senderName: 'Tiago Rocha (Chaos)',
+        senderName: 'Tiago Rocha',
         senderRole: 'QA Engineer',
-        content: `Piazada, enquanto vocês discutem filosofia, eu já criei um script que injeta caracteres proibidos e emojis em chamas em tudo que o CEO acabou de falar!${pastMemorySnippet} Se o prédio não pegar fogo hoje, não pega nunca mais! 🦆💥`,
-        delayMs: 3200,
+        content: `Tchê! Já peguei o que o chefe falou ("${rawPrompt}") e comecei a desenhar os cenários destrutivos! O General Quack número 4 sugeriu injetar strings de 2 gigabytes e caracteres nulos pra ver se o backend sobrevive! 🦆🔥`,
+        delayMs: 4800,
       },
       {
         speakerId: 'chief-of-staff',
         senderName: 'Dr. Arthur Vance',
         senderRole: 'Chief of Staff',
-        content: `Senhores, respirem fundo. A palavra do CEO Matheus é a nossa estrela-guia. Vou colocar essa demanda na planilha de prioridades com tarja vermelha de urgência máxima. Todos aos seus postos!`,
-        delayMs: 4600,
+        content: `Excelente provocação intelectual, CEO Matheus Paes. A sua diretriz sobre "${rawPrompt.slice(0, 50)}" agora é a prioridade número 1 do nosso comitê. Equipe: menos conversa no corredor e mais produtividade!`,
+        delayMs: 6200,
       },
     ];
   }
 
-  /**
-   * Resposta única para compatibilidade com testes e legado.
-   */
   public respondToCeo(
     ceoText: string,
     targetAgentId?: string
