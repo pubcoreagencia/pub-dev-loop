@@ -127,3 +127,79 @@ export async function retryTask(id: string): Promise<Task> {
   }
   return (await res.json()) as Task;
 }
+
+export async function evaluateCodeReview(input: {
+  taskId: string;
+  planId?: string;
+  developerAgentId?: string;
+  reviewerAgentId?: string;
+  project?: string;
+  findings?: any[];
+  testPassed?: boolean;
+  typecheckPassed?: boolean;
+  buildPassed?: boolean;
+}): Promise<any> {
+  const res = await fetch(`${API_BASE}office/reviews/evaluate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to evaluate review: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.review;
+}
+
+export async function requestApproval(input: {
+  planId?: string;
+  taskId?: string;
+  project?: string;
+  type: string;
+  title: string;
+  rationale: string;
+  requestedBy: string;
+}): Promise<any> {
+  const res = await fetch(`${API_BASE}office/approvals/request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to request approval: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.approval;
+}
+
+export async function decideApproval(
+  approvalId: string,
+  decision: 'GRANT' | 'REJECT',
+  notes?: string
+): Promise<any> {
+  const res = await fetch(`${API_BASE}office/approvals/${encodeURIComponent(approvalId)}/decide`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-role': 'CEO',
+    },
+    body: JSON.stringify({ decision, userRole: 'CEO', notes }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to decide approval: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.approval;
+}
+
+export async function fetchApprovals(project?: string): Promise<any[]> {
+  const query = project ? `?project=${encodeURIComponent(project)}` : '';
+  const res = await fetch(`${API_BASE}office/approvals${query}`);
+  if (!res.ok) throw new Error(`Failed to fetch approvals: ${res.status}`);
+  if (!isJsonResponse(res)) throw new Error('Approvals response not JSON');
+  const data = await res.json();
+  return (data.approvals || []) as any[];
+}

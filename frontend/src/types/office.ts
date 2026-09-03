@@ -225,6 +225,43 @@ export interface ChatMessage {
   stepId?: string;
 }
 
+export interface CodeReviewFinding {
+  ruleId: string;
+  severity: 'ERROR' | 'WARNING' | 'INFO';
+  file?: string;
+  line?: number;
+  message: string;
+  suggestion?: string;
+}
+
+export interface CodeReviewResult {
+  reviewId: string;
+  taskId: string;
+  status: 'APPROVED' | 'CHANGES_REQUESTED';
+  iteration: number;
+  findings: CodeReviewFinding[];
+  summary: string;
+}
+
+export type ApprovalType = 'CRITICAL_ARCHITECTURE_CHANGE' | 'PRODUCTION_PROMOTION' | 'SECURITY_OVERRIDE';
+export type ApprovalStatus = 'PENDING' | 'GRANTED' | 'REJECTED';
+
+export interface ApprovalItem {
+  id: string;
+  planId?: string;
+  taskId?: string;
+  project: string;
+  type: ApprovalType;
+  title: string;
+  rationale: string;
+  requestedBy: string;
+  status: ApprovalStatus;
+  decidedBy?: string;
+  decidedAt?: string;
+  decisionNotes?: string;
+  createdAt: string;
+}
+
 export type OfficeEventType =
   | 'MESSAGE_SENT'
   | 'MESSAGE_RECEIVED'
@@ -240,6 +277,11 @@ export type OfficeEventType =
   | 'AGENT_COMMUNICATION'
   | 'MEETING_STARTED'
   | 'MEETING_ENDED'
+  | 'REVIEW_REQUESTED'
+  | 'REVIEW_STARTED'
+  | 'REVIEW_FINDING'
+  | 'REVIEW_CHANGES_REQUESTED'
+  | 'REVIEW_APPROVED'
   | 'APPROVAL_REQUESTED'
   | 'APPROVAL_GRANTED'
   | 'APPROVAL_REJECTED';

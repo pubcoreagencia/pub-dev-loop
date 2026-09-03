@@ -12,6 +12,8 @@ import { defaultAgentRegistry, isValidAgentId } from './office/registry.js';
 import { defaultOfficeOrganization } from './office/organization.js';
 import { createOrganizationalPlan, planStepToTask } from './office/planning.js';
 import { defaultOfficeEventBus } from './office/events.js';
+import { defaultCodeReviewManager } from './office/review.js';
+import { defaultApprovalManager } from './office/approval.js';
 
 export interface HyperdriveBinding {
   connectionString: string;
@@ -583,6 +585,90 @@ export default {
         } catch (err: any) {
           return jsonResponse({ error: err.message }, 500);
         }
+      }
+
+      if (method === 'POST' && path === '/office/reviews/evaluate') {
+        try {
+          const body = (await request.json().catch(() => ({}))) as any;
+          const { taskId, planId, developerAgentId, reviewerAgentId, project, findings, testPassed, typecheckPassed, buildPassed } = body ?? {};
+          if (!taskId) {
+            return jsonResponse({ error: 'taskId is required' }, 400);
+          }
+          const pool = getPool(env);
+          defaultOfficeEventBus.setPool(pool);
+          const review = defaultCodeReviewManager.evaluateReview({
+            taskId,
+            planId,
+            developerAgentId,
+            reviewerAgentId,
+            project,
+            findings,
+            testPassed,
+            typecheckPassed,
+            buildPassed,
+          });
+          return jsonResponse({ review }, 200);
+        } catch (err: any) {
+          return jsonResponse({ error: err.message }, 500);
+        }
+      }
+
+      if (method === 'POST' && path === '/office/approvals/request') {
+        try {
+          const body = (await request.json().catch(() => ({}))) as any;
+          const { planId, taskId, project, type, title, rationale, requestedBy } = body ?? {};
+          if (!type || !title || !rationale || !requestedBy) {
+            return jsonResponse({ error: 'type, title, rationale and requestedBy are required' }, 400);
+          }
+          const pool = getPool(env);
+          defaultOfficeEventBus.setPool(pool);
+          const approval = defaultApprovalManager.requestApproval({
+            planId,
+            taskId,
+            project,
+            type,
+            title,
+            rationale,
+            requestedBy,
+          });
+          return jsonResponse({ approval }, 201);
+        } catch (err: any) {
+          return jsonResponse({ error: err.message }, 500);
+        }
+      }
+
+      if (method === 'POST' && path.startsWith('/office/approvals/') && path.endsWith('/decide')) {
+        try {
+          const approvalId = path.split('/')[3];
+          const body = (await request.json().catch(() => ({}))) as any;
+          const { decision, userRole, notes } = body ?? {};
+          const role = userRole || request.headers.get('x-user-role') || 'GUEST';
+          if (!decision || (decision !== 'GRANT' && decision !== 'REJECT')) {
+            return jsonResponse({ error: 'decision must be GRANT or REJECT' }, 400);
+          }
+          const pool = getPool(env);
+          defaultOfficeEventBus.setPool(pool);
+          const approval = defaultApprovalManager.decideApproval(approvalId, decision, role, notes);
+          return jsonResponse({ approval }, 200);
+        } catch (err: any) {
+          if (err.message.startsWith('UNAUTHORIZED')) {
+            return jsonResponse({ error: err.message }, 403);
+          }
+          if (err.message.startsWith('NOT_FOUND')) {
+            return jsonResponse({ error: err.message }, 404);
+          }
+          if (err.message.startsWith('CONFLICT')) {
+            return jsonResponse({ error: err.message }, 409);
+          }
+          return jsonResponse({ error: err.message }, 500);
+        }
+      }
+
+      if (method === 'GET' && path === '/office/approvals') {
+        const urlObj = new URL(request.url);
+        const project = urlObj.searchParams.get('project')?.trim() || undefined;
+        const approvals = defaultApprovalManager.listApprovals(project);
+        return jsonResponse({ approvals }, 200);
       }
 
       // GET /office/stream (Server-Sent Events for The Office)

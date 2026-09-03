@@ -11,6 +11,9 @@ import type {
   Task,
   ChatMessage,
   OfficeActivityEvent,
+  ApprovalItem,
+  CodeReviewResult,
+  CodeReviewFinding,
 } from '../types/office';
 import {
   fetchAgents,
@@ -18,6 +21,10 @@ import {
   fetchHealth,
   createPlan,
   executePlanStep,
+  evaluateCodeReview,
+  requestApproval,
+  decideApproval,
+  fetchApprovals,
 } from '../services/api';
 import {
   CEO_IDENTITY,
@@ -43,6 +50,7 @@ export interface OfficeState {
   selectedTask?: Task;
   messages: ChatMessage[];
   activities: OfficeActivityEvent[];
+  pendingApprovals: ApprovalItem[];
   activeProject: string;
   loading: boolean;
   actionLoading: boolean;
@@ -59,6 +67,9 @@ export interface OfficeState {
   submitObjective: (objective: string) => Promise<OrganizationalPlan>;
   executeStep: (plan: OrganizationalPlan, stepId: string) => Promise<Task>;
   executeAllSteps: (plan: OrganizationalPlan) => Promise<void>;
+  runCodeReview: (taskId: string, planId?: string, findings?: CodeReviewFinding[], testPassed?: boolean, typecheckPassed?: boolean, buildPassed?: boolean) => Promise<CodeReviewResult>;
+  requestCeoApproval: (input: { planId?: string; taskId?: string; type: any; title: string; rationale: string; requestedBy: string }) => Promise<ApprovalItem>;
+  decideCeoApproval: (approvalId: string, decision: 'GRANT' | 'REJECT', notes?: string) => Promise<ApprovalItem>;
   addMessage: (msg: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
   recordOfficeEvent: (event: Omit<OfficeEvent, 'id' | 'timestamp'>) => OfficeEvent;
   handleIncomingStreamEvent: (event: OfficeEvent) => void;
@@ -138,6 +149,7 @@ export const useStore = create<OfficeState>((set, get) => ({
   selectedTask: undefined,
   messages: INITIAL_MESSAGES,
   activities: [],
+  pendingApprovals: [],
   activeProject: 'pub-dev-loop',
   loading: false,
   actionLoading: false,
@@ -173,7 +185,6 @@ export const useStore = create<OfficeState>((set, get) => ({
   },
 
   triggerSpatialMovement: (agentId, targetAgentId, _purpose = 'HANDOFF', durationMs = 5000) => {
-    // 1. Fase: Aproximando-se do destino espacial
     activeSpatialStates.set(agentId, {
       spatialState: 'approaching',
       facingDirection: targetAgentId === 'architect' || targetAgentId === 'reviewer' ? 'WEST' : 'EAST',
@@ -187,7 +198,6 @@ export const useStore = create<OfficeState>((set, get) => ({
       ceo: agentId === 'ceo' ? { ...s.ceo, spatialState: 'approaching' } : s.ceo,
     }));
 
-    // 2. Fase: Interagindo no ponto de interação (após 1.4s)
     setTimeout(() => {
       activeSpatialStates.set(agentId, {
         spatialState: 'interacting',
@@ -203,7 +213,6 @@ export const useStore = create<OfficeState>((set, get) => ({
       }));
     }, 1400);
 
-    // 3. Fase: Retornando ao posto de trabalho (após 3.8s)
     setTimeout(() => {
       activeSpatialStates.set(agentId, {
         spatialState: 'returning',
@@ -219,7 +228,6 @@ export const useStore = create<OfficeState>((set, get) => ({
       }));
     }, 3800);
 
-    // 4. Fase: Na bancada / idle (após durationMs)
     setTimeout(() => {
       activeSpatialStates.delete(agentId);
       set((s) => ({
@@ -245,7 +253,7 @@ export const useStore = create<OfficeState>((set, get) => ({
       officeEvents: [event, ...s.officeEvents.filter((e) => e.id !== event.id).slice(0, 99)],
     }));
 
-    // 2. Processar efeitos semânticos e espaciais
+    // 2. Processar efeitos semânticos, de diálogo e espaciais
     switch (event.type) {
       case 'OBJECTIVE_SUBMITTED':
         state.triggerSpeechBubble({
@@ -256,8 +264,6 @@ export const useStore = create<OfficeState>((set, get) => ({
           durationMs: 4000,
           type: 'CHAT',
         });
-        state.triggerSpatialMovement('chief-of-staff', undefined, 'MEETING', 6000);
-        state.triggerSpatialMovement('ceo', undefined, 'MEETING', 6000);
         break;
 
       case 'PLAN_FORMULATED':
@@ -322,7 +328,6 @@ export const useStore = create<OfficeState>((set, get) => ({
       case 'AGENT_HANDOFF':
         if (event.targetId && event.actorId) {
           activeHandoffs.set(event.targetId, event.actorId);
-          // Disparo de movimento espacial determinístico para o handoff real
           state.triggerSpatialMovement(event.targetId, event.actorId, 'HANDOFF', 6000);
           setTimeout(() => {
             activeHandoffs.delete(event.targetId!);
@@ -355,6 +360,94 @@ export const useStore = create<OfficeState>((set, get) => ({
         }));
         break;
 
+      case 'REVIEW_FINDING':
+      case 'REVIEW_CHANGES_REQUESTED':
+        if (event.actorId) {
+          state.triggerSpeechBubble({
+            senderId: event.actorId,
+            senderName: 'Code Reviewer',
+            targetId: event.targetId || 'developer',
+            content: truncateText(event.summary, 60),
+            durationMs: 5000,
+            type: 'TASK',
+          });
+          // Developer se desloca para alinhar com o Reviewer
+          state.triggerSpatialMovement('developer', 'reviewer', 'HANDOFF', 6000);
+          state.addMessage({
+            sender: 'AGENT',
+            senderName: 'Code Reviewer (Revisão)',
+            content: event.summary,
+            type: 'TEXT',
+          });
+        }
+        break;
+
+      case 'REVIEW_APPROVED':
+        if (event.actorId) {
+          state.triggerSpeechBubble({
+            senderId: event.actorId,
+            senderName: 'Code Reviewer',
+            targetId: event.targetId || 'developer',
+            content: 'Aprovado: Conformidade técnica validada!',
+            durationMs: 4500,
+            type: 'TASK',
+          });
+          state.addMessage({
+            sender: 'AGENT',
+            senderName: 'Code Reviewer (Aprovação)',
+            content: event.summary,
+            type: 'TEXT',
+          });
+        }
+        break;
+
+      case 'APPROVAL_REQUESTED':
+        set((s) => {
+          const item: ApprovalItem = {
+            id: event.payload?.approvalId || `appr-${Date.now()}`,
+            planId: event.planId,
+            taskId: event.taskId,
+            project: event.project || 'pub-dev-loop',
+            type: event.payload?.type || 'CRITICAL_ARCHITECTURE_CHANGE',
+            title: event.summary,
+            rationale: event.payload?.rationale || '',
+            requestedBy: event.actorId,
+            status: 'PENDING',
+            createdAt: event.timestamp,
+          };
+          return {
+            pendingApprovals: [...s.pendingApprovals.filter((a) => a.id !== item.id), item],
+            ceo: {
+              ...s.ceo,
+              operationalState: 'waiting_for_approval',
+            },
+          };
+        });
+        state.addMessage({
+          sender: 'CHIEF_OF_STAFF',
+          senderName: 'Chief of Staff',
+          content: `⚠️ Decisão Estratégica Requer Aprovação do CEO: ${event.summary}`,
+          type: 'SYSTEM',
+        });
+        break;
+
+      case 'APPROVAL_GRANTED':
+      case 'APPROVAL_REJECTED':
+        set((s) => ({
+          pendingApprovals: s.pendingApprovals.filter((a) => a.id !== event.payload?.approvalId),
+          ceo: {
+            ...s.ceo,
+            operationalState: 'idle',
+          },
+        }));
+        state.addMessage({
+          sender: 'CEO',
+          senderName: 'CEO',
+          content: `Decisão de Diretoria Registrada: ${event.summary}`,
+          type: 'TEXT',
+        });
+        break;
+
       case 'MESSAGE_SENT':
       case 'MESSAGE_RECEIVED':
       case 'AGENT_RESPONDED':
@@ -374,10 +467,11 @@ export const useStore = create<OfficeState>((set, get) => ({
 
   loadData: async () => {
     try {
-      const [agentsData, tasksData, healthData] = await Promise.all([
+      const [agentsData, tasksData, healthData, approvalsData] = await Promise.all([
         fetchAgents().catch(() => []),
         fetchTasks().catch(() => []),
         fetchHealth().catch(() => ({ status: 'offline' })),
+        fetchApprovals(get().activeProject).catch(() => []),
       ]);
 
       const state = get();
@@ -489,16 +583,20 @@ export const useStore = create<OfficeState>((set, get) => ({
           facingDirection: 'SOUTH' as const,
         };
 
+        const hasPendingApproval = approvalsData.some((a) => a.status === 'PENDING');
+
         return {
           agents: enrichedAgents,
           ceo: {
             ...s.ceo,
+            operationalState: hasPendingApproval ? 'waiting_for_approval' : s.ceo.operationalState,
             spatialState: ceoSpatial.spatialState,
             facingDirection: ceoSpatial.facingDirection,
           },
           tasks: tasksData,
           health: healthData,
           meetingRoom: s.meetingRoom,
+          pendingApprovals: approvalsData,
           activities: newActivities.slice(0, 50),
           error: undefined,
         };
@@ -519,6 +617,55 @@ export const useStore = create<OfficeState>((set, get) => ({
   setActiveProject: (project) => {
     set({ activeProject: project });
     get().initStream();
+  },
+
+  runCodeReview: async (taskId, planId, findings, testPassed, typecheckPassed, buildPassed) => {
+    const state = get();
+    try {
+      const review = await evaluateCodeReview({
+        taskId,
+        planId,
+        developerAgentId: 'developer',
+        reviewerAgentId: 'reviewer',
+        project: state.activeProject,
+        findings,
+        testPassed,
+        typecheckPassed,
+        buildPassed,
+      });
+      await state.loadData();
+      return review;
+    } catch (err: any) {
+      set({ error: err.message });
+      throw err;
+    }
+  },
+
+  requestCeoApproval: async (input) => {
+    const state = get();
+    try {
+      const approval = await requestApproval({
+        ...input,
+        project: state.activeProject,
+      });
+      await state.loadData();
+      return approval;
+    } catch (err: any) {
+      set({ error: err.message });
+      throw err;
+    }
+  },
+
+  decideCeoApproval: async (approvalId, decision, notes) => {
+    const state = get();
+    try {
+      const approval = await decideApproval(approvalId, decision, notes);
+      await state.loadData();
+      return approval;
+    } catch (err: any) {
+      set({ error: err.message });
+      throw err;
+    }
   },
 
   recordOfficeEvent: (eventData) => {

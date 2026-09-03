@@ -3,7 +3,7 @@ import { useStore } from '../store/useStore';
 import { PlanViewer } from './PlanViewer';
 
 export const GlobalOfficeChat: React.FC = () => {
-  const { messages, submitObjective, actionLoading } = useStore();
+  const { messages, submitObjective, actionLoading, pendingApprovals, decideCeoApproval } = useStore();
   const [inputText, setInputText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -13,7 +13,7 @@ export const GlobalOfficeChat: React.FC = () => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, actionLoading]);
+  }, [messages, actionLoading, pendingApprovals]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,40 +49,46 @@ export const GlobalOfficeChat: React.FC = () => {
                 {msg.senderRole && (
                   <span className="sender-role">({msg.senderRole})</span>
                 )}
-                <span className="msg-time">{msg.timestamp}</span>
+                <span className="msg-timestamp">{msg.timestamp}</span>
               </div>
 
-              {msg.type === 'TEXT' && (
-                <div className="chat-text">{msg.content}</div>
-              )}
+              <div className="chat-bubble-content">{msg.content}</div>
 
-              {msg.type === 'PLAN' && msg.plan && (
-                <div className="chat-plan-block">
-                  <div className="plan-intro-text">{msg.content}</div>
+              {msg.plan && (
+                <div className="plan-attachment-container">
                   <PlanViewer plan={msg.plan} />
                 </div>
               )}
+            </div>
+          </div>
+        ))}
 
-              {msg.type === 'EXECUTION' && (
-                <div className="chat-execution-block">
-                  <div className="chat-text">{msg.content}</div>
-                  {msg.task && (
-                    <div className="task-execution-snippet">
-                      <span className="snippet-icon">⚙️</span>
-                      <span className="snippet-worker">Worker: {msg.task.worker}</span>
-                      <span className="snippet-status">Status: {msg.task.status === 'RUNNING' ? 'Em Execução' : msg.task.status}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {msg.type === 'ERROR' && (
-                <div className="chat-error-text">⚠️ {msg.content}</div>
-              )}
-
-              {msg.type === 'SYSTEM' && (
-                <div className="chat-system-text">📢 {msg.content}</div>
-              )}
+        {/* CARDS DE APROVAÇÃO PENDENTE DO CEO */}
+        {pendingApprovals.map((appr) => (
+          <div className="chat-bubble-row approval-request-row" key={appr.id}>
+            <div className="approval-card-box">
+              <div className="approval-card-header">
+                <span className="approval-badge">👑 DECISÃO ESTRATÉGICA DO CEO</span>
+                <span className="approval-type-tag">{appr.type}</span>
+              </div>
+              <h4 className="approval-title">{appr.title}</h4>
+              <p className="approval-rationale">{appr.rationale}</p>
+              <div className="approval-actions-row">
+                <button
+                  type="button"
+                  className="btn-approve-action"
+                  onClick={() => decideCeoApproval(appr.id, 'GRANT', 'Aprovado pelo CEO')}
+                >
+                  ✓ APROVAR DIRETRIZ
+                </button>
+                <button
+                  type="button"
+                  className="btn-reject-action"
+                  onClick={() => decideCeoApproval(appr.id, 'REJECT', 'Rejeitado pelo CEO')}
+                >
+                  ✕ REJEITAR
+                </button>
+              </div>
             </div>
           </div>
         ))}

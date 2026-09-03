@@ -1562,3 +1562,102 @@ code, pre, .mono-font, .crt-text, .sender-tag, .snippet-worker, .dep-tag {
   display: block;
   margin-top: 4px;
 }
+
+/* CEO Approval Action Card */
+.approval-request-row {
+  margin: 10px 0;
+}
+
+.approval-card-box {
+  background: #1a102a;
+  border: 2px solid #8b5cf6;
+  border-radius: 8px;
+  padding: 12px 16px;
+  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: approvalPulse 2s infinite ease-in-out;
+}
+
+@keyframes approvalPulse {
+  0%, 100% { border-color: #8b5cf6; box-shadow: 0 0 10px rgba(139, 92, 246, 0.2); }
+  50% { border-color: #c084fc; box-shadow: 0 0 16px rgba(192, 132, 252, 0.5); }
+}
+
+.approval-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.approval-badge {
+  font-size: 10px;
+  font-weight: 800;
+  color: #fde047;
+  letter-spacing: 0.5px;
+}
+
+.approval-type-tag {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #2e1065;
+  color: #c084fc;
+  border: 1px solid #7c3aed;
+}
+
+.approval-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.approval-rationale {
+  margin: 0;
+  font-size: 11px;
+  color: #cbd5e1;
+  line-height: 1.4;
+}
+
+.approval-actions-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn-approve-action {
+  background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+  color: #ffffff;
+  border: 1px solid #15803d;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 6px 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  transition: all 0.15s ease;
+}
+
+.btn-approve-action:hover {
+  background: #16a34a;
+  transform: translateY(-1px);
+}
+
+.btn-reject-action {
+  background: #271c19;
+  color: #f87171;
+  border: 1px solid #7f1d1d;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-reject-action:hover {
+  background: #450a0a;
+}

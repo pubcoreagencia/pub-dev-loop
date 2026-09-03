@@ -17,6 +17,8 @@ import { defaultAgentRegistry, isValidAgentId } from './office/registry.js';
 import { defaultOfficeOrganization } from './office/organization.js';
 import { createOrganizationalPlan, planStepToTask } from './office/planning.js';
 import { defaultOfficeEventBus } from './office/events.js';
+import { defaultCodeReviewManager } from './office/review.js';
+import { defaultApprovalManager } from './office/approval.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const prototypeEvents = new PrototypeEventStream();
@@ -161,6 +163,79 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     } catch (err) {
       return next(err);
     }
+  });
+
+  app.post('/office/reviews/evaluate', (req, res) => {
+    try {
+      const { taskId, planId, developerAgentId, reviewerAgentId, project, findings, testPassed, typecheckPassed, buildPassed } = req.body ?? {};
+      if (!taskId) {
+        return res.status(400).json({ error: 'taskId is required' });
+      }
+      const review = defaultCodeReviewManager.evaluateReview({
+        taskId,
+        planId,
+        developerAgentId,
+        reviewerAgentId,
+        project,
+        findings,
+        testPassed,
+        typecheckPassed,
+        buildPassed,
+      });
+      return res.status(200).json({ review });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/office/approvals/request', (req, res) => {
+    try {
+      const { planId, taskId, project, type, title, rationale, requestedBy } = req.body ?? {};
+      if (!type || !title || !rationale || !requestedBy) {
+        return res.status(400).json({ error: 'type, title, rationale and requestedBy are required' });
+      }
+      const approval = defaultApprovalManager.requestApproval({
+        planId,
+        taskId,
+        project,
+        type,
+        title,
+        rationale,
+        requestedBy,
+      });
+      return res.status(201).json({ approval });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/office/approvals/:id/decide', (req, res) => {
+    try {
+      const { decision, userRole, notes } = req.body ?? {};
+      const role = userRole || (req.headers['x-user-role'] as string) || 'GUEST';
+      if (!decision || (decision !== 'GRANT' && decision !== 'REJECT')) {
+        return res.status(400).json({ error: 'decision must be GRANT or REJECT' });
+      }
+      const approval = defaultApprovalManager.decideApproval(req.params.id, decision, role, notes);
+      return res.status(200).json({ approval });
+    } catch (err: any) {
+      if (err.message.startsWith('UNAUTHORIZED')) {
+        return res.status(403).json({ error: err.message });
+      }
+      if (err.message.startsWith('NOT_FOUND')) {
+        return res.status(404).json({ error: err.message });
+      }
+      if (err.message.startsWith('CONFLICT')) {
+        return res.status(409).json({ error: err.message });
+      }
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/office/approvals', (req, res) => {
+    const project = typeof req.query.project === 'string' ? req.query.project.trim() : undefined;
+    const approvals = defaultApprovalManager.listApprovals(project);
+    return res.status(200).json({ approvals });
   });
 
   app.get('/office/stream', (req, res) => {
