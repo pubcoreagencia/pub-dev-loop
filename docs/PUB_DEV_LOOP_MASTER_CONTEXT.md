@@ -1,229 +1,114 @@
-# PUB DEV LOOP Master Context
+# PUB DEV LOOP (THE OFFICE) — UNIFIED MASTER CONTEXT
+**Canonical Architectural Source of Truth & Operational Specification**
 
-This is the canonical continuity document for PUB DEV LOOP.
+---
 
-If you are a new agent, read this file first. It is the authoritative summary of the project, its architecture, what is frozen, what is blocked, and how to continue safely without relying on conversation memory.
+## SUMÁRIO EXECUTIVO
 
-## 1. What PUB DEV LOOP is
+O **PUB DEV LOOP (PDL)** é uma plataforma unificada de desenvolvimento de software em nuvem (Cloud-First Autonomous Engineering Platform) estruturada em torno de uma metáfora organizacional e espacial viva: **THE OFFICE**.
 
-PUB DEV LOOP is a cloud-first task execution system for PUB Core engineering work. It accepts a task, stores it in PostgreSQL, lets a worker claim it, runs the task inside an isolated workspace, records the result, and preserves the work in Git.
-
-The system exists so GPT-driven planning and human/agent execution can be traced, validated, and resumed from repository state.
-
-## 2. Project goal
-
-The goal is to keep a permanent, auditable, recoverable coding loop where:
-
-`Task -> queue -> worker -> provider -> workspace -> tests -> Git -> result`
-
-The repository must remain the source of truth for architecture, history, and operational handoff.
-
-## 3. Current architecture
-
-The active architecture is cloud-first and worker-centric:
-
-- API receives tasks.
-- PostgreSQL stores queue and task state.
-- A worker claims queued tasks.
-- The worker creates a temporary isolated workspace.
-- The worker delegates coding to a provider.
-- The provider is not allowed to own the workspace, Git, or local execution runtime.
-- The worker finalizes, tests, commits, records SHA, and cleans up.
-
-The worker continues to own:
-
-- workspace creation and cleanup
-- shell/process execution
-- Git clone, branch, add, commit, status
-- timeout and heartbeat handling
-- redaction and diagnostics
-- finalization
-
-## 4. Main components
-
-- `src/api-worker.ts`: API and cloud worker gateway entrypoint.
-- `src/worker.ts`: worker lifecycle startup and serial cycle orchestration.
-- `src/worker-service.ts`: worker execution, retry/finalization, and task lifecycle.
-- `src/repository.ts`: PostgreSQL task persistence and state transitions.
-- `src/agent.ts`: provider selection and Codex compatibility adapter.
-- `src/providers/router.ts`: 9Router OpenAI-compatible provider runtime.
-- `src/providers/codex-api.ts`: Codex API provider path.
-- `src/providers/shared.ts`: shared router configuration helpers.
-- `src/executor.ts`: process execution, redaction, and timeout handling.
-- `src/finalizer.ts`: validation and local commit finalization.
-- `src/tools/*`: workspace tools and security enforcement used by provider runtime.
-
-## 5. Task flow
-
-The intended task flow is:
-
-`QUEUED -> ASSIGNED -> RUNNING -> TESTING -> COMPLETED`
-
-Failure flow:
-
-`QUEUED -> ASSIGNED -> RUNNING -> FAILED`
-
-The invariant is that a task must not remain stuck in `RUNNING`.
-
-## 6. Worker behavior
-
-The worker is responsible for:
-
-- claiming a task
-- creating a branch/workspace
-- invoking the configured provider
-- enforcing timeout and heartbeat
-- finalizing the workspace
-- persisting result and commit SHA
-- cleaning up temporary files
-
-The worker must not silently mask provider failure.
-
-## 7. Lifecycle fix that must not be reverted
-
-The worker lifecycle bug was caused by overlapping execution cycles and by undefined values being sent to PostgreSQL.
-
-Fixes already applied in history:
-
-- worker polling became serialized instead of overlapping
-- repository updates no longer send `undefined` to `pg`
-
-Relevant commits:
-
-- `2ff44a4` `fix: stabilize task lifecycle worker`
-- `cb0ba5e` `docs: document router gateway architecture decision`
-
-## 8. Provider model
-
-The code now treats the coding backend as a provider abstraction.
-
-Supported provider kinds in the current codebase:
-
-- `mock`
-- `codex-api`
-- `9router`
-
-The provider is the model/brain side only. It must not take over workspace, Git, shell, or cleanup responsibilities.
-
-## 9. 9Router status
-
-The chosen gateway is the official 9Router service at:
-
-`https://9router.com/`
-
-The official public site presents an OpenAI-compatible endpoint and a local default endpoint of:
-
-`http://localhost:20128/v1`
-
-Current status in this repository:
-
-- The provider contract is implemented.
-- The gateway endpoint has not been proven reachable in this session.
-- `host.docker.internal:20128` was not reachable from the current environment.
-- `localhost:20128` was also not reachable from the current host session.
-
-Current status: `BLOCKED`
-
-Reason: no confirmed reachable 9Router endpoint in the current execution environment.
-
-## 10. Git automation
-
-The worker may create local commits when a task is finalized successfully.
-
-The intended contract is:
-
-- commit is local and controlled by the worker
-- push is not automatic unless explicitly enabled in a separate workflow
-- the worker must preserve workspace cleanliness and commit SHA provenance
-
-## 11. API
-
-The API remains the task entrypoint and state query surface.
-
-It is responsible for:
-
-- task creation
-- task lookup
-- cancellation
-- retry
-- rate limiting
-- authentication
-
-## 12. Database
-
-PostgreSQL is the durable queue and task result store.
-
-Important invariants:
-
-- task updates must not send `undefined`
-- tasks must not remain indefinitely in `RUNNING`
-- final task result should carry provider, model, summary/result, SHA, and diagnostics
-
-## 13. Docker
-
-Docker remains the portable Linux runtime path for the worker.
-
-The worker image is expected to:
-
-- run on Linux
-- use a non-root user
-- install Git and the official Codex CLI when Codex is enabled
-- keep credentials out of the image
-
-## 14. Cloudflare and experimental runtimes
-
-Cloudflare/container paths exist in the codebase and are treated as runtime experiments or deployment-specific integrations, not the source of truth for architecture.
-
-## 15. Security and secrets
-
-Never commit or print:
-
-- tokens
-- API keys
-- cookies
-- credentials
-- auth JSON
-
-Use placeholders only:
-
-- `<ROUTER_API_KEY>`
-- `<PUB_DEV_LOOP_API_KEY>`
-- `<GITHUB_TOKEN>`
-
-## 16. Existing documentation
-
-Historical documents still matter for auditability:
-
-- `docs/PUB_DEV_LOOP_STABILITY.md`
-- `docs/ROUTER_GATEWAY_DECISION.md`
-- `docs/ARCHITECTURE.md`
-- `docs/CLOUD_DEPLOYMENT.md`
-- `docs/GITHUB_ACTIONS_WORKER.md`
-
-If a historical doc contradicts this file, treat this file as current and leave the older document intact unless explicitly asked to mark it obsolete.
-
-## 17. What not to do
-
-Do not:
-
-- reintroduce overlapping worker loops
-- send undefined values to PostgreSQL
-- replace the gateway with OpenRouter
-- invent a fake 9Router implementation
-- move Git ownership out of the worker without a deliberate architecture change
-- wipe historical documents or Git history
-- assume a report is proof without checking code and Git
-
-## 18. How a new agent should start
-
-1. Run `git status`.
-2. Run `git log --oneline --decorate -10`.
-3. Read this file.
-4. Read `docs/AGENT_CONTINUITY.md`.
-5. Read `docs/ARCHITECTURE_DECISIONS.md`.
-6. Read `docs/PROJECT_STATE.md`.
-7. Read `docs/AGENT_HANDOFF.md`.
-8. Read the task-specific docs.
-9. Validate code and tests.
-10. Only then change code.
-
+Este documento integra e unifica em um único padrão canônico:
+1. **O que era a ideia (A Fundação & Core Engine):** A fila durável de tarefas, execução em workers isolados, gateway de LLMs resiliente, integridade do Git e protocolo estrito de continuidade.
+2. **O que se tornou (A Realidade Atual & THE OFFICE):** Uma força de trabalho de 5 agentes especialistas de IA liderados pelo CEO em um escritório virtual 3D, governados por camadas determinísticas de memória, aprendizagem institucional, feedback de resultados reais, inteligência e consciência organizacional.
+3. **O que precisa se tornar (O Horizonte Futuro & Compounding Autônomo):** A transformação do aprendizado em skills reutilizáveis (Daily Skill Learning), execução autônoma adaptativa governada, ambiente colaborativo vivo com turntable compartilhado e ecossistema multi-projeto escalável.
+
+---
+
+# PARTE I — A FUNDAÇÃO & O QUE ERA A IDEIA (THE CORE ENGINE)
+
+## 1. Identidade, Filosofia e Escopo Original
+O PUB DEV LOOP nasceu com uma premissa inegociável: **Engenharia de software automatizada, auditável, reproduzível e puramente em nuvem (Cloud-First & Cloud-Only)**.
+Máquinas locais de desenvolvimento são apenas clientes de visualização; o cérebro operacional e o runtime de execução vivem na nuvem.
+
+### O Ciclo Puro da Engine:
+$$\text{Task API} \longrightarrow \text{PostgreSQL Queue} \longrightarrow \text{Isolated Worker} \longrightarrow \text{Provider (LLM)} \longrightarrow \text{Workspace} \longrightarrow \text{Automated Tests} \longrightarrow \text{Git Commit} \longrightarrow \text{Result Persistence}$$
+
+## 2. Invariantes Fundamentais da Engine
+1. **Soberania do Worker sobre o Workspace:** O Worker é o proprietário absoluto do workspace temporário, da execução de processos no sistema operacional, do Git e da finalização da tarefa. O modelo/provedor de IA é apenas uma fonte de sugestão de código e *jamais* possui acesso direto ao host ou controle do repositório.
+2. **Persistence-First Continuity Protocol:** Sessões de chat, contextos de IA e máquinas locais são voláteis. O **Git** e o **PostgreSQL** são as únicas fontes duráveis de verdade. Qualquer evolução do projeto deve ser materializada no repositório.
+   $$\text{READ CONTEXT} \longrightarrow \text{IMPLEMENT} \longrightarrow \text{VALIDATE} \longrightarrow \text{UPDATE CONTEXT} \longrightarrow \text{COMMIT} \longrightarrow \text{PUSH/PR} \longrightarrow \text{VERIFY PERSISTENCE}$$
+3. **Segurança & Gestão de Segredos:** Segredos (chaves de API, tokens de autenticação) são injetados exclusivamente em tempo de execução via variáveis de ambiente/Secret Managers. Nunca são gravados em arquivos commitados, logs de execução ou resultados de tarefas.
+4. **Proibição Absoluta de Fake Activity:** O sistema jamais deve gerar simulações artificiais de progresso, trabalho falso ou diálogos fictícios. O estado visual e as métricas refletem exclusivamente execuções e dados empíricos reais.
+
+## 3. Arquitetura de Execução e Resiliência
+* **Dual Gateway Resiliente:** Roteamento de modelos com fallback automático entre gateways (`PRIMARY_GATEWAY = "openrouter"`, `FALLBACK_GATEWAY = "9router"`), gerenciamento de cotas (HTTP 429) e timeout global (`ROUTER_TIMEOUT_TOTAL_MS`).
+* **Ciclos de Worker Serializados (ADR-001):** Execução agendada sequencialmente para evitar condições de corrida em workers concorrentes.
+* **Sanitização de Estado (ADR-002):** Proibição estrita de valores `undefined` em queries do PostgreSQL para garantir persistência determinística de falhas e sucessos.
+* **Task Finalizer (`src/finalizer.ts`):** Validação automática de syntax/typecheck/build/testes antes de comitar qualquer alteração local no branch do Git.
+
+---
+
+# PARTE II — O QUE SE TORNOU (THE LIVE ARCHITECTURE & THE OFFICE)
+
+## 4. THE OFFICE — A Força de Trabalho Virtual Espacial
+O PUB DEV LOOP evoluiu para além de uma simples fila de background: tornou-se **THE OFFICE**, um ambiente virtual interativo onde o CEO lidera uma equipe de 5 funcionários virtuais canônicos.
+
+### Os 5 Papéis Canônicos:
+1. **Chief of Staff (CoS) — `chief-of-staff`:** Braço direito do CEO. Desdobra objetivos estratégicos em planos organizacionais estruturados, coordena handoffs e acompanha a execução global.
+2. **Arquiteto de Software (Architect) — `architect`:** Responsável pelo design de alto nível, contratos de API, isolamento de dependências, integridade de arquitetura e mitigação de débitos técnicos.
+3. **Desenvolvedor Full-Stack (Developer) — `developer`:** Implementador das soluções, refatorações, criação de endpoints e código de aplicação dentro de workspaces isolados.
+4. **Revisor de Código (Reviewer) — `reviewer`:** Guardião estrito de qualidade e segurança. Aplica guardrails rigorosos de review, aponta violações de regras e impõe o limite inegociável de **`MAX_REVIEW_ITERATIONS = 3`**.
+5. **Engenheiro de QA (QA Engineer) — `qa-engineer`:** Validador empírico de testes unitários, testes de regressão, suites E2E e confirmação de remediações comprovadas.
+
+## 5. Soberania do CEO & Contratos de Decisão Governada
+* **Soberania do CEO:** O CEO humano é o árbitro supremo. Decisões de arquitetura crítica, aprovação de desvios de segurança e promoção para produção exigem autorização explícita do CEO.
+* **Decision Context Engine (`src/office/decision-context.ts`):** Estrutura o raciocínio operacional dos agentes em contratos estritamente tipados:
+  $$\text{OBJETIVO} \longrightarrow \text{RESPONSABILIDADE} \longrightarrow \text{EVIDÊNCIA} \longrightarrow \text{RESTRIÇÕES} \longrightarrow \text{OPÇÕES} \longrightarrow \text{RECOMENDAÇÃO} \longrightarrow \text{PRÓXIMO PASSO} \longrightarrow \text{GOVERNANCE CHECK}$$
+* **Governed Context Assembly (`src/office/context-assembly.ts`):** Hierarquia estrita de autoridade na montagem de prompts:
+  $$\text{EVIDÊNCIA DO RUNTIME ATUAL} > \text{LIÇÕES INSTITUCIONAIS VALIDADAS} > \text{MEMÓRIA ORGANIZACIONAL HISTÓRICA}$$
+
+## 6. Memória Organizacional e Governança (Phases 8.1 - 8.4)
+* **Tipos de Memória:** `DECISION`, `REVIEW_FINDING`, `TASK_RESULT`, `LESSON`, `PROJECT_CONTEXT`, `AGENT_CONTEXT`, `PLAN`.
+* **Motor de Governança (`src/office/memory-governance.ts`):** Transições de ciclo de vida (`ACTIVE`, `SUPERSEDED`, `BLOCKED`), desduplicação determinística, cálculo de qualidade e quarentena para memórias contraditórias (`CONTRADICTORY_UNRESOLVED`).
+
+## 7. Pipeline de Aprendizagem Institucional (Phases 8.5-A - 8.5-F)
+O THE OFFICE aprende com o trabalho real através de uma esteira determinística de promoção sem dependência de LLM ou bancos vetoriais:
+$$\text{Evento Real} \longrightarrow \text{Memória} \longrightarrow \text{Padrão SHA-256} \longrightarrow \text{Candidato a Lição} \longrightarrow \text{Validação pelo CEO} \longrightarrow \text{Lição Institucional} \longrightarrow \text{Recuperação por Papel}$$
+* **Detecção de Padrões (`src/office/pattern-detection.ts`):** Identifica recorrências corroboradas por $\ge 3$ tarefas independentes.
+* **Validação Governada (`src/office/lesson-validation.ts`):** Aplica a Matriz de Governança, exigindo aprovação do CEO para diretrizes estratégicas e de segurança.
+* **Recuperação de Lições (`src/office/lesson-retrieval.ts`):** Injeta heurísticas governadas no contexto de decisão de forma consultiva e subordinada à evidência atual.
+
+## 8. Feedback Loop, Inteligência e Consciência Organizacional (Phases 8.6-A - 8.6-F)
+* **Learning Feedback Loop (`src/office/learning-feedback.ts`):** Deriva sinais estruturados a partir dos resultados reais de tarefas, revisões e testes.
+* **Organizational Intelligence (`src/office/organizational-intelligence.ts`):** Motor diagnóstica que computa métricas de entrega, qualidade, riscos operacionais, tendências temporais e gargalos.
+* **Organizational Awareness (`src/office/organizational-awareness.ts`):** O THE OFFICE enxerga o pulso da organização em tempo real (`GET /office/awareness`, pulso no `OfficeHeader.tsx`, `AwarenessPanel.tsx`).
+  * *Invariante Central:* As recomendações são estritamente consultivas (`requiresHumanDecision: true`) e os gargalos refletem fluxos de processos sem linguagem punitiva a funcionários.
+
+## 9. Padrão de Interface & Idioma (Office First / pt-BR First)
+* Toda a interface visível do THE OFFICE é padronizada em **Português do Brasil (pt-BR)**.
+* A interface primária é o **OfficeFloorMap 3D** (espaço físico, mesas dos agentes, presença do CEO e chat global de comando). Painéis operacionais abrem em overlays/modais discretos para nunca transformar o produto em um dashboard tradicional.
+
+---
+
+# PARTE III — O QUE PRECISA SE TORNAR (THE AUTONOMOUS HORIZON & ROADMAP)
+
+## 10. Phase 8.7 — Daily Skill Learning & Organizational Compounding
+Transformação de lições institucionais validadas em **Skills Reutilizáveis Tipadas** (`SkillRecord`):
+* **Catálogo de Skills (`src/office/skills.ts`):** `name`, `description`, `capability`, `sourceExperiences`, `confidence`, `version`, `applicableContexts`, `limitations`.
+* **Compounding Organizacional:** Agentes consultam e executam skills consolidadas para acelerar rotinas de scaffolding, validação, remediação de bugs comuns e arquitetura.
+
+## 11. Phase 8.8 — Governed Autonomous Execution & Adaptive Task Flow
+* Capacidade do Chief of Staff de orquestrar pipelines de tarefas multi-etapas com delegação automática para especialistas e checkpoints de aprovação do CEO em pontos críticos.
+* Resolução adaptativa de gargalos com base nos sinais da inteligência organizacional, mantendo a soberania humana intacta.
+
+## 12. Phase 8.9 — Ecossistema Multi-Projeto & Colaboração Global
+* Suporte nativo à alternância dinâmica de projetos no escritório, com isolamento estrito de workspaces e herança de lições organizacionais globais homologadas pelo CEO.
+
+## 13. Phase 9.0 — The Living Workplace & Turntable
+* **Toca-Discos do Escritório (The Office Turntable):** Sistema virtual de som compartilhado no escritório onde o CEO faz upload e reproduz trilhas musicais para o ambiente, com reações ambientais leves e não-bloqueantes dos agentes.
+* **Colaboração Espacial Avançada:** Animações e movimentações físicas autênticas quando houver handoffs de tarefas e reuniões estratégicas entre funcionários.
+
+---
+
+# PARTE IV — MATRIZ DE REGRAS E INVARIANTES ABSOLUTOS
+
+| Invariante / Regra | Definição Canônica |
+|---|---|
+| **Office First** | O escritório virtual espacial e a colaboração entre funcionários é a experiência central do produto, nunca um dashboard BI tradicional. |
+| **Soberania do CEO** | Nenhuma ação autônoma pode aprovar produção, alterar regras de segurança ou ignorar o limite de `MAX_REVIEW_ITERATIONS = 3` sem aprovação do CEO. |
+| **Precedência da Verdade** | $\text{RUNTIME ATUAL} > \text{EXECUÇÃO REAL} > \text{REVIEW REAL} > \text{QA REAL} > \text{FEEDBACK} > \text{PADRÕES} > \text{LIÇÕES} > \text{MEMÓRIA HISTÓRICA}$ |
+| **Isolamento de Tenant & Projeto** | Nenhuma informação, memória, inteligência ou skill de um Tenant/Projeto pode vazar para outro. |
+| **Zero Fake Activity** | Proibição absoluta de animações falsas, conversas fabricadas ou métricas fictícias. Apenas dados empíricos reais. |
+| **Decisão Humana em Recomendações** | Todas as recomendações geradas por inteligência organizacional possuem `requiresHumanDecision: true`. |
+| **pt-BR First** | Todos os textos visíveis ao usuário no THE OFFICE são em Português do Brasil. |
+| **Persistence-First** | O Git e o PostgreSQL são a única fonte durável de verdade da engenharia. |
