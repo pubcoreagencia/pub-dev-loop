@@ -1,7 +1,7 @@
 import { classifyApiError, type ClassificationResult } from '../api-error-classifier.js';
 import type { Task } from '../domain.js';
 import type { AgentProvider, ProviderTaskResult } from './types.js';
-import { DEFAULT_OPENROUTER_BASE_URL, normalizeBaseUrl, SHARED_SYSTEM_INSTRUCTIONS, PREVIEW_SYSTEM_INSTRUCTIONS, isPrototypeTask } from './shared.js';
+import { DEFAULT_OPENROUTER_BASE_URL, normalizeBaseUrl, resolveOpenRouterApiKey, SHARED_SYSTEM_INSTRUCTIONS, PREVIEW_SYSTEM_INSTRUCTIONS, isPrototypeTask } from './shared.js';
 import { ToolRuntime } from '../tools/runtime.js';
 import { AgentExecutor } from '../executor.js';
 import type { ToolCall, ToolResult, ToolExecutionContext, ToolDefinition } from '../tools/types.js';
@@ -81,14 +81,14 @@ export class OpenRouterProvider implements AgentProvider {
 
   constructor(
     baseUrl = process.env.OPENROUTER_BASE_URL ?? DEFAULT_OPENROUTER_BASE_URL,
-    apiKey = process.env.OPENROUTER_API_KEY,
+    apiKey?: string,
     timeoutMs = Number(process.env.OPENROUTER_TIMEOUT_MS ?? 900000),
     modelOverride?: string,
     enableStream = process.env.OPENROUTER_STREAM_ENABLED === 'true',
     consumer?: StreamConsumer,
   ) {
     this.baseUrl = normalizeBaseUrl(baseUrl, DEFAULT_OPENROUTER_BASE_URL);
-    this.apiKey = apiKey?.trim() || undefined;
+    this.apiKey = resolveOpenRouterApiKey(apiKey);
     this.timeoutMs = timeoutMs;
     this.maxToolRounds = Number(process.env.OPENROUTER_MAX_TOOL_ROUNDS ?? 20);
     this.maxToolCalls = Number(process.env.OPENROUTER_MAX_TOOL_CALLS ?? 50);
