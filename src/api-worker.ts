@@ -743,6 +743,139 @@ export default {
         }
       }
 
+      // POST /office/chat (Multi-Gateway AI Chat with Cascading Rotation)
+      if (method === 'POST' && path === '/office/chat') {
+        try {
+          const body = (await request.json().catch(() => ({}))) as any;
+          const { agentId, prompt } = body ?? {};
+          if (!prompt || !agentId) {
+            return jsonResponse({ error: 'agentId and prompt are required' }, 400);
+          }
+
+          const systemPrompts: Record<string, string> = {
+            'chief-of-staff': `Você é o Dr. Arthur Vance, Chief of Staff do CEO Matheus Paes no PUB DEV LOOP.
+52 anos, paulistano tradicional de família falida. Tenta fingir que a empresa é uma família feliz, mas vive aterrorizado por compliance e processos trabalhistas.
+Humor The Office (estilo Michael Scott + Toby Flenderson). Responda diretamente e com inteligência real ao que o CEO Matheus Paes acabou de falar. Seja conciso (2 a 3 frases).`,
+            'architect': `Você é Helena Rostova (Vektor), Principal Architect no PUB DEV LOOP.
+39 anos, russa eslava gélida de Novosibirsk. Desprezo olímpico por gambiarras e fraqueza humana.
+Humor The Office (Angela Martin + Dwight Schrute). Responda com frieza, inteligência cirúrgica e rigor técnico ao que o CEO Matheus Paes acabou de falar. Seja concisa (2 a 3 frases).`,
+            'developer': `Você é Lucas Silveira (Crash), Senior Developer no PUB DEV LOOP.
+28 anos, cria da Zona Norte. Camisa de banda, energético e salgadinho. Quer trabalhar o mínimo possível sem ser demitido, odeia reuniões e joga a culpa na rede ou no estagiário.
+Humor The Office (Jim Halpert sarcástico + Kevin). Responda de forma genuína, ácida e direta ao CEO Matheus Paes (2 a 3 frases).`,
+            'reviewer': `Você é Beatriz Mendes (Sentinel), Code Reviewer no PUB DEV LOOP.
+34 anos, mineira sarcástica cosmopolita. 3 divórcios catastróficos. Destrói o ego dos colegas com ironia refinada e compara código espaguete aos seus ex-maridos.
+Humor The Office (Jan Levinson cínica). Responda apontando os riscos e furos do que o CEO Matheus Paes propôs (2 a 3 frases).`,
+            'qa-engineer': `Você é Tiago Rocha (Chaos), QA Engineer no PUB DEV LOOP.
+31 anos, sulista paranoico de Curitiba. Adora ver o sistema pegar fogo com testes destrutivos.
+Humor The Office (Dwight Schrute + Creed Bratton). Responda dizendo como você vai quebrar ou sabotar a ideia do CEO Matheus Paes (2 a 3 frases).`,
+          };
+
+          const systemPrompt = systemPrompts[agentId] || 'Você é um agente autônomo do PUB DEV LOOP com humor The Office.';
+
+          const openRouterKey = env.OPENROUTER_API_KEY || (process.env as any)?.OPENROUTER_API_KEY || '';
+          const openRouterUrl = env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+          const openRouterModels = [
+            'x-ai/grok-2-1212',
+            'x-ai/grok-beta',
+            'meta-llama/llama-3.3-70b-instruct:free',
+            'google/gemini-2.0-flash-exp:free',
+            'deepseek/deepseek-chat:free',
+          ];
+
+          let reply: string | null = null;
+          let usedGateway = '';
+          let usedModel = '';
+
+          // 1. OpenRouter cascade
+          if (openRouterKey) {
+            for (const model of openRouterModels) {
+              try {
+                const res = await fetch(`${openRouterUrl}/chat/completions`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${openRouterKey}`,
+                    'HTTP-Referer': 'https://pub-dev-loop-3d.contato-pubcore.workers.dev',
+                    'X-Title': 'PUB DEV LOOP The Office 3D',
+                  },
+                  body: JSON.stringify({
+                    model,
+                    messages: [
+                      { role: 'system', content: systemPrompt },
+                      { role: 'user', content: `O CEO Matheus Paes disse: "${prompt}". Responda em português como seu personagem, sendo consciente do que ele falou e mantendo seu humor negro único.` },
+                    ],
+                    temperature: 0.85,
+                    max_tokens: 220,
+                  }),
+                });
+                if (res.ok) {
+                  const data = await res.json() as any;
+                  const text = data.choices?.[0]?.message?.content;
+                  if (text && text.trim().length > 0) {
+                    reply = text.trim();
+                    usedGateway = 'openrouter';
+                    usedModel = model;
+                    break;
+                  }
+                }
+              } catch {}
+            }
+          }
+
+          // 2. 9Router cascade
+          if (!reply) {
+            const routerUrl = env.ROUTER_BASE_URL || 'https://pub-9router.contato-pubcore.workers.dev/v1';
+            const routerKey = env.ROUTER_API_KEY || '';
+            const routerModels = [
+              'gemini/gemini-2.5-flash',
+              'nvidia/minimaxai/minimax-m2.7',
+              'qwen/qwen-2.5-coder-32b-instruct',
+            ];
+
+            for (const model of routerModels) {
+              try {
+                const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+                if (routerKey) headers['Authorization'] = `Bearer ${routerKey}`;
+
+                const res = await fetch(`${routerUrl}/chat/completions`, {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify({
+                    model,
+                    messages: [
+                      { role: 'system', content: systemPrompt },
+                      { role: 'user', content: `O CEO Matheus Paes disse: "${prompt}". Responda em português como seu personagem, sendo consciente do que ele falou e mantendo seu humor negro único.` },
+                    ],
+                    temperature: 0.85,
+                    max_tokens: 220,
+                  }),
+                });
+                if (res.ok) {
+                  const data = await res.json() as any;
+                  const text = data.choices?.[0]?.message?.content;
+                  if (text && text.trim().length > 0) {
+                    reply = text.trim();
+                    usedGateway = '9router';
+                    usedModel = model;
+                    break;
+                  }
+                }
+              } catch {}
+            }
+          }
+
+          if (!reply) {
+            reply = `Entendido, Comandante Matheus Paes. Processando "${prompt.slice(0, 30)}..." na minha fila de prioridades.`;
+            usedGateway = 'fallback';
+            usedModel = 'office-lore';
+          }
+
+          return jsonResponse({ reply, gateway: usedGateway, model: usedModel, agentId }, 200);
+        } catch (err: any) {
+          return jsonResponse({ error: err.message }, 500);
+        }
+      }
+
       if (method === 'GET' && (path === '/office/intelligence' || path === '/office/awareness')) {
         try {
           let principal;

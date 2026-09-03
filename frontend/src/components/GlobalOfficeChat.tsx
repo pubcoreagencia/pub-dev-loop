@@ -17,9 +17,6 @@ export const GlobalOfficeChat: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'COMMAND' | 'WATERCOOLER'>('COMMAND');
   const [inputText, setInputText] = useState('');
-  const [isAiConfigOpen, setIsAiConfigOpen] = useState(false);
-  const [aiKeyInput, setAiKeyInput] = useState(defaultAiChatService.getApiKey());
-  const [selectedModel, setSelectedModel] = useState(defaultAiChatService.getModel());
   const [isAiResponding, setIsAiResponding] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -30,13 +27,6 @@ export const GlobalOfficeChat: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages, actionLoading, pendingApprovals, activeTab, isAiResponding]);
-
-  const handleSaveAiConfig = (e: React.FormEvent) => {
-    e.preventDefault();
-    defaultAiChatService.setApiKey(aiKeyInput);
-    defaultAiChatService.setModel(selectedModel);
-    setIsAiConfigOpen(false);
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,85 +47,59 @@ export const GlobalOfficeChat: React.FC = () => {
         type: 'TEXT',
       });
 
-      // SE GROK / OPENROUTER ESTIVER CONFIGURADO, USA LLM REAL!
-      if (defaultAiChatService.isConfigured()) {
-        setIsAiResponding(true);
-        const agentKeys = selectedAgent && selectedAgent.id !== 'ceo'
-          ? [selectedAgent.id]
-          : ['developer', 'architect', 'reviewer', 'qa-engineer', 'chief-of-staff'];
+      // Executa chamada real para os gateways configurados (OpenRouter / 9Router / Fallback)
+      setIsAiResponding(true);
+      const agentKeys = selectedAgent && selectedAgent.id !== 'ceo'
+        ? [selectedAgent.id]
+        : ['developer', 'architect', 'reviewer', 'qa-engineer', 'chief-of-staff'];
 
-        for (let i = 0; i < agentKeys.length; i++) {
-          const agentId = agentKeys[i];
-          const profile = OFFICE_AGENTS_AI_PROFILES[agentId];
-          if (!profile) continue;
+      for (let i = 0; i < agentKeys.length; i++) {
+        const agentId = agentKeys[i];
+        const profile = OFFICE_AGENTS_AI_PROFILES[agentId];
+        if (!profile) continue;
 
-          try {
-            const aiContent = await defaultAiChatService.callLlmForAgent(agentId, text);
+        try {
+          const aiContent = await defaultAiChatService.callLlmForAgent(agentId, text);
+          addMessage({
+            sender: agentId.toUpperCase().replace(/-/g, '_') as any,
+            senderName: profile.name,
+            senderRole: profile.role,
+            content: aiContent,
+            type: 'TEXT',
+          });
+          triggerSpeechBubble({
+            senderId: agentId,
+            senderName: profile.name,
+            content: aiContent.slice(0, 60) + (aiContent.length > 60 ? '...' : ''),
+            durationMs: 7000,
+            type: 'TASK',
+          });
+        } catch (err: any) {
+          console.error(`AI response error for ${agentId}:`, err);
+          const fallbackReplies = defaultWatercoolerEngine.generateMultiAgentReaction(text, agentId);
+          if (fallbackReplies[0]) {
             addMessage({
               sender: agentId.toUpperCase().replace(/-/g, '_') as any,
               senderName: profile.name,
               senderRole: profile.role,
-              content: aiContent,
+              content: fallbackReplies[0].content,
               type: 'TEXT',
             });
-            triggerSpeechBubble({
-              senderId: agentId,
-              senderName: profile.name,
-              content: aiContent.slice(0, 60) + (aiContent.length > 60 ? '...' : ''),
-              durationMs: 7000,
-              type: 'TASK',
-            });
-          } catch (err: any) {
-            console.error(`AI error for ${agentId}:`, err);
-            // Fallback para o motor consciente
-            const fallbackReplies = defaultWatercoolerEngine.generateMultiAgentReaction(text, agentId);
-            if (fallbackReplies[0]) {
-              addMessage({
-                sender: agentId.toUpperCase().replace(/-/g, '_') as any,
-                senderName: profile.name,
-                senderRole: profile.role,
-                content: fallbackReplies[0].content,
-                type: 'TEXT',
-              });
-            }
           }
         }
-        setIsAiResponding(false);
-      } else {
-        // Dispara thread multi-agente consciente com respostas em cascata
-        const replies = defaultWatercoolerEngine.generateMultiAgentReaction(text, selectedAgent?.id);
-        replies.forEach((reply) => {
-          setTimeout(() => {
-            addMessage({
-              sender: reply.speakerId.toUpperCase().replace(/-/g, '_') as any,
-              senderName: reply.senderName,
-              senderRole: reply.senderRole,
-              content: reply.content,
-              type: 'TEXT',
-            });
-
-            triggerSpeechBubble({
-              senderId: reply.speakerId,
-              senderName: reply.senderName,
-              content: reply.content.slice(0, 55) + (reply.content.length > 55 ? '...' : ''),
-              durationMs: 7000,
-              type: 'TASK',
-            });
-          }, reply.delayMs || 600);
-        });
       }
+      setIsAiResponding(false);
     }
   };
 
   const handleTriggerWatercoolerDialogue = () => {
-    const dialogues = defaultWatercoolerEngine.getNextDialogue();
-    dialogues.forEach((d, idx) => {
+    const dialogue = defaultWatercoolerEngine.getNextDialogue();
+    dialogue.forEach((d: any, idx: number) => {
       setTimeout(() => {
-        const senderProfile = d.speakerId === 'chief-of-staff' ? { name: 'Dr. Arthur Vance', role: 'Chief of Staff' }
-          : d.speakerId === 'architect' ? { name: 'Helena Rostova', role: 'Principal Architect' }
-          : d.speakerId === 'developer' ? { name: 'Lucas Silveira', role: 'Senior Developer' }
-          : d.speakerId === 'reviewer' ? { name: 'Beatriz Mendes', role: 'Code Reviewer' }
-          : { name: 'Tiago Rocha', role: 'QA Engineer' };
+        const senderProfile = OFFICE_AGENTS_AI_PROFILES[d.speakerId] || {
+          name: d.speakerName,
+          role: 'Especialista',
+        };
 
         addMessage({
           sender: d.speakerId.toUpperCase().replace(/-/g, '_') as any,
@@ -158,7 +122,7 @@ export const GlobalOfficeChat: React.FC = () => {
 
   return (
     <div className="office-chat-container">
-      {/* CABEÇALHO COM ABAS E BOTÃO GROK AI */}
+      {/* CABEÇALHO COM ABAS E STATUS DO GATEWAY */}
       <div className="chat-header">
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <button
@@ -168,9 +132,9 @@ export const GlobalOfficeChat: React.FC = () => {
               border: activeTab === 'COMMAND' ? '1px solid #38bdf8' : '1px solid transparent',
               color: activeTab === 'COMMAND' ? '#38bdf8' : '#94a3b8',
               borderRadius: '6px',
-              padding: '4px 10px',
+              padding: '6px 12px',
               fontSize: '12px',
-              fontWeight: 600,
+              fontWeight: 700,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -182,13 +146,13 @@ export const GlobalOfficeChat: React.FC = () => {
           <button
             onClick={() => setActiveTab('WATERCOOLER')}
             style={{
-              background: activeTab === 'WATERCOOLER' ? '#1e293b' : 'transparent',
+              background: activeTab === 'WATERCOOLER' ? '#291e17' : 'transparent',
               border: activeTab === 'WATERCOOLER' ? '1px solid #f59e0b' : '1px solid transparent',
               color: activeTab === 'WATERCOOLER' ? '#f59e0b' : '#94a3b8',
               borderRadius: '6px',
-              padding: '4px 10px',
+              padding: '6px 12px',
               fontSize: '12px',
-              fontWeight: 600,
+              fontWeight: 700,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -199,173 +163,84 @@ export const GlobalOfficeChat: React.FC = () => {
           </button>
         </div>
 
-        {/* BOTÃO DE CONFIGURAÇÃO DE GROK / IA */}
-        <button
-          onClick={() => setIsAiConfigOpen(!isAiConfigOpen)}
-          title="Configurar Provedor de IA (Grok / OpenRouter)"
-          style={{
-            background: defaultAiChatService.isConfigured() ? 'rgba(34, 197, 94, 0.2)' : 'rgba(245, 158, 11, 0.2)',
-            border: `1px solid ${defaultAiChatService.isConfigured() ? '#22c55e' : '#f59e0b'}`,
-            borderRadius: '6px',
-            padding: '3px 8px',
-            color: defaultAiChatService.isConfigured() ? '#22c55e' : '#f59e0b',
-            fontSize: '11px',
-            fontWeight: 700,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-          }}
-        >
-          <span>⚡</span> {defaultAiChatService.isConfigured() ? 'Grok AI Ativo' : 'Conectar Grok'}
-        </button>
+        {/* STATUS DISCRETO DO GATEWAY AUTOMÁTICO */}
+        <div className="chat-status-pill" title="Gateways automáticos ativos: OpenRouter (Grok) ➔ 9Router Cloudflare">
+          <span>●</span> GROK &amp; 9ROUTER ATIVOS
+        </div>
       </div>
 
-      {/* MODAL / POPOVER DE CONFIGURAÇÃO DO GROK / OPENROUTER */}
-      {isAiConfigOpen && (
-        <div
-          style={{
-            background: '#090d16',
-            border: '1.5px solid #38bdf8',
-            borderRadius: '8px',
-            padding: '12px',
-            margin: '8px 12px',
-            boxShadow: '0 10px 25px rgba(0,0,0,0.8)',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <span style={{ fontSize: '12px', fontWeight: 700, color: '#38bdf8' }}>
-              🤖 Provedor de Conversação IA (Grok / xAI / OpenRouter)
-            </span>
-            <button
-              onClick={() => setIsAiConfigOpen(false)}
-              style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
-            >
-              ✕
-            </button>
-          </div>
-          <form onSubmit={handleSaveAiConfig} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div>
-              <label style={{ fontSize: '10px', color: '#94a3b8' }}>Chave API (OpenRouter ou xAI):</label>
-              <input
-                type="password"
-                placeholder="sk-or-v1-... ou sua chave de IA"
-                value={aiKeyInput}
-                onChange={(e) => setAiKeyInput(e.target.value)}
-                style={{
-                  width: '100%',
-                  background: '#1e293b',
-                  border: '1px solid #475569',
-                  borderRadius: '4px',
-                  color: '#f8fafc',
-                  padding: '5px 8px',
-                  fontSize: '11px',
-                  marginTop: '2px',
-                  boxSizing: 'border-box',
-                }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: '10px', color: '#94a3b8' }}>Modelo de Conversação:</label>
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                style={{
-                  width: '100%',
-                  background: '#1e293b',
-                  border: '1px solid #475569',
-                  borderRadius: '4px',
-                  color: '#f8fafc',
-                  padding: '5px 8px',
-                  fontSize: '11px',
-                  marginTop: '2px',
-                  boxSizing: 'border-box',
-                }}
-              >
-                <option value="x-ai/grok-2-1212">x-ai/grok-2-1212 (Grok Oficial)</option>
-                <option value="x-ai/grok-beta">x-ai/grok-beta</option>
-                <option value="google/gemini-2.0-flash-exp:free">Google Gemini 2.0 Flash (Free)</option>
-                <option value="meta-llama/llama-3.3-70b-instruct:free">Meta Llama 3.3 70B (Free)</option>
-                <option value="mistralai/mistral-small-24b-instruct-2501:free">Mistral Small 24B (Free)</option>
-              </select>
-            </div>
-            <button
-              type="submit"
-              style={{
-                background: '#0284c7',
-                border: 'none',
-                borderRadius: '4px',
-                color: '#fff',
-                padding: '6px',
-                fontSize: '11px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                marginTop: '4px',
-              }}
-            >
-              Salvar Configuração de IA
-            </button>
-          </form>
-        </div>
-      )}
-
-      {/* ÁREA DE MENSAGENS */}
-      <div className="chat-messages">
+      {/* ÁREA DE MENSAGENS COM CSS CLASSES OFICIAIS */}
+      <div className="chat-messages-area">
         {activeTab === 'WATERCOOLER' && (
           <div
             style={{
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              padding: '6px 12px',
-              background: 'rgba(245, 158, 11, 0.1)',
-              borderBottom: '1px solid rgba(245, 158, 11, 0.2)',
+              padding: '8px 14px',
+              background: 'rgba(245, 158, 11, 0.08)',
+              border: '1px solid rgba(245, 158, 11, 0.25)',
+              borderRadius: '6px',
               fontSize: '11px',
               color: '#f59e0b',
             }}
           >
-            <span>💬 Conversa de Corredor &amp; Humor Negro</span>
+            <span>💬 Canal Livre de Convivência &amp; Humor Negro</span>
             <button
               onClick={handleTriggerWatercoolerDialogue}
               style={{
-                background: 'transparent',
+                background: '#291e17',
                 border: '1px solid #f59e0b',
-                color: '#f59e0b',
+                color: '#fef3c7',
                 borderRadius: '4px',
-                padding: '2px 8px',
+                padding: '3px 10px',
                 fontSize: '10px',
                 cursor: 'pointer',
-                fontWeight: 600,
+                fontWeight: 700,
               }}
             >
-              Fofoca no Café ☕
+              Fofoca do Café ☕
             </button>
           </div>
         )}
 
-        {messages.map((msg) => (
-          <div key={msg.id} className={`chat-message-item ${msg.sender.toLowerCase()}`}>
-            <div className="message-header">
-              <span className="sender-name">{msg.senderName || msg.sender}</span>
-              {msg.senderRole && <span className="sender-role">{msg.senderRole}</span>}
-              <span className="message-time">{msg.timestamp}</span>
-            </div>
-            <div className="message-body">{msg.content}</div>
+        {messages.map((msg) => {
+          const senderClass = msg.sender.toLowerCase().replace(/_/g, '-');
+          const isCeo = senderClass === 'ceo';
+          const isChief = senderClass === 'chief-of-staff' || senderClass === 'chief_of_staff';
+          const rowClass = isCeo ? 'ceo' : isChief ? 'chief_of_staff' : senderClass === 'system' ? 'system' : 'agent';
 
-            {msg.plan && <PlanViewer plan={msg.plan} />}
-          </div>
-        ))}
+          return (
+            <div key={msg.id} className={`chat-bubble-row ${rowClass}`}>
+              <div className="chat-bubble-wrapper">
+                <div className="chat-sender-header">
+                  <span className="sender-tag">{msg.senderName || msg.sender}</span>
+                  {msg.senderRole && <span className="sender-role">{msg.senderRole}</span>}
+                  <span className="msg-time">{msg.timestamp || ''}</span>
+                </div>
+                <div className="chat-text">{msg.content}</div>
+                {msg.plan && <PlanViewer plan={msg.plan} />}
+              </div>
+            </div>
+          );
+        })}
 
         {isAiResponding && (
-          <div style={{ padding: '8px 12px', fontSize: '11px', color: '#38bdf8', fontStyle: 'italic' }}>
-            ⚡ Os especialistas do escritório estão pensando com IA...
+          <div className="chat-bubble-row agent">
+            <div className="chat-bubble-wrapper thinking-bubble">
+              <div className="thinking-dots">
+                ⚡ Processando réplica via Grok / 9Router...
+              </div>
+            </div>
           </div>
         )}
 
         {actionLoading && (
-          <div className="chat-message-item system loading">
-            <div className="message-body">
-              <span>⚡ O Chief of Staff e os Especialistas estão deliberando...</span>
+          <div className="chat-bubble-row system">
+            <div className="chat-bubble-wrapper thinking-bubble">
+              <div className="thinking-dots">
+                ⚙️ Chief of Staff formulando plano estratégico...
+              </div>
             </div>
           </div>
         )}
@@ -373,14 +248,16 @@ export const GlobalOfficeChat: React.FC = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* ÁREA DE SUBMISSÃO / INPUT */}
-      <form onSubmit={handleSubmit} className="chat-input-form">
+      {/* ÁREA DE INPUT INTEGRADA AO DESIGN DO ESCRITÓRIO */}
+      <form onSubmit={handleSubmit} className="chat-input-bar">
+        <span className="input-prompt-label">&gt;</span>
         <input
           type="text"
+          className="chat-text-input"
           placeholder={
             activeTab === 'COMMAND'
               ? 'Defina a diretriz para a equipe autônoma...'
-              : 'Fale qualquer coisa com o escritório (humor negro, perguntas, piadas)...'
+              : 'Fale com a equipe do escritório (humor negro, dúvidas, zoeiras)...'
           }
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
@@ -388,9 +265,12 @@ export const GlobalOfficeChat: React.FC = () => {
         />
         <button
           type="submit"
+          className="btn-dispatch-objective"
           disabled={actionLoading || isAiResponding || !inputText.trim()}
           style={{
-            background: activeTab === 'COMMAND' ? '#0284c7' : '#d97706',
+            background: activeTab === 'COMMAND'
+              ? 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)'
+              : 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
           }}
         >
           {actionLoading || isAiResponding ? '...' : activeTab === 'COMMAND' ? 'DESPACHAR' : 'FALAR'}
