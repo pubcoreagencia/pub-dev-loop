@@ -43,6 +43,16 @@ export const OfficeHeader: React.FC = () => {
           <span>CONCLUÍDAS: <strong style={{ color: '#34d399' }}>{completedTasks}</strong></span>
         </div>
 
+        <button
+          className={`status-badge awareness-pulse-btn ${useStore.getState().isAwarenessPanelOpen ? 'active' : ''}`}
+          onClick={() => useStore.getState().toggleAwarenessPanel()}
+          title="Clique para abrir a Consciência Organizacional (Phase 8.6-F)"
+          style={{ cursor: 'pointer', background: 'rgba(30, 41, 59, 0.8)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '4px', padding: '4px 8px' }}
+        >
+          <span className={`status-dot ${useStore.getState().awareness?.pulse.badgeColor === 'green' ? 'green' : useStore.getState().awareness?.pulse.badgeColor === 'amber' ? 'amber' : useStore.getState().awareness?.pulse.badgeColor === 'red' ? 'red' : 'gray'}`}></span>
+          <span>ORGANIZAÇÃO: <strong style={{ color: useStore.getState().awareness?.pulse.badgeColor === 'green' ? '#34d399' : useStore.getState().awareness?.pulse.badgeColor === 'amber' ? '#fbbf24' : useStore.getState().awareness?.pulse.badgeColor === 'red' ? '#f87171' : '#94a3b8' }}>{useStore.getState().awareness?.pulse.badgeLabel || 'HEALTHY'}</strong></span>
+        </button>
+
         <div className="project-selector-wrapper">
           <label className="project-label">PROJETO:</label>
           <input

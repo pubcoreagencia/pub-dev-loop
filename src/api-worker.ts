@@ -15,7 +15,7 @@ import { defaultOfficeEventBus } from './office/events.js';
 import { defaultCodeReviewManager } from './office/review.js';
 import { defaultApprovalManager } from './office/approval.js';
 import { authenticateOfficeRequest } from './office/auth.js';
-import { defaultMemoryStore, defaultMemoryRetrievalEngine } from './office/memory.js';
+import { defaultMemoryStore, defaultMemoryRetrievalEngine, defaultOrganizationalAwarenessEngine } from './office/memory.js';
 
 export interface HyperdriveBinding {
   connectionString: string;
@@ -738,6 +738,45 @@ export default {
           });
 
           return jsonResponse({ memories }, 200);
+        } catch (err: any) {
+          return jsonResponse({ error: err.message }, 500);
+        }
+      }
+
+      if (method === 'GET' && (path === '/office/intelligence' || path === '/office/awareness')) {
+        try {
+          let principal;
+          try {
+            principal = authenticateOfficeRequest(request.headers, env);
+          } catch (authErr: any) {
+            return jsonResponse({ error: authErr.message }, 401);
+          }
+
+          const urlObj = new URL(request.url);
+          const project = urlObj.searchParams.get('project')?.trim() || 'pub-dev-loop';
+          const tenantId = principal.tenantId || 'pub-dev-loop';
+
+          let allTasks: any[] = [];
+          let allEvents: any[] = [];
+          try {
+            const pool = getPool(env);
+            const tasksRepo = new PostgresTaskRepository(pool);
+            defaultOfficeEventBus.setPool(pool);
+            await ensureMigrations(pool);
+            allTasks = await tasksRepo.list();
+            allEvents = defaultOfficeEventBus.getEventsSince(0, { project });
+          } catch {
+            allEvents = defaultOfficeEventBus.getEventsSince(0, { project });
+          }
+
+          const awareness = defaultOrganizationalAwarenessEngine.generateAwareness({
+            tenantId,
+            projectId: project,
+            tasks: allTasks,
+            events: allEvents,
+          });
+
+          return jsonResponse({ awareness }, 200);
         } catch (err: any) {
           return jsonResponse({ error: err.message }, 500);
         }

@@ -312,3 +312,93 @@ export interface OfficeActivityEvent {
   taskId?: string;
   meta?: Record<string, any>;
 }
+
+export interface AwarenessPulse {
+  status: 'HEALTHY' | 'ATTENTION' | 'AT_RISK' | 'BLOCKED' | 'UNKNOWN';
+  badgeLabel: string;
+  badgeColor: 'green' | 'amber' | 'red' | 'gray';
+  summary: string;
+}
+
+export interface AwarenessHealth {
+  status: 'HEALTHY' | 'ATTENTION' | 'AT_RISK' | 'BLOCKED' | 'UNKNOWN';
+  summary: string;
+  successRateText: string;
+  failureRateText: string;
+  tasksCompleted: number;
+  tasksFailed: number;
+  tasksBlocked: number;
+  evaluatedAt: string;
+}
+
+export interface AwarenessRisk {
+  id: string;
+  riskType: string;
+  severity: 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  confidence: 'LOW' | 'MEDIUM' | 'HIGH';
+  evidence: string[];
+  firstObservedAt: string;
+  status: 'ACTIVE' | 'MITIGATED' | 'DISMISSED';
+}
+
+export interface AwarenessTrend {
+  metricName: string;
+  direction: 'IMPROVING' | 'STABLE' | 'DEGRADING' | 'VOLATILE' | 'UNKNOWN';
+  currentValueText: string;
+  previousValueText?: string;
+  reason: string;
+}
+
+export interface AwarenessBottleneck {
+  id: string;
+  title: string;
+  description: string;
+  severity: 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  affectedRole?: string;
+}
+
+export interface AwarenessAgentLoad {
+  role: string;
+  taskCount: number;
+  failureCount: number;
+  blockedCount: number;
+  reviewCount: number;
+  qaCount: number;
+}
+
+export interface AwarenessInsight {
+  id: string;
+  category: 'OBSERVED' | 'INFERRED';
+  title: string;
+  description: string;
+  evidence: string[];
+  confidence: 'LOW' | 'MEDIUM' | 'HIGH';
+}
+
+export interface AwarenessRecommendation {
+  id: string;
+  title: string;
+  description: string;
+  suggestedAction: string;
+  priority: 'LOW' | 'MEDIUM' | 'HIGH';
+  targetRole?: string;
+  requiresHumanDecision: true;
+}
+
+export interface OrganizationAwareness {
+  pulse: AwarenessPulse;
+  health: AwarenessHealth;
+  risks: AwarenessRisk[];
+  trends: AwarenessTrend[];
+  bottlenecks: AwarenessBottleneck[];
+  agentLoad: Record<string, AwarenessAgentLoad>;
+  insights: AwarenessInsight[];
+  recommendations: AwarenessRecommendation[];
+  metadata: {
+    tenantId: string;
+    projectId?: string;
+    sampleSize: number;
+    evaluatedAt: string;
+    isReadOnly: true;
+  };
+}

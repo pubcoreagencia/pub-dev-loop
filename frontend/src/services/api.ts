@@ -204,3 +204,12 @@ export async function fetchApprovals(project?: string): Promise<any[]> {
   const data = await res.json();
   return (data.approvals || []) as any[];
 }
+
+export async function fetchAwareness(project?: string): Promise<any> {
+  const query = project ? `?project=${encodeURIComponent(project)}` : '';
+  const res = await fetch(`${API_BASE}office/awareness${query}`);
+  if (!res.ok) throw new Error(`Failed to fetch awareness: ${res.status}`);
+  if (!isJsonResponse(res)) throw new Error('Awareness response not JSON');
+  const data = await res.json();
+  return data.awareness;
+}

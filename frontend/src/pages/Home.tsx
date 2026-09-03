@@ -5,6 +5,7 @@ import { OfficeFloorMap } from '../components/OfficeFloorMap';
 import { GlobalOfficeChat } from '../components/GlobalOfficeChat';
 import { ActivityTimeline } from '../components/ActivityTimeline';
 import { AgentInspector } from '../components/AgentInspector';
+import { AwarenessPanel } from '../components/AwarenessPanel';
 
 export const Home: React.FC = () => {
   const { loadData, initStream, closeStream, streamStatus } = useStore();
@@ -47,6 +48,9 @@ export const Home: React.FC = () => {
 
       {/* Slide-out / Modal Inspector for selected Agent */}
       <AgentInspector />
+
+      {/* Discreet Organizational Awareness Overlay (Phase 8.6-F) */}
+      <AwarenessPanel />
     </div>
   );
 };

@@ -125,6 +125,20 @@ import {
   type OrganizationalIntelligenceResult,
   type IntelligenceComputeInput,
 } from './organizational-intelligence.js';
+import {
+  defaultOrganizationalAwarenessEngine,
+  OrganizationalAwarenessEngine,
+  type AwarenessPulse,
+  type AwarenessHealth,
+  type AwarenessRisk,
+  type AwarenessTrend,
+  type AwarenessBottleneck,
+  type AwarenessAgentLoad,
+  type AwarenessInsight,
+  type AwarenessRecommendation,
+  type AwarenessMetadata,
+  type OrganizationAwareness,
+} from './organizational-awareness.js';
 
 export {
   defaultMemoryGovernanceEngine,
@@ -233,6 +247,18 @@ export {
   type OrganizationalRecommendation,
   type OrganizationalIntelligenceResult,
   type IntelligenceComputeInput,
+  defaultOrganizationalAwarenessEngine,
+  OrganizationalAwarenessEngine,
+  type AwarenessPulse,
+  type AwarenessHealth,
+  type AwarenessRisk,
+  type AwarenessTrend,
+  type AwarenessBottleneck,
+  type AwarenessAgentLoad,
+  type AwarenessInsight,
+  type AwarenessRecommendation,
+  type AwarenessMetadata,
+  type OrganizationAwareness,
 };
 
 export type MemoryType =

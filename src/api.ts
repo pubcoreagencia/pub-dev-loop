@@ -20,7 +20,7 @@ import { defaultOfficeEventBus } from './office/events.js';
 import { defaultCodeReviewManager } from './office/review.js';
 import { defaultApprovalManager } from './office/approval.js';
 import { authenticateOfficeRequest } from './office/auth.js';
-import { defaultMemoryStore, defaultMemoryRetrievalEngine } from './office/memory.js';
+import { defaultMemoryStore, defaultMemoryRetrievalEngine, defaultOrganizationalAwarenessEngine } from './office/memory.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const prototypeEvents = new PrototypeEventStream();
@@ -281,6 +281,34 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
       });
 
       return res.status(200).json({ memories });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get(['/office/intelligence', '/office/awareness'], async (req, res) => {
+    try {
+      let principal;
+      try {
+        principal = authenticateOfficeRequest(req.headers);
+      } catch (authErr: any) {
+        return res.status(401).json({ error: authErr.message });
+      }
+
+      const project = typeof req.query.project === 'string' ? req.query.project.trim() : 'pub-dev-loop';
+      const tenantId = principal.tenantId || 'pub-dev-loop';
+
+      const allTasks = await tasks.list();
+      const allEvents = defaultOfficeEventBus.getEventsSince(0, { project });
+
+      const awareness = defaultOrganizationalAwarenessEngine.generateAwareness({
+        tenantId,
+        projectId: project,
+        tasks: allTasks,
+        events: allEvents,
+      });
+
+      return res.status(200).json({ awareness });
     } catch (err: any) {
       return res.status(500).json({ error: err.message });
     }

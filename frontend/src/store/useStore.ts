@@ -14,6 +14,7 @@ import type {
   ApprovalItem,
   CodeReviewResult,
   CodeReviewFinding,
+  OrganizationAwareness,
 } from '../types/office';
 import {
   fetchAgents,
@@ -25,6 +26,7 @@ import {
   requestApproval,
   decideApproval,
   fetchApprovals,
+  fetchAwareness,
 } from '../services/api';
 import {
   CEO_IDENTITY,
@@ -52,6 +54,8 @@ export interface OfficeState {
   activities: OfficeActivityEvent[];
   pendingApprovals: ApprovalItem[];
   activeProject: string;
+  awareness?: OrganizationAwareness;
+  isAwarenessPanelOpen: boolean;
   loading: boolean;
   actionLoading: boolean;
   error?: string;
@@ -61,6 +65,8 @@ export interface OfficeState {
   initStream: () => void;
   closeStream: () => void;
   loadData: () => Promise<void>;
+  fetchAwarenessData: () => Promise<void>;
+  toggleAwarenessPanel: (open?: boolean) => void;
   selectAgent: (agent?: AgentDefinition | CeoIdentity) => void;
   selectTask: (task?: Task) => void;
   setActiveProject: (project: string) => void;
@@ -151,11 +157,26 @@ export const useStore = create<OfficeState>((set, get) => ({
   activities: [],
   pendingApprovals: [],
   activeProject: 'pub-dev-loop',
+  awareness: undefined,
+  isAwarenessPanelOpen: false,
   loading: false,
   actionLoading: false,
   error: undefined,
   health: undefined,
   streamStatus: 'disconnected',
+
+  toggleAwarenessPanel: (open) => {
+    set((s) => ({ isAwarenessPanelOpen: open !== undefined ? open : !s.isAwarenessPanelOpen }));
+  },
+
+  fetchAwarenessData: async () => {
+    try {
+      const awareness = await fetchAwareness(get().activeProject);
+      set({ awareness });
+    } catch {
+      // Graceful fallback - never breaks office
+    }
+  },
 
   initStream: () => {
     if (streamClient) {
@@ -601,6 +622,7 @@ export const useStore = create<OfficeState>((set, get) => ({
           error: undefined,
         };
       });
+      void get().fetchAwarenessData();
     } catch (err: any) {
       set({ error: err.message });
     }
@@ -617,6 +639,7 @@ export const useStore = create<OfficeState>((set, get) => ({
   setActiveProject: (project) => {
     set({ activeProject: project });
     get().initStream();
+    void get().fetchAwarenessData();
   },
 
   runCodeReview: async (taskId, planId, findings, testPassed, typecheckPassed, buildPassed) => {

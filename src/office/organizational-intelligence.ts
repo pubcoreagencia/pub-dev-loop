@@ -160,6 +160,7 @@ export interface IntelligenceComputeInput {
   events?: OfficeEvent[];
   patterns?: OrganizationalPattern[];
   previousPeriodMetrics?: Partial<OrganizationalMetricsSummary>;
+  previousPeriodTasks?: Task[];
 }
 
 export class OrganizationalIntelligenceEngine {
@@ -172,19 +173,19 @@ export class OrganizationalIntelligenceEngine {
 
     // Filter tasks strictly by tenant (and project if specified)
     const tasks = (input.tasks || []).filter((t) => {
-      const matchTenant = (t.tenantId as any) === tenantId || (!t.tenantId && tenantId === 'pub-dev-loop');
+      const matchTenant = !(t as any).tenantId || (t as any).tenantId === tenantId;
       const matchProject = !projectId || t.project === projectId;
       return matchTenant && matchProject;
     });
 
     const events = (input.events || []).filter((e) => {
-      const matchTenant = (e as any).tenantId === tenantId || (!(e as any).tenantId && tenantId === 'pub-dev-loop');
+      const matchTenant = !(e as any).tenantId || (e as any).tenantId === tenantId;
       const matchProject = !projectId || e.project === projectId;
       return matchTenant && matchProject;
     });
 
     const patterns = (input.patterns || []).filter((p) => {
-      const matchTenant = p.tenantId === tenantId;
+      const matchTenant = !(p as any).tenantId || p.tenantId === tenantId;
       const matchProject = !projectId || p.projectId === projectId;
       return matchTenant && matchProject;
     });
@@ -193,7 +194,18 @@ export class OrganizationalIntelligenceEngine {
     let failed = 0;
     let blocked = 0;
 
+    const canonicalRoles: OfficeAgentRole[] = ['chief-of-staff', 'architect', 'developer', 'reviewer', 'qa-engineer'];
     const workforce: Record<string, AgentWorkforceMetric> = {};
+    for (const r of canonicalRoles) {
+      workforce[r] = {
+        agentRole: r,
+        taskCount: 0,
+        failureCount: 0,
+        blockedCount: 0,
+        reviewCount: 0,
+        qaCount: 0,
+      };
+    }
 
     for (const t of tasks) {
       const agent = (t.agentId || 'unknown') as OfficeAgentRole;
@@ -227,10 +239,19 @@ export class OrganizationalIntelligenceEngine {
     // Quality metrics from events
     const reviewEvents = events.filter((e) => e.type === 'REVIEW_FINDING' || e.type === 'REVIEW_BLOCKED');
     const reviewBlockedEvents = events.filter((e) => e.type === 'REVIEW_BLOCKED');
-    const qaEvents = events.filter((e) => e.type === 'AGENT_FINISHED_WORK' && (e.payload as any)?.qaConfirmed !== undefined);
+    const qaEvents = events.filter((e) => e.type === 'AGENT_FINISHED_WORK' && ((e.payload as any)?.qaConfirmed !== undefined || e.actorId === 'qa-engineer'));
     const qaFailedEvents = events.filter((e) => (e.payload as any)?.qaConfirmed === false || (e.payload as any)?.regressionsDetected === true);
     const regressionEvents = events.filter((e) => (e.payload as any)?.regressionsDetected === true);
     const remediationEvents = events.filter((e) => (e.payload as any)?.remediationVerified === true);
+
+    for (const e of reviewEvents) {
+      const actor = e.actorId as string;
+      if (actor && workforce[actor]) workforce[actor].reviewCount++;
+    }
+    for (const e of qaEvents) {
+      const actor = e.actorId as string;
+      if (actor && workforce[actor]) workforce[actor].qaCount++;
+    }
 
     const totalReviews = reviewEvents.length;
     const totalQARuns = qaEvents.length;
@@ -522,7 +543,17 @@ export class OrganizationalIntelligenceEngine {
   public evaluateIntelligence(input: IntelligenceComputeInput): OrganizationalIntelligenceResult {
     const metrics = this.computeMetrics(input);
     const signals = this.detectSignals(metrics, input);
-    const trends = this.analyzeTrends(metrics, input.previousPeriodMetrics);
+
+    let prevMetrics = input.previousPeriodMetrics;
+    if (!prevMetrics && input.previousPeriodTasks && input.previousPeriodTasks.length > 0) {
+      prevMetrics = this.computeMetrics({
+        tenantId: input.tenantId,
+        projectId: input.projectId,
+        tasks: input.previousPeriodTasks,
+      });
+    }
+
+    const trends = this.analyzeTrends(metrics, prevMetrics);
     const health = this.evaluateProjectHealth(metrics, signals);
     const risks = this.detectRisks(signals, input);
     const insights = this.generateInsights(metrics, signals, risks);
