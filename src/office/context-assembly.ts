@@ -1,6 +1,7 @@
 import type { Task } from '../domain.js';
 import type { OrganizationalMemory } from './memory.js';
 import type { InstitutionalLesson } from './lesson-validation.js';
+import type { SkillRecord } from './skills.js';
 import { formatInstitutionalLessonContext } from './lesson-retrieval.js';
 import {
   formatDeveloperMemoryContext,
@@ -22,6 +23,7 @@ export type ContextSource =
   | 'SECURITY_EVIDENCE'
   | 'DEPENDENCY_CONTEXT'
   | 'INSTITUTIONAL_LESSON'
+  | 'DAILY_SKILL'
   | 'ORGANIZATIONAL_MEMORY';
 
 export type OfficeAgentRole =
@@ -39,6 +41,7 @@ export interface ContextBlockProvenance {
   eventId?: string;
   memoryId?: string;
   lessonId?: string;
+  skillId?: string;
   reviewId?: string;
   approvalId?: string;
 }
@@ -84,6 +87,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       'RUNTIME_EVIDENCE',
       'SECURITY_EVIDENCE',
       'INSTITUTIONAL_LESSON',
+      'DAILY_SKILL',
       'ORGANIZATIONAL_MEMORY',
     ],
     sourcePriorities: {
@@ -96,6 +100,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       QA_EVIDENCE: 45,
       DEPENDENCY_CONTEXT: 40,
       INSTITUTIONAL_LESSON: 30,
+      DAILY_SKILL: 25,
       ORGANIZATIONAL_MEMORY: 10,
     },
   },
@@ -109,6 +114,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       'REVIEW_EVIDENCE',
       'DEPENDENCY_CONTEXT',
       'INSTITUTIONAL_LESSON',
+      'DAILY_SKILL',
       'ORGANIZATIONAL_MEMORY',
     ],
     sourcePriorities: {
@@ -121,6 +127,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       CEO_OBJECTIVE: 60,
       QA_EVIDENCE: 50,
       INSTITUTIONAL_LESSON: 30,
+      DAILY_SKILL: 25,
       ORGANIZATIONAL_MEMORY: 10,
     },
   },
@@ -135,6 +142,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       'SECURITY_EVIDENCE',
       'DEPENDENCY_CONTEXT',
       'INSTITUTIONAL_LESSON',
+      'DAILY_SKILL',
       'ORGANIZATIONAL_MEMORY',
     ],
     sourcePriorities: {
@@ -147,6 +155,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       DEPENDENCY_CONTEXT: 60,
       CEO_OBJECTIVE: 50,
       INSTITUTIONAL_LESSON: 30,
+      DAILY_SKILL: 25,
       ORGANIZATIONAL_MEMORY: 10,
     },
   },
@@ -161,6 +170,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       'PROJECT_STATE',
       'DEPENDENCY_CONTEXT',
       'INSTITUTIONAL_LESSON',
+      'DAILY_SKILL',
       'ORGANIZATIONAL_MEMORY',
     ],
     sourcePriorities: {
@@ -173,6 +183,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       DEPENDENCY_CONTEXT: 60,
       CEO_OBJECTIVE: 50,
       INSTITUTIONAL_LESSON: 30,
+      DAILY_SKILL: 25,
       ORGANIZATIONAL_MEMORY: 10,
     },
   },
@@ -186,6 +197,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       'PROJECT_STATE',
       'DEPENDENCY_CONTEXT',
       'INSTITUTIONAL_LESSON',
+      'DAILY_SKILL',
       'ORGANIZATIONAL_MEMORY',
     ],
     sourcePriorities: {
@@ -198,6 +210,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       SECURITY_EVIDENCE: 55,
       CEO_OBJECTIVE: 50,
       INSTITUTIONAL_LESSON: 30,
+      DAILY_SKILL: 25,
       ORGANIZATIONAL_MEMORY: 10,
     },
   },
@@ -243,6 +256,7 @@ export interface RawAssemblyInput {
   securityEvidence?: string;
   dependencyContext?: string;
   institutionalLessons?: InstitutionalLesson[];
+  skills?: SkillRecord[];
   historicalMemories?: OrganizationalMemory[];
   budget?: Partial<ContextBudget>;
 }
@@ -395,7 +409,45 @@ export class ContextAssemblyEngine {
       }
     }
 
-    // 5. HISTORICAL ORGANIZATIONAL MEMORY (HISTORICAL)
+    // 5. GOVERNED DAILY SKILLS (GOVERNED)
+    if (input.skills && input.skills.length > 0) {
+      const activeSkills = input.skills.filter((s) => {
+        if (s.status !== 'ACTIVE') {
+          invalidBlocks.push(`Excluded non-active skill: ${s.id} (${s.status})`);
+          return false;
+        }
+        if (s.tenantId !== input.tenantId) {
+          invalidBlocks.push(`Excluded cross-tenant skill: ${s.id}`);
+          return false;
+        }
+        return true;
+      });
+
+      if (activeSkills.length > 0) {
+        const formattedSkills = activeSkills
+          .map(
+            (s) =>
+              `[Skill: ${s.name} (v${s.version})]\nCapability: ${s.capability}\nGuideline: ${s.executableGuideline}\nLimitations: ${s.limitations.join('; ')}`
+          )
+          .join('\n\n');
+
+        blocks.push({
+          id: `skills-${input.currentTask.id}`,
+          source: 'DAILY_SKILL',
+          authority: 'GOVERNED',
+          priority: roleProfile.sourcePriorities.DAILY_SKILL ?? 25,
+          title: 'Reusable Organizational Skills',
+          content: formattedSkills,
+          provenance: {
+            tenantId: input.tenantId,
+            projectId: input.projectId,
+            taskId: input.currentTask.id,
+          },
+        });
+      }
+    }
+
+    // 6. HISTORICAL ORGANIZATIONAL MEMORY (HISTORICAL)
     if (input.historicalMemories && input.historicalMemories.length > 0) {
       const validMemories = input.historicalMemories.filter((m) => {
         if (m.status !== 'ACTIVE') {

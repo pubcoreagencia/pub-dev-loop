@@ -28,6 +28,7 @@ export interface DecisionEvidence {
     agentId?: string;
     memoryId?: string;
     lessonId?: string;
+    skillId?: string;
   };
 }
 

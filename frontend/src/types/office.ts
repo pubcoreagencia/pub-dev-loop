@@ -402,3 +402,31 @@ export interface OrganizationAwareness {
     isReadOnly: true;
   };
 }
+
+export type SkillStatus = 'DRAFT' | 'ACTIVE' | 'DEPRECATED' | 'BLOCKED';
+
+export interface SkillRecord {
+  id: string;
+  tenantId: string;
+  projectId?: string;
+  name: string;
+  description: string;
+  capability: string;
+  sourceLessonId?: string;
+  sourceExperiences: string[];
+  confidence: 'LOW' | 'MEDIUM' | 'HIGH';
+  version: number;
+  applicableRoles: string[];
+  applicableContexts: string[];
+  limitations: string[];
+  executableGuideline: string;
+  status: SkillStatus;
+  provenance: {
+    tenantId: string;
+    projectId?: string;
+    createdAt: string;
+    updatedAt: string;
+    compiledFromLessonId?: string;
+    validatedBy?: string;
+  };
+}

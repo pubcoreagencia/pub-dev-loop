@@ -213,3 +213,23 @@ export async function fetchAwareness(project?: string): Promise<any> {
   const data = await res.json();
   return data.awareness;
 }
+
+export async function fetchSkills(project?: string, role?: string): Promise<any[]> {
+  const params = new URLSearchParams();
+  if (project) params.set('project', project);
+  if (role) params.set('role', role);
+  const query = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`${API_BASE}office/skills${query}`);
+  if (!res.ok) throw new Error(`Failed to fetch skills: ${res.status}`);
+  if (!isJsonResponse(res)) throw new Error('Skills response not JSON');
+  const data = await res.json();
+  return (data.skills || []) as any[];
+}
+
+export async function fetchSkillById(id: string): Promise<any> {
+  const res = await fetch(`${API_BASE}office/skills/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error(`Failed to fetch skill: ${res.status}`);
+  if (!isJsonResponse(res)) throw new Error('Skill response not JSON');
+  const data = await res.json();
+  return data.skill;
+}

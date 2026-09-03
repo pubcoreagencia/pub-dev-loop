@@ -15,7 +15,7 @@ import { defaultOfficeEventBus } from './office/events.js';
 import { defaultCodeReviewManager } from './office/review.js';
 import { defaultApprovalManager } from './office/approval.js';
 import { authenticateOfficeRequest } from './office/auth.js';
-import { defaultMemoryStore, defaultMemoryRetrievalEngine, defaultOrganizationalAwarenessEngine } from './office/memory.js';
+import { defaultMemoryStore, defaultMemoryRetrievalEngine, defaultOrganizationalAwarenessEngine, defaultDailySkillEngine } from './office/memory.js';
 
 export interface HyperdriveBinding {
   connectionString: string;
@@ -777,6 +777,59 @@ export default {
           });
 
           return jsonResponse({ awareness }, 200);
+        } catch (err: any) {
+          return jsonResponse({ error: err.message }, 500);
+        }
+      }
+
+      if (method === 'GET' && path === '/office/skills') {
+        try {
+          let principal;
+          try {
+            principal = authenticateOfficeRequest(request.headers, env);
+          } catch (authErr: any) {
+            return jsonResponse({ error: authErr.message }, 401);
+          }
+
+          const urlObj = new URL(request.url);
+          const project = urlObj.searchParams.get('project')?.trim() || undefined;
+          const role = urlObj.searchParams.get('role')?.trim() as any || undefined;
+          const status = urlObj.searchParams.get('status')?.trim() as any || undefined;
+          const limit = parseInt(urlObj.searchParams.get('limit') || '50', 10) || 50;
+          const tenantId = principal.tenantId || 'pub-dev-loop';
+
+          const skills = defaultDailySkillEngine.listSkills({
+            tenantId,
+            projectId: project,
+            role,
+            status,
+            limit,
+          });
+
+          return jsonResponse({ skills }, 200);
+        } catch (err: any) {
+          return jsonResponse({ error: err.message }, 500);
+        }
+      }
+
+      if (method === 'GET' && path.startsWith('/office/skills/')) {
+        try {
+          let principal;
+          try {
+            principal = authenticateOfficeRequest(request.headers, env);
+          } catch (authErr: any) {
+            return jsonResponse({ error: authErr.message }, 401);
+          }
+
+          const id = path.replace('/office/skills/', '').trim();
+          const tenantId = principal.tenantId || 'pub-dev-loop';
+
+          const skill = defaultDailySkillEngine.getSkill(id, tenantId);
+          if (!skill) {
+            return jsonResponse({ error: `Skill '${id}' not found` }, 404);
+          }
+
+          return jsonResponse({ skill }, 200);
         } catch (err: any) {
           return jsonResponse({ error: err.message }, 500);
         }

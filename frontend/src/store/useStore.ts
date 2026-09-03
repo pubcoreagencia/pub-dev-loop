@@ -15,6 +15,7 @@ import type {
   CodeReviewResult,
   CodeReviewFinding,
   OrganizationAwareness,
+  SkillRecord,
 } from '../types/office';
 import {
   fetchAgents,
@@ -27,6 +28,7 @@ import {
   decideApproval,
   fetchApprovals,
   fetchAwareness,
+  fetchSkills,
 } from '../services/api';
 import {
   CEO_IDENTITY,
@@ -55,6 +57,7 @@ export interface OfficeState {
   pendingApprovals: ApprovalItem[];
   activeProject: string;
   awareness?: OrganizationAwareness;
+  skills: SkillRecord[];
   isAwarenessPanelOpen: boolean;
   loading: boolean;
   actionLoading: boolean;
@@ -66,6 +69,7 @@ export interface OfficeState {
   closeStream: () => void;
   loadData: () => Promise<void>;
   fetchAwarenessData: () => Promise<void>;
+  fetchSkillsData: () => Promise<void>;
   toggleAwarenessPanel: (open?: boolean) => void;
   selectAgent: (agent?: AgentDefinition | CeoIdentity) => void;
   selectTask: (task?: Task) => void;
@@ -158,6 +162,7 @@ export const useStore = create<OfficeState>((set, get) => ({
   pendingApprovals: [],
   activeProject: 'pub-dev-loop',
   awareness: undefined,
+  skills: [],
   isAwarenessPanelOpen: false,
   loading: false,
   actionLoading: false,
@@ -173,6 +178,15 @@ export const useStore = create<OfficeState>((set, get) => ({
     try {
       const awareness = await fetchAwareness(get().activeProject);
       set({ awareness });
+    } catch {
+      // Graceful fallback - never breaks office
+    }
+  },
+
+  fetchSkillsData: async () => {
+    try {
+      const skills = await fetchSkills(get().activeProject);
+      set({ skills });
     } catch {
       // Graceful fallback - never breaks office
     }
@@ -623,6 +637,7 @@ export const useStore = create<OfficeState>((set, get) => ({
         };
       });
       void get().fetchAwarenessData();
+      void get().fetchSkillsData();
     } catch (err: any) {
       set({ error: err.message });
     }
@@ -640,6 +655,7 @@ export const useStore = create<OfficeState>((set, get) => ({
     set({ activeProject: project });
     get().initStream();
     void get().fetchAwarenessData();
+    void get().fetchSkillsData();
   },
 
   runCodeReview: async (taskId, planId, findings, testPassed, typecheckPassed, buildPassed) => {

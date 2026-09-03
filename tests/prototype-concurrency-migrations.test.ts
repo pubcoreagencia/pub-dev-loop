@@ -28,6 +28,7 @@ describe('PUB Prototype — Concurrency, Migrations & Preview Error Handling', (
         '013_organizational_patterns.sql',
         '014_lesson_candidates.sql',
         '015_institutional_lessons.sql',
+        '016_daily_skills.sql',
       ]);
 
       // Check each migration SQL for idempotency constructs

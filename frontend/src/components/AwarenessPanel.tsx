@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { useStore } from '../store/useStore';
 
 export const AwarenessPanel: React.FC = () => {
-  const { awareness, isAwarenessPanelOpen, toggleAwarenessPanel, fetchAwarenessData } = useStore();
+  const { awareness, skills, isAwarenessPanelOpen, toggleAwarenessPanel, fetchAwarenessData, fetchSkillsData } = useStore();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -74,7 +74,10 @@ export const AwarenessPanel: React.FC = () => {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <button
-              onClick={() => fetchAwarenessData()}
+              onClick={() => {
+                fetchAwarenessData();
+                fetchSkillsData();
+              }}
               title="Atualizar dados"
               style={{
                 background: 'transparent',
@@ -295,6 +298,38 @@ export const AwarenessPanel: React.FC = () => {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Section 6: Daily Skills Catalog */}
+          <div>
+            <h3 style={{ fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#94a3b8', margin: '0 0 10px 0' }}>
+              🧠 Catálogo de Skills Organizacionais ({skills?.length || 0})
+            </h3>
+            {(!skills || skills.length === 0) ? (
+              <div style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
+                Nenhuma skill consolidada no momento. Lições institucionais validadas são compiladas em skills práticas reutilizáveis.
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '8px' }}>
+                {skills.map((sk) => (
+                  <div key={sk.id} style={{
+                    background: 'rgba(30, 41, 59, 0.4)',
+                    border: '1px solid #334155',
+                    borderRadius: '4px',
+                    padding: '8px 12px',
+                    fontSize: '12px',
+                  }}>
+                    <div style={{ fontWeight: 600, color: '#38bdf8' }}>
+                      ⚡ {sk.name} <span style={{ fontSize: '10px', color: '#94a3b8' }}>(v{sk.version})</span>
+                    </div>
+                    <div style={{ marginTop: '4px', color: '#cbd5e1' }}>{sk.description}</div>
+                    <div style={{ marginTop: '6px', fontSize: '11px', color: '#94a3b8' }}>
+                      Papéis: <span style={{ color: '#f8fafc' }}>{sk.applicableRoles.join(', ')}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
         </div>

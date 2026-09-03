@@ -20,7 +20,7 @@ import { defaultOfficeEventBus } from './office/events.js';
 import { defaultCodeReviewManager } from './office/review.js';
 import { defaultApprovalManager } from './office/approval.js';
 import { authenticateOfficeRequest } from './office/auth.js';
-import { defaultMemoryStore, defaultMemoryRetrievalEngine, defaultOrganizationalAwarenessEngine } from './office/memory.js';
+import { defaultMemoryStore, defaultMemoryRetrievalEngine, defaultOrganizationalAwarenessEngine, defaultDailySkillEngine } from './office/memory.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const prototypeEvents = new PrototypeEventStream();
@@ -309,6 +309,58 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
       });
 
       return res.status(200).json({ awareness });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/office/skills', async (req, res) => {
+    try {
+      let principal;
+      try {
+        principal = authenticateOfficeRequest(req.headers);
+      } catch (authErr: any) {
+        return res.status(401).json({ error: authErr.message });
+      }
+
+      const project = typeof req.query.project === 'string' ? req.query.project.trim() : undefined;
+      const role = typeof req.query.role === 'string' ? (req.query.role.trim() as any) : undefined;
+      const status = typeof req.query.status === 'string' ? (req.query.status.trim() as any) : undefined;
+      const limit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) || 50 : 50;
+      const tenantId = principal.tenantId || 'pub-dev-loop';
+
+      const skills = defaultDailySkillEngine.listSkills({
+        tenantId,
+        projectId: project,
+        role,
+        status,
+        limit,
+      });
+
+      return res.status(200).json({ skills });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/office/skills/:id', async (req, res) => {
+    try {
+      let principal;
+      try {
+        principal = authenticateOfficeRequest(req.headers);
+      } catch (authErr: any) {
+        return res.status(401).json({ error: authErr.message });
+      }
+
+      const id = req.params.id;
+      const tenantId = principal.tenantId || 'pub-dev-loop';
+
+      const skill = defaultDailySkillEngine.getSkill(id, tenantId);
+      if (!skill) {
+        return res.status(404).json({ error: `Skill '${id}' not found` });
+      }
+
+      return res.status(200).json({ skill });
     } catch (err: any) {
       return res.status(500).json({ error: err.message });
     }

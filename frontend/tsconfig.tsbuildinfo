@@ -1,0 +1,1 @@
+{"root":["./src/services/agentadapter.ts","./src/services/api.ts","./src/store/usestore.ts","./src/types/agent.ts","./src/types/task.ts"],"errors":true,"version":"6.0.3"}

@@ -1,0 +1,16 @@
+﻿{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pub-dev-loop-3d",
+  "compatibility_date": "2026-08-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "headers": [
+    {
+      "type": "javascript-bundle",
+      "key": "Permissions-Policy",
+      "value": "geolocation=(), camera=(), microphone=(), payment=()"
+    }
+  ],
+  "assets": {
+    "directory": "dist"
+  }
+}

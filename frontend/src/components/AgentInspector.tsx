@@ -4,12 +4,16 @@ import type { AgentDefinition } from '../types/office';
 import { OPERATIONAL_STATE_LABELS_PT } from '../config/officeLayout';
 
 export const AgentInspector: React.FC = () => {
-  const { selectedAgent, selectAgent, tasks } = useStore();
+  const { selectedAgent, selectAgent, tasks, skills } = useStore();
 
   if (!selectedAgent) return null;
 
   const isCeo = selectedAgent.role === 'CEO';
   const agent = selectedAgent as AgentDefinition;
+
+  const agentSkills = !isCeo
+    ? (skills || []).filter((s) => s.applicableRoles?.includes(agent.id) && s.status === 'ACTIVE')
+    : [];
 
   const activeTask = !isCeo
     ? tasks.find((t) => t.agentId === agent.id && t.status === 'RUNNING')
@@ -107,6 +111,23 @@ export const AgentInspector: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {/* SKILLS ORGANIZACIONAIS DOMINADAS */}
+              {agentSkills.length > 0 && (
+                <div className="inspector-section">
+                  <h4 className="section-title">🧠 SKILLS ORGANIZACIONAIS DOMINADAS ({agentSkills.length})</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {agentSkills.map((sk) => (
+                      <div key={sk.id} style={{ padding: '8px', background: '#1e293b', borderRadius: '4px', border: '1px solid #334155' }}>
+                        <div style={{ fontWeight: 600, color: '#38bdf8', fontSize: '13px' }}>
+                          ⚡ {sk.name} <span style={{ fontSize: '11px', color: '#94a3b8' }}>(v{sk.version})</span>
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#cbd5e1', marginTop: '2px' }}>{sk.description}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
 

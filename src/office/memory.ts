@@ -139,6 +139,14 @@ import {
   type AwarenessMetadata,
   type OrganizationAwareness,
 } from './organizational-awareness.js';
+import {
+  defaultDailySkillEngine,
+  DailySkillEngine,
+  type SkillRecord,
+  type SkillStatus,
+  type SkillProvenance,
+  type SkillFilter,
+} from './skills.js';
 
 export {
   defaultMemoryGovernanceEngine,
@@ -259,6 +267,12 @@ export {
   type AwarenessRecommendation,
   type AwarenessMetadata,
   type OrganizationAwareness,
+  defaultDailySkillEngine,
+  DailySkillEngine,
+  type SkillRecord,
+  type SkillStatus,
+  type SkillProvenance,
+  type SkillFilter,
 };
 
 export type MemoryType =
