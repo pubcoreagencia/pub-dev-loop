@@ -293,6 +293,7 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
             finalizeWasCalled: false,
             finalizeStatus: null,
             commitSha: null,
+            agentId: task.agentId ?? null,
           },
         };
       }
@@ -484,6 +485,7 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
           fallbackUsed: subResult.fallbackUsed,
           validationResult: subResult.validationResult ?? null,
           errorClass: subResult.errorClass ?? null,
+          agentId: task.agentId ?? null,
         };
         // Record this attempt in executedAttempts after creating trace
         executedAttempts.push(...modelChain);
@@ -533,6 +535,7 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
               finalizeWasCalled: false,
               finalizeStatus: null,
               commitSha: null,
+              agentId: task.agentId ?? null,
             },
           };
         }
@@ -586,6 +589,7 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
               finalizeWasCalled: false,
               finalizeStatus: null,
               commitSha: null,
+              agentId: task.agentId ?? null,
             },
           };
         }
@@ -640,6 +644,7 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
               finalizeWasCalled: false,
               finalizeStatus: null,
               commitSha: null,
+              agentId: task.agentId ?? null,
             },
           };
         }
@@ -676,7 +681,7 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
         if (attempt < effectiveProviders.length - 1) {
           const backoffRemaining = deadline - Date.now();
           if (backoffRemaining <= 0) {
-            return this.createTotalTimeoutResult(globalStart, config.timeoutTotalMs, attemptTraces, effectiveProviders.length);
+            return this.createTotalTimeoutResult(globalStart, config.timeoutTotalMs, attemptTraces, effectiveProviders.length, task);
           }
           const backoffMs = Math.min(
             config.backoffMs * (attempt + 1),
@@ -685,7 +690,7 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
           await sleep(backoffMs);
 
           if (deadline - Date.now() <= 0) {
-            return this.createTotalTimeoutResult(globalStart, config.timeoutTotalMs, attemptTraces, effectiveProviders.length);
+            return this.createTotalTimeoutResult(globalStart, config.timeoutTotalMs, attemptTraces, effectiveProviders.length, task);
           }
         }
       } catch (error) {
@@ -693,7 +698,7 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
         await rm(attemptWS, { recursive: true, force: true }).catch(() => {});
         const elapsed = Date.now() - globalStart;
         if (deadline - Date.now() <= 0) {
-          return this.createTotalTimeoutResult(globalStart, config.timeoutTotalMs, attemptTraces, effectiveProviders.length);
+          return this.createTotalTimeoutResult(globalStart, config.timeoutTotalMs, attemptTraces, effectiveProviders.length, task);
         }
 
         // Other setup errors — START_ERROR (fail-fast)
@@ -715,6 +720,7 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
           isWinner: false,
           workspaceCreated: true,
           workspaceCleaned: true,
+          agentId: task.agentId ?? null,
         };
         attemptTraces.push(trace);
 
@@ -747,6 +753,7 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
             finalizeWasCalled: false,
             finalizeStatus: null,
             commitSha: null,
+            agentId: task.agentId ?? null,
           },
         };
       }
@@ -785,6 +792,7 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
         finalizeWasCalled: false,
         finalizeStatus: null,
         commitSha: null,
+        agentId: task.agentId ?? null,
       },
     };
   }
@@ -828,6 +836,7 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
     totalMs: number,
     attemptTraces: AttemptTrace[],
     chainLength: number,
+    task?: Task,
   ): AttemptResult {
     return {
       status: 'FAILED',
@@ -858,6 +867,7 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
         finalizeWasCalled: false,
         finalizeStatus: null,
         commitSha: null,
+        agentId: task?.agentId ?? null,
       },
     };
   }

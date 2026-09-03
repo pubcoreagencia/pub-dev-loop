@@ -125,6 +125,8 @@ export interface AttemptTrace {
   validationResult?: string | null;
   /** Formal error classification – currently always null; placeholder */
   errorClass?: string | null;
+  /** Optional assigned organizational agent ID from The Office (P5.7.5) */
+  agentId?: string | null;
 }
 
 
@@ -159,6 +161,8 @@ export interface WorkerExecutionTrace {
   finalizeStatus: 'COMPLETED' | 'FAILED' | 'SKIPPED_AGENT_FAILED' | null;
   /** Commit SHA (if committed) */
   commitSha: string | null;
+  /** Optional assigned organizational agent ID from The Office (P5.7.5) */
+  agentId?: string | null;
 }
 
 export interface Worker {
@@ -402,6 +406,7 @@ export abstract class BaseWorker implements Worker {
         winningAttempt.trace.finalizeWasCalled = this.finalizeWasCalled;
         winningAttempt.trace.finalizeStatus = this.lastFinalize;
         winningAttempt.trace.commitSha = finalizeResult.commitSha;
+        winningAttempt.trace.agentId = task.agentId ?? null;
       }
 
       // Update task with final status
