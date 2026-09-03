@@ -1,5 +1,6 @@
 import React from 'react';
 import { useStore } from '../store/useStore';
+import { TurntablePlayer } from './TurntablePlayer';
 
 export const OfficeHeader: React.FC = () => {
   const { agents, tasks, health, activeProject, setActiveProject, streamStatus } = useStore();
@@ -14,12 +15,15 @@ export const OfficeHeader: React.FC = () => {
           <span className="logo-symbol">🏢</span>
           <div>
             <h1 className="logo-title">THE OFFICE</h1>
-            <span className="logo-subtitle">PUB DEV LOOP • FORÇA DE TRABALHO AUTÔNOMA</span>
+            <span className="logo-subtitle">PUB DEV LOOP • ESCRITÓRIO 3D VIVO</span>
           </div>
         </div>
       </div>
 
       <div className="header-status-ribbon">
+        {/* Toca-Discos Lo-Fi / Synthwave do Escritório */}
+        <TurntablePlayer />
+
         <div className="status-badge" title="Canal de Eventos em Tempo Real">
           <span className={`status-dot ${streamStatus === 'connected' ? 'green' : streamStatus === 'connecting' ? 'amber' : 'red'}`}></span>
           <span>STREAM: <strong>{streamStatus === 'connected' ? 'LIVE (SSE)' : streamStatus === 'connecting' ? 'CONECTANDO...' : 'FALLBACK'}</strong></span>

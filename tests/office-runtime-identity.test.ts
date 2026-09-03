@@ -158,7 +158,7 @@ describe('P5.7.5 — The Office: Runtime Identity Propagation', () => {
     // Verify AgentDefinition can be resolved from agentId
     const agentDef = getAgent(task.agentId!);
     expect(agentDef).toBeDefined();
-    expect(agentDef?.name).toBe('Developer');
+    expect(agentDef?.name).toBe('Lucas Silveira');
     expect(agentDef?.role).toBe('DEVELOPER');
     expect(agentDef?.department).toBe('ENGINEERING');
   });

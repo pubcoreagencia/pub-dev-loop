@@ -69,6 +69,55 @@ export const AgentInspector: React.FC = () => {
             <p className="section-text">{selectedAgent.personalitySummary}</p>
           </div>
 
+          {/* DOSSIÊ DE VIDA, GOSTOS & RIXAS DE ESCRITÓRIO */}
+          {selectedAgent.avatar && (
+            <div className="inspector-section" style={{ background: 'rgba(30, 41, 59, 0.4)', borderRadius: '6px', padding: '10px', border: '1px solid #334155' }}>
+              <h4 className="section-title" style={{ color: selectedAgent.avatar.accentColor }}>
+                🎭 DOSSIÊ HUMANO &amp; HÁBITOS DE ESCRITÓRIO
+              </h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '8px', fontSize: '12px', marginTop: '6px' }}>
+                {selectedAgent.avatar.age && (
+                  <div>
+                    <strong style={{ color: '#94a3b8' }}>Idade:</strong> <span style={{ color: '#f8fafc' }}>{selectedAgent.avatar.age} anos</span>
+                  </div>
+                )}
+                {selectedAgent.avatar.nickname && (
+                  <div>
+                    <strong style={{ color: '#94a3b8' }}>Codinome:</strong> <span style={{ color: '#38bdf8', fontWeight: 600 }}>"{selectedAgent.avatar.nickname}"</span>
+                  </div>
+                )}
+                {selectedAgent.avatar.drinkPreference && (
+                  <div>
+                    <strong style={{ color: '#94a3b8' }}>Bebida Favorita:</strong> <span style={{ color: '#f8fafc' }}>☕ {selectedAgent.avatar.drinkPreference}</span>
+                  </div>
+                )}
+                {selectedAgent.avatar.musicTaste && (
+                  <div>
+                    <strong style={{ color: '#94a3b8' }}>Gosto Musical:</strong> <span style={{ color: '#f8fafc' }}>🎧 {selectedAgent.avatar.musicTaste}</span>
+                  </div>
+                )}
+              </div>
+
+              {selectedAgent.avatar.catchphrase && (
+                <div style={{ marginTop: '8px', padding: '6px 10px', background: 'rgba(15, 23, 42, 0.6)', borderLeft: `3px solid ${selectedAgent.avatar.accentColor}`, borderRadius: '4px', fontStyle: 'italic', fontSize: '12px', color: '#cbd5e1' }}>
+                  💬 "{selectedAgent.avatar.catchphrase}"
+                </div>
+              )}
+
+              {selectedAgent.avatar.rivalries && (
+                <div style={{ marginTop: '8px', fontSize: '11px', color: '#fca5a5' }}>
+                  ⚡ <strong>Dinâmica / Rixas:</strong> {selectedAgent.avatar.rivalries}
+                </div>
+              )}
+
+              {selectedAgent.avatar.backgroundLore && (
+                <div style={{ marginTop: '6px', fontSize: '11px', color: '#94a3b8' }}>
+                  📖 <strong>Histórico:</strong> {selectedAgent.avatar.backgroundLore}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="inspector-section">
             <h4 className="section-title">ESPECIALIDADE PRINCIPAL</h4>
             <p className="section-text-highlight">{selectedAgent.specialty}</p>

@@ -70,6 +70,14 @@ export interface AvatarProfile {
   tieColor?: string;
   accessory?: string;
   avatarStyle?: 'EXECUTIVE' | 'STRATEGY' | 'ARCHITECT' | 'CODER' | 'REVIEWER' | 'QA';
+  age?: number;
+  nickname?: string;
+  drinkPreference?: string;
+  musicTaste?: string;
+  catchphrase?: string;
+  knownQuirks?: string[];
+  rivalries?: string;
+  backgroundLore?: string;
 }
 
 export interface AgentDefinition {

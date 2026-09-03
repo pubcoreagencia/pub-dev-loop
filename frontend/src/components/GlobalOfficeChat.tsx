@@ -1,9 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { PlanViewer } from './PlanViewer';
+import { defaultWatercoolerEngine } from '../services/watercoolerEngine';
 
 export const GlobalOfficeChat: React.FC = () => {
-  const { messages, submitObjective, actionLoading, pendingApprovals, decideCeoApproval } = useStore();
+  const {
+    messages,
+    addMessage,
+    submitObjective,
+    actionLoading,
+    pendingApprovals,
+    decideCeoApproval,
+    triggerSpeechBubble,
+    selectedAgent,
+  } = useStore();
+
+  const [activeTab, setActiveTab] = useState<'COMMAND' | 'WATERCOOLER'>('COMMAND');
   const [inputText, setInputText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -13,27 +25,142 @@ export const GlobalOfficeChat: React.FC = () => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, actionLoading, pendingApprovals]);
+  }, [messages, actionLoading, pendingApprovals, activeTab]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() || actionLoading) return;
-    const objective = inputText.trim();
+    const text = inputText.trim();
     setInputText('');
-    await submitObjective(objective);
+
+    if (activeTab === 'COMMAND') {
+      // Despacho de Objetivo Estratégico do CEO
+      await submitObjective(text);
+    } else {
+      // Conversa Livre do Watercooler / Relação com os Funcionários
+      addMessage({
+        sender: 'CEO',
+        senderName: 'Matheus Paes (CEO)',
+        senderRole: 'Comandante',
+        content: text,
+        type: 'TEXT',
+      });
+
+      // Dispara resposta autêntica de personalidade após breve delay
+      setTimeout(() => {
+        const reply = defaultWatercoolerEngine.respondToCeo(text, selectedAgent?.id);
+        addMessage({
+          sender: reply.speakerId.toUpperCase().replace(/-/g, '_') as any,
+          senderName: reply.senderName,
+          senderRole: reply.senderRole,
+          content: reply.content,
+          type: 'TEXT',
+        });
+
+        triggerSpeechBubble({
+          senderId: reply.speakerId,
+          senderName: reply.senderName,
+          content: reply.content.slice(0, 50) + (reply.content.length > 50 ? '...' : ''),
+          durationMs: 6000,
+          type: 'TASK',
+        });
+      }, 700);
+    }
+  };
+
+  const handleTriggerWatercoolerDialogue = () => {
+    const dialogues = defaultWatercoolerEngine.getNextDialogue();
+    dialogues.forEach((d, idx) => {
+      setTimeout(() => {
+        const senderProfile = d.speakerId === 'chief-of-staff' ? { name: 'Dr. Arthur Vance', role: 'Chief of Staff' }
+          : d.speakerId === 'architect' ? { name: 'Helena Rostova', role: 'Principal Architect' }
+          : d.speakerId === 'developer' ? { name: 'Lucas Silveira', role: 'Senior Developer' }
+          : d.speakerId === 'reviewer' ? { name: 'Beatriz Mendes', role: 'Code Reviewer' }
+          : { name: 'Tiago Rocha', role: 'QA Engineer' };
+
+        addMessage({
+          sender: d.speakerId.toUpperCase().replace(/-/g, '_') as any,
+          senderName: senderProfile.name,
+          senderRole: senderProfile.role,
+          content: d.content,
+          type: 'TEXT',
+        });
+
+        triggerSpeechBubble({
+          senderId: d.speakerId,
+          senderName: senderProfile.name,
+          content: d.content.slice(0, 45) + (d.content.length > 45 ? '...' : ''),
+          durationMs: 5000,
+          type: 'TASK',
+        });
+      }, idx * 1200);
+    });
   };
 
   return (
     <div className="office-chat-container">
-      {/* CABEÇALHO DO CHAT */}
+      {/* CABEÇALHO COM ABAS DE NAVEGAÇÃO */}
       <div className="chat-header">
-        <div className="chat-title-group">
-          <span className="terminal-prompt-icon">📟</span>
-          <span className="chat-title">CHAT GLOBAL DO ESCRITÓRIO • SUPERFÍCIE DE COMANDO DO CEO</span>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={() => setActiveTab('COMMAND')}
+            style={{
+              background: activeTab === 'COMMAND' ? '#1e293b' : 'transparent',
+              border: activeTab === 'COMMAND' ? '1px solid #38bdf8' : '1px solid transparent',
+              color: activeTab === 'COMMAND' ? '#38bdf8' : '#94a3b8',
+              borderRadius: '6px',
+              padding: '4px 10px',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <span>📟</span> COMANDO DO CEO
+          </button>
+          <button
+            onClick={() => setActiveTab('WATERCOOLER')}
+            style={{
+              background: activeTab === 'WATERCOOLER' ? '#1e293b' : 'transparent',
+              border: activeTab === 'WATERCOOLER' ? '1px solid #f59e0b' : '1px solid transparent',
+              color: activeTab === 'WATERCOOLER' ? '#f59e0b' : '#94a3b8',
+              borderRadius: '6px',
+              padding: '4px 10px',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <span>☕</span> CORREDOR &amp; WATERCOOLER
+          </button>
         </div>
-        <div className="chat-status-pill">
-          LINHA DIRETA • CHIEF OF STAFF
-        </div>
+
+        {activeTab === 'WATERCOOLER' ? (
+          <button
+            onClick={handleTriggerWatercoolerDialogue}
+            style={{
+              background: 'linear-gradient(135deg, #d97706, #b45309)',
+              border: 'none',
+              borderRadius: '4px',
+              color: '#fff',
+              padding: '4px 10px',
+              fontSize: '11px',
+              cursor: 'pointer',
+              fontWeight: 600,
+            }}
+          >
+            🎲 Puxar Conversa no Café
+          </button>
+        ) : (
+          <div className="chat-status-pill">
+            LINHA DIRETA • CHIEF OF STAFF
+          </div>
+        )}
       </div>
 
       {/* ÁREA DE HISTÓRICO DE MENSAGENS */}
@@ -96,7 +223,7 @@ export const GlobalOfficeChat: React.FC = () => {
         {actionLoading && (
           <div className="chat-bubble-row chief_of_staff">
             <div className="chat-bubble-wrapper thinking-bubble">
-              <span className="thinking-dots">🧠 Chief of Staff formulando plano e alocando especialistas...</span>
+              <span className="thinking-dots">🧠 Dr. Arthur Vance formulando plano e alocando especialistas...</span>
             </div>
           </div>
         )}
@@ -104,23 +231,47 @@ export const GlobalOfficeChat: React.FC = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* BARRA DE ENTRADA DO CEO (FIXA NO RODAPÉ DO CHAT) */}
+      {/* BARRA DE ENTRADA DO CEO */}
       <form onSubmit={handleSubmit} className="chat-input-bar">
         <span className="input-prompt-label">CEO &gt;</span>
         <input
           type="text"
           className="chat-text-input"
-          placeholder="Envie um objetivo estratégico para o escritório (ex: Implementar tela de checkout)..."
+          placeholder={
+            activeTab === 'COMMAND'
+              ? 'Envie um objetivo estratégico para o escritório (ex: Implementar tela de checkout)...'
+              : selectedAgent
+              ? `Fale diretamente com ${selectedAgent.name} (ou faça uma piada de café)...`
+              : 'Converse livremente com a equipe no corredor (ou selecione um agente na mesa)...'
+          }
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           disabled={actionLoading}
         />
         <button
           type="submit"
-          className="btn-dispatch-objective"
+          className={activeTab === 'COMMAND' ? 'btn-dispatch-objective' : 'btn-watercooler-send'}
+          style={
+            activeTab === 'WATERCOOLER'
+              ? {
+                  background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                  color: '#000',
+                  fontWeight: 700,
+                  border: 'none',
+                  borderRadius: '4px',
+                  padding: '0 16px',
+                  cursor: 'pointer',
+                  fontSize: '11px',
+                }
+              : undefined
+          }
           disabled={actionLoading || !inputText.trim()}
         >
-          {actionLoading ? 'PLANEJANDO...' : 'DESPACHAR AO ESCRITÓRIO'}
+          {actionLoading
+            ? 'PLANEJANDO...'
+            : activeTab === 'COMMAND'
+            ? 'DESPACHAR OBJETIVO'
+            : 'FALAR COM TIME'}
         </button>
       </form>
     </div>

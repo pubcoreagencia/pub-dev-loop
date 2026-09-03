@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   createAgentRoleContext,
   toRoleContext,
@@ -176,7 +176,7 @@ describe('P5.7.7 — The Office: Agent Persona & Role Context', () => {
 
     const roleCtx = toRoleContext(execCtx!);
     expect(roleCtx.agentId).toBe('architect');
-    expect(roleCtx.name).toBe('Architect');
+    expect(roleCtx.name).toBe('Helena Rostova');
     expect(roleCtx.role).toBe('ARCHITECT');
     expect(roleCtx.department).toBe('ENGINEERING');
     expect(Object.isFrozen(roleCtx.responsibilities)).toBe(true);
