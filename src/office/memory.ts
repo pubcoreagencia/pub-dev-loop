@@ -32,6 +32,16 @@ import {
   type CandidateContradictionStatus,
   type EligibilityEvaluation,
 } from './lesson-candidate.js';
+import {
+  defaultLessonValidationEngine,
+  LessonValidationEngine,
+  type InstitutionalLesson,
+  type InstitutionalLessonStatus,
+  type InstitutionalLessonType,
+  type LessonTemporalValidity,
+  type GovernanceRequirement,
+  type ValidationResult,
+} from './lesson-validation.js';
 
 export {
   defaultMemoryGovernanceEngine,
@@ -59,6 +69,14 @@ export {
   type CandidateScope,
   type CandidateContradictionStatus,
   type EligibilityEvaluation,
+  defaultLessonValidationEngine,
+  LessonValidationEngine,
+  type InstitutionalLesson,
+  type InstitutionalLessonStatus,
+  type InstitutionalLessonType,
+  type LessonTemporalValidity,
+  type GovernanceRequirement,
+  type ValidationResult,
 };
 
 export type MemoryType =
