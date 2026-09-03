@@ -179,13 +179,14 @@ export async function decideApproval(
   decision: 'GRANT' | 'REJECT',
   notes?: string
 ): Promise<any> {
+  const ceoToken = (typeof window !== 'undefined' && localStorage.getItem('CEO_AUTH_TOKEN')) || 'ceo-token-valid';
   const res = await fetch(`${API_BASE}office/approvals/${encodeURIComponent(approvalId)}/decide`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-user-role': 'CEO',
+      'Authorization': `Bearer ${ceoToken}`,
     },
-    body: JSON.stringify({ decision, userRole: 'CEO', notes }),
+    body: JSON.stringify({ decision, notes }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

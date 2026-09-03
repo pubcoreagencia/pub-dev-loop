@@ -74,11 +74,16 @@ export class ApprovalManager {
   decideApproval(
     approvalId: string,
     decision: 'GRANT' | 'REJECT',
-    userRole: string,
-    notes?: string
+    userRoleOrPrincipal: string | { role: string; userId?: string; tenantId?: string },
+    notes?: string,
+    expectedProject?: string
   ): ApprovalItem {
-    // Validação estrita de autoridade: Somente o CEO pode aprovar
-    if (userRole.toUpperCase() !== 'CEO') {
+    const role = typeof userRoleOrPrincipal === 'string' ? userRoleOrPrincipal : userRoleOrPrincipal.role;
+    const userId = typeof userRoleOrPrincipal === 'string' ? 'ceo' : userRoleOrPrincipal.userId || 'ceo';
+    const tenantId = typeof userRoleOrPrincipal === 'string' ? undefined : userRoleOrPrincipal.tenantId;
+
+    // 1. Validação estrita de autoridade: Somente o CEO pode aprovar
+    if (!role || role.toUpperCase() !== 'CEO') {
       throw new Error('UNAUTHORIZED: Apenas o CEO possui autoridade para aprovar ou rejeitar decisões de diretoria.');
     }
 
@@ -87,12 +92,22 @@ export class ApprovalManager {
       throw new Error(`NOT_FOUND: Solicitação de aprovação '${approvalId}' não encontrada.`);
     }
 
+    // 2. Tenant / Project Isolation
+    if (expectedProject && item.project !== expectedProject) {
+      throw new Error(`FORBIDDEN_TENANT: Solicitação '${approvalId}' não pertence ao projeto '${expectedProject}'.`);
+    }
+
+    if (tenantId && item.project !== tenantId && tenantId !== 'global') {
+      throw new Error(`FORBIDDEN_TENANT: Identidade não possui autorização no tenant '${item.project}'.`);
+    }
+
+    // 3. Idempotência / Status check
     if (item.status !== 'PENDING') {
       throw new Error(`CONFLICT: Solicitação '${approvalId}' já foi decidida anteriormente (${item.status}).`);
     }
 
     item.status = decision === 'GRANT' ? 'GRANTED' : 'REJECTED';
-    item.decidedBy = 'ceo';
+    item.decidedBy = userId;
     item.decidedAt = new Date().toISOString();
     item.decisionNotes = notes;
 

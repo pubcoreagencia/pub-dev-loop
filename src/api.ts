@@ -19,6 +19,7 @@ import { createOrganizationalPlan, planStepToTask } from './office/planning.js';
 import { defaultOfficeEventBus } from './office/events.js';
 import { defaultCodeReviewManager } from './office/review.js';
 import { defaultApprovalManager } from './office/approval.js';
+import { authenticateOfficeRequest } from './office/auth.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const prototypeEvents = new PrototypeEventStream();
@@ -211,15 +212,23 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
 
   app.post('/office/approvals/:id/decide', (req, res) => {
     try {
-      const { decision, userRole, notes } = req.body ?? {};
-      const role = userRole || (req.headers['x-user-role'] as string) || 'GUEST';
+      // 1. Authoritative Backend Authentication (Never trusts x-user-role or client payload)
+      let principal;
+      try {
+        principal = authenticateOfficeRequest(req.headers);
+      } catch (authErr: any) {
+        return res.status(401).json({ error: authErr.message });
+      }
+
+      const { decision, notes } = req.body ?? {};
       if (!decision || (decision !== 'GRANT' && decision !== 'REJECT')) {
         return res.status(400).json({ error: 'decision must be GRANT or REJECT' });
       }
-      const approval = defaultApprovalManager.decideApproval(req.params.id, decision, role, notes);
+
+      const approval = defaultApprovalManager.decideApproval(req.params.id, decision, principal, notes);
       return res.status(200).json({ approval });
     } catch (err: any) {
-      if (err.message.startsWith('UNAUTHORIZED')) {
+      if (err.message.startsWith('UNAUTHORIZED') || err.message.startsWith('FORBIDDEN')) {
         return res.status(403).json({ error: err.message });
       }
       if (err.message.startsWith('NOT_FOUND')) {

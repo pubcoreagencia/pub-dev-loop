@@ -14,6 +14,7 @@ import { createOrganizationalPlan, planStepToTask } from './office/planning.js';
 import { defaultOfficeEventBus } from './office/events.js';
 import { defaultCodeReviewManager } from './office/review.js';
 import { defaultApprovalManager } from './office/approval.js';
+import { authenticateOfficeRequest } from './office/auth.js';
 
 export interface HyperdriveBinding {
   connectionString: string;
@@ -639,19 +640,26 @@ export default {
 
       if (method === 'POST' && path.startsWith('/office/approvals/') && path.endsWith('/decide')) {
         try {
+          // 1. Authoritative Backend Authentication (Never trusts x-user-role or client payload)
+          let principal;
+          try {
+            principal = authenticateOfficeRequest(request.headers, env);
+          } catch (authErr: any) {
+            return jsonResponse({ error: authErr.message }, 401);
+          }
+
           const approvalId = path.split('/')[3];
           const body = (await request.json().catch(() => ({}))) as any;
-          const { decision, userRole, notes } = body ?? {};
-          const role = userRole || request.headers.get('x-user-role') || 'GUEST';
+          const { decision, notes } = body ?? {};
           if (!decision || (decision !== 'GRANT' && decision !== 'REJECT')) {
             return jsonResponse({ error: 'decision must be GRANT or REJECT' }, 400);
           }
           const pool = getPool(env);
           defaultOfficeEventBus.setPool(pool);
-          const approval = defaultApprovalManager.decideApproval(approvalId, decision, role, notes);
+          const approval = defaultApprovalManager.decideApproval(approvalId, decision, principal, notes);
           return jsonResponse({ approval }, 200);
         } catch (err: any) {
-          if (err.message.startsWith('UNAUTHORIZED')) {
+          if (err.message.startsWith('UNAUTHORIZED') || err.message.startsWith('FORBIDDEN')) {
             return jsonResponse({ error: err.message }, 403);
           }
           if (err.message.startsWith('NOT_FOUND')) {
