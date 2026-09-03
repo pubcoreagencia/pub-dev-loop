@@ -484,13 +484,6 @@ export const useStore = create<OfficeState>((set, get) => ({
           }
         }
 
-        const meetingRoom: MeetingRoomState = {
-          ...s.meetingRoom,
-          status: s.actionLoading ? 'EM_REUNIAO' : 'DISPONIVEL',
-          topic: s.actionLoading ? 'Planejamento de Objetivo com Chief of Staff' : undefined,
-          participants: s.actionLoading ? ['ceo', 'chief-of-staff'] : [],
-        };
-
         const ceoSpatial = activeSpatialStates.get('ceo') || {
           spatialState: 'idle' as EmployeeSpatialState,
           facingDirection: 'SOUTH' as const,
@@ -505,7 +498,7 @@ export const useStore = create<OfficeState>((set, get) => ({
           },
           tasks: tasksData,
           health: healthData,
-          meetingRoom,
+          meetingRoom: s.meetingRoom,
           activities: newActivities.slice(0, 50),
           error: undefined,
         };

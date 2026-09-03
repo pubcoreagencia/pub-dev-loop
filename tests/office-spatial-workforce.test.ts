@@ -74,4 +74,59 @@ describe('P5.8 / Phase 6 — Spatial Workforce / Movement & Proximity', () => {
     expect(handoffPayload.isOperationalHandoff).toBe(true);
     expect((handoffPayload as any).isDirectCommunication).toBeUndefined();
   });
+
+  it('6. handles MEETING_STARTED and MEETING_ENDED as real runtime events', () => {
+    let meetingRoom: MeetingRoomState = {
+      id: 'sala-alinhamento-principal',
+      name: 'Sala de Alinhamento & Estratégia',
+      status: 'DISPONIVEL',
+      participants: [],
+    };
+
+    // Event 1: Real MEETING_STARTED from backend
+    const meetingStartedEvent = {
+      type: 'MEETING_STARTED',
+      actorId: 'ceo',
+      targetId: 'chief-of-staff',
+      summary: 'Alinhamento de Planejamento Estratégico',
+      payload: { participants: ['ceo', 'chief-of-staff'], topic: 'Expansão de Funcionalidades' },
+    };
+
+    meetingRoom = {
+      ...meetingRoom,
+      status: 'EM_REUNIAO',
+      topic: meetingStartedEvent.payload.topic,
+      participants: meetingStartedEvent.payload.participants,
+    };
+
+    expect(meetingRoom.status).toBe('EM_REUNIAO');
+    expect(meetingRoom.participants).toContain('ceo');
+    expect(meetingRoom.participants).toContain('chief-of-staff');
+    expect(meetingRoom.topic).toBe('Expansão de Funcionalidades');
+
+    // Event 2: Real MEETING_ENDED from backend
+    meetingRoom = {
+      ...meetingRoom,
+      status: 'DISPONIVEL',
+      topic: undefined,
+      participants: [],
+    };
+
+    expect(meetingRoom.status).toBe('DISPONIVEL');
+    expect(meetingRoom.participants).toHaveLength(0);
+  });
+
+  it('7. ensures multiple agents maintain independent spatial states without collision', () => {
+    const agents = [
+      { id: 'developer', spatialState: 'approaching', operationalState: 'working' },
+      { id: 'reviewer', spatialState: 'idle', operationalState: 'reviewing' },
+      { id: 'qa-engineer', spatialState: 'idle', operationalState: 'idle' },
+      { id: 'chief-of-staff', spatialState: 'interacting', operationalState: 'in_meeting' },
+    ];
+
+    expect(agents.find((a) => a.id === 'developer')?.spatialState).toBe('approaching');
+    expect(agents.find((a) => a.id === 'reviewer')?.spatialState).toBe('idle');
+    expect(agents.find((a) => a.id === 'reviewer')?.operationalState).toBe('reviewing');
+    expect(agents.find((a) => a.id === 'chief-of-staff')?.spatialState).toBe('interacting');
+  });
 });

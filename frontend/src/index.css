@@ -600,9 +600,21 @@ code, pre, .mono-font, .crt-text, .sender-tag, .snippet-worker, .dep-tag {
   50% { transform: translateY(-3px); }
 }
 
-.employee-avatar-wrapper.spatial-interacting .character-portrait-box {
-  box-shadow: 0 0 10px rgba(245, 158, 11, 0.6);
+.agent-workstation.spatial-approaching .character-portrait-box {
+  transform: translateX(-30px);
+  transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.agent-workstation.spatial-interacting .character-portrait-box {
+  transform: translateX(-30px);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.7);
   border-color: #f59e0b;
+  transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.agent-workstation.spatial-returning .character-portrait-box {
+  transform: translateX(0);
+  transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .employee-avatar-wrapper.facing-west .character-svg {

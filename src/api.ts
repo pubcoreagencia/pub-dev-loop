@@ -70,6 +70,15 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
         payload: { objective },
       });
 
+      defaultOfficeEventBus.publish({
+        type: 'MEETING_STARTED',
+        actorId: 'ceo',
+        targetId: 'chief-of-staff',
+        project,
+        summary: `Alinhamento de Planejamento Estratégico: ${objective.slice(0, 40)}...`,
+        payload: { participants: ['ceo', 'chief-of-staff'], topic: objective },
+      });
+
       const plan = createOrganizationalPlan(
         { objective, project, repository, context },
         { steps }
@@ -83,6 +92,15 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
         planId: plan.id,
         summary: `Plano organizacional formulado com ${plan.steps.length} etapas delegadas.`,
         payload: { stepCount: plan.steps.length },
+      });
+
+      defaultOfficeEventBus.publish({
+        type: 'MEETING_ENDED',
+        actorId: 'chief-of-staff',
+        targetId: 'ceo',
+        project,
+        planId: plan.id,
+        summary: 'Encerramento da Reunião de Alinhamento Estratégico',
       });
 
       return res.status(201).json({ plan });
