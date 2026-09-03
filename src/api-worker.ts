@@ -10,6 +10,7 @@ import { prototypeUiHtml } from './prototype/ui.js';
 import { prototypeHistoryUiScript } from './prototype/history-ui.js';
 import { defaultAgentRegistry, isValidAgentId } from './office/registry.js';
 import { defaultOfficeOrganization } from './office/organization.js';
+import { createOrganizationalPlan, planStepToTask } from './office/planning.js';
 
 export interface HyperdriveBinding {
   connectionString: string;
@@ -453,6 +454,44 @@ export default {
           return jsonResponse({ error: 'Agent not found' }, 404);
         }
         return jsonResponse({ agent });
+      }
+
+      if (method === 'POST' && path === '/office/plans') {
+        try {
+          const body = (await request.json().catch(() => ({}))) as any;
+          const { objective, project, repository, context, steps } = body ?? {};
+          if (!objective || typeof objective !== 'string' || !objective.trim()) {
+            return jsonResponse({ error: 'objective is required' }, 400);
+          }
+          const plan = createOrganizationalPlan(
+            { objective, project, repository, context },
+            { steps }
+          );
+          return jsonResponse({ plan }, 201);
+        } catch (err: any) {
+          return jsonResponse({ error: err.message }, 500);
+        }
+      }
+
+      if (method === 'POST' && path === '/office/plans/execute-step') {
+        try {
+          const body = (await request.json().catch(() => ({}))) as any;
+          const { plan, stepId, overrides } = body ?? {};
+          if (!plan || !stepId) {
+            return jsonResponse({ error: 'plan and stepId are required' }, 400);
+          }
+          const step = plan.steps?.find((s: any) => s.id === stepId);
+          if (!step) {
+            return jsonResponse({ error: `Step '${stepId}' not found in plan` }, 404);
+          }
+          const taskPayload = planStepToTask(step, plan, overrides);
+          const pool = getPool(env);
+          const tasksRepo = new PostgresTaskRepository(pool);
+          const createdTask = await tasksRepo.create(taskPayload);
+          return jsonResponse({ task: createdTask }, 201);
+        } catch (err: any) {
+          return jsonResponse({ error: err.message }, 500);
+        }
       }
 
       // POST /migrate (Synchronously run schema migrations)

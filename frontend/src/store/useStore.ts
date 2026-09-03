@@ -1,249 +1,235 @@
-import { create } from "zustand";
-import type { Task, CreateTaskInput, PrototypeSession, LogicalProject } from "../types/task";
-import type { Agent } from "../types/agent";
-import { fetchTasks, fetchSessions, createTask, cancelTask, retryTask } from "../services/api";
-import { deriveAgentsFromTasks, groupSessionsIntoProjects } from "../services/agentAdapter";
+import { create } from 'zustand';
+import type {
+  AgentDefinition,
+  OrganizationalPlan,
+  Task,
+  ChatMessage,
+  OfficeActivityEvent,
+} from '../types/office';
+import {
+  fetchAgents,
+  fetchTasks,
+  fetchHealth,
+  createPlan,
+  executePlanStep,
+} from '../services/api';
 
-const STORAGE_PROJECT_KEY = "pub-3d:last-project";
-
-export type ModalType =
-  | "CREATE_TASK"
-  | "VIEW_TASK"
-  | "VIEW_LOGS"
-  | "VIEW_RESULT"
-  | "CONFIRM_CANCEL"
-  | "CONFIRM_RETRY"
-  | null;
-
-interface State {
-  sessions: PrototypeSession[];
-  projects: LogicalProject[];
-  activeProject?: LogicalProject;
-  activeSession?: PrototypeSession;
-  projectSearch: string;
+interface OfficeState {
+  agents: AgentDefinition[];
   tasks: Task[];
-  agents: Agent[];
-  selectedAgent?: Agent;
+  plans: OrganizationalPlan[];
+  activePlan?: OrganizationalPlan;
+  selectedAgent?: AgentDefinition;
   selectedTask?: Task;
-  activeModal: ModalType;
-  modalPayload?: any;
+  messages: ChatMessage[];
+  activities: OfficeActivityEvent[];
+  activeProject: string;
   loading: boolean;
   actionLoading: boolean;
   error?: string;
-  projectsError?: string;
-  successMessage?: string;
+  health?: { status: string; runtime?: string; [key: string]: any };
 
   loadData: () => Promise<void>;
-  selectProject: (project?: LogicalProject) => void;
-  selectSession: (session: PrototypeSession) => void;
-  setProjectSearch: (query: string) => void;
-  selectAgent: (agent?: Agent) => void;
+  selectAgent: (agent?: AgentDefinition) => void;
   selectTask: (task?: Task) => void;
-  openModal: (type: ModalType, payload?: any) => void;
-  closeModal: () => void;
-  setSuccessMessage: (msg?: string) => void;
-
-  // Actions
-  handleCreateTask: (input: CreateTaskInput) => Promise<Task>;
-  handleCancelTask: (id: string) => Promise<Task>;
-  handleRetryTask: (id: string) => Promise<Task>;
+  setActiveProject: (project: string) => void;
+  submitObjective: (objective: string) => Promise<OrganizationalPlan>;
+  executeStep: (plan: OrganizationalPlan, stepId: string) => Promise<Task>;
+  executeAllSteps: (plan: OrganizationalPlan) => Promise<void>;
+  addMessage: (msg: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
 }
 
-export const useStore = create<State>((set, get) => ({
-  sessions: [],
-  projects: [],
-  activeProject: undefined,
-  activeSession: undefined,
-  projectSearch: "",
-  tasks: [],
+const INITIAL_MESSAGES: ChatMessage[] = [
+  {
+    id: 'msg-init-1',
+    sender: 'CHIEF_OF_STAFF',
+    senderName: 'Chief of Staff',
+    senderRole: 'Orchestrator & Strategy',
+    content: 'Good morning, CEO. The office is online and all specialists (Architect, Developer, Reviewer, QA Engineer) are standing by at their desks. Provide an objective below to initiate planning and autonomous delegation.',
+    timestamp: new Date().toLocaleTimeString(),
+    type: 'TEXT',
+  },
+];
+
+export const useStore = create<OfficeState>((set, get) => ({
   agents: [],
+  tasks: [],
+  plans: [],
+  activePlan: undefined,
   selectedAgent: undefined,
   selectedTask: undefined,
-  activeModal: null,
-  modalPayload: undefined,
+  messages: INITIAL_MESSAGES,
+  activities: [],
+  activeProject: 'pub-dev-loop',
   loading: false,
   actionLoading: false,
   error: undefined,
-  projectsError: undefined,
-  successMessage: undefined,
+  health: undefined,
 
-  setProjectSearch: (query: string) => {
-    set({ projectSearch: query });
-  },
+  loadData: async () => {
+    try {
+      const [agentsData, tasksData, healthData] = await Promise.all([
+        fetchAgents().catch(() => []),
+        fetchTasks().catch(() => []),
+        fetchHealth().catch(() => ({ status: 'offline' })),
+      ]);
 
-  selectProject: (project) => {
-    if (project) {
-      if (typeof window !== "undefined" && window.localStorage) {
-        try {
-          window.localStorage.setItem(STORAGE_PROJECT_KEY, project.normalizedProject);
-        } catch {}
-      }
-      set({
-        activeProject: project,
-        activeSession: project.latestSession,
+      set((state) => {
+        const newActivities: OfficeActivityEvent[] = [...state.activities];
+
+        for (const task of tasksData) {
+          const prev = state.tasks.find((t) => t.id === task.id);
+          if (!prev) {
+            newActivities.unshift({
+              id: `act-${task.id}-${Date.now()}`,
+              timestamp: new Date(task.createdAt || Date.now()).toLocaleTimeString(),
+              type: 'TASK_RUNNING',
+              title: `Task Created: ${task.agentId ? `[${task.agentId.toUpperCase()}]` : ''} ${task.objective.slice(0, 40)}...`,
+              description: `Status: ${task.status} | Worker: ${task.worker}`,
+              agentId: task.agentId || undefined,
+              taskId: task.id,
+            });
+          } else if (prev.status !== task.status) {
+            newActivities.unshift({
+              id: `act-status-${task.id}-${Date.now()}`,
+              timestamp: new Date(task.updatedAt || Date.now()).toLocaleTimeString(),
+              type: task.status === 'COMPLETED' ? 'TASK_COMPLETED' : task.status === 'FAILED' ? 'TASK_FAILED' : 'TASK_RUNNING',
+              title: `Task ${task.status}: ${task.id.slice(0, 16)}`,
+              description: task.result?.summary ? task.result.summary.slice(0, 100) : `Transitioned from ${prev.status} to ${task.status}`,
+              agentId: task.agentId || undefined,
+              taskId: task.id,
+            });
+          }
+        }
+
+        return {
+          agents: agentsData.length > 0 ? agentsData : state.agents,
+          tasks: tasksData,
+          health: healthData,
+          activities: newActivities.slice(0, 50),
+          error: undefined,
+        };
       });
-    } else {
-      set({
-        activeProject: undefined,
-        activeSession: undefined,
-      });
+    } catch (err: any) {
+      set({ error: err.message });
     }
-  },
-
-  selectSession: (session: PrototypeSession) => {
-    set({ activeSession: session });
   },
 
   selectAgent: (agent) => {
-    const state = get();
-    const task = agent ? state.tasks.find((t) => t.id === agent.taskId) : undefined;
-    set({ selectedAgent: agent, selectedTask: task });
+    set({ selectedAgent: agent });
   },
 
   selectTask: (task) => {
+    set({ selectedTask: task });
+  },
+
+  setActiveProject: (project) => {
+    set({ activeProject: project });
+  },
+
+  addMessage: (msg) => {
+    const fullMsg: ChatMessage = {
+      ...msg,
+      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: new Date().toLocaleTimeString(),
+    };
+    set((state) => ({ messages: [...state.messages, fullMsg] }));
+  },
+
+  submitObjective: async (objectiveText: string) => {
     const state = get();
-    const agent = task
-      ? state.agents.find((a) => a.taskId === task.id)
-      : undefined;
-    set({ selectedTask: task, selectedAgent: agent });
-  },
-
-  openModal: (type, payload) => set({ activeModal: type, modalPayload: payload }),
-  closeModal: () => set({ activeModal: null, modalPayload: undefined }),
-  setSuccessMessage: (msg) => set({ successMessage: msg }),
-
-  async loadData() {
-    // 1. Fetch Sessions and group into Logical Projects
-    try {
-      const sessions = await fetchSessions();
-      const logicalProjects = groupSessionsIntoProjects(sessions);
-
-      // Restore active project: try localStorage first, fallback to current or latest
-      let savedProjectKey: string | null = null;
-      if (typeof window !== "undefined" && window.localStorage) {
-        try {
-          savedProjectKey = window.localStorage.getItem(STORAGE_PROJECT_KEY);
-        } catch {}
-      }
-
-      let targetProject: LogicalProject | undefined;
-
-      if (savedProjectKey) {
-        targetProject = logicalProjects.find((p) => p.normalizedProject === savedProjectKey);
-      }
-
-      if (!targetProject && get().activeProject) {
-        const curNorm = get().activeProject!.normalizedProject;
-        targetProject = logicalProjects.find((p) => p.normalizedProject === curNorm);
-      }
-
-      if (!targetProject && logicalProjects.length > 0) {
-        targetProject = logicalProjects[0];
-      }
-
-      set({
-        sessions,
-        projects: logicalProjects,
-        activeProject: targetProject,
-        activeSession: targetProject?.latestSession,
-        projectsError: undefined,
-      });
-    } catch (e: any) {
-      set({ projectsError: e.message ?? "Erro ao carregar sessões de /prototype/sessions" });
-    }
-
-    // 2. Fetch Tasks from /tasks
-    try {
-      const tasks = await fetchTasks();
-      const agents = deriveAgentsFromTasks(tasks);
-
-      const currentSelectedAgent = get().selectedAgent;
-      let updatedSelectedAgent = currentSelectedAgent;
-      if (currentSelectedAgent) {
-        const match = agents.find(
-          (a) =>
-            a.id === currentSelectedAgent.id || a.taskId === currentSelectedAgent.taskId
-        );
-        if (match) {
-          updatedSelectedAgent = match;
-        }
-      } else if (agents.length > 0) {
-        updatedSelectedAgent = agents[0];
-      }
-
-      const currentSelectedTask = get().selectedTask;
-      let updatedSelectedTask = currentSelectedTask;
-      if (currentSelectedTask) {
-        const matchTask = tasks.find((t) => t.id === currentSelectedTask.id);
-        if (matchTask) updatedSelectedTask = matchTask;
-      } else if (updatedSelectedAgent) {
-        updatedSelectedTask = tasks.find(
-          (t) => t.id === updatedSelectedAgent?.taskId
-        );
-      }
-
-      set({
-        tasks,
-        agents,
-        selectedAgent: updatedSelectedAgent,
-        selectedTask: updatedSelectedTask,
-        error: undefined,
-      });
-    } catch (e: any) {
-      set({ error: e.message ?? "Erro ao conectar com a API de tarefas do PUB DEV LOOP" });
-    }
-  },
-
-  async handleCreateTask(input: CreateTaskInput) {
     set({ actionLoading: true, error: undefined });
+
+    state.addMessage({
+      sender: 'CEO',
+      senderName: 'CEO (You)',
+      content: objectiveText,
+      type: 'TEXT',
+    });
+
     try {
-      const newTask = await createTask(input);
-      await get().loadData();
-      get().selectTask(newTask);
-      set({
-        activeModal: null,
-        successMessage: `Tarefa criada com sucesso na fila!`,
+      const plan = await createPlan(objectiveText, {
+        project: state.activeProject,
       });
-      return newTask;
-    } catch (e: any) {
-      set({ error: e.message ?? "Falha ao criar tarefa" });
-      throw e;
-    } finally {
+
+      state.addMessage({
+        sender: 'CHIEF_OF_STAFF',
+        senderName: 'Chief of Staff',
+        senderRole: 'Orchestrator & Strategy',
+        content: `Objective received. I have formulated an Organizational Plan with ${plan.steps.length} delegated steps.`,
+        type: 'PLAN',
+        plan,
+      });
+
+      set((s) => ({
+        plans: [plan, ...s.plans],
+        activePlan: plan,
+        actionLoading: false,
+      }));
+
+      return plan;
+    } catch (err: any) {
+      state.addMessage({
+        sender: 'SYSTEM',
+        senderName: 'The Office Dispatcher',
+        content: `Error creating organizational plan: ${err.message}`,
+        type: 'ERROR',
+      });
+      set({ actionLoading: false, error: err.message });
+      throw err;
+    }
+  },
+
+  executeStep: async (plan: OrganizationalPlan, stepId: string) => {
+    const state = get();
+    set({ actionLoading: true });
+    const step = plan.steps.find((s) => s.id === stepId);
+
+    try {
+      const task = await executePlanStep(plan, stepId);
+
+      state.addMessage({
+        sender: 'AGENT',
+        senderName: step?.agentId?.toUpperCase() || 'SPECIALIST AGENT',
+        senderRole: step?.agentId ? `Assigned Specialist (${step.agentId})` : 'Agent',
+        content: `Commencing work on step '${step?.id}': ${step?.description}`,
+        type: 'EXECUTION',
+        task,
+        stepId,
+      });
+
+      await state.loadData();
       set({ actionLoading: false });
+      return task;
+    } catch (err: any) {
+      state.addMessage({
+        sender: 'SYSTEM',
+        senderName: 'The Office Dispatcher',
+        content: `Failed to execute step ${stepId}: ${err.message}`,
+        type: 'ERROR',
+      });
+      set({ actionLoading: false, error: err.message });
+      throw err;
     }
   },
 
-  async handleCancelTask(id: string) {
-    set({ actionLoading: true, error: undefined });
+  executeAllSteps: async (plan: OrganizationalPlan) => {
+    const state = get();
+    set({ actionLoading: true });
     try {
-      const updated = await cancelTask(id);
-      await get().loadData();
-      set({
-        activeModal: null,
-        successMessage: `Tarefa ${id.slice(0, 8)} cancelada com sucesso!`,
+      for (const step of plan.steps) {
+        await executePlanStep(plan, step.id);
+      }
+      state.addMessage({
+        sender: 'CHIEF_OF_STAFF',
+        senderName: 'Chief of Staff',
+        senderRole: 'Orchestrator',
+        content: `All ${plan.steps.length} steps have been dispatched to their assigned specialists in the execution queue.`,
+        type: 'SYSTEM',
       });
-      return updated;
-    } catch (e: any) {
-      set({ error: e.message ?? "Falha ao cancelar tarefa" });
-      throw e;
-    } finally {
-      set({ actionLoading: false });
-    }
-  },
-
-  async handleRetryTask(id: string) {
-    set({ actionLoading: true, error: undefined });
-    try {
-      const updated = await retryTask(id);
-      await get().loadData();
-      set({
-        activeModal: null,
-        successMessage: `Tarefa ${id.slice(0, 8)} reinserida na fila de execução!`,
-      });
-      return updated;
-    } catch (e: any) {
-      set({ error: e.message ?? "Falha ao reexecutar tarefa" });
-      throw e;
+      await state.loadData();
+    } catch (err: any) {
+      set({ error: err.message });
     } finally {
       set({ actionLoading: false });
     }

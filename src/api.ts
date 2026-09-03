@@ -15,6 +15,7 @@ import { PublicPreviewRuntime } from './prototype/public-preview-runtime.js';
 import { PrototypeHandoffService, type PrototypeHandoffInput } from './prototype/handoff.js';
 import { defaultAgentRegistry, isValidAgentId } from './office/registry.js';
 import { defaultOfficeOrganization } from './office/organization.js';
+import { createOrganizationalPlan, planStepToTask } from './office/planning.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const prototypeEvents = new PrototypeEventStream();
@@ -51,6 +52,38 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     const agent = defaultAgentRegistry.getAgent(req.params.id);
     if (!agent) return res.status(404).json({ error: 'Agent not found' });
     return res.json({ agent });
+  });
+  app.post('/office/plans', (req, res) => {
+    try {
+      const { objective, project, repository, context, steps } = req.body ?? {};
+      if (!objective || typeof objective !== 'string' || !objective.trim()) {
+        return res.status(400).json({ error: 'objective is required' });
+      }
+      const plan = createOrganizationalPlan(
+        { objective, project, repository, context },
+        { steps }
+      );
+      return res.status(201).json({ plan });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+  app.post('/office/plans/execute-step', async (req, res, next) => {
+    try {
+      const { plan, stepId, overrides } = req.body ?? {};
+      if (!plan || !stepId) {
+        return res.status(400).json({ error: 'plan and stepId are required' });
+      }
+      const step = plan.steps?.find((s: any) => s.id === stepId);
+      if (!step) {
+        return res.status(404).json({ error: `Step '${stepId}' not found in plan` });
+      }
+      const taskPayload = planStepToTask(step, plan, overrides);
+      const createdTask = await tasks.create(taskPayload);
+      return res.status(201).json({ task: createdTask });
+    } catch (err) {
+      return next(err);
+    }
   });
   app.get(['/prototype', '/prototype/sessions/:id/view'], (_req,res)=>res.status(200).type('html').send(prototypeUiHtml()+prototypeHistoryUiScript()));
 
