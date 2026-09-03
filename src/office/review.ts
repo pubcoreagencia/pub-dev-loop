@@ -35,6 +35,46 @@ export interface CodeReviewResult {
 
 export const MAX_REVIEW_ITERATIONS = 3;
 
+/**
+ * Extracts review input metrics from real Task execution results.
+ * SOURCE (TaskResult/Worker) → PRODUCER (extractReviewContextFromTask) → CONSUMER (CodeReviewManager)
+ */
+export function extractReviewContextFromTask(
+  task: { id: string; agentId?: string | null; project?: string; status?: string; result?: any },
+  overrides?: Partial<CodeReviewEvaluationInput>
+): CodeReviewEvaluationInput {
+  const result = task.result;
+  const stdout = result?.stdout || '';
+  const stderr = result?.stderr || '';
+  const exitCode = result?.exitCode ?? (task.status === 'COMPLETED' ? 0 : 1);
+
+  const testPassed = overrides?.testPassed ?? (
+    exitCode === 0 && !stderr.includes('FAIL') && !stdout.includes('Tests:       failed')
+  );
+
+  const typecheckPassed = overrides?.typecheckPassed ?? (
+    !stderr.includes('error TS') && !stdout.includes('error TS')
+  );
+
+  const buildPassed = overrides?.buildPassed ?? (
+    exitCode === 0 && !stderr.includes('build failed')
+  );
+
+  return {
+    taskId: task.id,
+    planId: overrides?.planId,
+    developerAgentId: task.agentId || 'developer',
+    reviewerAgentId: 'reviewer',
+    project: task.project || 'pub-dev-loop',
+    diff: overrides?.diff,
+    changedFiles: overrides?.changedFiles,
+    testPassed,
+    typecheckPassed,
+    buildPassed,
+    findings: overrides?.findings,
+  };
+}
+
 export class CodeReviewManager {
   private iterations = new Map<string, number>();
 
