@@ -938,12 +938,18 @@ code, pre, .mono-font, .crt-text, .sender-tag, .snippet-worker, .dep-tag {
 
 .timeline-header {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
-  padding: 12px 16px;
+  padding: 10px 14px;
   background: #17110e;
   border-bottom: 2px solid var(--border-wood);
   flex-shrink: 0;
+}
+
+.timeline-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .timeline-title {
@@ -951,6 +957,30 @@ code, pre, .mono-font, .crt-text, .sender-tag, .snippet-worker, .dep-tag {
   font-weight: 800;
   letter-spacing: 1.5px;
   color: var(--accent-amber);
+}
+
+.timeline-tab-switch {
+  display: flex;
+  gap: 6px;
+}
+
+.tab-btn {
+  flex: 1;
+  background: #120d0a;
+  border: 1px solid var(--border-wood);
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tab-btn.active {
+  background: #2a1f18;
+  border-color: var(--accent-gold);
+  color: #fde047;
 }
 
 .timeline-items-list {
@@ -979,6 +1009,42 @@ code, pre, .mono-font, .crt-text, .sender-tag, .snippet-worker, .dep-tag {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.timeline-event-card.event-semantic {
+  border-left-color: var(--accent-amber);
+  background: #1a130f;
+}
+
+.event-type-pill {
+  font-size: 8px;
+  font-weight: 800;
+  color: #fde047;
+  background: #2d1e14;
+  padding: 1px 4px;
+  border-radius: 3px;
+  border: 1px solid #4a3221;
+}
+
+.event-actors-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.actor-tag {
+  color: #93c5fd;
+}
+
+.arrow-tag {
+  color: #64748b;
+  font-size: 8px;
+}
+
+.target-tag {
+  color: #86efac;
 }
 
 .event-meta-line {

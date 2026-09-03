@@ -193,6 +193,35 @@ export interface ChatMessage {
   stepId?: string;
 }
 
+export type OfficeEventType =
+  | 'MESSAGE_SENT'
+  | 'MESSAGE_RECEIVED'
+  | 'OBJECTIVE_SUBMITTED'
+  | 'PLAN_FORMULATED'
+  | 'STEP_DELEGATED'
+  | 'AGENT_STARTED_WORK'
+  | 'AGENT_FINISHED_WORK'
+  | 'AGENT_FAILED_WORK'
+  | 'AGENT_COLLABORATING'
+  | 'MEETING_STARTED'
+  | 'MEETING_ENDED'
+  | 'APPROVAL_REQUESTED'
+  | 'APPROVAL_GRANTED'
+  | 'APPROVAL_REJECTED';
+
+export interface OfficeEvent {
+  id: string;
+  type: OfficeEventType;
+  timestamp: string;
+  actorId: string;
+  targetId?: string;
+  taskId?: string;
+  planId?: string;
+  stepId?: string;
+  summary: string;
+  payload?: Record<string, any>;
+}
+
 export interface OfficeActivityEvent {
   id: string;
   timestamp: string;
