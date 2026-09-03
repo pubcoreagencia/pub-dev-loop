@@ -9,6 +9,7 @@ import type { TaskRepository, Task } from './domain.js';
 import { TaskFinalizer, type FinalizeResult, type WorkspaceSnapshot, WorkspaceValidator } from './finalizer.js';
 import { captureWorkspaceSnapshot } from './finalizer.js';
 import { createAgentExecutionContext, type AgentExecutionContext } from './office/execution-context.js';
+import { resolveAgentAssignment, type AgentAssignmentDecision } from './office/assignment.js';
 
 const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
 const HEARTBEAT_INTERVAL_MS = Number(process.env.WORKER_HEARTBEAT_MS ?? 10000);
@@ -287,6 +288,13 @@ export abstract class BaseWorker implements Worker {
    */
   protected getAgentContext(task: Task): AgentExecutionContext | null {
     return createAgentExecutionContext(task.agentId);
+  }
+
+  /**
+   * Resolve the deterministic organizational assignment decision for a task.
+   */
+  protected getAssignmentDecision(task: Task): AgentAssignmentDecision {
+    return resolveAgentAssignment(task);
   }
 
   async cancel(): Promise<void> {
