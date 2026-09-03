@@ -42,6 +42,12 @@ import {
   type GovernanceRequirement,
   type ValidationResult,
 } from './lesson-validation.js';
+import {
+  defaultInstitutionalLessonRetrievalEngine,
+  InstitutionalLessonRetrievalEngine,
+  formatInstitutionalLessonContext,
+  type LessonRetrievalQuery,
+} from './lesson-retrieval.js';
 
 export {
   defaultMemoryGovernanceEngine,
@@ -77,6 +83,10 @@ export {
   type LessonTemporalValidity,
   type GovernanceRequirement,
   type ValidationResult,
+  defaultInstitutionalLessonRetrievalEngine,
+  InstitutionalLessonRetrievalEngine,
+  formatInstitutionalLessonContext,
+  type LessonRetrievalQuery,
 };
 
 export type MemoryType =
@@ -807,22 +817,40 @@ export async function enrichDeveloperTaskWithMemory(
 
     const durationMs = Date.now() - start;
 
-    if (memories.length === 0) {
+    let lessonBlock = '';
+    try {
+      const lessons = await defaultInstitutionalLessonRetrievalEngine.retrieveContext({
+        tenantId,
+        projectId,
+        agentRole: 'developer',
+        taskId: task.id,
+      });
+      if (lessons.length > 0) {
+        lessonBlock = formatInstitutionalLessonContext(lessons);
+      }
+    } catch {
+      // Failure isolated
+    }
+
+    if (memories.length === 0 && !lessonBlock) {
       return task;
     }
 
-    console.log(JSON.stringify({
-      event: 'ORGANIZATIONAL_MEMORY_RETRIEVED',
-      taskId: task.id,
-      project: projectId,
-      agent: 'developer',
-      memoryCount: memories.length,
-      memoryIds: memories.map((m) => m.id),
-      durationMs,
-    }));
+    if (memories.length > 0) {
+      console.log(JSON.stringify({
+        event: 'ORGANIZATIONAL_MEMORY_RETRIEVED',
+        taskId: task.id,
+        project: projectId,
+        agent: 'developer',
+        memoryCount: memories.length,
+        memoryIds: memories.map((m) => m.id),
+        durationMs,
+      }));
+    }
 
-    const memoryBlock = formatDeveloperMemoryContext(memories);
-    const enrichedPrompt = `${task.prompt}\n\n${memoryBlock}`;
+    const memoryBlock = memories.length > 0 ? formatDeveloperMemoryContext(memories) : '';
+    const parts = [task.prompt, lessonBlock, memoryBlock].filter(Boolean);
+    const enrichedPrompt = parts.join('\n\n');
 
     return {
       ...task,
@@ -913,22 +941,40 @@ export async function enrichArchitectTaskWithMemory(
 
     const durationMs = Date.now() - start;
 
-    if (memories.length === 0) {
+    let lessonBlock = '';
+    try {
+      const lessons = await defaultInstitutionalLessonRetrievalEngine.retrieveContext({
+        tenantId,
+        projectId,
+        agentRole: 'architect',
+        taskId: task.id,
+      });
+      if (lessons.length > 0) {
+        lessonBlock = formatInstitutionalLessonContext(lessons);
+      }
+    } catch {
+      // Failure isolated
+    }
+
+    if (memories.length === 0 && !lessonBlock) {
       return task;
     }
 
-    console.log(JSON.stringify({
-      event: 'ORGANIZATIONAL_MEMORY_RETRIEVED',
-      taskId: task.id,
-      project: projectId,
-      agent: 'architect',
-      memoryCount: memories.length,
-      memoryIds: memories.map((m) => m.id),
-      durationMs,
-    }));
+    if (memories.length > 0) {
+      console.log(JSON.stringify({
+        event: 'ORGANIZATIONAL_MEMORY_RETRIEVED',
+        taskId: task.id,
+        project: projectId,
+        agent: 'architect',
+        memoryCount: memories.length,
+        memoryIds: memories.map((m) => m.id),
+        durationMs,
+      }));
+    }
 
-    const memoryBlock = formatArchitectMemoryContext(memories);
-    const enrichedPrompt = `${task.prompt}\n\n${memoryBlock}`;
+    const memoryBlock = memories.length > 0 ? formatArchitectMemoryContext(memories) : '';
+    const parts = [task.prompt, lessonBlock, memoryBlock].filter(Boolean);
+    const enrichedPrompt = parts.join('\n\n');
 
     return {
       ...task,
@@ -1020,22 +1066,40 @@ export async function enrichReviewerTaskWithMemory(
 
     const durationMs = Date.now() - start;
 
-    if (memories.length === 0) {
+    let lessonBlock = '';
+    try {
+      const lessons = await defaultInstitutionalLessonRetrievalEngine.retrieveContext({
+        tenantId,
+        projectId,
+        agentRole: 'reviewer',
+        taskId: task.id,
+      });
+      if (lessons.length > 0) {
+        lessonBlock = formatInstitutionalLessonContext(lessons);
+      }
+    } catch {
+      // Failure isolated
+    }
+
+    if (memories.length === 0 && !lessonBlock) {
       return task;
     }
 
-    console.log(JSON.stringify({
-      event: 'ORGANIZATIONAL_MEMORY_RETRIEVED',
-      taskId: task.id,
-      project: projectId,
-      agent: 'reviewer',
-      memoryCount: memories.length,
-      memoryIds: memories.map((m) => m.id),
-      durationMs,
-    }));
+    if (memories.length > 0) {
+      console.log(JSON.stringify({
+        event: 'ORGANIZATIONAL_MEMORY_RETRIEVED',
+        taskId: task.id,
+        project: projectId,
+        agent: 'reviewer',
+        memoryCount: memories.length,
+        memoryIds: memories.map((m) => m.id),
+        durationMs,
+      }));
+    }
 
-    const memoryBlock = formatReviewerMemoryContext(memories);
-    const enrichedPrompt = `${task.prompt}\n\n${memoryBlock}`;
+    const memoryBlock = memories.length > 0 ? formatReviewerMemoryContext(memories) : '';
+    const parts = [task.prompt, lessonBlock, memoryBlock].filter(Boolean);
+    const enrichedPrompt = parts.join('\n\n');
 
     return {
       ...task,
@@ -1127,22 +1191,40 @@ export async function enrichQaTaskWithMemory(
 
     const durationMs = Date.now() - start;
 
-    if (memories.length === 0) {
+    let lessonBlock = '';
+    try {
+      const lessons = await defaultInstitutionalLessonRetrievalEngine.retrieveContext({
+        tenantId,
+        projectId,
+        agentRole: 'qa-engineer',
+        taskId: task.id,
+      });
+      if (lessons.length > 0) {
+        lessonBlock = formatInstitutionalLessonContext(lessons);
+      }
+    } catch {
+      // Failure isolated
+    }
+
+    if (memories.length === 0 && !lessonBlock) {
       return task;
     }
 
-    console.log(JSON.stringify({
-      event: 'ORGANIZATIONAL_MEMORY_RETRIEVED',
-      taskId: task.id,
-      project: projectId,
-      agent: 'qa-engineer',
-      memoryCount: memories.length,
-      memoryIds: memories.map((m) => m.id),
-      durationMs,
-    }));
+    if (memories.length > 0) {
+      console.log(JSON.stringify({
+        event: 'ORGANIZATIONAL_MEMORY_RETRIEVED',
+        taskId: task.id,
+        project: projectId,
+        agent: 'qa-engineer',
+        memoryCount: memories.length,
+        memoryIds: memories.map((m) => m.id),
+        durationMs,
+      }));
+    }
 
-    const memoryBlock = formatQaMemoryContext(memories);
-    const enrichedPrompt = `${task.prompt}\n\n${memoryBlock}`;
+    const memoryBlock = memories.length > 0 ? formatQaMemoryContext(memories) : '';
+    const parts = [task.prompt, lessonBlock, memoryBlock].filter(Boolean);
+    const enrichedPrompt = parts.join('\n\n');
 
     return {
       ...task,
@@ -1234,22 +1316,40 @@ export async function enrichChiefOfStaffTaskWithMemory(
 
     const durationMs = Date.now() - start;
 
-    if (memories.length === 0) {
+    let lessonBlock = '';
+    try {
+      const lessons = await defaultInstitutionalLessonRetrievalEngine.retrieveContext({
+        tenantId,
+        projectId,
+        agentRole: 'chief-of-staff',
+        taskId: task.id,
+      });
+      if (lessons.length > 0) {
+        lessonBlock = formatInstitutionalLessonContext(lessons);
+      }
+    } catch {
+      // Failure isolated
+    }
+
+    if (memories.length === 0 && !lessonBlock) {
       return task;
     }
 
-    console.log(JSON.stringify({
-      event: 'ORGANIZATIONAL_MEMORY_RETRIEVED',
-      taskId: task.id,
-      project: projectId,
-      agent: 'chief-of-staff',
-      memoryCount: memories.length,
-      memoryIds: memories.map((m) => m.id),
-      durationMs,
-    }));
+    if (memories.length > 0) {
+      console.log(JSON.stringify({
+        event: 'ORGANIZATIONAL_MEMORY_RETRIEVED',
+        taskId: task.id,
+        project: projectId,
+        agent: 'chief-of-staff',
+        memoryCount: memories.length,
+        memoryIds: memories.map((m) => m.id),
+        durationMs,
+      }));
+    }
 
-    const memoryBlock = formatChiefOfStaffMemoryContext(memories);
-    const enrichedPrompt = `${task.prompt}\n\n${memoryBlock}`;
+    const memoryBlock = memories.length > 0 ? formatChiefOfStaffMemoryContext(memories) : '';
+    const parts = [task.prompt, lessonBlock, memoryBlock].filter(Boolean);
+    const enrichedPrompt = parts.join('\n\n');
 
     return {
       ...task,
