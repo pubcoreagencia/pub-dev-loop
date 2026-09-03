@@ -7,7 +7,7 @@ import { RouterProvider } from './providers/router.js';
 import { OpenRouterProvider } from './providers/openrouter.js';
 import { StreamEventSink, type OperationalEventEnvelope, type OperationalEventType } from './providers/streaming/index.js';
 import { classifyTaskProfile } from './routing/index.js';
-import { enrichDeveloperTaskWithMemory } from './office/memory.js';
+import { enrichDeveloperTaskWithMemory, enrichArchitectTaskWithMemory } from './office/memory.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -245,7 +245,8 @@ export class RouterWorker extends BaseWorker {
     repository: string,
   ): Promise<AttemptResult> {
     this.active = true;
-    const effectiveTask = await enrichDeveloperTaskWithMemory(task);
+    let effectiveTask = await enrichDeveloperTaskWithMemory(task);
+    effectiveTask = await enrichArchitectTaskWithMemory(effectiveTask);
     const config = getRetryConfig();
     const providers = this.getProviderChain();
     const maxAttempts = Math.min(config.maxAttempts, providers.length);
