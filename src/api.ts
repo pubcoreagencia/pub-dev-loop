@@ -20,6 +20,7 @@ import { defaultOfficeEventBus } from './office/events.js';
 import { defaultCodeReviewManager } from './office/review.js';
 import { defaultApprovalManager } from './office/approval.js';
 import { authenticateOfficeRequest } from './office/auth.js';
+import { defaultMemoryStore, defaultMemoryRetrievalEngine } from './office/memory.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const prototypeEvents = new PrototypeEventStream();
@@ -245,6 +246,44 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     const project = typeof req.query.project === 'string' ? req.query.project.trim() : undefined;
     const approvals = defaultApprovalManager.listApprovals(project);
     return res.status(200).json({ approvals });
+  });
+
+  app.get('/office/memory', async (req, res) => {
+    try {
+      let principal;
+      try {
+        principal = authenticateOfficeRequest(req.headers);
+      } catch (authErr: any) {
+        return res.status(401).json({ error: authErr.message });
+      }
+
+      const project = typeof req.query.project === 'string' ? req.query.project.trim() : 'pub-dev-loop';
+      const type = typeof req.query.type === 'string' ? (req.query.type.trim() as any) : undefined;
+      const status = typeof req.query.status === 'string' ? (req.query.status.trim() as any) : undefined;
+      const actorId = typeof req.query.actorId === 'string' ? req.query.actorId.trim() : undefined;
+      const agentRole = typeof req.query.agentRole === 'string' ? (req.query.agentRole.trim() as any) : undefined;
+      const taskId = typeof req.query.taskId === 'string' ? req.query.taskId.trim() : undefined;
+      const planId = typeof req.query.planId === 'string' ? req.query.planId.trim() : undefined;
+      const query = typeof req.query.query === 'string' ? req.query.query.trim() : undefined;
+      const limit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) || 5 : 5;
+
+      const memories = await defaultMemoryRetrievalEngine.retrieveContext({
+        tenantId: principal.tenantId || 'pub-dev-loop',
+        projectId: project,
+        types: type ? [type] : undefined,
+        status,
+        actorId,
+        agentRole,
+        taskId,
+        planId,
+        query,
+        limit,
+      });
+
+      return res.status(200).json({ memories });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
   });
 
   app.get('/office/stream', (req, res) => {

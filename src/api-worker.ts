@@ -15,6 +15,7 @@ import { defaultOfficeEventBus } from './office/events.js';
 import { defaultCodeReviewManager } from './office/review.js';
 import { defaultApprovalManager } from './office/approval.js';
 import { authenticateOfficeRequest } from './office/auth.js';
+import { defaultMemoryStore, defaultMemoryRetrievalEngine } from './office/memory.js';
 
 export interface HyperdriveBinding {
   connectionString: string;
@@ -263,7 +264,27 @@ const SCHEMA_MIGRATIONS = [
     payload JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   );`,
-  `CREATE INDEX IF NOT EXISTS office_events_project_seq_idx ON office_events (project, sequence ASC);`
+  `CREATE INDEX IF NOT EXISTS office_events_project_seq_idx ON office_events (project, sequence ASC);`,
+  `CREATE TABLE IF NOT EXISTS organizational_memories (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL DEFAULT 'pub-dev-loop',
+    project_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ACTIVE',
+    epistemic_status TEXT NOT NULL DEFAULT 'OBSERVED',
+    scope TEXT NOT NULL DEFAULT 'PROJECT',
+    actor_id TEXT NOT NULL,
+    recurrence_count INTEGER NOT NULL DEFAULT 1,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    provenance JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );`,
+  `CREATE INDEX IF NOT EXISTS org_memories_tenant_project_idx ON organizational_memories (tenant_id, project_id);`,
+  `CREATE INDEX IF NOT EXISTS org_memories_tenant_project_type_idx ON organizational_memories (tenant_id, project_id, type);`,
+  `CREATE INDEX IF NOT EXISTS org_memories_tenant_project_status_idx ON organizational_memories (tenant_id, project_id, status);`
 ];
 
 let migrationsChecked = false;
@@ -677,6 +698,49 @@ export default {
         const project = urlObj.searchParams.get('project')?.trim() || undefined;
         const approvals = defaultApprovalManager.listApprovals(project);
         return jsonResponse({ approvals }, 200);
+      }
+
+      if (method === 'GET' && path === '/office/memory') {
+        try {
+          let principal;
+          try {
+            principal = authenticateOfficeRequest(request.headers, env);
+          } catch (authErr: any) {
+            return jsonResponse({ error: authErr.message }, 401);
+          }
+
+          const pool = getPool(env);
+          defaultMemoryStore.setPool(pool);
+          await ensureMigrations(pool);
+
+          const urlObj = new URL(request.url);
+          const project = urlObj.searchParams.get('project')?.trim() || 'pub-dev-loop';
+          const type = urlObj.searchParams.get('type')?.trim() as any || undefined;
+          const status = urlObj.searchParams.get('status')?.trim() as any || undefined;
+          const actorId = urlObj.searchParams.get('actorId')?.trim() || undefined;
+          const agentRole = urlObj.searchParams.get('agentRole')?.trim() as any || undefined;
+          const taskId = urlObj.searchParams.get('taskId')?.trim() || undefined;
+          const planId = urlObj.searchParams.get('planId')?.trim() || undefined;
+          const query = urlObj.searchParams.get('query')?.trim() || undefined;
+          const limit = parseInt(urlObj.searchParams.get('limit') || '5', 10) || 5;
+
+          const memories = await defaultMemoryRetrievalEngine.retrieveContext({
+            tenantId: principal.tenantId || 'pub-dev-loop',
+            projectId: project,
+            types: type ? [type] : undefined,
+            status,
+            actorId,
+            agentRole,
+            taskId,
+            planId,
+            query,
+            limit,
+          });
+
+          return jsonResponse({ memories }, 200);
+        } catch (err: any) {
+          return jsonResponse({ error: err.message }, 500);
+        }
       }
 
       // GET /office/stream (Server-Sent Events for The Office)
