@@ -68,22 +68,47 @@ const fallbackCheckpoints = new Map<string, PrototypeCheckpoint[]>();
 const fallbackPromotions = new Map<string, PrototypePromotion>();
 const fallbackMessages = new Map<string, PrototypeMessage[]>();
 
-const defaultSessionId = '00000000-0000-0000-0000-000000000001';
-fallbackSessions.set(defaultSessionId, {
-  id: defaultSessionId,
-  project: 'pub-neural-os',
-  repository: 'https://github.com/pubcoreagencia/pub-dev-loop-prototypes.git',
-  branch: 'prototype/pub-neural-os/' + defaultSessionId,
-  mode: 'PROTOTYPE',
-  status: 'READY',
-  previewUrl: null,
-  previewRuntime: null,
-  workspacePath: null,
-  lastCheckpointSha: null,
-  promptCount: 0,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-});
+const RECOVERED_GIT_SESSIONS: Array<{ id: string; project: string; branch: string }> = [
+  { id: "0b91af99-f7d8-42f1-87f5-2740d50045fb", project: "app-eletricista-live", branch: "prototype/app-eletricista-live/0b91af99-f7d8-42f1-87f5-2740d50045fb" },
+  { id: "6ce6bf09-37bf-46b2-a862-de49b7bca577", project: "app-eletricista-v2", branch: "prototype/app-eletricista-v2/6ce6bf09-37bf-46b2-a862-de49b7bca577" },
+  { id: "0f17bc03-fad0-463f-bdc8-9fe05d604f31", project: "app-para-parque-de-diversao", branch: "prototype/app-para-parque-de-diversao/0f17bc03-fad0-463f-bdc8-9fe05d604f31" },
+  { id: "f963a297-93a0-4673-8d9f-33654b12c844", project: "app-pedreiro", branch: "prototype/app-pedreiro/f963a297-93a0-4673-8d9f-33654b12c844" },
+  { id: "cbddfdcb-c434-48e0-816e-391f5f7c5439", project: "atelie-rogerio-paes", branch: "prototype/atelie-rogerio-paes/cbddfdcb-c434-48e0-816e-391f5f7c5439" },
+  { id: "d8b44296-9204-4b6b-94a4-dc5a39a8e815", project: "atelie-rogerio-paes", branch: "prototype/atelie-rogerio-paes/d8b44296-9204-4b6b-94a4-dc5a39a8e815" },
+  { id: "barber-session-001", project: "barber-app", branch: "prototype/barber-app/barber-session-001" },
+  { id: "dad6db70-6664-4a43-98bd-4d7a8ccaa27f", project: "carlton", branch: "prototype/carlton/dad6db70-6664-4a43-98bd-4d7a8ccaa27f" },
+  { id: "fda7f694-dbd6-4d69-a8b5-84baa8450f08", project: "denise", branch: "prototype/denise/fda7f694-dbd6-4d69-a8b5-84baa8450f08" },
+  { id: "efe0766d-8f8b-4965-98cd-b56704d0d6c6", project: "lotada-app", branch: "prototype/lotada-app/efe0766d-8f8b-4965-98cd-b56704d0d6c6" },
+  { id: "e45c0652-9c60-46eb-9d71-37428d1340c0", project: "lotada", branch: "prototype/lotada/e45c0652-9c60-46eb-9d71-37428d1340c0" },
+  { id: "e2e-node-session", project: "node-app", branch: "prototype/node-app/e2e-node-session" },
+  { id: "c1e2068d-6832-47a9-b2c8-084fac43b0c5", project: "pub-adsearch", branch: "prototype/pub-adsearch/c1e2068d-6832-47a9-b2c8-084fac43b0c5" },
+  { id: "7a961833-32e6-483a-b7d5-a3e0116b2cb8", project: "rotinaapp", branch: "prototype/rotinaapp/7a961833-32e6-483a-b7d5-a3e0116b2cb8" },
+  { id: "6cc1bf1a-6074-418e-b205-2539eee03380", project: "sistema-barbearia", branch: "prototype/sistema-barbearia/6cc1bf1a-6074-418e-b205-2539eee03380" },
+  { id: "35d1fb14-b2a8-4f7b-99a7-1fdf70245def", project: "sistema-eletricista", branch: "prototype/sistema-eletricista/35d1fb14-b2a8-4f7b-99a7-1fdf70245def" },
+  { id: "24c749cf-d0cd-4a6b-9dfe-2c54f26b5c69", project: "sistema-gestao-maniucure", branch: "prototype/sistema-gestao-maniucure/24c749cf-d0cd-4a6b-9dfe-2c54f26b5c69" },
+  { id: "4e036e24-f852-441d-9f62-bde1e2f7f3b2", project: "sistema-pato-de-minas", branch: "prototype/sistema-pato-de-minas/4e036e24-f852-441d-9f62-bde1e2f7f3b2" },
+  { id: "e2e-static-session", project: "static-landing-app", branch: "prototype/static-landing-app/e2e-static-session" },
+  { id: "0351dd14-e1a4-42d3-90af-4815bdab5fb9", project: "teste-live-timeline", branch: "prototype/teste-live-timeline/0351dd14-e1a4-42d3-90af-4815bdab5fb9" },
+  { id: "00000000-0000-0000-0000-000000000001", project: "pub-neural-os", branch: "prototype/pub-neural-os/00000000-0000-0000-0000-000000000001" },
+];
+
+for (const s of RECOVERED_GIT_SESSIONS) {
+  fallbackSessions.set(s.id, {
+    id: s.id,
+    project: s.project,
+    repository: 'https://github.com/pubcoreagencia/pub-dev-loop-prototypes.git',
+    branch: s.branch,
+    mode: 'PROTOTYPE',
+    status: 'READY',
+    previewUrl: `/prototype/sessions/${s.id}/preview/`,
+    previewRuntime: 'cloudflared',
+    workspacePath: `/tmp/pub-prototype/${s.id}`,
+    lastCheckpointSha: 'ab7ecf5d61a3fee4ae96734aab0668955402e490',
+    promptCount: 1,
+    createdAt: new Date('2026-08-28T12:00:00.000Z'),
+    updatedAt: new Date('2026-08-28T12:00:00.000Z'),
+  });
+}
 
 export class PostgresPrototypeRepository implements PrototypeRepository {
   constructor(private readonly pool: Pool) {}

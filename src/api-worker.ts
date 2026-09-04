@@ -1612,6 +1612,37 @@ Humor The Office (Dwight Schrute + Creed Bratton). Responda dizendo como você v
         return jsonResponse(sessions);
       }
 
+      // 4a. GET /prototype/sessions/:id (Get Single Prototype Session details, checkpoints, messages)
+      const sessionDetailMatch = path.match(/^\/prototype\/sessions\/([^\/]+)$/);
+      if (sessionDetailMatch && method === 'GET') {
+        const id = sessionDetailMatch[1];
+        const prototypes = getPrototypesRepository(env);
+        const session = await prototypes.getSession(id);
+        if (!session) {
+          return new Response(JSON.stringify({ error: 'Session not found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        const tasksRepo = getRepository(env);
+        let filteredTasks: any[] = [];
+        try {
+          const allTasks = await tasksRepo.list();
+          filteredTasks = allTasks.filter((t: any) => t.prototypeSessionId === session.id);
+        } catch {}
+        const checkpoints = await prototypes.listCheckpoints(session.id);
+        const messages = await prototypes.listMessages(session.id);
+        return new Response(JSON.stringify({
+          session,
+          checkpoints,
+          tasks: filteredTasks,
+          messages,
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
       // 4c. POST /prototype/sessions/:id/preview/refresh
       // Recovery requires git operations which are not available in the
       // Cloudflare Workers runtime (no child_process). Dispatch to the

@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import type { AvatarProfile, EmployeeOperationalState } from '../types/office';
+import { OPERATIONAL_STATE_LABELS_PT } from '../config/officeLayout';
 
 interface Office3DAvatarProps {
   position: [number, number, number];
@@ -179,14 +180,25 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
           <span
             style={{
               fontSize: '9px',
-              padding: '1px 4px',
+              padding: '2px 6px',
               borderRadius: '3px',
-              background: avatar.accentColor,
-              color: '#000',
+              background:
+                operationalState === 'working'
+                  ? '#0284c7'
+                  : operationalState === 'reviewing'
+                  ? '#9333ea'
+                  : operationalState === 'thinking'
+                  ? '#d97706'
+                  : operationalState === 'celebrating'
+                  ? '#16a34a'
+                  : operationalState === 'waiting_for_dependency'
+                  ? '#ea580c'
+                  : avatar.accentColor || '#64748b',
+              color: '#ffffff',
               fontWeight: 700,
             }}
           >
-            {operationalState.toUpperCase()}
+            {OPERATIONAL_STATE_LABELS_PT[operationalState]?.label || 'Disponível'}
           </span>
         </div>
       </Html>

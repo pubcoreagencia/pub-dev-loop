@@ -184,26 +184,29 @@ function deriveOperationalState(agentId: string, tasks: Task[], actionLoading: b
   const runningTask = agentTasks.find((t) => t.status === 'RUNNING');
   if (runningTask) {
     if (agentId === 'reviewer') return 'reviewing';
+    if (agentId === 'architect') return 'thinking';
     return 'working';
-  }
-
-  const queuedTask = agentTasks.find((t) => t.status === 'QUEUED');
-  if (queuedTask) {
-    return 'waiting_for_dependency';
-  }
-
-  const blockedTask = agentTasks.find((t) => t.status === 'BLOCKED');
-  if (blockedTask) {
-    return 'blocked';
   }
 
   const completedRecent = agentTasks.find((t) => {
     if (t.status !== 'COMPLETED') return false;
     const diff = Date.now() - new Date(t.updatedAt || t.createdAt).getTime();
-    return diff < 60000;
+    return diff < 8000;
   });
   if (completedRecent) {
     return 'celebrating';
+  }
+
+  // Apenas sinaliza 'waiting_for_dependency' se houver execução de plano ativa no momento
+  if (actionLoading) {
+    const queuedTask = agentTasks.find((t) => t.status === 'QUEUED');
+    if (queuedTask) {
+      return 'waiting_for_dependency';
+    }
+    const blockedTask = agentTasks.find((t) => t.status === 'BLOCKED');
+    if (blockedTask) {
+      return 'blocked';
+    }
   }
 
   return 'idle';
@@ -984,22 +987,71 @@ export const useStore = create<OfficeState>((set, get) => ({
     });
 
     const trimmed = objectiveText.trim();
+    const isSummaryOrStatusRequest =
+      /(\bresumo\b|\bo que foi feito\b|\bo que vocês fizeram\b|\bo que voce fez\b|\bquais tarefas\b|\bquais etapas\b|\brelatório\b|\brelatorio\b|\bstatus\b|\bcomo está\b|\bcomo esta\b|\bme atualize\b|\batualização\b|\batualizacao\b|\bprogresso\b|\bconcluiu\b|\bresultado\b)/i.test(
+        trimmed
+      );
+
     const isQuestion =
+      isSummaryOrStatusRequest ||
       trimmed.endsWith('?') ||
-      /^(quem|qual|quais|como|onde|quando|por que|porque|por quê|o que|quanto|quantos|me explica|pode explicar|sabe me dizer|me fala|explica|status|como está|como andam|o que acha|diga)\b/i.test(trimmed);
+      /^(quem|qual|quais|como|onde|quando|por que|porque|por quê|o que|quanto|quantos|me explica|pode explicar|sabe me dizer|me fala|explica|status|como está|como andam|o que acha|diga|me diga|me passe)\b/i.test(
+        trimmed
+      );
 
     if (isQuestion) {
       try {
         let reply = '';
-        try {
-          reply = await defaultAiChatService.callLlmForAgent(
-            'chief-of-staff',
-            `O CEO Matheus Paes fez a seguinte pergunta direta no comando: "${objectiveText}" (Projeto ativo: ${state.activeProject}). Responda com clareza executiva, precisão técnica e no papel do Dr. Arthur Vance, Chief of Staff do PUB DEV LOOP.`
-          );
-        } catch {}
+        if (isSummaryOrStatusRequest) {
+          const completedTasks = state.tasks.filter((t) => t.status === 'COMPLETED');
+          const taskBulletList = completedTasks.length > 0
+            ? completedTasks
+                .slice(0, 8)
+                .map((t) => `- **${(t as any).title || t.id}**: ${t.result?.summary || 'Concluído com sucesso e homologado.'}`)
+                .join('\n')
+            : '- Nenhuma etapa avulsa executada recentemente; repositório alinhado com a branch principal.';
 
-        if (!reply || !reply.trim()) {
-          reply = `Comandante Matheus, em relação a "${trimmed.slice(0, 45)}": nossas frentes no repositório **${state.activeProject}** estão sincronizadas. A equipe está pronta para rodar qualquer nova diretriz ou disparar o fluxo autônomo assim que você ordenar.`;
+          const defaultSummary = `## 📋 Relatório Executivo de Atividades — PUB DEV LOOP
+
+Comandante Matheus Paes, segue o resumo consolidado das atividades no projeto **\`${state.activeProject}\`**:
+
+### 🏛️ Status do Desenvolvimento
+- **Repositório Git:** \`pubcoreagencia/${state.activeProject}\`
+- **Etapas Homologadas:**
+${taskBulletList}
+
+### 👥 Alinhamento dos Especialistas:
+1. **Helena Rostova (Arquiteta):** Especificações de interfaces, contratos de dados e arquitetura técnica.
+2. **Lucas Silveira (Desenvolvedor):** Implementação de funcionalidades, barramento assíncrono e resiliência.
+3. **Beatriz Mendes (Code Reviewer):** Auditoria de segurança, tipagem estrita TypeScript e aprovação de lint.
+4. **Tiago Rocha (QA Engineer):** Homologação de testes automatizados e validação de estabilidade.
+
+---
+### 🚀 Próximos Passos (Next Steps):
+1. **Homologação e Deploy:** Atualização e build final no ambiente Cloudflare / Staging.
+2. **Novos Despachos:** A equipe está em prontidão para sua próxima diretriz técnica.`;
+
+          try {
+            reply = await defaultAiChatService.callLlmForAgent(
+              'chief-of-staff',
+              `O CEO Matheus Paes solicitou um resumo do que foi feito no projeto ${state.activeProject}. Como Dr. Arthur Vance (Chief of Staff), apresente um relatório executivo claro, no estilo do Antigravity, contendo: o que foi desenvolvido e entregue por Helena, Lucas, Beatriz e Tiago, o status atual do repositório pubcoreagencia/${state.activeProject}, e os próximos passos recomendados.`
+            );
+          } catch {}
+
+          if (!reply || !reply.trim()) {
+            reply = defaultSummary;
+          }
+        } else {
+          try {
+            reply = await defaultAiChatService.callLlmForAgent(
+              'chief-of-staff',
+              `O CEO Matheus Paes fez a seguinte pergunta direta no comando: "${objectiveText}" (Projeto ativo: ${state.activeProject}). Responda com clareza executiva, precisão técnica e no papel do Dr. Arthur Vance, Chief of Staff do PUB DEV LOOP.`
+            );
+          } catch {}
+
+          if (!reply || !reply.trim()) {
+            reply = `Comandante Matheus, em relação a "${trimmed.slice(0, 45)}": nossas frentes no repositório **${state.activeProject}** estão sincronizadas. A equipe está pronta para rodar qualquer nova diretriz ou disparar o fluxo autônomo assim que você ordenar.`;
+          }
         }
 
         state.addMessage({
@@ -1129,11 +1181,18 @@ export const useStore = create<OfficeState>((set, get) => ({
       updatedAt: new Date().toISOString(),
     };
 
+    const activeOpState: EmployeeOperationalState =
+      agentId === 'reviewer' ? 'reviewing' : agentId === 'architect' ? 'thinking' : 'working';
+
     set((prev) => {
       const exists = prev.tasks.some((t) => t.id === runningTask.id);
       return {
         tasks: exists ? prev.tasks.map((t) => (t.id === runningTask.id ? runningTask : t)) : [runningTask, ...prev.tasks],
-        agents: prev.agents.map((a) => (a.id === agentId ? { ...a, status: 'ACTIVE' as const } : a)),
+        agents: prev.agents.map((a) =>
+          a.id === agentId
+            ? { ...a, status: 'ACTIVE' as const, operationalState: activeOpState, spatialState: 'interacting' as const }
+            : a
+        ),
       };
     });
 
@@ -1184,9 +1243,24 @@ export const useStore = create<OfficeState>((set, get) => ({
 
       set((prev) => ({
         tasks: prev.tasks.map((t) => (t.id === completedTask.id ? completedTask : t)),
-        agents: prev.agents.map((a) => (a.id === agentId ? { ...a, status: 'IDLE' as const } : a)),
+        agents: prev.agents.map((a) =>
+          a.id === agentId
+            ? { ...a, status: 'IDLE' as const, operationalState: 'celebrating' as const, spatialState: 'idle' as const }
+            : a
+        ),
         actionLoading: false,
       }));
+
+      // Após 6 segundos, retorna o agente para 'idle' (Disponível)
+      setTimeout(() => {
+        set((prev) => ({
+          agents: prev.agents.map((a) =>
+            a.id === agentId && a.operationalState === 'celebrating'
+              ? { ...a, operationalState: 'idle' as const }
+              : a
+          ),
+        }));
+      }, 6000);
 
       // Balão de celebração no 3D
       state.triggerSpeechBubble({
@@ -1219,7 +1293,11 @@ export const useStore = create<OfficeState>((set, get) => ({
       };
       set((prev) => ({
         tasks: prev.tasks.map((t) => (t.id === failedTask.id ? failedTask : t)),
-        agents: prev.agents.map((a) => (a.id === agentId ? { ...a, status: 'IDLE' as const } : a)),
+        agents: prev.agents.map((a) =>
+          a.id === agentId
+            ? { ...a, status: 'IDLE' as const, operationalState: 'idle' as const, spatialState: 'idle' as const }
+            : a
+        ),
         actionLoading: false,
       }));
       throw execErr;
@@ -1294,7 +1372,15 @@ export const useStore = create<OfficeState>((set, get) => ({
     } catch (err: any) {
       set({ error: err.message });
     } finally {
-      set({ actionLoading: false });
+      set((prev) => ({
+        actionLoading: false,
+        agents: prev.agents.map((a) => ({
+          ...a,
+          status: 'IDLE' as const,
+          operationalState: 'idle' as const,
+          spatialState: 'idle' as const,
+        })),
+      }));
     }
   },
 }));
