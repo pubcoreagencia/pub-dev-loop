@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { useStore } from '../store/useStore';
 import { PlanViewer } from './PlanViewer';
 import { defaultWatercoolerEngine } from '../services/watercoolerEngine';
@@ -10,7 +10,6 @@ export const GlobalOfficeChat: React.FC = () => {
     addMessage,
     submitObjective,
     actionLoading,
-    pendingApprovals,
     triggerSpeechBubble,
     selectedAgent,
   } = useStore();
@@ -24,15 +23,14 @@ export const GlobalOfficeChat: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, actionLoading, pendingApprovals, activeTab, respondingAgent]);
+  // Rolagem automática em background REMOVIDA: Usuário tem controle total do scroll
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() || actionLoading || Boolean(respondingAgent)) return;
     const text = inputText.trim();
     setInputText('');
+    scrollToBottom();
 
     if (activeTab === 'COMMAND') {
       // Despacho de Objetivo Estratégico do CEO

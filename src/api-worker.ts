@@ -414,6 +414,7 @@ async function triggerContainerWorker(env: Env): Promise<void> {
 }
 
 const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+const sovereignMemoryTasks = new Map<string, any>();
 const MAX_REQUESTS_PER_MINUTE = 10;
 const RATE_LIMIT_WINDOW_MS = 60000;
 
