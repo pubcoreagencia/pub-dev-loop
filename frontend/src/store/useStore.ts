@@ -1044,7 +1044,7 @@ export const useStore = create<OfficeState>((set, get) => ({
 
         let solidAuditFallback = '';
         if (realGitContext) {
-          solidAuditFallback = `## 📋 Auditoria Executiva do Repositório \`pubcoreagencia/${state.activeProject}\`\n\nComandante Matheus, li o repositório diretamente no GitHub:\n\n${realGitContext.replace('--- DADOS REAIS DO REPOSITÓRIO GITHUB', '### 🔍 Estrutura Identificada')}\n\n### 🚀 Próximas Etapas Recomendadas:\n1. Concluir as integrações de pagamento e fluxo pós-compra pendentes.\n2. Iniciar a camada operacional de frete e financeiro.\n3. Implementação do frontend da loja virtual.\n\nDeseja que eu despache a Helena (Arquitetura) ou o Lucas (Dev) para iniciar a codificação?`;
+          solidAuditFallback = `## 📋 Auditoria Executiva do Repositório \`pubcoreagencia/${state.activeProject}\`\n\nComandante Matheus, li o repositório diretamente no GitHub da organização:\n\n${realGitContext.replace('--- DADOS REAIS DO REPOSITÓRIO GITHUB', '### 🔍 Estrutura Identificada')}\n\n### 🚀 Próximas Etapas Recomendadas:\n1. Concluir as integrações de pagamento e fluxo pós-compra pendentes.\n2. Iniciar a camada operacional de frete e financeiro.\n3. Implementação do frontend da loja virtual.\n\nDeseja que eu despache a Helena (Arquitetura) ou o Lucas (Dev) para iniciar a codificação?`;
         } else {
           const taskBulletList =
             completedTasks.length > 0
@@ -1062,12 +1062,16 @@ export const useStore = create<OfficeState>((set, get) => ({
           reply = await defaultAiChatService.callLlmForAgent('chief-of-staff', llmPrompt);
         } catch {}
 
+        const isDirectReadQuestion = /(leu|leia|audit|status do git|o que tem|o que est[aá]|quais pr[oó]ximas|pr[oó]ximo passo)/i.test(trimmed);
+
         if (
           !reply ||
           !reply.trim() ||
+          (realGitContext && isDirectReadQuestion && (reply.includes('não tenho acesso') || reply.includes('rep blank') || reply.includes('não é bonita') || !reply.includes('PHASE_STATUS'))) ||
           reply.includes('passivos trabalhistas') ||
           reply.includes('INSTRUÇÃO EXECUTIVA') ||
-          reply.includes('Alinhamento e governança evitam retrabalho')
+          reply.includes('Alinhamento e governança evitam retrabalho') ||
+          reply.includes('não tenho acesso')
         ) {
           reply = solidAuditFallback;
         }

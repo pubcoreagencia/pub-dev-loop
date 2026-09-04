@@ -242,7 +242,7 @@ export class WatercoolerEngine {
           speakerId: 'chief-of-staff',
           senderName: 'Dr. Arthur Vance',
           senderRole: 'Chief of Staff',
-          content: `Entendido, Comandante Matheus. Analisei sua solicitação com atenção. Estou pronto para detalhar a auditoria do repositório, definir as prioridades executivas e encaminhar as próximas etapas com máxima precisão.`,
+          content: `Alinhamento estratégico registrado, Comandante Matheus. Analisei sua solicitação com atenção. Estou pronto para detalhar a auditoria do repositório, definir as prioridades executivas e encaminhar as próximas etapas com máxima precisão.`,
           delayMs: 300,
         },
       ];

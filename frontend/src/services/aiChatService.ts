@@ -129,10 +129,11 @@ export class AiChatService {
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 25000);
+        const activeProject = useStore.getState().activeProject;
         const res = await fetch('https://pub-dev-loop-api.contato-pubcore.workers.dev/office/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ agentId, prompt: ceoPrompt }),
+          body: JSON.stringify({ agentId, prompt: ceoPrompt, project: activeProject }),
           signal: controller.signal,
         });
         clearTimeout(timeout);

@@ -1103,9 +1103,69 @@ export default {
       if (method === 'POST' && path === '/office/chat') {
         try {
           const body = (await request.json().catch(() => ({}))) as any;
-          const { agentId, prompt } = body ?? {};
+          const { agentId, prompt, project } = body ?? {};
           if (!prompt || !agentId) {
             return jsonResponse({ error: 'agentId and prompt are required' }, 400);
+          }
+
+          let gitContextForLlm = '';
+          if (agentId === 'chief-of-staff') {
+            let targetProj = (typeof project === 'string' && project.trim()) ? project.trim() : '';
+            if (!targetProj) {
+              const match = String(prompt).match(/\b(pub-[a-z0-9-_]+|sistema-[a-z0-9-_]+|[a-z0-9-_]+app)\b/i);
+              if (match) targetProj = match[1];
+              else if (/pub\s*ecom|pubecom/i.test(prompt)) targetProj = 'pub-ecom';
+            }
+            if (targetProj) {
+              try {
+                const ghToken = env.GITHUB_TOKEN || env.PROTOTYPE_BOT_TOKEN || process.env.GITHUB_TOKEN || process.env.PROTOTYPE_BOT_TOKEN || '';
+                const ghHeaders: Record<string, string> = {
+                  'User-Agent': 'PUB-DEV-LOOP-API',
+                  'Accept': 'application/vnd.github.v3+json',
+                };
+                if (ghToken) ghHeaders['Authorization'] = `Bearer ${ghToken}`;
+
+                const repoRes = await fetch(`https://api.github.com/repos/pubcoreagencia/${targetProj}`, { headers: ghHeaders });
+                if (repoRes.ok) {
+                  const repoData = await repoRes.json() as any;
+                  const defaultBranch = repoData.default_branch || 'main';
+
+                  let commitsList: string[] = [];
+                  try {
+                    const commitsRes = await fetch(`https://api.github.com/repos/pubcoreagencia/${targetProj}/commits?per_page=5`, { headers: ghHeaders });
+                    if (commitsRes.ok) {
+                      const cData = await commitsRes.json() as any[];
+                      if (Array.isArray(cData)) {
+                        commitsList = cData.map(c => `- [${(c.sha || '').slice(0, 7)}] ${c.commit?.message?.split('\n')?.[0]} (${c.commit?.author?.name || c.author?.login})`);
+                      }
+                    }
+                  } catch {}
+
+                  let filesList: string[] = [];
+                  try {
+                    const treeRes = await fetch(`https://api.github.com/repos/pubcoreagencia/${targetProj}/git/trees/${defaultBranch}`, { headers: ghHeaders });
+                    if (treeRes.ok) {
+                      const tData = await treeRes.json() as any;
+                      if (Array.isArray(tData.tree)) {
+                        filesList = tData.tree.map((t: any) => t.path);
+                      }
+                    }
+                  } catch {}
+
+                  let phaseContent = '';
+                  if (filesList.includes('PHASE_STATUS.md')) {
+                    try {
+                      const phaseRes = await fetch(`https://raw.githubusercontent.com/pubcoreagencia/${targetProj}/${defaultBranch}/PHASE_STATUS.md`);
+                      if (phaseRes.ok) phaseContent = (await phaseRes.text()).slice(0, 1000);
+                    } catch {}
+                  }
+
+                  gitContextForLlm = `\n\n--- DADOS REAIS DO REPOSITÓRIO NO GITHUB (pubcoreagencia/${targetProj}):\n- Branch: ${defaultBranch}\n- Arquivos: ${filesList.slice(0, 25).join(', ')}\n- Últimos Commits no Git:\n${commitsList.join('\n')}${phaseContent ? '\n\nDocumento PHASE_STATUS.md:\n' + phaseContent : ''}\n\nVocê TEM acesso completo a esses dados reais acima. Cite os arquivos, commits e status real do repositório em sua resposta com máxima autoridade executiva.`;
+                }
+              } catch (ghErr) {
+                console.warn('[office/chat] Erro ao carregar git:', ghErr);
+              }
+            }
           }
 
           const systemPrompts: Record<string, string> = {
@@ -1131,7 +1191,7 @@ Humor The Office (Jan Levinson cínica). Responda apontando os riscos e furos do
 Humor The Office (Dwight Schrute + Creed Bratton). Responda dizendo como você vai quebrar ou sabotar a ideia do CEO Matheus Paes (2 a 3 frases).`,
           };
 
-          const systemPrompt = systemPrompts[agentId] || 'Você é um agente autônomo do PUB DEV LOOP com humor The Office.';
+          const systemPrompt = (systemPrompts[agentId] || 'Você é um agente autônomo do PUB DEV LOOP.') + gitContextForLlm;
 
           const openRouterKey = env.OPENROUTER_API_KEY || (process.env as any)?.OPENROUTER_API_KEY || '';
           const openRouterUrl = env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
