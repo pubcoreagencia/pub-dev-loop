@@ -217,6 +217,72 @@ function truncateText(text: string, maxLen = 50): string {
   return text.length > maxLen ? text.slice(0, maxLen) + '...' : text;
 }
 
+function formatAntigravityAudit(project: string, gitData: any): string {
+  const branch = gitData?.defaultBranch || 'main';
+  const files: string[] = Array.isArray(gitData?.files) ? gitData.files : [];
+  const commits = Array.isArray(gitData?.recentCommits) ? gitData.recentCommits : [];
+
+  const commitLines =
+    commits.length > 0
+      ? commits.slice(0, 5).map((c: any) => `- \`[${c.sha}]\` **${c.message}** _(${c.author})_`).join('\n')
+      : '- Repositório sincronizado na branch principal.';
+
+  const docs = files.filter((f) => f.endsWith('.md'));
+  const configs = files.filter(
+    (f) => f.startsWith('.') || f.endsWith('.json') || (f.endsWith('.ts') && !f.includes('/'))
+  );
+  const folders = files.filter((f) => !f.includes('.') && f.length < 20);
+
+  let phaseContent = '';
+  if (gitData?.phaseStatus) {
+    const rawLines = String(gitData.phaseStatus).split('\n');
+    const filteredLines = rawLines
+      .map((l) => l.trim())
+      .filter(
+        (l) =>
+          l &&
+          (l.startsWith('#') ||
+            l.startsWith('-') ||
+            l.startsWith('*') ||
+            l.includes('Phase') ||
+            l.includes('Status') ||
+            l.includes('Complete') ||
+            l.includes('Pending') ||
+            l.includes('Not implemented') ||
+            l.includes('Fase'))
+      )
+      .slice(0, 16);
+    phaseContent = filteredLines.join('\n');
+  }
+
+  return `## 📌 Diagnóstico Técnico do Repositório: \`pubcoreagencia/${project}\`
+
+### 🌐 Contexto de Versionamento (Git)
+- **Branch Ativa:** \`${branch}\`
+- **Últimos Commits no GitHub:**
+${commitLines}
+
+### 📂 Estrutura Identificada & Módulos
+- **Documentação de Engenharia:** ${docs.slice(0, 8).map((d) => `\`${d}\``).join(', ') || 'N/A'}
+- **Módulos & Diretórios:** ${folders.map((f) => `\`${f}/\``).join(', ') || 'Raiz'}
+- **Configurações:** ${configs.slice(0, 6).map((c) => `\`${c}\``).join(', ') || 'Padrão'}
+
+${phaseContent ? `### 📊 Status da Fase (\`PHASE_STATUS.md\`)\n${phaseContent}\n` : ''}
+### 🛠️ Gaps Identificados & O Que Falta Resolver:
+1. **Frontend / Interface do Usuário**: Componentes visuais, telas de autenticação e vitrine.
+2. **Integrações Operacionais**: Fluxo pós-compra, gateways e telemetria.
+3. **Deploy & Staging**: Pipeline de entrega contínua.
+
+---
+
+### 🚀 Próximas Ações Executáveis:
+Para despachar os 4 especialistas autônomos imediatamente, envie:
+- **\`resolva [o problema]\`** (ex: \`resolva o problema de login\`)
+- **\`toque o projeto a partir daqui\`** ou **\`inicie a próxima fase\`**
+
+A equipe técnica executará a arquitetura, desenvolvimento do código e homologação com testes automaticamente.`;
+}
+
 export const useStore = create<OfficeState>((set, get) => ({
   ceo: CEO_IDENTITY,
   agents: [],
@@ -988,92 +1054,65 @@ export const useStore = create<OfficeState>((set, get) => ({
 
     const trimmed = objectiveText.trim();
 
-    // Apenas comandos explícitos de construção/programação/execução em lote disparam o plano autônomo
-    const isExplicitTeamExecutionOrder =
-      /(\b(construa|desenvolva|implemente|execute o plano|inicie a sprint|inicie o desenvolvimento|vamos programar|vamos codificar|despache a equipe|inicie a execu[çc][aã]o|execute as etapas|crie o c[oó]digo|fa[çc]a o c[oó]digo)\b)/i.test(
+    // 1. Identificar se é uma pergunta pura ou se é uma ordem de ação/resolução/desenvolvimento
+    const isPureInquiry =
+      trimmed.endsWith('?') ||
+      /^(quem|qual|quais|como|onde|quando|por que|porque|por quê|o que|quanto|quantos|me fala|explica|diga|me diga|me passa|me conta)\b/i.test(
         trimmed
-      ) &&
-      !trimmed.endsWith('?') &&
-      !/^(quem|qual|quais|como|onde|quando|por que|porque|por quê|o que|quanto|quantos|leia|analise|audite|mostre|veja|me fala|explica|diga|me diga|me passa|me conta)\b/i.test(
+      ) ||
+      /^(leia|leia o git|audit|audite|status|como est[aá]|o que tem|veja|mostre|relat[oó]rio)\b/i.test(trimmed);
+
+    // Qualquer comando de ação, resolução, desenvolvimento ou avanço aciona a esteira autônoma
+    const isActionOrder =
+      !isPureInquiry ||
+      /(resolva|resolver|arrume|arrumar|corrija|corrigir|implemente|implementar|construa|construir|desenvolva|desenvolver|fa[çc]a|fazer|adicione|adicionar|crie|criar|execute|executar|inicie|iniciar|toque|tocar|avance|avan[çc]ar|codifique|programar|vamos|bora|despache|solucione|solucionar)\b/i.test(
         trimmed
       );
 
-    // Dr. Arthur Vance é o Agente Principal: Perguntas, diagnósticos, leitura de repositório,
-    // análises, auditorias e status são resolvidos e entregues diretamente por ele!
-    if (!isExplicitTeamExecutionOrder) {
+    if (!isActionOrder) {
+      // Pergunta informativa ou solicitação de auditoria no repositório
       try {
         let reply = '';
-        const completedTasks = state.tasks.filter((t) => t.status === 'COMPLETED');
+        let gitData: any = null;
 
-        // Se o CEO pediu para ler repositório, auditar git ou ver próximos passos: busca dados REAIS do GitHub
-        const isGitOrRepoRequest =
-          /(git|reposit[oó]rio|repo|c[oó]digo|codebase|projeto|pr[oó]ximo passo|etapas|auditoria|arquivos|branch|commit|leia)/i.test(
-            trimmed
-          );
-
-        let realGitContext = '';
-        if (isGitOrRepoRequest) {
-          try {
-            const gitRes = await fetch(
-              `https://pub-dev-loop-api.contato-pubcore.workers.dev/office/projects/${state.activeProject}/git-summary`
-            ).catch(() => null);
-            if (gitRes && gitRes.ok) {
-              const gitData = (await gitRes.json()) as any;
-              if (gitData && gitData.exists) {
-                const filesList = Array.isArray(gitData.files)
-                  ? gitData.files.slice(0, 25).join(', ')
-                  : 'Nenhum arquivo listado';
-                const commitsList = Array.isArray(gitData.recentCommits)
-                  ? gitData.recentCommits
-                      .map((c: any) => `- [${c.sha}] ${c.message} (${c.author})`)
-                      .join('\n')
-                  : 'Sem commits recentes';
-                const phaseDoc = gitData.phaseStatus
-                  ? `\n\n### Documento de Fase (PHASE_STATUS.md):\n${gitData.phaseStatus.slice(0, 1200)}`
-                  : '';
-                const readmeDoc = gitData.readme
-                  ? `\n\n### README do Repositório:\n${gitData.readme.slice(0, 800)}`
-                  : '';
-                realGitContext = `\n\n--- DADOS REAIS DO REPOSITÓRIO GITHUB (pubcoreagencia/${state.activeProject}):\n- Branch Principal: ${gitData.defaultBranch}\n- Arquivos existentes: ${filesList}\n- Últimos Commits no Git:\n${commitsList}${phaseDoc}${readmeDoc}`;
-              }
-            }
-          } catch (gitErr) {
-            console.warn('[Chief of Staff] Erro ao inspecionar git:', gitErr);
+        try {
+          const gitRes = await fetch(
+            `https://pub-dev-loop-api.contato-pubcore.workers.dev/office/projects/${state.activeProject}/git-summary`
+          ).catch(() => null);
+          if (gitRes && gitRes.ok) {
+            gitData = (await gitRes.json()) as any;
           }
+        } catch (gitErr) {
+          console.warn('[Chief of Staff] Erro ao inspecionar git:', gitErr);
         }
 
-        let solidAuditFallback = '';
-        if (realGitContext) {
-          solidAuditFallback = `## 📋 Auditoria Executiva do Repositório \`pubcoreagencia/${state.activeProject}\`\n\nComandante Matheus, li o repositório diretamente no GitHub da organização:\n\n${realGitContext.replace('--- DADOS REAIS DO REPOSITÓRIO GITHUB', '### 🔍 Estrutura Identificada')}\n\n### 🚀 Próximas Etapas Recomendadas:\n1. Concluir as integrações de pagamento e fluxo pós-compra pendentes.\n2. Iniciar a camada operacional de frete e financeiro.\n3. Implementação do frontend da loja virtual.\n\nDeseja que eu despache a Helena (Arquitetura) ou o Lucas (Dev) para iniciar a codificação?`;
-        } else {
-          const taskBulletList =
-            completedTasks.length > 0
-              ? completedTasks
-                  .slice(0, 5)
-                  .map((t) => `- **${(t as any).title || t.id}**: ${t.result?.summary || 'Concluído'}`)
-                  .join('\n')
-              : '- Repositório sincronizado com a branch principal.';
-          solidAuditFallback = `## 📋 Diagnóstico Executivo — \`pubcoreagencia/${state.activeProject}\`\n\nComandante Matheus, analisei o status de **${state.activeProject}**.\n\n### 📦 Entregas Registradas:\n${taskBulletList}\n\n### 🎯 Próximos Passos:\n1. Alinhamento dos contratos e requisitos da sprint.\n2. Início do desenvolvimento dos módulos centrais.\n\nA equipe técnica está em prontidão para sua ordem de execução.`;
-        }
+        const solidAudit = formatAntigravityAudit(state.activeProject, gitData);
 
-        const llmPrompt = `${objectiveText}${realGitContext ? '\n\n' + realGitContext : ''}`;
+        const llmPrompt = `Instrução Executiva (Padrão Google Antigravity / ChatGPT Pro):
+Você é o Dr. Arthur Vance, Chief of Staff & Agente Principal do CEO Matheus Paes no PUB DEV LOOP.
+O CEO perguntou: "${objectiveText}".
+Repositório Atual: pubcoreagencia/${state.activeProject}.
+Dados Reais do Git:
+${JSON.stringify({ branch: gitData?.defaultBranch, commits: gitData?.recentCommits, files: gitData?.files?.slice(0, 25) }, null, 2)}
+Documento de Fase (PHASE_STATUS.md):
+${(gitData?.phaseStatus || '').slice(0, 800)}
+
+Responda no formato Antigravity limpo, técnico e estruturado em tópicos Markdown (Diagnóstico, Git, Módulos, Gaps a Resolver e Ação Recomendada). Sem piadas ou caricaturas.`;
 
         try {
           reply = await defaultAiChatService.callLlmForAgent('chief-of-staff', llmPrompt);
         } catch {}
 
-        const isDirectReadQuestion = /(leu|leia|audit|status do git|o que tem|o que est[aá]|quais pr[oó]ximas|pr[oó]ximo passo)/i.test(trimmed);
-
         if (
           !reply ||
-          !reply.trim() ||
-          (realGitContext && isDirectReadQuestion && (reply.includes('não tenho acesso') || reply.includes('rep blank') || reply.includes('não é bonita') || !reply.includes('PHASE_STATUS'))) ||
+          reply.trim().length < 100 ||
+          reply.includes('não tenho acesso') ||
+          reply.includes('rep blank') ||
           reply.includes('passivos trabalhistas') ||
           reply.includes('INSTRUÇÃO EXECUTIVA') ||
-          reply.includes('Alinhamento e governança evitam retrabalho') ||
-          reply.includes('não tenho acesso')
+          reply.includes('Alinhamento e governança evitam retrabalho')
         ) {
-          reply = solidAuditFallback;
+          reply = solidAudit;
         }
 
         state.addMessage({
@@ -1088,7 +1127,7 @@ export const useStore = create<OfficeState>((set, get) => ({
         state.triggerSpeechBubble({
           senderId: 'chief-of-staff',
           senderName: 'Dr. Arthur Vance',
-          content: reply.slice(0, 55) + (reply.length > 55 ? '...' : ''),
+          content: `📋 Diagnóstico técnico de [${state.activeProject}] emitido.`,
           durationMs: 7000,
           type: 'TASK',
         });
@@ -1101,22 +1140,22 @@ export const useStore = create<OfficeState>((set, get) => ({
       }
     }
 
+    // 2. Ordem de Ação / Engenharia / Resolução de Problemas:
     try {
       const plan = await createPlan(objectiveText, {
         project: state.activeProject,
       });
 
-      let planExplanation = `Entendido, Comandante. Estruturei a estratégia de execução para o repositório **${state.activeProject}** visando atender a diretriz: "${objectiveText}". Deleguei ${plan.steps.length} etapas críticas aos nossos especialistas para execução sequencial homologada.`;
+      const planExplanation = `## ⚡ Ordem de Engenharia Recebida: \`${objectiveText}\`
 
-      try {
-        const dynamicIntro = await defaultAiChatService.callLlmForAgent(
-          'chief-of-staff',
-          `O CEO determinou o seguinte objetivo de engenharia: "${objectiveText}" para o projeto ${state.activeProject}. Como Dr. Arthur Vance, dê uma confirmação dinâmica de 2 frases declarando que dividiu a demanda entre os arquitetos, engenheiros e QA para entrega imediata.`
-        );
-        if (dynamicIntro && dynamicIntro.trim()) {
-          planExplanation = dynamicIntro.trim();
-        }
-      } catch {}
+**Repositório Ativo:** \`pubcoreagencia/${state.activeProject}\`  
+**Estratégia Técnica:** Formulei o plano com ${plan.steps.length} etapas e acionei os 4 especialistas autônomos para resolver o problema no código e homologar a entrega.
+
+### 👥 Esteira Autônoma em Execução Imediata:
+1. 🏛️ **Helena Rostova (Arquitetura):** Especificação técnica, contratos e interfaces.
+2. 💻 **Lucas Silveira (Desenvolvimento):** Implementação concreta do código e dos módulos.
+3. 🔍 **Beatriz Mendes (Review):** Auditoria de segurança OWASP, integridade e tipagem.
+4. 🛡️ **Tiago Rocha (QA):** Bateria de testes automatizados e homologação funcional.`;
 
       state.addMessage({
         sender: 'CHIEF_OF_STAFF',
@@ -1131,7 +1170,7 @@ export const useStore = create<OfficeState>((set, get) => ({
       state.triggerSpeechBubble({
         senderId: 'chief-of-staff',
         senderName: 'Dr. Arthur Vance',
-        content: `📋 Plano montado para [${state.activeProject}]: ${plan.steps.length} etapas delegadas!`,
+        content: `⚡ Executando ${plan.steps.length} etapas para [${state.activeProject}]!`,
         durationMs: 6000,
         type: 'TASK',
       });
@@ -1141,6 +1180,9 @@ export const useStore = create<OfficeState>((set, get) => ({
         activePlan: plan,
         actionLoading: false,
       }));
+
+      // DISPARO IMEDIATO E AUTÔNOMO DE TODAS AS ETAPAS PELOS AGENTES
+      void state.executeAllSteps(plan);
 
       return plan;
     } catch (err: any) {
