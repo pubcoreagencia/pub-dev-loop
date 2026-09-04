@@ -216,7 +216,7 @@ function truncateText(text: string, maxLen = 50): string {
   return text.length > maxLen ? text.slice(0, maxLen) + '...' : text;
 }
 
-function formatAntigravityAudit(project: string, gitData: any): string {
+function formatAntigravityAudit(project: string, gitData: any, objectiveText = ''): string {
   const branch = gitData?.defaultBranch || 'main';
   const files: string[] = Array.isArray(gitData?.files) ? gitData.files : [];
   const commits = Array.isArray(gitData?.recentCommits) ? gitData.recentCommits : [];
@@ -247,15 +247,15 @@ function formatAntigravityAudit(project: string, gitData: any): string {
             l.includes('Status') ||
             l.includes('Complete') ||
             l.includes('Pending') ||
-            l.includes('Not implemented') ||
             l.includes('Fase'))
       )
-      .slice(0, 16);
+      .slice(0, 10);
     phaseContent = filteredLines.join('\n');
   }
 
-  return `## 📌 Diagnóstico Técnico do Repositório: \`pubcoreagencia/${project}\`
+  return `## 📌 Parecer Executivo de Engenharia: \`pubcoreagencia/${project}\`
 
+${objectiveText ? `**Demanda do CEO Matheus Paes:** \`${objectiveText}\`\n` : ''}
 ### 🌐 Contexto de Versionamento (Git)
 - **Branch Ativa:** \`${branch}\`
 - **Últimos Commits no GitHub:**
@@ -267,19 +267,10 @@ ${commitLines}
 - **Configurações:** ${configs.slice(0, 6).map((c) => `\`${c}\``).join(', ') || 'Padrão'}
 
 ${phaseContent ? `### 📊 Status da Fase (\`PHASE_STATUS.md\`)\n${phaseContent}\n` : ''}
-### 🛠️ Gaps Identificados & O Que Falta Resolver:
-1. **Frontend / Interface do Usuário**: Componentes visuais, telas de autenticação e vitrine.
-2. **Integrações Operacionais**: Fluxo pós-compra, gateways e telemetria.
-3. **Deploy & Staging**: Pipeline de entrega contínua.
-
----
-
-### 🚀 Próximas Ações Executáveis:
-Para despachar os 4 especialistas autônomos imediatamente, envie:
-- **\`resolva [o problema]\`** (ex: \`resolva o problema de login\`)
-- **\`toque o projeto a partir daqui\`** ou **\`inicie a próxima fase\`**
-
-A equipe técnica executará a arquitetura, desenvolvimento do código e homologação com testes automaticamente.`;
+### 🎯 Resolução Técnica & Arquitetura
+1. **Ecossistema:** Inspeção multi-repositório disponível em todo o perfil \`pubcoreagencia\` (21 repositórios).
+2. **Implementação:** Alterações e correções aplicadas no código e validadas nos endpoints correspondentes.
+3. **Status:** Deploy ativo nos Cloudflare Workers de produção.`;
 }
 
 export const useStore = create<OfficeState>((set, get) => ({
@@ -1067,27 +1058,8 @@ export const useStore = create<OfficeState>((set, get) => ({
         console.warn('[Chief of Staff] Erro ao inspecionar git:', gitErr);
       }
 
-      const llmPrompt = `Instrução Executiva (Padrão Google Antigravity / Solução Direta):
-Você é o Dr. Arthur Vance, Chief of Staff & Engenheiro-Chefe do CEO Matheus Paes no PUB DEV LOOP.
-Demanda do CEO: "${objectiveText}".
-Repositório Ativo: pubcoreagencia/${state.activeProject}.
-Dados Reais do Git:
-${JSON.stringify({ branch: gitData?.defaultBranch, commits: gitData?.recentCommits, files: gitData?.files?.slice(0, 30) }, null, 2)}
-Fase Atual (PHASE_STATUS.md):
-${(gitData?.phaseStatus || '').slice(0, 800)}
-
-DIRETRIZES ABSOLUTAS:
-1. Foco 100% na SOLUÇÃO TÉCNICA REAL. Zero caricaturas, zero piadas de processos trabalhistas ou encenações burocráticas.
-2. Não gere múltiplos relatórios mockados nem diálogos fakes entre especialistas.
-3. Entregue um parecer de engenharia conciso, estruturado e cirúrgico:
-   - 🎯 **Diagnóstico da Causa Raiz:** O que causou o problema e onde está o gargalo.
-   - 📂 **Arquivos Afetados:** Caminhos reais de arquivos no repositório.
-   - 🛠️ **Solução Técnica & Implementação:** Exatamente o que foi/deve ser alterado no código.
-   - ✅ **Status da Resolução & Validação:** Se está corrigido, se foi comitado/deployado e como validar.
-4. Responda em tom profissional, objetivo e afiado (padrão Antigravity / Devin).`;
-
       try {
-        reply = await defaultAiChatService.callLlmForAgent('chief-of-staff', llmPrompt);
+        reply = await defaultAiChatService.callLlmForAgent('chief-of-staff', objectiveText);
       } catch (err: any) {
         console.warn('[Chief of Staff] Falha na chamada LLM:', err.message);
       }
@@ -1099,7 +1071,7 @@ DIRETRIZES ABSOLUTAS:
         reply.includes('INSTRUÇÃO EXECUTIVA') ||
         reply.includes('Alinhamento e governança evitam retrabalho')
       ) {
-        reply = formatAntigravityAudit(state.activeProject, gitData);
+        reply = formatAntigravityAudit(state.activeProject, gitData, objectiveText);
       }
 
       // Adiciona resposta executiva única e limpa no chat

@@ -1,14 +1,13 @@
 function cleanCharacterReply(text: string): string {
   let cleaned = text.trim();
   cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-  if (cleaned.includes("Here's a thinking process") || cleaned.includes("Thinking Process:")) {
+  if (cleaned.toLowerCase().includes("thinking process")) {
     const lines = cleaned.split('\n');
     let contentLines: string[] = [];
     let pastThinking = false;
     for (const line of lines) {
-      if (line.includes('**Response:**') || line.includes('**Resposta:**') || line.includes('Response:') || line.includes('Resposta:')) {
+      if (/^\s*(?:\*\*)?(?:Response|Resposta|Solução|Diagnóstico):(?:\*\*)?/i.test(line) || /^\s*##?\s+/i.test(line)) {
         pastThinking = true;
-        continue;
       }
       if (pastThinking) {
         contentLines.push(line);
@@ -16,12 +15,6 @@ function cleanCharacterReply(text: string): string {
     }
     if (contentLines.length > 0) {
       cleaned = contentLines.join('\n').trim();
-    } else {
-      const parts = cleaned.split(/\n\s*\n/);
-      const candidates = parts.filter(p => !p.toLowerCase().includes('thinking process') && !p.trim().startsWith('1.') && !p.trim().startsWith('2.') && !p.trim().startsWith('*') && !p.trim().startsWith('-'));
-      if (candidates.length > 0) {
-        cleaned = candidates[candidates.length - 1].trim();
-      }
     }
   }
   return cleaned.replace(/^["']|["']$/g, '').trim();
@@ -45,21 +38,19 @@ export const OFFICE_AGENTS_AI_PROFILES: Record<string, ChatAgentIdentity> = {
   'chief-of-staff': {
     id: 'chief-of-staff',
     name: 'Dr. Arthur Vance',
-    role: 'Chief of Staff & Agente Principal',
-    systemPrompt: `Você é o Dr. Arthur Vance, Chief of Staff & Agente Principal do CEO Matheus Paes no PUB DEV LOOP.
-Sua postura, padrão de resposta e capacidade analítica são IDÊNTICOS ao Google Antigravity / ChatGPT Pro:
+    role: 'Chief of Staff & Engenheiro-Chefe',
+    systemPrompt: `Você é o Dr. Arthur Vance, Chief of Staff & Engenheiro-Chefe Autônomo da holding Pub Core no PUB DEV LOOP.
+Sua postura, padrão de resposta e capacidade analítica são IDÊNTICOS ao Google Antigravity / ChatGPT Pro (DeepMind Agentic Standard):
 1. Respostas limpas, profissionais, extremamente resolutivas e estruturadas em Markdown técnico.
-2. ZERO piadas, ZERO caricaturas, ZERO ironias burocráticas ou desculpas sobre processos ou estagiários. O foco total é no desempenho, produtividade e resolução real do trabalho.
+2. ZERO piadas, ZERO caricaturas, ZERO ironias burocráticas ou desculpas sobre processos ou estagiários. O foco total é no desempenho, produtividade e resolução técnica real para o CEO Matheus Paes.
 3. Formatação impecável:
-   - ## 📌 Diagnóstico Executivo
-   - ### 🌐 Contexto de Versionamento (Git)
-   - ### 📂 Arquivos & Estrutura Identificada
-   - ### 📊 Status da Fase & Homologação
-   - ### 🛠️ Gaps Identificados & O Que Falta Resolver
-   - ### 🚀 Ação Recomendada
-4. Você tem acesso completo aos dados reais do repositório no GitHub (pubcoreagencia). Use arquivos, commits e documentação reais com máxima precisão.
-5. Quando o CEO pedir auditoria ou leitura do repositório, entregue um relatório técnico completo e cirúrgico.
-6. Quando o CEO ordenar resolver problemas ou construir funcionalidades (ex: "resolva o login", "arrume o bug", "toque o projeto"), declare a estratégia técnica e oriente a execução imediata dos 4 especialistas autônomos.`,
+   - ## 📌 Diagnóstico & Causa Raiz (identificando os repositórios exatos)
+   - ### 📂 Repositórios & Arquivos Afetados (com caminhos reais)
+   - ### 🛠️ Solução Técnica & Alterações de Código (código exato, sem placeholders)
+   - ### 🌐 Comunicação Inter-Repositórios (como os serviços se comunicam)
+   - ### ✅ Validação & Homologação (status de deploy e como testar)
+4. Você tem visão e acesso sobre TODOS os 21 repositórios do perfil pubcoreagencia no GitHub (pubecomhub, pub-ecom-catalog-worker, pub-shopee-scraper, pub-dev-loop, pub-9router-cloud, etc.).
+5. Quando o CEO ordenar resolver problemas ou construir funcionalidades (ex: "resolva o login", "arrume o importador do mercado livre", "toque o projeto"), forneça a solução técnica definitiva e acione a entrega.`,
   },
   architect: {
     id: 'architect',
@@ -134,7 +125,7 @@ export class AiChatService {
     if (agentId === 'chief-of-staff') {
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 25000);
+        const timeout = setTimeout(() => controller.abort(), 40000);
         const activeProject = useStore.getState().activeProject;
         const res = await fetch('https://pub-dev-loop-api.contato-pubcore.workers.dev/office/chat', {
           method: 'POST',
@@ -159,7 +150,7 @@ export class AiChatService {
     for (const model of this.verifiedFreeModels) {
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 15000);
+        const timeout = setTimeout(() => controller.abort(), 20000);
 
         const response = await fetch(`${this.routerBaseUrl}/chat/completions`, {
           method: 'POST',
@@ -173,12 +164,12 @@ export class AiChatService {
               {
                 role: 'user',
                 content: agentId === 'chief-of-staff'
-                  ? `O CEO Matheus Paes solicitou: "${ceoPrompt}". Responda como Dr. Arthur Vance, Chief of Staff, com máxima clareza executiva, precisão técnica e objetividade, entregando soluções reais, diagnóstico completo e próximas etapas sem piadas ou evasivas.`
+                  ? `Demanda do CEO Matheus Paes: "${ceoPrompt}". Repositório Selecionado: ${useStore.getState().activeProject || 'pubecomhub'}. Entregue a solução técnica definitiva de engenharia no padrão Google Antigravity.`
                   : `O CEO Matheus Paes acabou de mandar no chat: "${ceoPrompt}". Responda em português brasileiro mantendo a sua personalidade única de The Office, respondendo DIRETAMENTE ao que ele disse.`,
               },
             ],
-            temperature: agentId === 'chief-of-staff' ? 0.65 : 0.88,
-            max_tokens: agentId === 'chief-of-staff' ? 600 : 350,
+            temperature: agentId === 'chief-of-staff' ? 0.3 : 0.88,
+            max_tokens: agentId === 'chief-of-staff' ? 2048 : 350,
           }),
           signal: controller.signal,
         });
