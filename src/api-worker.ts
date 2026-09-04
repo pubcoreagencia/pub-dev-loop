@@ -335,10 +335,7 @@ async function ensureMigrations(pool: InstanceType<typeof Pool>): Promise<void> 
  * Prioriza a connectionString do Cloudflare Hyperdrive quando disponível.
  */
 function getPool(env: Env): InstanceType<typeof Pool> {
-  const connectionString = env.HYPERDRIVE?.connectionString || env.DATABASE_URL || process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error('Missing DATABASE_URL or HYPERDRIVE binding connection string');
-  }
+  const connectionString = env.HYPERDRIVE?.connectionString || env.DATABASE_URL || process.env.DATABASE_URL || 'postgresql://localhost:5432/pubdevloop';
   return new Pool({ connectionString });
 }
 
@@ -593,8 +590,7 @@ export default {
             return jsonResponse({ error: `Step '${stepId}' not found in plan` }, 404);
           }
           const taskPayload = planStepToTask(step, plan, overrides);
-          const pool = getPool(env);
-          const tasksRepo = new PostgresTaskRepository(pool);
+          const tasksRepo = getRepository(env);
           const createdTask = await tasksRepo.create(taskPayload);
 
           if (step.agentId) {
@@ -630,6 +626,10 @@ export default {
                 });
               }
             }
+          }
+
+          if (ctx && typeof ctx.waitUntil === 'function') {
+            ctx.waitUntil(triggerContainerWorker(env));
           }
 
           return jsonResponse({ task: createdTask }, 201);

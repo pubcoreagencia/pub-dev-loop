@@ -938,6 +938,12 @@ export const useStore = create<OfficeState>((set, get) => ({
     try {
       const task = await executePlanStep(plan, stepId);
 
+      set((prev) => {
+        const existing = prev.tasks.find((t) => t.id === task.id);
+        const updatedTasks = existing ? prev.tasks.map((t) => (t.id === task.id ? task : t)) : [task, ...prev.tasks];
+        return { tasks: updatedTasks };
+      });
+
       state.addMessage({
         sender: 'AGENT',
         senderName: step?.agentId?.toUpperCase() || 'AGENTE ESPECIALISTA',
@@ -968,7 +974,12 @@ export const useStore = create<OfficeState>((set, get) => ({
     set({ actionLoading: true });
     try {
       for (const step of plan.steps) {
-        await executePlanStep(plan, step.id);
+        const task = await executePlanStep(plan, step.id);
+        set((prev) => {
+          const existing = prev.tasks.find((t) => t.id === task.id);
+          const updatedTasks = existing ? prev.tasks.map((t) => (t.id === task.id ? task : t)) : [task, ...prev.tasks];
+          return { tasks: updatedTasks };
+        });
       }
       state.addMessage({
         sender: 'CHIEF_OF_STAFF',
