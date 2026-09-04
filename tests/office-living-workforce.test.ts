@@ -140,12 +140,10 @@ describe('PDL — Phase 9.0: The Living 3D Office & Workforce Personas Suite', (
     expect(lastMemory.topic).toContain('Lazer');
   });
 
-  it('19. Vinyl Jukebox contains 6 curated albums with distinct genres and artwork', () => {
-    expect(VINYL_ALBUMS.length).toBe(6);
-    const genres = VINYL_ALBUMS.map(a => a.genre);
-    expect(genres.some(g => g.includes('Synthwave'))).toBe(true);
-    expect(genres.some(g => g.includes('Jazz'))).toBe(true);
-    expect(genres.some(g => g.includes('8-Bit'))).toBe(true);
+  it('19. Vinyl Jukebox contains Pub Records curated tracks with distinct artwork and durations', () => {
+    expect(VINYL_ALBUMS.length).toBeGreaterThanOrEqual(6);
+    expect(VINYL_ALBUMS.some(a => a.artist.includes('PUB Records'))).toBe(true);
+    expect(VINYL_ALBUMS.every(a => Boolean(a.coverImage))).toBe(true);
   });
 
   it('20. Open-ended discussion generates multi-agent debate quoting the CEO prompt', () => {

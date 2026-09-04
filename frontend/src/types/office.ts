@@ -228,6 +228,7 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   type: 'TEXT' | 'PLAN' | 'EXECUTION' | 'RESULT' | 'ERROR' | 'SYSTEM';
+  channel?: 'COMMAND' | 'RESENHOLA';
   plan?: OrganizationalPlan;
   task?: Task;
   stepId?: string;

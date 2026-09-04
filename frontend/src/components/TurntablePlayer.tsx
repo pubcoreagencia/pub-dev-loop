@@ -1,24 +1,6 @@
 import React from 'react';
 import { useStore } from '../store/useStore';
-
-interface Track {
-  id: string;
-  albumId: string;
-  title: string;
-  artist: string;
-  genre: string;
-  duration: string;
-}
-
-const PLAYLIST: Track[] = [
-  { id: 't0', albumId: 'album-pubrecords', title: 'PUB Records Official', artist: 'PUB Records', genre: 'SoundCloud Tracks', duration: 'Live' },
-  { id: 't1', albumId: 'album-synth', title: 'Midnight Compile Session', artist: 'Neon Workforce', genre: 'Synthwave / Lo-Fi', duration: '3:45' },
-  { id: 't2', albumId: 'album-bossa', title: 'Bossa Nova for Code Reviewers', artist: 'Arthur Vance Trio', genre: 'Bossa Jazz', duration: '4:12' },
-  { id: 't3', albumId: 'album-idm', title: 'Zero Any in TypeScript', artist: 'Helena & The Solid State', genre: 'IDM Minimal', duration: '5:01' },
-  { id: 't4', albumId: 'album-rock', title: 'Friday 17:59 Production Deploy', artist: 'Crash Silveira Band', genre: 'Speed Synth', duration: '2:58' },
-  { id: 't5', albumId: 'album-8bit', title: 'Duck in the Database', artist: 'Chaos Monkey & Tiago', genre: 'Chiptune 8-bit', duration: '3:20' },
-  { id: 't6', albumId: 'album-lofi', title: 'Matcha & Memory Leaks', artist: 'Sentinel Beatriz', genre: 'Dark Lo-Fi Chill', duration: '4:30' },
-];
+import { VINYL_ALBUMS } from './VinylJukeboxModal';
 
 export const TurntablePlayer: React.FC = () => {
   const {
@@ -31,17 +13,17 @@ export const TurntablePlayer: React.FC = () => {
     setJukeboxOpen,
   } = useStore();
 
-  const currentTrack = PLAYLIST.find((t) => t.albumId === activeAlbumId) || PLAYLIST[0];
-  const currentTrackIndex = PLAYLIST.findIndex((t) => t.albumId === currentTrack.albumId);
+  const currentAlbum = VINYL_ALBUMS.find((a) => a.id === activeAlbumId) || VINYL_ALBUMS[0];
+  const currentTrackIndex = VINYL_ALBUMS.findIndex((a) => a.id === currentAlbum.id);
 
   const handleNext = () => {
-    const nextIdx = (currentTrackIndex + 1) % PLAYLIST.length;
-    selectVinylAlbum(PLAYLIST[nextIdx].albumId);
+    const nextIdx = (currentTrackIndex + 1) % VINYL_ALBUMS.length;
+    selectVinylAlbum(VINYL_ALBUMS[nextIdx].id);
   };
 
   const handlePrev = () => {
-    const prevIdx = (currentTrackIndex - 1 + PLAYLIST.length) % PLAYLIST.length;
-    selectVinylAlbum(PLAYLIST[prevIdx].albumId);
+    const prevIdx = (currentTrackIndex - 1 + VINYL_ALBUMS.length) % VINYL_ALBUMS.length;
+    selectVinylAlbum(VINYL_ALBUMS[prevIdx].id);
   };
 
   return (
@@ -74,10 +56,10 @@ export const TurntablePlayer: React.FC = () => {
         title="Clique para escolher álbum"
       >
         <span style={{ fontWeight: 600, color: '#38bdf8', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {currentTrack.title}
+          {currentAlbum.title}
         </span>
         <span style={{ color: '#94a3b8', fontSize: '9px' }}>
-          {currentTrack.artist} • {currentTrack.genre}
+          {currentAlbum.artist} • {currentAlbum.duration || currentAlbum.genre}
         </span>
       </div>
 
@@ -128,7 +110,7 @@ export const TurntablePlayer: React.FC = () => {
           scrolling="no"
           frameBorder="no"
           allow="autoplay"
-          src="https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/pubrecords/tracks&color=%23ff5500&auto_play=true&hide_related=true&show_comments=false&show_user=false&show_reposts=false&show_teaser=false"
+          src={currentAlbum.trackSlug ? `https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/${currentAlbum.trackSlug}&color=%23ff5500&auto_play=true&hide_related=true&show_comments=false&show_user=false&show_reposts=false&show_teaser=false` : "https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/pubrecords/tracks&color=%23ff5500&auto_play=true&hide_related=true&show_comments=false&show_user=false&show_reposts=false&show_teaser=false"}
           style={{ position: 'absolute', width: '1px', height: '1px', opacity: 0, pointerEvents: 'none' }}
           title="SoundCloud Stream"
         />

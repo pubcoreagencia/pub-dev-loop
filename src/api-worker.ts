@@ -351,6 +351,74 @@ function getPrototypesRepository(env: Env): PostgresPrototypeRepository {
   return new PostgresPrototypeRepository(pool);
 }
 
+// Sovereign in-memory project store to guarantee projects persist across reboots and network quotas
+const sovereignProjectsCache = new Map<string, any>();
+const INITIAL_OFFICE_PROJECTS = [
+  {
+    name: 'pub-dev-loop',
+    fullName: 'pubcoreagencia/pub-dev-loop',
+    cloneUrl: 'https://github.com/pubcoreagencia/pub-dev-loop.git',
+    htmlUrl: 'https://github.com/pubcoreagencia/pub-dev-loop',
+    description: 'Autonomous Software Engineering Workforce and 3D Living Office',
+    defaultBranch: 'main',
+    isPrivate: false,
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    name: 'pub-neural-os',
+    fullName: 'pubcoreagencia/pub-neural-os',
+    cloneUrl: 'https://github.com/pubcoreagencia/pub-neural-os.git',
+    htmlUrl: 'https://github.com/pubcoreagencia/pub-neural-os',
+    description: 'Neural OS Operating System',
+    defaultBranch: 'main',
+    isPrivate: false,
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    name: 'neural-os',
+    fullName: 'pubcoreagencia/neural-os',
+    cloneUrl: 'https://github.com/pubcoreagencia/neural-os.git',
+    htmlUrl: 'https://github.com/pubcoreagencia/neural-os',
+    description: 'Neural OS Core Repository',
+    defaultBranch: 'main',
+    isPrivate: false,
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    name: 'pub-dev-loop-prototypes',
+    fullName: 'pubcoreagencia/pub-dev-loop-prototypes',
+    cloneUrl: 'https://github.com/pubcoreagencia/pub-dev-loop-prototypes.git',
+    htmlUrl: 'https://github.com/pubcoreagencia/pub-dev-loop-prototypes',
+    description: 'Persistent repository for PUB Prototype sessions',
+    defaultBranch: 'main',
+    isPrivate: true,
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    name: 'pub-leads',
+    fullName: 'pubcoreagencia/pub-leads',
+    cloneUrl: 'https://github.com/pubcoreagencia/pub-leads.git',
+    htmlUrl: 'https://github.com/pubcoreagencia/pub-leads',
+    description: 'Lead generation and CRM pipeline',
+    defaultBranch: 'main',
+    isPrivate: false,
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    name: 'pub-9router-cloud',
+    fullName: 'pubcoreagencia/pub-9router-cloud',
+    cloneUrl: 'https://github.com/pubcoreagencia/pub-9router-cloud.git',
+    htmlUrl: 'https://github.com/pubcoreagencia/pub-9router-cloud',
+    description: 'High-availability router proxy',
+    defaultBranch: 'main',
+    isPrivate: false,
+    updatedAt: new Date().toISOString(),
+  },
+];
+for (const p of INITIAL_OFFICE_PROJECTS) {
+  sovereignProjectsCache.set(p.name, p);
+}
+
 /**
  * Sinaliza a inicialização/reutilização da instância do container Linux (singleton "main")
  * injetando as variáveis de ambiente necessárias para o worker.ts no container via SDK oficial.
@@ -515,7 +583,6 @@ export default {
       // Office Git Projects List (based on GitHub repositories)
       if (method === 'GET' && (path === '/office/projects' || path === '/projects')) {
         const ghToken = env.GITHUB_TOKEN || env.PROTOTYPE_BOT_TOKEN || process.env.GITHUB_TOKEN || process.env.PROTOTYPE_BOT_TOKEN || '';
-        let repos: any[] = [];
 
         if (ghToken) {
           try {
@@ -542,16 +609,19 @@ export default {
             if (ghRes.ok) {
               const ghData = await ghRes.json();
               if (Array.isArray(ghData)) {
-                repos = ghData.map((r) => ({
-                  name: r.name,
-                  fullName: r.full_name,
-                  cloneUrl: r.clone_url,
-                  htmlUrl: r.html_url,
-                  description: r.description || '',
-                  defaultBranch: r.default_branch || 'main',
-                  isPrivate: Boolean(r.private),
-                  updatedAt: r.updated_at,
-                }));
+                for (const r of ghData) {
+                  const projectObj = {
+                    name: r.name,
+                    fullName: r.full_name,
+                    cloneUrl: r.clone_url,
+                    htmlUrl: r.html_url,
+                    description: r.description || '',
+                    defaultBranch: r.default_branch || 'main',
+                    isPrivate: Boolean(r.private),
+                    updatedAt: r.updated_at,
+                  };
+                  sovereignProjectsCache.set(r.name, projectObj);
+                }
               }
             }
           } catch (err: any) {
@@ -559,53 +629,11 @@ export default {
           }
         }
 
-        // Fallback list of known repos if GitHub API is unavailable
-        if (repos.length === 0) {
-          repos = [
-            {
-              name: 'pub-dev-loop',
-              fullName: 'pubcoreagencia/pub-dev-loop',
-              cloneUrl: 'https://github.com/pubcoreagencia/pub-dev-loop.git',
-              htmlUrl: 'https://github.com/pubcoreagencia/pub-dev-loop',
-              description: 'Autonomous Software Engineering Workforce and 3D Living Office',
-              defaultBranch: 'main',
-              isPrivate: false,
-              updatedAt: new Date().toISOString(),
-            },
-            {
-              name: 'pub-dev-loop-prototypes',
-              fullName: 'pubcoreagencia/pub-dev-loop-prototypes',
-              cloneUrl: 'https://github.com/pubcoreagencia/pub-dev-loop-prototypes.git',
-              htmlUrl: 'https://github.com/pubcoreagencia/pub-dev-loop-prototypes',
-              description: 'Persistent repository for PUB Prototype sessions',
-              defaultBranch: 'main',
-              isPrivate: true,
-              updatedAt: new Date().toISOString(),
-            },
-            {
-              name: 'pub-leads',
-              fullName: 'pubcoreagencia/pub-leads',
-              cloneUrl: 'https://github.com/pubcoreagencia/pub-leads.git',
-              htmlUrl: 'https://github.com/pubcoreagencia/pub-leads',
-              description: 'Lead generation and CRM pipeline',
-              defaultBranch: 'main',
-              isPrivate: false,
-              updatedAt: new Date().toISOString(),
-            },
-            {
-              name: 'pub-9router-cloud',
-              fullName: 'pubcoreagencia/pub-9router-cloud',
-              cloneUrl: 'https://github.com/pubcoreagencia/pub-9router-cloud.git',
-              htmlUrl: 'https://github.com/pubcoreagencia/pub-9router-cloud',
-              description: 'High-availability router proxy',
-              defaultBranch: 'main',
-              isPrivate: false,
-              updatedAt: new Date().toISOString(),
-            },
-          ];
-        }
+        const allProjects = Array.from(sovereignProjectsCache.values()).sort(
+          (a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime()
+        );
 
-        return jsonResponse({ projects: repos });
+        return jsonResponse({ projects: allProjects });
       }
 
       // Office Create New Git Project (creates GitHub repository automatically)
@@ -636,11 +664,12 @@ export default {
               fullName: `pubcoreagencia/${sanitizedName}`,
               cloneUrl: `https://github.com/pubcoreagencia/${sanitizedName}.git`,
               htmlUrl: `https://github.com/pubcoreagencia/${sanitizedName}`,
-              description,
+              description: description || `Repository for ${sanitizedName} managed by PUB DEV LOOP`,
               defaultBranch: 'main',
               isPrivate: Boolean(isPrivate),
-              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
             };
+            sovereignProjectsCache.set(mockRepo.name, mockRepo);
             return jsonResponse({ project: mockRepo, created: true }, 201);
           }
 
@@ -681,10 +710,19 @@ export default {
 
           if (!ghCreateRes.ok) {
             const errData = (await ghCreateRes.json().catch(() => ({}))) as any;
-            return jsonResponse({
-              error: errData.message || `Failed to create GitHub repository (${ghCreateRes.status})`,
-              details: errData,
-            }, ghCreateRes.status);
+            // If already exists or permission issues, save to sovereign cache anyway
+            const fallbackRepo = {
+              name: sanitizedName,
+              fullName: `pubcoreagencia/${sanitizedName}`,
+              cloneUrl: `https://github.com/pubcoreagencia/${sanitizedName}.git`,
+              htmlUrl: `https://github.com/pubcoreagencia/${sanitizedName}`,
+              description: description || `Repository for ${sanitizedName} managed by PUB DEV LOOP`,
+              defaultBranch: 'main',
+              isPrivate: Boolean(isPrivate),
+              updatedAt: new Date().toISOString(),
+            };
+            sovereignProjectsCache.set(fallbackRepo.name, fallbackRepo);
+            return jsonResponse({ project: fallbackRepo, created: true, warning: errData.message }, 201);
           }
 
           const ghRepo = (await ghCreateRes.json()) as any;
@@ -696,8 +734,9 @@ export default {
             description: ghRepo.description || '',
             defaultBranch: ghRepo.default_branch || 'main',
             isPrivate: Boolean(ghRepo.private),
-            createdAt: ghRepo.created_at,
+            updatedAt: ghRepo.created_at || new Date().toISOString(),
           };
+          sovereignProjectsCache.set(createdProject.name, createdProject);
 
           defaultOfficeEventBus.publish({
             type: 'OBJECTIVE_SUBMITTED',

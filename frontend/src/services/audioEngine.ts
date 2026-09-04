@@ -16,7 +16,7 @@ class OfficeAudioEngine {
       const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
       this.ctx = new AudioCtxClass();
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(0.85, this.ctx.currentTime);
       this.masterGain.connect(this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') {
@@ -24,19 +24,39 @@ class OfficeAudioEngine {
     }
   }
 
-  // 1. Gera ruído característico de vinil (crackle & pops analógicos)
+  // Toque característico de descida da agulha no vinil (needle drop thump)
+  private playNeedleDrop() {
+    if (!this.ctx || !this.masterGain) return;
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(65, this.ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(28, this.ctx.currentTime + 0.18);
+      gain.gain.setValueAtTime(0.35, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.22);
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start();
+      osc.stop(this.ctx.currentTime + 0.25);
+    } catch {}
+  }
+
+  // 1. Gera ruído autêntico e audível de vinil (crackle, estalos analógicos e hiss de superfície)
   private startVinylCrackle() {
     if (!this.ctx || !this.masterGain) return;
+    this.playNeedleDrop();
+
     const bufferSize = this.ctx.sampleRate * 2;
     const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
     const output = noiseBuffer.getChannelData(0);
 
     for (let i = 0; i < bufferSize; i++) {
-      // Pink noise suave de fundo
+      // Ruído de superfície analógica
       const white = Math.random() * 2 - 1;
-      // Estalos aleatórios de poeira no sulco do vinil
-      const isPop = Math.random() < 0.0008;
-      output[i] = white * 0.012 + (isPop ? (Math.random() * 0.2 - 0.1) : 0);
+      // Estalos e ranhuras perceptíveis no sulco do vinil
+      const isPop = Math.random() < 0.0035;
+      output[i] = white * 0.038 + (isPop ? (Math.random() * 0.4 - 0.2) : 0);
     }
 
     const noise = this.ctx.createBufferSource();
@@ -45,7 +65,7 @@ class OfficeAudioEngine {
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(1200, this.ctx.currentTime);
+    filter.frequency.setValueAtTime(2400, this.ctx.currentTime);
 
     noise.connect(filter);
     filter.connect(this.masterGain);
@@ -53,93 +73,15 @@ class OfficeAudioEngine {
     this.noiseNode = noise;
   }
 
-  // 2. Toca notas e acordes procedurais por álbum
-  private playNote(freq: number, duration: number, type: OscillatorType = 'sine', gainVal = 0.1) {
-    if (!this.ctx || !this.masterGain) return;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
-
-    gain.gain.setValueAtTime(gainVal, this.ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
-
-    osc.connect(gain);
-    gain.connect(this.masterGain);
-
-    osc.start();
-    osc.stop(this.ctx.currentTime + duration);
-  }
-
-  // Escalas musicais
-  private getNotesForAlbum(albumId: string): { notes: number[]; type: OscillatorType; intervalMs: number } {
-    switch (albumId) {
-      case 'album-bossa':
-        // Bossa Jazz (Dó maior com 7M / Lá menor 9)
-        return {
-          notes: [261.63, 329.63, 392.00, 493.88, 440.00, 523.25, 349.23, 293.66],
-          type: 'triangle',
-          intervalMs: 800,
-        };
-      case 'album-8bit':
-        // 8-bit Chiptune Arpeggios rápidos
-        return {
-          notes: [523.25, 659.25, 783.99, 1046.50, 783.99, 659.25, 587.33, 880.00],
-          type: 'square',
-          intervalMs: 220,
-        };
-      case 'album-rock':
-        // Pentatônica Menor pesada
-        return {
-          notes: [146.83, 174.61, 196.00, 220.00, 261.63, 293.66, 220.00],
-          type: 'sawtooth',
-          intervalMs: 380,
-        };
-      case 'album-idm':
-        // Texturas minimalistas e atmosféricas
-        return {
-          notes: [440.00, 554.37, 659.25, 830.61, 440.00, 329.63],
-          type: 'sine',
-          intervalMs: 1100,
-        };
-      case 'album-lofi':
-        // Lo-Fi Chillhop suave
-        return {
-          notes: [220.00, 277.18, 329.63, 415.30, 369.99, 293.66],
-          type: 'sine',
-          intervalMs: 900,
-        };
-      case 'album-synth':
-      default:
-        // Synthwave 80s arpeggio clássico (Am - F - C - G)
-        return {
-          notes: [220.00, 261.63, 329.63, 440.00, 174.61, 261.63, 349.23, 196.00],
-          type: 'sawtooth',
-          intervalMs: 400,
-        };
-    }
-  }
-
-  public play(albumId = 'album-synth') {
+  public play(albumId = 'album-pubrecords') {
     this.initContext();
     this.stop();
     this.isPlaying = true;
     this.currentAlbumId = albumId;
 
+    // Apenas o ruído analógico característico do vinil (agulha descendo e estalos suaves)
+    // ZERO música mock sintetizada: a música real vem 100% das faixas do SoundCloud da PUB Records
     this.startVinylCrackle();
-
-    const config = this.getNotesForAlbum(albumId);
-    let noteIdx = 0;
-
-    this.timerId = setInterval(() => {
-      if (!this.isPlaying) return;
-      const freq = config.notes[noteIdx % config.notes.length];
-      const duration = (config.intervalMs / 1000) * 1.5;
-      const gainVal = config.type === 'square' ? 0.04 : config.type === 'sawtooth' ? 0.05 : 0.08;
-      this.playNote(freq, duration, config.type, gainVal);
-      noteIdx++;
-    }, config.intervalMs);
   }
 
   public stop() {
@@ -160,9 +102,12 @@ class OfficeAudioEngine {
   }
 
   public setVolume(val: number) {
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume();
+    }
     if (this.masterGain && this.ctx) {
       const clamped = Math.max(0, Math.min(1, val));
-      this.masterGain.gain.setValueAtTime(clamped * 0.4, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(clamped * 1.0, this.ctx.currentTime);
     }
   }
 

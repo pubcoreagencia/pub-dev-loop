@@ -8,87 +8,183 @@ export interface VinylAlbum {
   year: string;
   labelColor: string;
   coverBg: string;
+  coverImage?: string;
+  trackSlug?: string;
+  duration?: string;
   description: string;
   tracks: string[];
 }
 
+export const PUB_ARTWORK = 'https://i1.sndcdn.com/avatars-yEuGz9F4uSiAy40t-FIQ8EA-t500x500.jpg';
+
 export const VINYL_ALBUMS: VinylAlbum[] = [
   {
     id: 'album-pubrecords',
-    title: 'PUB Records Official Tracks',
-    artist: 'PUB Records (SoundCloud)',
-    genre: 'Original SoundCloud Productions',
+    title: 'PUB Records • Todas as Faixas (Feed Oficial)',
+    artist: 'paesnobeat • PUB Records',
+    genre: 'SoundCloud Feed',
     year: '2026',
     labelColor: '#ff5500',
-    coverBg: 'linear-gradient(135deg, #ff5500, #451a03)',
-    description: 'Faixas oficiais produzidas pela Pub Records diretamente do SoundCloud (soundcloud.com/pubrecords/tracks).',
-    tracks: ['01. Pub Records Master Track', '02. Living Office Groove', '03. Autonomous Wave', '04. SoundCloud Live Stream'],
+    coverBg: 'linear-gradient(135deg, #ff5500, #7c2d12)',
+    coverImage: PUB_ARTWORK,
+    trackSlug: 'pubrecords/tracks',
+    duration: '63 Faixas',
+    description: 'Catálogo oficial completo hospedado em soundcloud.com/pubrecords/tracks. Qualquer faixa nova upada entra aqui em tempo real.',
+    tracks: ['01. Feed Dinâmico do SoundCloud', '02. Transmissão Contínua', '03. 100% Volume Analógico'],
   },
   {
-    id: 'album-synth',
-    title: 'Midnight Compile Session',
-    artist: 'Neon Workforce',
-    genre: 'Synthwave & Retrowave',
-    year: '1984 / 2026',
-    labelColor: '#38bdf8',
-    coverBg: 'linear-gradient(135deg, #0284c7, #1e1b4b)',
-    description: 'Batidas analógicas aceleradas para maratonas de código e deploy sem medo nas madrugadas.',
-    tracks: ['01. Hotfix at 3 AM', '02. Cyberpunk Terminal', '03. Stack Overflow Highway', '04. Fast Forward Commit'],
-  },
-  {
-    id: 'album-bossa',
-    title: 'Bossa Nova for Code Reviewers',
-    artist: 'Arthur Vance Trio',
-    genre: 'Bossa Jazz & Soft Lounge',
-    year: '1962 / 2026',
-    labelColor: '#f59e0b',
-    coverBg: 'linear-gradient(135deg, #d97706, #451a03)',
-    description: 'Violão clássico e piano suave selecionados pelo Dr. Arthur para manter a calma durante reuniões de alinhamento.',
-    tracks: ['01. Garota de Copacabana', '02. Café na Porcelana', '03. Cronograma Perfeito', '04. Paz na Sprint'],
-  },
-  {
-    id: 'album-idm',
-    title: 'Zero Any in TypeScript',
-    artist: 'Helena & The Solid State',
-    genre: 'IDM Minimal & Glitch',
-    year: '2026',
-    labelColor: '#3b82f6',
-    coverBg: 'linear-gradient(135deg, #2563eb, #0f172a)',
-    description: 'Texturas sonoras limpas e minimalistas para quem não tolera acoplamento ou falta de rigor arquitetural.',
-    tracks: ['01. Pure Abstraction', '02. Monad Dreams', '03. Strict Null Check', '04. Hexagonal Architecture'],
-  },
-  {
-    id: 'album-rock',
-    title: 'Friday 17:59 Production Deploy',
-    artist: 'Crash Silveira Band',
-    genre: 'Speed Metal & Pop Punk',
+    id: 'track-mailow',
+    title: 'MAILOW',
+    artist: 'paesnobeat • PUB Records',
+    genre: 'Trap / Beat',
     year: '2026',
     labelColor: '#ef4444',
-    coverBg: 'linear-gradient(135deg, #dc2626, #7f1d1d)',
-    description: 'Guitarras pesadas e riffs rápidos que o Lucas ouve no volume máximo enquanto jura que o commit vai passar no build.',
-    tracks: ['01. Works on My Machine', '02. Force Push Hero', '03. Last Minute Hotfix', '04. No Tests No Fear'],
+    coverBg: 'linear-gradient(135deg, #b91c1c, #450a0a)',
+    coverImage: PUB_ARTWORK,
+    trackSlug: 'pubrecords/mailow',
+    duration: '0:59',
+    description: 'Faixa oficial lançada no SoundCloud por paesnobeat (PUB Records).',
+    tracks: ['01. MAILOW (Original Mix)'],
   },
   {
-    id: 'album-8bit',
-    title: 'Duck in the Database',
-    artist: 'Chaos Monkey & Tiago',
-    genre: '8-Bit Chiptune & Electro',
-    year: '1989 / 2026',
-    labelColor: '#eab308',
-    coverBg: 'linear-gradient(135deg, #ca8a04, #14532d)',
-    description: 'Músicas no estilo Game Boy e arcade criadas pelo Tiago para acompanhar os testes destrutivos com sua frota de patinhos.',
-    tracks: ['01. Rubber Duck Symphony', '02. Fuzzing the Payload', '03. 500 Internal Server Error', '04. Chaos Monkey Dance'],
+    id: 'track-pelelope',
+    title: 'pelelope',
+    artist: 'paesnobeat • PUB Records',
+    genre: 'Instrumental Groove',
+    year: '2026',
+    labelColor: '#f59e0b',
+    coverBg: 'linear-gradient(135deg, #d97706, #451a03)',
+    coverImage: PUB_ARTWORK,
+    trackSlug: 'pubrecords/pelelope',
+    duration: '4:00',
+    description: 'Faixa com arranjo melódico e batida marcante produzida por paesnobeat.',
+    tracks: ['01. pelelope (Original Mix)'],
   },
   {
-    id: 'album-lofi',
-    title: 'Matcha & Memory Leaks',
-    artist: 'Sentinel Beatriz',
-    genre: 'Dark Lo-Fi Chillhop',
+    id: 'track-carlton',
+    title: 'carlton',
+    artist: 'paesnobeat • PUB Records',
+    genre: 'Extended Session',
     year: '2026',
     labelColor: '#10b981',
     coverBg: 'linear-gradient(135deg, #059669, #064e3b)',
-    description: 'Batidas relaxantes e hipnóticas que a Beatriz escuta enquanto encontra vulnerabilidades e memória vazando em segundos.',
-    tracks: ['01. Green Tea Filter', '02. Zero Day Chill', '03. Blocked Pull Request', '04. Safe in Production'],
+    coverImage: PUB_ARTWORK,
+    trackSlug: 'pubrecords/carlton',
+    duration: '10:46',
+    description: 'Sessão estendida de 10 minutos para foco profundo e desenvolvimento sem pausas.',
+    tracks: ['01. carlton (Extended Cut)'],
+  },
+  {
+    id: 'track-sherman-2',
+    title: 'sherman #2',
+    artist: 'paesnobeat • PUB Records',
+    genre: 'Boom Bap',
+    year: '2026',
+    labelColor: '#38bdf8',
+    coverBg: 'linear-gradient(135deg, #0284c7, #082f49)',
+    coverImage: PUB_ARTWORK,
+    trackSlug: 'pubrecords/sherman-2',
+    duration: '1:29',
+    description: 'Produção clássica e punchy com a assinatura rítmica da PUB Records.',
+    tracks: ['01. sherman #2'],
+  },
+  {
+    id: 'track-jovem-tralha',
+    title: 'jovem tralha',
+    artist: 'paesnobeat • PUB Records',
+    genre: 'Underground Beat',
+    year: '2026',
+    labelColor: '#8b5cf6',
+    coverBg: 'linear-gradient(135deg, #7c3aed, #2e1065)',
+    coverImage: PUB_ARTWORK,
+    trackSlug: 'pubrecords/jovem-tralha',
+    duration: '7:08',
+    description: 'Faixa envolvente de 7 minutos gravada no Rio de Janeiro por paesnobeat.',
+    tracks: ['01. jovem tralha'],
+  },
+  {
+    id: 'track-sunday-sunday',
+    title: 'sunday sunday',
+    artist: 'paesnobeat • PUB Records',
+    genre: 'Chill / Lo-Fi Beat',
+    year: '2026',
+    labelColor: '#ec4899',
+    coverBg: 'linear-gradient(135deg, #db2777, #500724)',
+    coverImage: PUB_ARTWORK,
+    trackSlug: 'pubrecords/sunday-sunday',
+    duration: '2:27',
+    description: 'Batida descontraída para manhãs de domingo e sessões leves de alinhamento.',
+    tracks: ['01. sunday sunday'],
+  },
+  {
+    id: 'track-chirivia',
+    title: 'chirivia',
+    artist: 'paesnobeat • PUB Records',
+    genre: 'Original Track',
+    year: '2026',
+    labelColor: '#14b8a6',
+    coverBg: 'linear-gradient(135deg, #0d9488, #042f2e)',
+    coverImage: PUB_ARTWORK,
+    trackSlug: 'pubrecords/chirivia',
+    duration: '4:16',
+    description: 'Faixa atmosférica com texturas rítmicas ricas lançada no catálogo oficial.',
+    tracks: ['01. chirivia'],
+  },
+  {
+    id: 'track-papara',
+    title: 'papara',
+    artist: 'paesnobeat • PUB Records',
+    genre: 'Groove / Bounce',
+    year: '2026',
+    labelColor: '#f97316',
+    coverBg: 'linear-gradient(135deg, #ea580c, #431407)',
+    coverImage: PUB_ARTWORK,
+    trackSlug: 'pubrecords/papara',
+    duration: '2:49',
+    description: 'Balanço rápido e percussão viva produzida por Matheus Paes (paesnobeat).',
+    tracks: ['01. papara'],
+  },
+  {
+    id: 'track-balalau',
+    title: 'balalau',
+    artist: 'paesnobeat • PUB Records',
+    genre: 'Rhythm / Vibe',
+    year: '2026',
+    labelColor: '#eab308',
+    coverBg: 'linear-gradient(135deg, #ca8a04, #422006)',
+    coverImage: PUB_ARTWORK,
+    trackSlug: 'pubrecords/balalau',
+    duration: '3:12',
+    description: 'Faixa icônica da PUB Records disponível no canal oficial soundcloud.com/pubrecords.',
+    tracks: ['01. balalau'],
+  },
+  {
+    id: 'track-padregabriel',
+    title: 'PADREGABRIEL',
+    artist: 'paesnobeat • PUB Records',
+    genre: 'Signature Track',
+    year: '2026',
+    labelColor: '#6366f1',
+    coverBg: 'linear-gradient(135deg, #4f46e5, #1e1b4b)',
+    coverImage: PUB_ARTWORK,
+    trackSlug: 'pubrecords/padregabriel',
+    duration: '3:12',
+    description: 'Faixa marcante do catálogo da PUB Records com produção completa de paesnobeat.',
+    tracks: ['01. PADREGABRIEL'],
+  },
+  {
+    id: 'album-pubrecords-shuffle',
+    title: 'PUB Records • Modo Aleatório (Shuffle)',
+    artist: 'paesnobeat • PUB Records',
+    genre: 'SoundCloud Shuffle',
+    year: '2026',
+    labelColor: '#38bdf8',
+    coverBg: 'linear-gradient(135deg, #0284c7, #1e1b4b)',
+    coverImage: PUB_ARTWORK,
+    trackSlug: 'pubrecords/tracks',
+    duration: 'Mix Aleatório',
+    description: 'Todas as músicas da PUB Records tocadas de forma randômica para ambientar a equipe.',
+    tracks: ['01. Shuffle Automático', '02. Rotação Contínua'],
   },
 ];
 
@@ -220,19 +316,22 @@ export const VinylJukeboxModal: React.FC<VinylJukeboxModalProps> = ({
             >
               <div
                 style={{
-                  width: '42px',
-                  height: '42px',
+                  width: '46px',
+                  height: '46px',
                   borderRadius: '50%',
                   background: activeAlbum.labelColor,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: '#000',
-                  fontWeight: 800,
-                  fontSize: '11px',
+                  overflow: 'hidden',
+                  border: '2px solid #000',
                 }}
               >
-                ●
+                {activeAlbum.coverImage ? (
+                  <img src={activeAlbum.coverImage} alt={activeAlbum.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <span style={{ color: '#000', fontWeight: 800 }}>●</span>
+                )}
               </div>
             </div>
 
@@ -242,7 +341,7 @@ export const VinylJukeboxModal: React.FC<VinylJukeboxModalProps> = ({
                 <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: activeAlbum.labelColor, color: '#000', fontWeight: 700 }}>
                   {activeAlbum.genre}
                 </span>
-                <span style={{ fontSize: '11px', color: '#94a3b8' }}>{activeAlbum.year}</span>
+                <span style={{ fontSize: '11px', color: '#94a3b8' }}>{activeAlbum.duration || activeAlbum.year}</span>
               </div>
               <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', color: '#f8fafc' }}>
                 {activeAlbum.title}
@@ -280,7 +379,6 @@ export const VinylJukeboxModal: React.FC<VinylJukeboxModalProps> = ({
             </button>
           </div>
 
-
           {/* PLAYER OFICIAL DO SOUNDCLOUD DA PUB RECORDS */}
           <div
             style={{
@@ -304,11 +402,11 @@ export const VinylJukeboxModal: React.FC<VinylJukeboxModalProps> = ({
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '18px' }}>☁️</span>
                 <span style={{ fontSize: '12px', fontWeight: 700, color: '#ff7733', letterSpacing: '0.5px' }}>
-                  PUB RECORDS • SOUNDCLOUD (soundcloud.com/pubrecords/tracks)
+                  PUB RECORDS • SOUNDCLOUD ({activeAlbum.title})
                 </span>
               </div>
               <a
-                href="https://soundcloud.com/pubrecords/tracks"
+                href={activeAlbum.trackSlug ? `https://soundcloud.com/${activeAlbum.trackSlug}` : "https://soundcloud.com/pubrecords/tracks"}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{
@@ -329,19 +427,35 @@ export const VinylJukeboxModal: React.FC<VinylJukeboxModalProps> = ({
             </div>
             <iframe
               width="100%"
-              height="280"
+              height="360"
               scrolling="no"
               frameBorder="no"
               allow="autoplay"
-              src="https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/pubrecords/tracks&color=%23ff5500&auto_play=false&hide_related=false&show_comments=true&show_user=true&show_reposts=false&show_teaser=true&visual=true"
+              src={activeAlbum.trackSlug ? `https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/${activeAlbum.trackSlug}&color=%23ff5500&auto_play=${isPlaying}&hide_related=false&show_comments=true&show_user=true&show_reposts=false&show_teaser=true&visual=false` : `https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/pubrecords/tracks&color=%23ff5500&auto_play=${isPlaying}&hide_related=false&show_comments=true&show_user=true&show_reposts=false&show_teaser=true&visual=false`}
               style={{ display: 'block', border: 'none' }}
-              title="SoundCloud Player Pub Records"
+              title={`SoundCloud Player - ${activeAlbum.title}`}
             />
+            <div
+              style={{
+                padding: '8px 16px',
+                background: '#111827',
+                borderTop: '1px solid #374151',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: '11px',
+                color: '#9ca3af',
+              }}
+            >
+              <span>✨ <strong>Sincronização Ativa:</strong> Todas as 63 faixas de soundcloud.com/pubrecords/tracks sincronizadas.</span>
+              <span style={{ color: '#ff7733', fontWeight: 600 }}>100% Volume Analógico</span>
+            </div>
           </div>
+
           {/* PRATELEIRA DE DISCOS DE VINIL */}
           <div>
             <h4 style={{ margin: '0 0 12px 0', fontSize: '13px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              📚 PRATELEIRA DE VINIS DO LOUNGE (CLIQUE PARA TOCAR)
+              📚 PRATELEIRA DE VINIS OFICIAIS • PUB RECORDS ({VINYL_ALBUMS.length} DISCOS)
             </h4>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
@@ -366,19 +480,27 @@ export const VinylJukeboxModal: React.FC<VinylJukeboxModalProps> = ({
                     {/* CAPA DO DISCO */}
                     <div
                       style={{
-                        width: '50px',
-                        height: '50px',
+                        width: '52px',
+                        height: '52px',
                         borderRadius: '6px',
                         background: album.coverBg,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: '20px',
+                        overflow: 'hidden',
                         boxShadow: '0 4px 10px rgba(0,0,0,0.4)',
                         flexShrink: 0,
                       }}
                     >
-                      🎵
+                      {album.coverImage ? (
+                        <img
+                          src={album.coverImage}
+                          alt={album.title}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        <span>🎵</span>
+                      )}
                     </div>
 
                     <div style={{ flex: 1, minWidth: 0 }}>

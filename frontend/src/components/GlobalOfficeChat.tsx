@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { PlanViewer } from './PlanViewer';
 import { defaultWatercoolerEngine } from '../services/watercoolerEngine';
@@ -12,6 +12,7 @@ export const GlobalOfficeChat: React.FC = () => {
     actionLoading,
     triggerSpeechBubble,
     selectedAgent,
+    activeProject,
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<'COMMAND' | 'WATERCOOLER'>('COMMAND');
@@ -25,6 +26,65 @@ export const GlobalOfficeChat: React.FC = () => {
 
   // Rolagem automática em background REMOVIDA: Usuário tem controle total do scroll
 
+  // Vida própria no escritório: A equipe conversa espontaneamente no canal RESENHOLA com IA real
+  useEffect(() => {
+    const triggerAmbientBanter = async () => {
+      if (actionLoading || Boolean(respondingAgent)) return;
+      try {
+        const dialogue = await defaultAiChatService.generateRealOfficeBanter(activeProject || 'neural-os');
+        dialogue.forEach((d: any, idx: number) => {
+          setTimeout(() => {
+            const senderProfile = OFFICE_AGENTS_AI_PROFILES[d.speakerId] || {
+              name: d.speakerName || d.speakerId,
+              role: 'Especialista',
+            };
+
+            addMessage({
+              sender: d.speakerId.toUpperCase().replace(/-/g, '_') as any,
+              senderName: senderProfile.name,
+              senderRole: senderProfile.role,
+              content: d.content,
+              type: 'TEXT',
+              channel: 'RESENHOLA',
+            });
+
+            triggerSpeechBubble({
+              senderId: d.speakerId,
+              senderName: senderProfile.name,
+              content: d.content.slice(0, 48) + (d.content.length > 48 ? '...' : ''),
+              durationMs: 5500,
+              type: 'TASK',
+            });
+          }, idx * 1800);
+        });
+      } catch {
+        const fallbackDialogue = defaultWatercoolerEngine.getNextDialogue();
+        fallbackDialogue.forEach((d: any, idx: number) => {
+          setTimeout(() => {
+            const senderProfile = OFFICE_AGENTS_AI_PROFILES[d.speakerId] || {
+              name: d.speakerName || d.speakerId,
+              role: 'Especialista',
+            };
+            addMessage({
+              sender: d.speakerId.toUpperCase().replace(/-/g, '_') as any,
+              senderName: senderProfile.name,
+              senderRole: senderProfile.role,
+              content: d.content,
+              type: 'TEXT',
+              channel: 'RESENHOLA',
+            });
+          }, idx * 1500);
+        });
+      }
+    };
+
+    const ambientTimer = setInterval(() => {
+      void triggerAmbientBanter();
+    }, 45000);
+
+    return () => clearInterval(ambientTimer);
+  }, [actionLoading, respondingAgent, activeProject]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() || actionLoading || Boolean(respondingAgent)) return;
@@ -33,16 +93,17 @@ export const GlobalOfficeChat: React.FC = () => {
     scrollToBottom();
 
     if (activeTab === 'COMMAND') {
-      // Despacho de Objetivo Estratégico do CEO
+      // Despacho de Objetivo Estratégico do CEO ou Pergunta direta ao Chief of Staff
       await submitObjective(text);
     } else {
-      // Conversa Livre do Watercooler / Relação com os Funcionários
+      // Conversa Livre do Watercooler / Relação com os Funcionários (Canal RESENHOLA)
       addMessage({
         sender: 'CEO',
         senderName: 'Matheus Paes (CEO)',
         senderRole: 'Comandante',
         content: text,
         type: 'TEXT',
+        channel: 'RESENHOLA',
       });
 
       // Executa chamada real exibindo o nome de cada funcionário respondendo
@@ -66,6 +127,7 @@ export const GlobalOfficeChat: React.FC = () => {
             senderRole: profile.role,
             content: aiContent,
             type: 'TEXT',
+            channel: 'RESENHOLA',
           });
           triggerSpeechBubble({
             senderId: agentId,
@@ -84,6 +146,7 @@ export const GlobalOfficeChat: React.FC = () => {
               senderRole: profile.role,
               content: fallbackReplies[0].content,
               type: 'TEXT',
+              channel: 'RESENHOLA',
             });
           }
         }
@@ -92,32 +155,53 @@ export const GlobalOfficeChat: React.FC = () => {
     }
   };
 
-  const handleTriggerWatercoolerDialogue = () => {
-    const dialogue = defaultWatercoolerEngine.getNextDialogue();
-    dialogue.forEach((d: any, idx: number) => {
-      setTimeout(() => {
-        const senderProfile = OFFICE_AGENTS_AI_PROFILES[d.speakerId] || {
-          name: d.speakerName,
-          role: 'Especialista',
-        };
+  const handleTriggerWatercoolerDialogue = async () => {
+    try {
+      const dialogue = await defaultAiChatService.generateRealOfficeBanter(activeProject || 'neural-os');
+      dialogue.forEach((d: any, idx: number) => {
+        setTimeout(() => {
+          const senderProfile = OFFICE_AGENTS_AI_PROFILES[d.speakerId] || {
+            name: d.speakerName,
+            role: 'Especialista',
+          };
 
-        addMessage({
-          sender: d.speakerId.toUpperCase().replace(/-/g, '_') as any,
-          senderName: senderProfile.name,
-          senderRole: senderProfile.role,
-          content: d.content,
-          type: 'TEXT',
-        });
+          addMessage({
+            sender: d.speakerId.toUpperCase().replace(/-/g, '_') as any,
+            senderName: senderProfile.name,
+            senderRole: senderProfile.role,
+            content: d.content,
+            type: 'TEXT',
+            channel: 'RESENHOLA',
+          });
 
-        triggerSpeechBubble({
-          senderId: d.speakerId,
-          senderName: senderProfile.name,
-          content: d.content.slice(0, 45) + (d.content.length > 45 ? '...' : ''),
-          durationMs: 5000,
-          type: 'TASK',
-        });
-      }, idx * 1200);
-    });
+          triggerSpeechBubble({
+            senderId: d.speakerId,
+            senderName: senderProfile.name,
+            content: d.content.slice(0, 45) + (d.content.length > 45 ? '...' : ''),
+            durationMs: 5000,
+            type: 'TASK',
+          });
+        }, idx * 1200);
+      });
+    } catch {
+      const dialogue = defaultWatercoolerEngine.getNextDialogue();
+      dialogue.forEach((d: any, idx: number) => {
+        setTimeout(() => {
+          const senderProfile = OFFICE_AGENTS_AI_PROFILES[d.speakerId] || {
+            name: d.speakerName,
+            role: 'Especialista',
+          };
+          addMessage({
+            sender: d.speakerId.toUpperCase().replace(/-/g, '_') as any,
+            senderName: senderProfile.name,
+            senderRole: senderProfile.role,
+            content: d.content,
+            type: 'TEXT',
+            channel: 'RESENHOLA',
+          });
+        }, idx * 1200);
+      });
+    }
   };
 
   return (
@@ -159,13 +243,8 @@ export const GlobalOfficeChat: React.FC = () => {
               gap: '6px',
             }}
           >
-            <span>☕</span> WATERCOOLER
+            <span>☕</span> RESENHOLA
           </button>
-        </div>
-
-        {/* STATUS DISCRETO DO GATEWAY AUTOMÁTICO */}
-        <div className="chat-status-pill" title="Gateways 100% Free: OpenRouter Free (Llama 3.3 70B / Gemini 2.0 Flash) ➔ 9Router Free">
-          <span>●</span> 100% FREE (LLAMA 3.3 / GEMINI ➔ 9ROUTER)
         </div>
       </div>
 
@@ -199,7 +278,9 @@ export const GlobalOfficeChat: React.FC = () => {
           </div>
         )}
 
-        {messages.map((msg) => {
+        {messages
+          .filter((msg) => (activeTab === 'COMMAND' ? msg.channel !== 'RESENHOLA' : msg.channel === 'RESENHOLA'))
+          .map((msg) => {
           const senderClass = msg.sender.toLowerCase().replace(/_/g, '-');
           const isCeo = senderClass === 'ceo';
           const isChief = senderClass === 'chief-of-staff' || senderClass === 'chief_of_staff';

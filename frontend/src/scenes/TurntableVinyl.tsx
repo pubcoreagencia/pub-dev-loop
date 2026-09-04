@@ -16,7 +16,7 @@ export const TurntableVinyl: React.FC<TurntableVinylProps> = ({
   albumTitle = 'Midnight Compile Session',
   onClick,
 }) => {
-  const discRef = useRef<THREE.Mesh>(null);
+  const discRef = useRef<THREE.Group>(null);
   const armGroupRef = useRef<THREE.Group>(null);
   const needleLightRef = useRef<THREE.PointLight>(null);
   const wave1Ref = useRef<THREE.Mesh>(null);
@@ -26,9 +26,9 @@ export const TurntableVinyl: React.FC<TurntableVinylProps> = ({
 
   // Rotação contínua do disco, interpolação física do braço e ondas sonoras
   useFrame((_, delta) => {
-    // 1. Rotação a 33 RPM
+    // 1. Rotação a 33 RPM (gira o grupo inteiro do disco e rótulo)
     if (isPlaying && discRef.current) {
-      discRef.current.rotation.y += delta * 4.2;
+      discRef.current.rotation.y += delta * 4.8;
     }
 
     // 2. Movimento físico nítido e visível do braço da agulha (Tonearm)
@@ -126,28 +126,56 @@ export const TurntableVinyl: React.FC<TurntableVinylProps> = ({
         <meshStandardMaterial color="#18181b" metalness={0.85} roughness={0.15} />
       </mesh>
 
-      {/* Prato Giratório Metálico (Platter) */}
-      <mesh position={[-0.15, 1.1, 0]}>
-        <cylinderGeometry args={[0.38, 0.38, 0.025, 32]} />
-        <meshStandardMaterial color="#3f3f46" metalness={0.95} roughness={0.1} />
+      {/* Prato Base Fixo da Vitrola */}
+      <mesh position={[-0.15, 1.095, 0]}>
+        <cylinderGeometry args={[0.38, 0.38, 0.018, 32]} />
+        <meshStandardMaterial color="#27272a" metalness={0.9} roughness={0.2} />
       </mesh>
 
-      {/* Disco de Vinil Preto com Ranhuras e Rotação */}
-      <mesh ref={discRef} position={[-0.15, 1.125, 0]} castShadow>
-        <cylinderGeometry args={[0.36, 0.36, 0.015, 32]} />
-        <meshStandardMaterial color="#09090b" roughness={0.2} metalness={0.5} />
-      </mesh>
+      {/* CONJUNTO GIRATÓRIO DO VINIL (Platter, Disco com ranhuras, Rótulo e Marcadores Visíveis de 33 RPM) */}
+      <group ref={discRef} position={[-0.15, 1.115, 0]}>
+        {/* Disco de Vinil Preto */}
+        <mesh castShadow receiveShadow>
+          <cylinderGeometry args={[0.36, 0.36, 0.015, 48]} />
+          <meshStandardMaterial color="#09090b" roughness={0.3} metalness={0.4} />
+        </mesh>
 
-      {/* RÓTULO CENTRAL DO VINIL (Muda de cor instantaneamente ao selecionar álbum) */}
-      <mesh position={[-0.15, 1.135, 0]}>
-        <cylinderGeometry args={[0.13, 0.13, 0.02, 32]} />
-        <meshBasicMaterial color={labelColor} />
-      </mesh>
-      {/* Pino Central Prateado */}
-      <mesh position={[-0.15, 1.155, 0]}>
-        <cylinderGeometry args={[0.018, 0.018, 0.04, 16]} />
-        <meshStandardMaterial color="#e4e4e7" metalness={0.95} />
-      </mesh>
+        {/* Ranhuras Concêntricas Brilhantes do Vinil */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]}>
+          <ringGeometry args={[0.18, 0.19, 32]} />
+          <meshBasicMaterial color="#3f3f46" />
+        </mesh>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]}>
+          <ringGeometry args={[0.25, 0.26, 32]} />
+          <meshBasicMaterial color="#3f3f46" />
+        </mesh>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]}>
+          <ringGeometry args={[0.32, 0.33, 32]} />
+          <meshBasicMaterial color="#3f3f46" />
+        </mesh>
+
+        {/* Rótulo Central Colorido */}
+        <mesh position={[0, 0.009, 0]}>
+          <cylinderGeometry args={[0.13, 0.13, 0.006, 32]} />
+          <meshBasicMaterial color={labelColor} />
+        </mesh>
+
+        {/* Faixa Radial Contrastante no Rótulo (torna a rotação de 33 RPM instantaneamente visível aos olhos) */}
+        <mesh position={[0, 0.013, 0]}>
+          <boxGeometry args={[0.11, 0.002, 0.018]} />
+          <meshBasicMaterial color="#ffffff" />
+        </mesh>
+        <mesh position={[0, 0.013, 0]}>
+          <boxGeometry args={[0.018, 0.002, 0.11]} />
+          <meshBasicMaterial color="#0f172a" />
+        </mesh>
+
+        {/* Pino Central Prateado */}
+        <mesh position={[0, 0.03, 0]}>
+          <cylinderGeometry args={[0.016, 0.016, 0.045, 16]} />
+          <meshStandardMaterial color="#e4e4e7" metalness={0.95} roughness={0.1} />
+        </mesh>
+      </group>
 
       {/* BRAÇO DA AGULHA FÍSICO (Tonearm Mecânico Articulado) */}
       <group ref={armGroupRef} position={[0.34, 1.14, 0.26]}>
