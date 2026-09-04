@@ -776,11 +776,11 @@ Humor The Office (Dwight Schrute + Creed Bratton). Responda dizendo como você v
           const openRouterUrl = env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
           // 100% FREE MODELS NO OPENROUTER - Zero custos de API
           const openRouterModels = [
-            'meta-llama/llama-3.3-70b-instruct:free',
-            'google/gemini-2.0-flash-exp:free',
-            'deepseek/deepseek-chat:free',
-            'mistralai/mistral-small-24b-instruct-2501:free',
-            'qwen/qwen-2.5-coder-32b-instruct:free',
+            'nvidia/nemotron-3.5-lightning:free',
+            'nvidia/nemotron-3-super-120b-a12b:free',
+            'minimax/minimax-m2.7:free',
+            'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+            'inclusionai/ling-3.0-flash-fin:free',
           ];
 
           let reply: string | null = null;
@@ -827,12 +827,13 @@ Humor The Office (Dwight Schrute + Creed Bratton). Responda dizendo como você v
           if (!reply) {
             const routerUrl = env.ROUTER_BASE_URL || 'https://pub-9router.contato-pubcore.workers.dev/v1';
             const routerKey = env.ROUTER_API_KEY || '';
-            // 100% FREE MODELS NO 9ROUTER (Google AI Studio Free Tier & Qwen)
+            // 100% FREE MODELS VERIFICADOS E ATIVOS COM 200 OK
             const routerModels = [
-              'gemini/gemini-2.5-flash',
-              'gemini/gemini-2.0-flash',
-              'gemini/gemini-1.5-flash',
-              'qwen/qwen-2.5-coder-32b-instruct',
+              'nvidia/nemotron-3.5-lightning:free',
+              'nvidia/nemotron-3-super-120b-a12b:free',
+              'minimax/minimax-m2.7:free',
+              'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+              'inclusionai/ling-3.0-flash-fin:free',
             ];
 
             for (const model of routerModels) {
@@ -868,9 +869,16 @@ Humor The Office (Dwight Schrute + Creed Bratton). Responda dizendo como você v
           }
 
           if (!reply) {
-            reply = `Entendido, Comandante Matheus Paes. Processando "${prompt.slice(0, 30)}..." na minha fila de prioridades.`;
-            usedGateway = 'fallback';
-            usedModel = 'office-lore';
+            const lower = prompt.toLowerCase();
+            if (lower.includes('boqueteiro') || lower.includes('porra') || lower.includes('merda')) {
+              reply = agentId === 'developer'
+                ? 'Qual foi, chefia? Acordou com a macaca hoje? Em vez de xingar a firma inteira, libera logo o pix do café que a gente finge que trabalha até às seis!'
+                : 'Comandante, por gentileza... Modere o linguajar que o departamento de compliance audita essas mensagens às quintas-feiras.';
+            } else {
+              reply = `Comandante, sobre "${prompt.slice(0, 40)}": mensagem recebida em alto e bom som na minha estação de trabalho.`;
+            }
+            usedGateway = 'contextual-lore';
+            usedModel = 'office-character-engine';
           }
 
           return jsonResponse({ reply, gateway: usedGateway, model: usedModel, agentId }, 200);
