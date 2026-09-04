@@ -175,17 +175,12 @@ export const GlobalOfficeChat: React.FC = () => {
           <div
             style={{
               display: 'flex',
-              justifyContent: 'space-between',
+              justifyContent: 'flex-end',
               alignItems: 'center',
-              padding: '8px 14px',
-              background: 'rgba(245, 158, 11, 0.08)',
-              border: '1px solid rgba(245, 158, 11, 0.25)',
-              borderRadius: '6px',
+              padding: '4px 14px',
               fontSize: '11px',
-              color: '#f59e0b',
             }}
           >
-            <span>💬 Canal Livre de Convivência &amp; Humor Negro</span>
             <button
               onClick={handleTriggerWatercoolerDialogue}
               style={{
@@ -193,13 +188,13 @@ export const GlobalOfficeChat: React.FC = () => {
                 border: '1px solid #f59e0b',
                 color: '#fef3c7',
                 borderRadius: '4px',
-                padding: '3px 10px',
+                padding: '4px 10px',
                 fontSize: '10px',
                 cursor: 'pointer',
                 fontWeight: 700,
               }}
             >
-              Fofoca do Café ☕
+              ☕ Fofoca do Café
             </button>
           </div>
         )}

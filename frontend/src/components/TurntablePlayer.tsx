@@ -11,6 +11,7 @@ interface Track {
 }
 
 const PLAYLIST: Track[] = [
+  { id: 't0', albumId: 'album-pubrecords', title: 'PUB Records Official', artist: 'PUB Records', genre: 'SoundCloud Tracks', duration: 'Live' },
   { id: 't1', albumId: 'album-synth', title: 'Midnight Compile Session', artist: 'Neon Workforce', genre: 'Synthwave / Lo-Fi', duration: '3:45' },
   { id: 't2', albumId: 'album-bossa', title: 'Bossa Nova for Code Reviewers', artist: 'Arthur Vance Trio', genre: 'Bossa Jazz', duration: '4:12' },
   { id: 't3', albumId: 'album-idm', title: 'Zero Any in TypeScript', artist: 'Helena & The Solid State', genre: 'IDM Minimal', duration: '5:01' },
@@ -118,6 +119,20 @@ export const TurntablePlayer: React.FC = () => {
           style={{ width: '50px', height: '3px', accentColor: '#38bdf8', cursor: 'pointer' }}
         />
       </div>
+
+      {/* SoundCloud Audio Stream para faixas da Pub Records */}
+      {isPlayingVinyl && (
+        <iframe
+          width="1"
+          height="1"
+          scrolling="no"
+          frameBorder="no"
+          allow="autoplay"
+          src="https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/pubrecords/tracks&color=%23ff5500&auto_play=true&hide_related=true&show_comments=false&show_user=false&show_reposts=false&show_teaser=false"
+          style={{ position: 'absolute', width: '1px', height: '1px', opacity: 0, pointerEvents: 'none' }}
+          title="SoundCloud Stream"
+        />
+      )}
     </div>
   );
 };

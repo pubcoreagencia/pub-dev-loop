@@ -14,6 +14,17 @@ export interface VinylAlbum {
 
 export const VINYL_ALBUMS: VinylAlbum[] = [
   {
+    id: 'album-pubrecords',
+    title: 'PUB Records Official Tracks',
+    artist: 'PUB Records (SoundCloud)',
+    genre: 'Original SoundCloud Productions',
+    year: '2026',
+    labelColor: '#ff5500',
+    coverBg: 'linear-gradient(135deg, #ff5500, #451a03)',
+    description: 'Faixas oficiais produzidas pela Pub Records diretamente do SoundCloud (soundcloud.com/pubrecords/tracks).',
+    tracks: ['01. Pub Records Master Track', '02. Living Office Groove', '03. Autonomous Wave', '04. SoundCloud Live Stream'],
+  },
+  {
     id: 'album-synth',
     title: 'Midnight Compile Session',
     artist: 'Neon Workforce',
@@ -269,6 +280,64 @@ export const VinylJukeboxModal: React.FC<VinylJukeboxModalProps> = ({
             </button>
           </div>
 
+
+          {/* PLAYER OFICIAL DO SOUNDCLOUD DA PUB RECORDS */}
+          <div
+            style={{
+              borderRadius: '12px',
+              overflow: 'hidden',
+              border: '1px solid #ff5500',
+              boxShadow: '0 8px 30px rgba(255, 85, 0, 0.15)',
+              background: '#181411',
+            }}
+          >
+            <div
+              style={{
+                background: 'linear-gradient(90deg, #2b1d14, #181411)',
+                padding: '10px 16px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                borderBottom: '1px solid #452416',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '18px' }}>☁️</span>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#ff7733', letterSpacing: '0.5px' }}>
+                  PUB RECORDS • SOUNDCLOUD (soundcloud.com/pubrecords/tracks)
+                </span>
+              </div>
+              <a
+                href="https://soundcloud.com/pubrecords/tracks"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  background: '#ff5500',
+                  color: '#fff',
+                  padding: '4px 10px',
+                  borderRadius: '4px',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  textDecoration: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                Abrir no SoundCloud ↗
+              </a>
+            </div>
+            <iframe
+              width="100%"
+              height="280"
+              scrolling="no"
+              frameBorder="no"
+              allow="autoplay"
+              src="https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/pubrecords/tracks&color=%23ff5500&auto_play=false&hide_related=false&show_comments=true&show_user=true&show_reposts=false&show_teaser=true&visual=true"
+              style={{ display: 'block', border: 'none' }}
+              title="SoundCloud Player Pub Records"
+            />
+          </div>
           {/* PRATELEIRA DE DISCOS DE VINIL */}
           <div>
             <h4 style={{ margin: '0 0 12px 0', fontSize: '13px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>

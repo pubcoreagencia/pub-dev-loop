@@ -1,9 +1,10 @@
 import React from 'react';
 import { useStore } from '../store/useStore';
 import { TurntablePlayer } from './TurntablePlayer';
+import { ProjectSelector } from './ProjectSelector';
 
 export const OfficeHeader: React.FC = () => {
-  const { agents, tasks, health, activeProject, setActiveProject, streamStatus } = useStore();
+  const { agents, tasks, health, streamStatus } = useStore();
 
   const runningTasks = tasks.filter((t) => t.status === 'RUNNING').length;
   const completedTasks = tasks.filter((t) => t.status === 'COMPLETED').length;
@@ -57,17 +58,7 @@ export const OfficeHeader: React.FC = () => {
           <span>ORGANIZAÇÃO: <strong style={{ color: useStore.getState().awareness?.pulse.badgeColor === 'green' ? '#34d399' : useStore.getState().awareness?.pulse.badgeColor === 'amber' ? '#fbbf24' : useStore.getState().awareness?.pulse.badgeColor === 'red' ? '#f87171' : '#94a3b8' }}>{useStore.getState().awareness?.pulse.badgeLabel || 'HEALTHY'}</strong></span>
         </button>
 
-        <div className="project-selector-wrapper">
-          <label className="project-label">PROJETO:</label>
-          <input
-            type="text"
-            className="project-input"
-            value={activeProject}
-            onChange={(e) => setActiveProject(e.target.value)}
-            placeholder="ex: pub-dev-loop"
-            title="Projeto ativo no escritório"
-          />
-        </div>
+        <ProjectSelector />
       </div>
     </header>
   );

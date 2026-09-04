@@ -34,6 +34,9 @@ import {
   fetchPipelines,
   tickPipeline,
   decidePipelineCheckpoint,
+  fetchProjects,
+  createProject,
+  type GitProject,
 } from '../services/api';
 import {
   CEO_IDENTITY,
@@ -61,7 +64,11 @@ export interface OfficeState {
   messages: ChatMessage[];
   activities: OfficeActivityEvent[];
   pendingApprovals: ApprovalItem[];
+  projects: GitProject[];
   activeProject: string;
+  activeRepository: string;
+  fetchProjectsList: () => Promise<void>;
+  createNewProject: (name: string, description?: string, isPrivate?: boolean) => Promise<GitProject>;
   awareness?: OrganizationAwareness;
   skills: SkillRecord[];
   pipelines: AutonomousPipeline[];
@@ -94,7 +101,7 @@ export interface OfficeState {
   toggleAwarenessPanel: (open?: boolean) => void;
   selectAgent: (agent?: AgentDefinition | CeoIdentity) => void;
   selectTask: (task?: Task) => void;
-  setActiveProject: (project: string) => void;
+  setActiveProject: (project: string, repoUrl?: string) => void;
   submitObjective: (objective: string) => Promise<OrganizationalPlan>;
   executeStep: (plan: OrganizationalPlan, stepId: string) => Promise<Task>;
   executeAllSteps: (plan: OrganizationalPlan) => Promise<void>;
@@ -127,6 +134,43 @@ const activeSpatialStates = new Map<string, { spatialState: EmployeeSpatialState
 const processedEventIds = new Set<string>();
 
 let streamClient: OfficeEventStreamClient | null = null;
+function loadSavedMessages(): ChatMessage[] {
+  if (typeof window === 'undefined') return INITIAL_MESSAGES;
+  try {
+    const raw = localStorage.getItem('PDL_OFFICE_CHAT_HISTORY_V1');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (err) {
+    console.warn('Failed to load chat history from localStorage', err);
+  }
+  return INITIAL_MESSAGES;
+}
+
+function saveMessages(msgs: ChatMessage[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    const trimmed = msgs.slice(-200);
+    localStorage.setItem('PDL_OFFICE_CHAT_HISTORY_V1', JSON.stringify(trimmed));
+  } catch (err) {
+    console.warn('Failed to save chat history to localStorage', err);
+  }
+}
+
+function loadSavedActiveProject(): { project: string; repository: string } {
+  if (typeof window === 'undefined') {
+    return { project: 'pub-dev-loop', repository: 'https://github.com/pubcoreagencia/pub-dev-loop.git' };
+  }
+  try {
+    const project = localStorage.getItem('PDL_ACTIVE_PROJECT') || 'pub-dev-loop';
+    const repository = localStorage.getItem('PDL_ACTIVE_REPO') || `https://github.com/pubcoreagencia/${project}.git`;
+    return { project, repository };
+  } catch {
+    return { project: 'pub-dev-loop', repository: 'https://github.com/pubcoreagencia/pub-dev-loop.git' };
+  }
+}
+
 
 function deriveOperationalState(agentId: string, tasks: Task[], actionLoading: boolean, isChiefOfStaff: boolean): EmployeeOperationalState {
   if (isChiefOfStaff && actionLoading) {
@@ -178,10 +222,12 @@ export const useStore = create<OfficeState>((set, get) => ({
   activePlan: undefined,
   selectedAgent: undefined,
   selectedTask: undefined,
-  messages: INITIAL_MESSAGES,
+  messages: loadSavedMessages(),
   activities: [],
   pendingApprovals: [],
-  activeProject: 'pub-dev-loop',
+  projects: [],
+  activeProject: loadSavedActiveProject().project,
+  activeRepository: loadSavedActiveProject().repository,
   awareness: undefined,
   skills: [],
   pipelines: [],
@@ -780,9 +826,39 @@ export const useStore = create<OfficeState>((set, get) => ({
     set({ selectedTask: task });
   },
 
-  setActiveProject: (project) => {
-    set({ activeProject: project });
+  fetchProjectsList: async () => {
+    try {
+      const projects = await fetchProjects();
+      set({ projects });
+    } catch (err: any) {
+      console.warn('Failed to fetch projects list:', err.message);
+    }
+  },
+
+  createNewProject: async (name: string, description?: string, isPrivate?: boolean) => {
+    const created = await createProject(name, description, isPrivate);
+    set((s) => {
+      const exists = s.projects.some((p) => p.name === created.name);
+      return {
+        projects: exists ? s.projects : [created, ...s.projects],
+      };
+    });
+    get().setActiveProject(created.name, created.cloneUrl);
+    return created;
+  },
+
+  setActiveProject: (project, repoUrl) => {
+    const state = get();
+    const repository = repoUrl || (state.projects.find((p) => p.name === project)?.cloneUrl) || `https://github.com/pubcoreagencia/${project}.git`;
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('PDL_ACTIVE_PROJECT', project);
+        localStorage.setItem('PDL_ACTIVE_REPO', repository);
+      } catch {}
+    }
+    set({ activeProject: project, activeRepository: repository });
     get().initStream();
+    void get().loadData();
     void get().fetchAwarenessData();
     void get().fetchSkillsData();
     void get().fetchPipelinesData();
@@ -881,9 +957,13 @@ export const useStore = create<OfficeState>((set, get) => ({
     const fullMsg: ChatMessage = {
       ...msg,
       id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      timestamp: new Date().toLocaleTimeString('pt-BR'),
+      timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
     };
-    set((state) => ({ messages: [...state.messages, fullMsg] }));
+    set((state) => {
+      const nextMessages = [...state.messages, fullMsg];
+      saveMessages(nextMessages);
+      return { messages: nextMessages };
+    });
   },
 
   submitObjective: async (objectiveText: string) => {

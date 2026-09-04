@@ -136,7 +136,7 @@ export class PubDevLoopWorkerContainer extends Container<Env> {
           await triggerContainerWorker(this.env as Env);
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('[PubDevLoopWorkerContainer] Alarm execution error:', (err as Error).message);
     }
   }
@@ -147,7 +147,7 @@ export class PubDevLoopWorkerContainer extends Container<Env> {
         await (this as any).ctx.storage.setAlarm(Date.now() + ms);
         console.log(`[PubDevLoopWorkerContainer] Alarm scheduled for +${ms}ms.`);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('[PubDevLoopWorkerContainer] Failed to schedule alarm:', (err as Error).message);
     }
   }
@@ -172,7 +172,7 @@ export class PubDevLoopWorkerContainer extends Container<Env> {
         } else {
           this.stopActivityRenewal();
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('[PubDevLoopWorkerContainer] Activity check error:', (err as Error).message);
       }
     }, 20000);
@@ -325,7 +325,7 @@ async function ensureMigrations(pool: InstanceType<typeof Pool>): Promise<void> 
       });
     }
     migrationsChecked = true;
-  } catch (err) {
+  } catch (err: any) {
     console.error('[API Worker] Ensure migrations error:', (err as Error).message);
   }
 }
@@ -405,7 +405,7 @@ async function triggerContainerWorker(env: Env): Promise<void> {
       cancellationOptions: { portReadyTimeoutMS: 30000 },
     });
     console.log('[API Worker] Triggered container worker instance "main" with OpenRouter -> 9Router gateway policy.');
-  } catch (err) {
+  } catch (err: any) {
     console.error('[API Worker] Error triggering container worker:', (err as Error).message);
   }
 }
@@ -510,6 +510,208 @@ export default {
         return jsonResponse({
           organization: defaultOfficeOrganization.getOrganization(),
         });
+      }
+
+      // Office Git Projects List (based on GitHub repositories)
+      if (method === 'GET' && (path === '/office/projects' || path === '/projects')) {
+        const ghToken = env.GITHUB_TOKEN || env.PROTOTYPE_BOT_TOKEN || process.env.GITHUB_TOKEN || process.env.PROTOTYPE_BOT_TOKEN || '';
+        let repos: any[] = [];
+
+        if (ghToken) {
+          try {
+            // First attempt to fetch org repos for pubcoreagencia
+            let ghRes = await fetch('https://api.github.com/orgs/pubcoreagencia/repos?sort=updated&per_page=100', {
+              headers: {
+                'Authorization': `Bearer ${ghToken}`,
+                'User-Agent': 'PUB-DEV-LOOP-API',
+                'Accept': 'application/vnd.github.v3+json',
+              },
+            });
+
+            if (!ghRes.ok) {
+              // Fallback to authenticated user's repos
+              ghRes = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100', {
+                headers: {
+                  'Authorization': `Bearer ${ghToken}`,
+                  'User-Agent': 'PUB-DEV-LOOP-API',
+                  'Accept': 'application/vnd.github.v3+json',
+                },
+              });
+            }
+
+            if (ghRes.ok) {
+              const ghData = await ghRes.json();
+              if (Array.isArray(ghData)) {
+                repos = ghData.map((r) => ({
+                  name: r.name,
+                  fullName: r.full_name,
+                  cloneUrl: r.clone_url,
+                  htmlUrl: r.html_url,
+                  description: r.description || '',
+                  defaultBranch: r.default_branch || 'main',
+                  isPrivate: Boolean(r.private),
+                  updatedAt: r.updated_at,
+                }));
+              }
+            }
+          } catch (err: any) {
+            console.warn('[API Worker] GitHub repos fetch error:', err.message);
+          }
+        }
+
+        // Fallback list of known repos if GitHub API is unavailable
+        if (repos.length === 0) {
+          repos = [
+            {
+              name: 'pub-dev-loop',
+              fullName: 'pubcoreagencia/pub-dev-loop',
+              cloneUrl: 'https://github.com/pubcoreagencia/pub-dev-loop.git',
+              htmlUrl: 'https://github.com/pubcoreagencia/pub-dev-loop',
+              description: 'Autonomous Software Engineering Workforce and 3D Living Office',
+              defaultBranch: 'main',
+              isPrivate: false,
+              updatedAt: new Date().toISOString(),
+            },
+            {
+              name: 'pub-dev-loop-prototypes',
+              fullName: 'pubcoreagencia/pub-dev-loop-prototypes',
+              cloneUrl: 'https://github.com/pubcoreagencia/pub-dev-loop-prototypes.git',
+              htmlUrl: 'https://github.com/pubcoreagencia/pub-dev-loop-prototypes',
+              description: 'Persistent repository for PUB Prototype sessions',
+              defaultBranch: 'main',
+              isPrivate: true,
+              updatedAt: new Date().toISOString(),
+            },
+            {
+              name: 'pub-leads',
+              fullName: 'pubcoreagencia/pub-leads',
+              cloneUrl: 'https://github.com/pubcoreagencia/pub-leads.git',
+              htmlUrl: 'https://github.com/pubcoreagencia/pub-leads',
+              description: 'Lead generation and CRM pipeline',
+              defaultBranch: 'main',
+              isPrivate: false,
+              updatedAt: new Date().toISOString(),
+            },
+            {
+              name: 'pub-9router-cloud',
+              fullName: 'pubcoreagencia/pub-9router-cloud',
+              cloneUrl: 'https://github.com/pubcoreagencia/pub-9router-cloud.git',
+              htmlUrl: 'https://github.com/pubcoreagencia/pub-9router-cloud',
+              description: 'High-availability router proxy',
+              defaultBranch: 'main',
+              isPrivate: false,
+              updatedAt: new Date().toISOString(),
+            },
+          ];
+        }
+
+        return jsonResponse({ projects: repos });
+      }
+
+      // Office Create New Git Project (creates GitHub repository automatically)
+      if (method === 'POST' && (path === '/office/projects' || path === '/projects')) {
+        try {
+          const body = (await request.json().catch(() => ({}))) as any;
+          const { name, description = '', isPrivate = false } = body ?? {};
+          if (!name || typeof name !== 'string' || !name.trim()) {
+            return jsonResponse({ error: 'Project name is required' }, 400);
+          }
+
+          const sanitizedName = name
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9-_]/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '');
+
+          if (!sanitizedName) {
+            return jsonResponse({ error: 'Invalid project name' }, 400);
+          }
+
+          const ghToken = env.GITHUB_TOKEN || env.PROTOTYPE_BOT_TOKEN || process.env.GITHUB_TOKEN || process.env.PROTOTYPE_BOT_TOKEN || '';
+          if (!ghToken) {
+            // Local fallback simulation if token is not configured
+            const mockRepo = {
+              name: sanitizedName,
+              fullName: `pubcoreagencia/${sanitizedName}`,
+              cloneUrl: `https://github.com/pubcoreagencia/${sanitizedName}.git`,
+              htmlUrl: `https://github.com/pubcoreagencia/${sanitizedName}`,
+              description,
+              defaultBranch: 'main',
+              isPrivate: Boolean(isPrivate),
+              createdAt: new Date().toISOString(),
+            };
+            return jsonResponse({ project: mockRepo, created: true }, 201);
+          }
+
+          // Create repo on GitHub: try org first, then user
+          let ghCreateRes = await fetch('https://api.github.com/orgs/pubcoreagencia/repos', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${ghToken}`,
+              'User-Agent': 'PUB-DEV-LOOP-API',
+              'Content-Type': 'application/json',
+              'Accept': 'application/vnd.github.v3+json',
+            },
+            body: JSON.stringify({
+              name: sanitizedName,
+              description: description || `Repository for ${sanitizedName} managed by PUB DEV LOOP`,
+              private: Boolean(isPrivate),
+              auto_init: true,
+            }),
+          });
+
+          if (!ghCreateRes.ok) {
+            ghCreateRes = await fetch('https://api.github.com/user/repos', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${ghToken}`,
+                'User-Agent': 'PUB-DEV-LOOP-API',
+                'Content-Type': 'application/json',
+                'Accept': 'application/vnd.github.v3+json',
+              },
+              body: JSON.stringify({
+                name: sanitizedName,
+                description: description || `Repository for ${sanitizedName} managed by PUB DEV LOOP`,
+                private: Boolean(isPrivate),
+                auto_init: true,
+              }),
+            });
+          }
+
+          if (!ghCreateRes.ok) {
+            const errData = (await ghCreateRes.json().catch(() => ({}))) as any;
+            return jsonResponse({
+              error: errData.message || `Failed to create GitHub repository (${ghCreateRes.status})`,
+              details: errData,
+            }, ghCreateRes.status);
+          }
+
+          const ghRepo = (await ghCreateRes.json()) as any;
+          const createdProject = {
+            name: ghRepo.name,
+            fullName: ghRepo.full_name,
+            cloneUrl: ghRepo.clone_url,
+            htmlUrl: ghRepo.html_url,
+            description: ghRepo.description || '',
+            defaultBranch: ghRepo.default_branch || 'main',
+            isPrivate: Boolean(ghRepo.private),
+            createdAt: ghRepo.created_at,
+          };
+
+          defaultOfficeEventBus.publish({
+            type: 'OBJECTIVE_SUBMITTED',
+            actorId: 'ceo',
+            targetId: 'chief-of-staff',
+            project: createdProject.name,
+            summary: `Novo repositório Git criado no GitHub: ${createdProject.fullName}`,
+            payload: { project: createdProject },
+          });
+
+          return jsonResponse({ project: createdProject, created: true }, 201);
+        } catch (err: any) {
+          return jsonResponse({ error: err.message }, 500);
+        }
       }
 
       const officeAgentMatch = path.match(/^\/office\/agents\/([^\/]+)$/);
@@ -1316,7 +1518,7 @@ Humor The Office (Dwight Schrute + Creed Bratton). Responda dizendo como você v
             containerHealth,
             databaseConfigured: Boolean(env.DATABASE_URL && env.DATABASE_URL.trim().length > 0),
           }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        } catch (err) {
+        } catch (err: any) {
           return new Response(JSON.stringify({
             status: 'error',
             error: (err as Error).message,
@@ -1988,7 +2190,7 @@ Humor The Office (Dwight Schrute + Creed Bratton). Responda dizendo como você v
         status: 404,
         headers: { 'Content-Type': 'application/json' },
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error('[API Worker] Unhandled error:', err);
       return new Response(JSON.stringify({ error: (err as Error).message }), {
         status: 500,

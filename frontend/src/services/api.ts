@@ -306,3 +306,37 @@ export async function decidePipelineCheckpoint(
   const data = await res.json();
   return data.pipeline;
 }
+
+export interface GitProject {
+  name: string;
+  fullName: string;
+  cloneUrl: string;
+  htmlUrl: string;
+  description?: string;
+  defaultBranch?: string;
+  isPrivate?: boolean;
+  updatedAt?: string;
+}
+
+export async function fetchProjects(): Promise<GitProject[]> {
+  const res = await fetch(`${API_BASE}office/projects`);
+  if (!res.ok) throw new Error(`Failed to fetch projects: ${res.status}`);
+  if (!isJsonResponse(res)) throw new Error('Projects response not JSON');
+  const data = await res.json();
+  return (data.projects || []) as GitProject[];
+}
+
+export async function createProject(name: string, description?: string, isPrivate?: boolean): Promise<GitProject> {
+  const res = await fetch(`${API_BASE}office/projects`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, description, isPrivate }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to create project: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.project as GitProject;
+}
+
