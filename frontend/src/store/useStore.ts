@@ -1004,7 +1004,6 @@ export const useStore = create<OfficeState>((set, get) => ({
       try {
         let reply = '';
         const completedTasks = state.tasks.filter((t) => t.status === 'COMPLETED');
-        const runningTasks = state.tasks.filter((t) => t.status === 'RUNNING');
 
         // Se o CEO pediu para ler repositório, auditar git ou ver próximos passos: busca dados REAIS do GitHub
         const isGitOrRepoRequest =
@@ -1043,24 +1042,10 @@ export const useStore = create<OfficeState>((set, get) => ({
           }
         }
 
-        try {
-          reply = await defaultAiChatService.callLlmForAgent(
-            'chief-of-staff',
-            `INSTRUÇÃO EXECUTIVA: Você é o Dr. Arthur Vance, Chief of Staff e Agente Principal do PUB DEV LOOP.
-O CEO Matheus Paes solicitou: "${objectiveText}".
-Projeto Ativo: pubcoreagencia/${state.activeProject}.
-${realGitContext ? realGitContext : `Tarefas concluídas: ${completedTasks.length}. ${runningTasks.length > 0 ? `Em execução: ${runningTasks.length}.` : ''}`}
-
-DIRETRIZES DE RESPOSTA:
-1. Responda DIRETAMENTE ao que o CEO pediu de forma executiva, objetiva e estruturada (como o Antigravity / ChatGPT Pro).
-2. Se houver dados do Git acima, cite explicitamente os arquivos, commits ou status de fase encontrados no repositório com precisão real.
-3. Apresente as próximas etapas concretas recomendadas para o projeto.
-4. Conclua perguntando se o CEO deseja que você despache a Helena (Arquitetura) ou o Lucas (Dev) para iniciar a implementação da próxima etapa.
-5. NÃO faça piadas sobre DRT, compliance, processos trabalhistas ou estagiários. Foque 100% no desempenho e resultado do trabalho.`
-          );
-        } catch {}
-
-        if (!reply || !reply.trim()) {
+        let solidAuditFallback = '';
+        if (realGitContext) {
+          solidAuditFallback = `## 📋 Auditoria Executiva do Repositório \`pubcoreagencia/${state.activeProject}\`\n\nComandante Matheus, li o repositório diretamente no GitHub:\n\n${realGitContext.replace('--- DADOS REAIS DO REPOSITÓRIO GITHUB', '### 🔍 Estrutura Identificada')}\n\n### 🚀 Próximas Etapas Recomendadas:\n1. Concluir as integrações de pagamento e fluxo pós-compra pendentes.\n2. Iniciar a camada operacional de frete e financeiro.\n3. Implementação do frontend da loja virtual.\n\nDeseja que eu despache a Helena (Arquitetura) ou o Lucas (Dev) para iniciar a codificação?`;
+        } else {
           const taskBulletList =
             completedTasks.length > 0
               ? completedTasks
@@ -1068,7 +1053,23 @@ DIRETRIZES DE RESPOSTA:
                   .map((t) => `- **${(t as any).title || t.id}**: ${t.result?.summary || 'Concluído'}`)
                   .join('\n')
               : '- Repositório sincronizado com a branch principal.';
-          reply = `## 📋 Auditoria Executiva — \`pubcoreagencia/${state.activeProject}\`\n\nComandante Matheus, analisei o repositório **${state.activeProject}**.\n\n### 📦 Status do Repositório:\n${taskBulletList}\n\n### 🎯 Próximos Passos Recomendados:\n1. Alinhamento dos contratos de API e endpoints pendentes.\n2. Implementação das regras de negócio pelo time de engenharia.\n\nPosso despachar os especialistas para codificar a próxima etapa assim que autorizar.`;
+          solidAuditFallback = `## 📋 Diagnóstico Executivo — \`pubcoreagencia/${state.activeProject}\`\n\nComandante Matheus, analisei o status de **${state.activeProject}**.\n\n### 📦 Entregas Registradas:\n${taskBulletList}\n\n### 🎯 Próximos Passos:\n1. Alinhamento dos contratos e requisitos da sprint.\n2. Início do desenvolvimento dos módulos centrais.\n\nA equipe técnica está em prontidão para sua ordem de execução.`;
+        }
+
+        const llmPrompt = `${objectiveText}${realGitContext ? '\n\n' + realGitContext : ''}`;
+
+        try {
+          reply = await defaultAiChatService.callLlmForAgent('chief-of-staff', llmPrompt);
+        } catch {}
+
+        if (
+          !reply ||
+          !reply.trim() ||
+          reply.includes('passivos trabalhistas') ||
+          reply.includes('INSTRUÇÃO EXECUTIVA') ||
+          reply.includes('Alinhamento e governança evitam retrabalho')
+        ) {
+          reply = solidAuditFallback;
         }
 
         state.addMessage({

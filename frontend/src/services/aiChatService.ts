@@ -124,11 +124,35 @@ export class AiChatService {
       throw new Error(`Agent ${agentId} not found`);
     }
 
-    // TENTATIVA 1: Chamar diretamente o 9Router (que tem chave ativa e respondeu HTTP 200 no teste real)
+    // TENTATIVA 1: Para o Chief of Staff, chamar prioritariamente o Backend Worker /office/chat (que tem OpenRouter configurado e responde com modelo real)
+    if (agentId === 'chief-of-staff') {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 25000);
+        const res = await fetch('https://pub-dev-loop-api.contato-pubcore.workers.dev/office/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agentId, prompt: ceoPrompt }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (res.ok) {
+          const data = (await res.json()) as any;
+          if (data.reply && data.reply.trim().length > 0 && !data.reply.includes('Processando "')) {
+            useStore.getState().setActiveGateway('OPENROUTER');
+            return cleanCharacterReply(data.reply.trim());
+          }
+        }
+      } catch (backendErr) {
+        console.warn('[AI Service] Backend /office/chat failed for chief-of-staff, trying 9Router:', backendErr);
+      }
+    }
+
+    // TENTATIVA 2: Chamar 9Router
     for (const model of this.verifiedFreeModels) {
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 12000);
+        const timeout = setTimeout(() => controller.abort(), 15000);
 
         const response = await fetch(`${this.routerBaseUrl}/chat/completions`, {
           method: 'POST',
@@ -166,25 +190,27 @@ export class AiChatService {
       }
     }
 
-    // TENTATIVA 2: Backend Worker /office/chat
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-      const res = await fetch('https://pub-dev-loop-api.contato-pubcore.workers.dev/office/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agentId, prompt: ceoPrompt }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      if (res.ok) {
-        const data = await res.json() as any;
-        if (data.reply && data.reply.trim().length > 0 && !data.reply.includes('Processando "')) {
-          useStore.getState().setActiveGateway('OPENROUTER');
-          return data.reply.trim();
+    // TENTATIVA 3: Se não for chief-of-staff e 9Router falhar, tentar Backend Worker /office/chat
+    if (agentId !== 'chief-of-staff') {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 20000);
+        const res = await fetch('https://pub-dev-loop-api.contato-pubcore.workers.dev/office/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agentId, prompt: ceoPrompt }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (res.ok) {
+          const data = await res.json() as any;
+          if (data.reply && data.reply.trim().length > 0 && !data.reply.includes('Processando "')) {
+            useStore.getState().setActiveGateway('OPENROUTER');
+            return cleanCharacterReply(data.reply.trim());
+          }
         }
-      }
-    } catch {}
+      } catch {}
+    }
 
     // TENTATIVA 3: Motor semântico com réplica contextual de verdade baseada no vocabulário do usuário
     const lower = ceoPrompt.toLowerCase();

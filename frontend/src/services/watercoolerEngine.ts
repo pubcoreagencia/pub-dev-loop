@@ -235,14 +235,14 @@ export class WatercoolerEngine {
       ];
     }
 
-    // 3. Destino Específico: Dr. Arthur Vance
-    if (targetAgentId === 'chief-of-staff' || promptLower.includes('arthur') || promptLower.includes('plano') || promptLower.includes('sprint')) {
+    // 3. Destino Específico: Dr. Arthur Vance (Chief of Staff & Agente Principal)
+    if (targetAgentId === 'chief-of-staff' || promptLower.includes('arthur') || promptLower.includes('plano') || promptLower.includes('sprint') || promptLower.includes('git') || promptLower.includes('repo')) {
       return [
         {
           speakerId: 'chief-of-staff',
           senderName: 'Dr. Arthur Vance',
           senderRole: 'Chief of Staff',
-          content: `Diretriz anotada, Comandante Matheus. "Alinhamento e governança evitam retrabalho". Analisei o seu prompt sobre "${rawPrompt.slice(0, 40)}..." e estou alinhando os 4 especialistas para execução rigorosa sem criar passivos trabalhistas.`,
+          content: `Entendido, Comandante Matheus. Analisei sua solicitação com atenção. Estou pronto para detalhar a auditoria do repositório, definir as prioridades executivas e encaminhar as próximas etapas com máxima precisão.`,
           delayMs: 300,
         },
       ];
