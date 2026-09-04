@@ -163,6 +163,35 @@ export class PostgresPrototypeRepository implements PrototypeRepository {
     return fallbackSessions.get(id) || null;
   }
 
+  setFallbackSession(session: PrototypeSession): void {
+    if (session && session.id) {
+      fallbackSessions.set(session.id, session);
+    }
+  }
+
+  ensureFallbackSession(id: string, projectName: string): PrototypeSession {
+    const existing = fallbackSessions.get(id);
+    if (existing) return existing;
+    const cleanProject = (projectName || 'projeto-personalizado').trim().replace(/[^a-zA-Z0-9-_]/g, '-');
+    const session: PrototypeSession = {
+      id,
+      project: projectName || 'Projeto Personalizado',
+      repository: 'https://github.com/pubcoreagencia/pub-dev-loop-prototypes.git',
+      branch: `prototype/${cleanProject}/${id}`,
+      mode: 'PROTOTYPE',
+      status: 'READY',
+      previewUrl: `/prototype/sessions/${id}/preview/`,
+      previewRuntime: 'cloudflared',
+      workspacePath: `/tmp/pub-prototype/${id}`,
+      lastCheckpointSha: null,
+      promptCount: 1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    fallbackSessions.set(id, session);
+    return session;
+  }
+
   async listSessions(): Promise<PrototypeSession[]> {
     try {
       const r = await this.pool.query(`SELECT * FROM prototype_sessions ORDER BY updated_at DESC`);

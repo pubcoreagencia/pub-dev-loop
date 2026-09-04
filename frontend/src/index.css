@@ -111,7 +111,10 @@ code, pre, .mono-font, .crt-text, .sender-tag, .snippet-worker, .dep-tag {
 .header-status-ribbon {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  overflow: hidden;
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .status-badge {
@@ -120,10 +123,12 @@ code, pre, .mono-font, .crt-text, .sender-tag, .snippet-worker, .dep-tag {
   gap: 6px;
   background: #18120e;
   border: 1px solid var(--border-wood);
-  padding: 6px 12px;
+  padding: 5px 10px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .status-dot {

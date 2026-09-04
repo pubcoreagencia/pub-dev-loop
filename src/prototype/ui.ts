@@ -673,25 +673,50 @@ function addErrorCard(opts) {
 
 function clearStaleErrors() { $$('.error-card').forEach(el => el.closest('.message')?.remove()); }
 
-// === SIDEBAR ===
-async function loadProjects() {
-  (async () => {
+// === PERSISTENCE & SIDEBAR ===
+const LOCAL_PROJECTS_KEY = 'pub_prototype_local_projects_v2';
+
+function getLocalProjects() {
   try {
-    const r = await fetch('/prototype/sessions', {cache: 'no-store'});
-    if (!r.ok) throw new Error('Falha ao listar projetos: ' + r.status);
-    const data = await r.json();
-    const sessions = Array.isArray(data) ? data : [];
-    // Usar o ID da sessão como chave (único), não o nome do projeto.
-    // Isso evita que sessões com nomes similares sejam sobrescritas.
+    const raw = localStorage.getItem(LOCAL_PROJECTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function saveLocalProject(session) {
+  if (!session || !session.id) return;
+  try {
+    const list = getLocalProjects().filter(p => p.id !== session.id);
+    list.unshift({ ...session, updatedAt: new Date().toISOString() });
+    localStorage.setItem(LOCAL_PROJECTS_KEY, JSON.stringify(list.slice(0, 50)));
+  } catch {}
+}
+
+async function loadProjects() {
+  try {
+    const localSessions = getLocalProjects();
+    const headers = {};
+    if (localSessions.length > 0) {
+      headers['x-client-sessions'] = JSON.stringify(localSessions.map(s => ({ id: s.id, project: s.project })));
+    }
+    const r = await fetch('/prototype/sessions', { cache: 'no-store', headers }).catch(() => null);
+    const data = r && r.ok ? await r.json().catch(() => []) : [];
+    const serverSessions = Array.isArray(data) ? data : [];
+
     const sessionMap = new Map();
-    sessions.forEach(s => {
-      const key = (s.id || '').trim();
-      if (!key) return;
-      if (!sessionMap.has(key)) {
+    // 1. Sessões do servidor
+    serverSessions.forEach(s => {
+      const key = (s?.id || '').trim();
+      if (key) sessionMap.set(key, s);
+    });
+    // 2. Mescla sessões locais para que projetos criados nunca sumam em caso de reinício
+    localSessions.forEach(s => {
+      const key = (s?.id || '').trim();
+      if (key && !sessionMap.has(key)) {
         sessionMap.set(key, s);
       }
     });
-    // Coleta de projetos únicos por projeto (mantendo ordenação por updatedAt mais recente).
+
     const projectMap = new Map();
     sessionMap.forEach((s, key) => {
       const projKey = (s.project || '').trim().toLowerCase();
@@ -706,10 +731,7 @@ async function loadProjects() {
     renderProjects();
   } catch (e) {
     console.error('Failed to load projects:', e);
-    projectsCache = [];
-    renderProjects();
   }
-  })();
 }
 
 function renderProjects() {
@@ -748,23 +770,57 @@ async function confirmNewProject() {
   hideNewProjectModal();
   try {
     const r = await fetch('/prototype/sessions', { method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({project: name}) });
-    if (!r.ok) throw new Error('Failed to create');
+    if (!r.ok) throw new Error('Falha ao criar projeto no servidor');
     const session = await r.json();
+    saveLocalProject(session);
     localStorage.setItem(STORAGE_KEY, session.id);
     await loadProjects();
     await loadSession(session.id);
-  } catch (e) { addMessage('system', 'Erro ao criar projeto: ' + (e?.message || String(e))); }
+  } catch (e) {
+    // Fallback soberano: cria sessão localmente com UUID para nunca perder o projeto
+    const localId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'local-' + Date.now();
+    const fallbackSession = {
+      id: localId,
+      project: name,
+      repository: 'https://github.com/pubcoreagencia/pub-dev-loop-prototypes.git',
+      branch: 'prototype/' + name.toLowerCase().replace(/[^a-z0-9-_]/g, '-') + '/' + localId,
+      mode: 'PROTOTYPE',
+      status: 'READY',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    saveLocalProject(fallbackSession);
+    localStorage.setItem(STORAGE_KEY, localId);
+    await loadProjects();
+    await loadSession(localId);
+  }
 }
 
 // === LOAD SESSION ===
 async function loadSession(id) {
   loadSessionAt = Date.now();
-  const r = await fetch('/prototype/sessions/' + encodeURIComponent(id));
-  if (!r.ok) throw new Error('Sessão não encontrada');
-  const data = await r.json();
+  const proj = projectsCache.find(p => p.id === id) || getLocalProjects().find(p => p.id === id);
+  const projParam = proj?.project ? '?project=' + encodeURIComponent(proj.project) : '';
+  let data = null;
+  try {
+    const r = await fetch('/prototype/sessions/' + encodeURIComponent(id) + projParam);
+    if (r.ok) {
+      data = await r.json();
+    }
+  } catch {}
+
+  if (!data || !data.session) {
+    if (proj) {
+      data = { session: proj, checkpoints: [], tasks: [], messages: [] };
+    } else {
+      throw new Error('Sessão não encontrada');
+    }
+  }
+
   clearStaleErrors();
   sessionId = data.session.id;
   localStorage.setItem(STORAGE_KEY, sessionId);
+  saveLocalProject(data.session);
   $('chatHeaderTitle').textContent = data.session.project || 'Sem nome';
   $('sessionBox').textContent = sessionId;
   $('chat').innerHTML = '';
@@ -788,12 +844,23 @@ async function loadSession(id) {
   }
   setPreviewState('ready');
   $('previewUrl').textContent = directPreviewUrl;
-  $('previewUrl').href = directPreviewUrl;
-  $('previewUrlBar').style.display = 'flex';
 
-  const tasks = data.tasks || [];
-  const activeTask = tasks.find(t => ['QUEUED','ASSIGNED','RUNNING','TESTING'].includes(t.status));
-  if (activeTask) { currentTaskId = activeTask.id; activeTaskStatus = activeTask.status; $('send').classList.add('sending'); $('composeStatus').textContent = 'Construindo...'; startTaskTimer(); } else { currentTaskId = null; activeTaskStatus = null; $('send').classList.remove('sending'); $('composeStatus').textContent = ''; stopTaskTimer(); }
+  const activeTask = (data.tasks || []).find(t => ['QUEUED','ASSIGNED','RUNNING','TESTING'].includes(t.status));
+  if (activeTask) {
+    currentTaskId = activeTask.id;
+    activeTaskStatus = activeTask.status;
+    $('send').classList.add('sending');
+    $('composeStatus').textContent = 'Construindo...';
+    startTaskTimer();
+    startLivePoll(sessionId);
+  } else {
+    currentTaskId = null;
+    activeTaskStatus = null;
+    $('send').classList.remove('sending');
+    $('composeStatus').textContent = '';
+    stopTaskTimer();
+    stopLivePoll();
+  }
   attachEvents(id);
 }
 
@@ -955,6 +1022,91 @@ function updateSendButton() {
 }
 promptEl.addEventListener('input', () => { promptEl.style.height = 'auto'; promptEl.style.height = Math.min(promptEl.scrollHeight, 240) + 'px'; updateSendButton(); });
 promptEl.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!sendBtn.disabled) send(); } });
+// === REAL-TIME LIVE POLLING ===
+let livePollTimer = null;
+function stopLivePoll() {
+  if (livePollTimer) {
+    clearInterval(livePollTimer);
+    livePollTimer = null;
+  }
+}
+
+function startLivePoll(sessId) {
+  stopLivePoll();
+  let pollCount = 0;
+  const maxPolls = 60; // 90s (1.5s intervalo)
+
+  livePollTimer = setInterval(async () => {
+    pollCount++;
+    if (pollCount > maxPolls || !sessionId || sessionId !== sessId) {
+      stopLivePoll();
+      if (activeTaskStatus === 'RUNNING') {
+        activeTaskStatus = null;
+        sendBtn.classList.remove('sending');
+        promptEl.disabled = false;
+        $('composeStatus').textContent = '';
+        updateSendButton();
+        stopTaskTimer();
+      }
+      return;
+    }
+
+    try {
+      const proj = projectsCache.find(p => p.id === sessId);
+      const projParam = proj?.project ? '?project=' + encodeURIComponent(proj.project) : '';
+      const r = await fetch('/prototype/sessions/' + encodeURIComponent(sessId) + projParam, { cache: 'no-store' });
+      if (!r.ok) return;
+      const data = await r.json();
+      const messages = data.messages || [];
+      const tasks = data.tasks || [];
+      const currentTask = currentTaskId ? tasks.find(t => t.id === currentTaskId) : tasks[0];
+
+      // Detecta novas mensagens do agente em tempo real
+      const renderedElements = Array.from(chat.querySelectorAll('.message'));
+      const renderedKeys = new Set(renderedElements.map(el => el.dataset.key).filter(Boolean));
+      let hasNewReply = false;
+
+      messages.forEach(m => {
+        const role = m.role === 'user' ? 'user' : (m.role === 'assistant' || m.role === 'agent') ? 'agent' : 'system';
+        const msgKey = role + ':' + (m.content || '').trim().slice(0, 100);
+        if (!renderedKeys.has(msgKey)) {
+          addMessage(role, m.content, m.createdAt || m.timestamp);
+          renderedKeys.add(msgKey);
+          if (role === 'agent' || role === 'system') {
+            hasNewReply = true;
+          }
+        }
+      });
+
+      const isTaskDone = currentTask && (currentTask.status === 'COMPLETED' || currentTask.status === 'FAILED');
+      const isSessionReady = data.session?.status === 'READY';
+      const hasAgentMessage = messages.some(m => m.role === 'assistant' || m.role === 'agent');
+
+      if (isTaskDone || (hasNewReply && hasAgentMessage)) {
+        stopLivePoll();
+        stopTaskTimer();
+        activeTaskStatus = null;
+        currentTaskId = null;
+        sendBtn.classList.remove('sending');
+        promptEl.disabled = false;
+        $('composeStatus').textContent = 'Pronto';
+        $('chatHeaderStatus').textContent = 'Pronto';
+        const dot = $('chatHeaderMeta').querySelector('.dot');
+        if (dot) dot.style.background = 'var(--success)';
+        updateSendButton();
+
+        // Atualiza preview em tempo real
+        const directPreviewUrl = '/prototype/sessions/' + encodeURIComponent(sessId) + '/preview/';
+        const iframe = $('iframe');
+        if (iframe) iframe.src = directPreviewUrl;
+        setPreviewState('ready');
+      }
+    } catch (err) {
+      console.warn('[LivePoll] Erro ao sincronizar sessão:', err);
+    }
+  }, 1500);
+}
+
 sendBtn.addEventListener('click', send);
 async function send() {
   const text = promptEl.value.trim();
@@ -970,6 +1122,9 @@ async function send() {
     startTaskTimer();
     addTimeline([{label: 'Seu pedido', status: 'done'}, {label: 'Agente iniciado', status: 'active'}]);
     
+    // Inicia polling dinâmico em tempo real para responder sem depender de F5
+    startLivePoll(sessionId);
+
     const r = await fetch('/prototype/sessions/' + encodeURIComponent(sessionId) + '/prompts', {
       method: 'POST',
       headers: {'content-type': 'application/json'},
@@ -988,10 +1143,12 @@ async function send() {
     promptEl.value = text;
     updateSendButton();
     stopTaskTimer();
+    stopLivePoll();
     $('composeStatus').textContent = '';
     addErrorCard({type: 'AGENT_ERROR', desc: e?.message || 'Erro ao enviar'});
   }
 }
+
 
 // === PREVIEW CONTROLS ===
 $('refresh').addEventListener('click', () => {

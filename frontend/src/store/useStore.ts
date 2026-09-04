@@ -987,13 +987,21 @@ export const useStore = create<OfficeState>((set, get) => ({
     });
 
     const trimmed = objectiveText.trim();
+
+    // Detecta pedidos de resumo/status/auditoria explícitos
     const isSummaryOrStatusRequest =
-      /(\bresumo\b|\bo que foi feito\b|\bo que vocês fizeram\b|\bo que voce fez\b|\bquais tarefas\b|\bquais etapas\b|\brelatório\b|\brelatorio\b|\bstatus\b|\bcomo está\b|\bcomo esta\b|\bme atualize\b|\batualização\b|\batualizacao\b|\bprogresso\b|\bconcluiu\b|\bresultado\b)/i.test(
+      /(\bresumo\b|\bme d[eê] um resumo\b|\bfaz um resumo\b|\bo que foi feito\b|\bo que vocês fizeram\b|\bo que voce fez\b|\bquais tarefas\b|\bquais etapas\b|\brelatório\b|\brelatorio\b|\bstatus\b|\bcomo está\b|\bcomo esta\b|\bme atualize\b|\batualização\b|\batualizacao\b|\bprogresso\b|\bconcluiu\b|\bresultado\b|\bauditoria\b|\bme mostre\b|\bme mostra\b|\bme passa\b|\bo que tem no git\b|\bestado atual\b|\bcomo anda\b|\bcomo estamos\b|\bnosso momento\b|\bnosso estado\b|\bqual o estado\b|\bhistórico\b|\bhistorico\b)/i.test(
         trimmed
       );
 
+    // Detecta comandos imperativos de leitura/auditoria (ex: "LEIA O GIT", "ANALISE O REPOSITÓRIO")
+    const isImperativeAuditCommand =
+      /^(leia|analise|analisa|audite|audita|me d[eê]|verifique|verifica|inspecione|inspeciona|me passe|me mostre|me mostra|me conta|conta|faz uma|fa[çc]a uma|faz um|fa[çc]a um|cheque|checa|avalie|avalia|mostre|mostra)\b/i.test(trimmed) &&
+      /(git|reposit[oó]rio|repo|branch|c[oó]digo|codebase|projeto|momento|estado|hist[oó]rico|auditoria|situa[çc][aã]o|sprint|entrega|deploy|commit)/i.test(trimmed);
+
     const isQuestion =
       isSummaryOrStatusRequest ||
+      isImperativeAuditCommand ||
       trimmed.endsWith('?') ||
       /^(quem|qual|quais|como|onde|quando|por que|porque|por quê|o que|quanto|quantos|me explica|pode explicar|sabe me dizer|me fala|explica|status|como está|como andam|o que acha|diga|me diga|me passe)\b/i.test(
         trimmed
@@ -1002,39 +1010,25 @@ export const useStore = create<OfficeState>((set, get) => ({
     if (isQuestion) {
       try {
         let reply = '';
-        if (isSummaryOrStatusRequest) {
+        if (isSummaryOrStatusRequest || isImperativeAuditCommand) {
           const completedTasks = state.tasks.filter((t) => t.status === 'COMPLETED');
+          const runningTasks = state.tasks.filter((t) => t.status === 'RUNNING');
           const taskBulletList = completedTasks.length > 0
             ? completedTasks
                 .slice(0, 8)
-                .map((t) => `- **${(t as any).title || t.id}**: ${t.result?.summary || 'Concluído com sucesso e homologado.'}`)
+                .map((t) => `- **${(t as any).title || t.id}**: ${t.result?.summary || 'Concluído e homologado.'}`)
                 .join('\n')
-            : '- Nenhuma etapa avulsa executada recentemente; repositório alinhado com a branch principal.';
+            : '- Sem tarefas concluídas recentemente no contexto desta sessão.';
+          const runningLine = runningTasks.length > 0
+            ? `\n**Em execução:** ${runningTasks.map((t) => (t as any).title || t.id).join(', ')}`
+            : '';
 
-          const defaultSummary = `## 📋 Relatório Executivo de Atividades — PUB DEV LOOP
-
-Comandante Matheus Paes, segue o resumo consolidado das atividades no projeto **\`${state.activeProject}\`**:
-
-### 🏛️ Status do Desenvolvimento
-- **Repositório Git:** \`pubcoreagencia/${state.activeProject}\`
-- **Etapas Homologadas:**
-${taskBulletList}
-
-### 👥 Alinhamento dos Especialistas:
-1. **Helena Rostova (Arquiteta):** Especificações de interfaces, contratos de dados e arquitetura técnica.
-2. **Lucas Silveira (Desenvolvedor):** Implementação de funcionalidades, barramento assíncrono e resiliência.
-3. **Beatriz Mendes (Code Reviewer):** Auditoria de segurança, tipagem estrita TypeScript e aprovação de lint.
-4. **Tiago Rocha (QA Engineer):** Homologação de testes automatizados e validação de estabilidade.
-
----
-### 🚀 Próximos Passos (Next Steps):
-1. **Homologação e Deploy:** Atualização e build final no ambiente Cloudflare / Staging.
-2. **Novos Despachos:** A equipe está em prontidão para sua próxima diretriz técnica.`;
+          const defaultSummary = `**Projeto:** \`pubcoreagencia/${state.activeProject}\`${runningLine}\n\n**Entregas recentes:**\n${taskBulletList}\n\n**Equipe em standby:** Helena · Lucas · Beatriz · Tiago — aguardando próxima diretriz.`;
 
           try {
             reply = await defaultAiChatService.callLlmForAgent(
               'chief-of-staff',
-              `O CEO Matheus Paes solicitou um resumo do que foi feito no projeto ${state.activeProject}. Como Dr. Arthur Vance (Chief of Staff), apresente um relatório executivo claro, no estilo do Antigravity, contendo: o que foi desenvolvido e entregue por Helena, Lucas, Beatriz e Tiago, o status atual do repositório pubcoreagencia/${state.activeProject}, e os próximos passos recomendados.`
+              `INSTRUÇÃO: Você é Dr. Arthur Vance, Chief of Staff do PUB DEV LOOP. Responda DIRETO à pergunta do CEO sem introdução longa. CEO perguntou: "${objectiveText}". Projeto ativo: ${state.activeProject}. Tarefas concluídas: ${completedTasks.length}. ${runningTasks.length > 0 ? `Em execução: ${runningTasks.length}.` : ''} Use no máximo 4 parágrafos curtos. Seja objetivo, sem markdown excessivo.`
             );
           } catch {}
 
@@ -1045,12 +1039,12 @@ ${taskBulletList}
           try {
             reply = await defaultAiChatService.callLlmForAgent(
               'chief-of-staff',
-              `O CEO Matheus Paes fez a seguinte pergunta direta no comando: "${objectiveText}" (Projeto ativo: ${state.activeProject}). Responda com clareza executiva, precisão técnica e no papel do Dr. Arthur Vance, Chief of Staff do PUB DEV LOOP.`
+              `INSTRUÇÃO: Você é Dr. Arthur Vance, Chief of Staff. Responda de forma concisa e direta à pergunta do CEO: "${objectiveText}" (Projeto: ${state.activeProject}). Máximo 3 parágrafos, sem rodeios.`
             );
           } catch {}
 
           if (!reply || !reply.trim()) {
-            reply = `Comandante Matheus, em relação a "${trimmed.slice(0, 45)}": nossas frentes no repositório **${state.activeProject}** estão sincronizadas. A equipe está pronta para rodar qualquer nova diretriz ou disparar o fluxo autônomo assim que você ordenar.`;
+            reply = `Comandante, sobre "${trimmed.slice(0, 60)}": repositório **${state.activeProject}** sincronizado. Equipe em standby.`;
           }
         }
 

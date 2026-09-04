@@ -1608,6 +1608,19 @@ Humor The Office (Dwight Schrute + Creed Bratton). Responda dizendo como você v
       // 4. GET /prototype/sessions (List Prototype Sessions)
       if (method === 'GET' && path === '/prototype/sessions') {
         const prototypes = getPrototypesRepository(env);
+        const clientSessionsHeader = request.headers.get('x-client-sessions');
+        if (clientSessionsHeader) {
+          try {
+            const parsed = JSON.parse(clientSessionsHeader);
+            if (Array.isArray(parsed)) {
+              for (const cs of parsed) {
+                if (cs?.id && cs?.project) {
+                  prototypes.ensureFallbackSession(cs.id, cs.project);
+                }
+              }
+            }
+          } catch {}
+        }
         const sessions = await prototypes.listSessions();
         return jsonResponse(sessions);
       }
@@ -1617,18 +1630,23 @@ Humor The Office (Dwight Schrute + Creed Bratton). Responda dizendo como você v
       if (sessionDetailMatch && method === 'GET') {
         const id = sessionDetailMatch[1];
         const prototypes = getPrototypesRepository(env);
-        const session = await prototypes.getSession(id);
+        let session = await prototypes.getSession(id);
         if (!session) {
-          return new Response(JSON.stringify({ error: 'Session not found' }), {
-            status: 404,
-            headers: { 'Content-Type': 'application/json' },
-          });
+          const projectName = url.searchParams.get('project') || request.headers.get('x-project-name');
+          if (projectName && projectName.trim()) {
+            session = prototypes.ensureFallbackSession(id, projectName.trim());
+          } else {
+            return new Response(JSON.stringify({ error: 'Session not found' }), {
+              status: 404,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
         }
         const tasksRepo = getRepository(env);
         let filteredTasks: any[] = [];
         try {
           const allTasks = await tasksRepo.list();
-          filteredTasks = allTasks.filter((t: any) => t.prototypeSessionId === session.id);
+          filteredTasks = allTasks.filter((t: any) => t.prototypeSessionId === session!.id);
         } catch {}
         const checkpoints = await prototypes.listCheckpoints(session.id);
         const messages = await prototypes.listMessages(session.id);
