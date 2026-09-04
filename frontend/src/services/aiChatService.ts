@@ -1,3 +1,31 @@
+function cleanCharacterReply(text: string): string {
+  let cleaned = text.trim();
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  if (cleaned.includes("Here's a thinking process") || cleaned.includes("Thinking Process:")) {
+    const lines = cleaned.split('\n');
+    let contentLines: string[] = [];
+    let pastThinking = false;
+    for (const line of lines) {
+      if (line.includes('**Response:**') || line.includes('**Resposta:**') || line.includes('Response:') || line.includes('Resposta:')) {
+        pastThinking = true;
+        continue;
+      }
+      if (pastThinking) {
+        contentLines.push(line);
+      }
+    }
+    if (contentLines.length > 0) {
+      cleaned = contentLines.join('\n').trim();
+    } else {
+      const parts = cleaned.split(/\n\s*\n/);
+      const candidates = parts.filter(p => !p.toLowerCase().includes('thinking process') && !p.trim().startsWith('1.') && !p.trim().startsWith('2.') && !p.trim().startsWith('*') && !p.trim().startsWith('-'));
+      if (candidates.length > 0) {
+        cleaned = candidates[candidates.length - 1].trim();
+      }
+    }
+  }
+  return cleaned.replace(/^["']|["']$/g, '').trim();
+}
 /**
  * AI Chat Service for The Office PUB DEV LOOP
  * 100% FREE MODELS Verified & Working on 9Router & OpenRouter
@@ -67,12 +95,13 @@ Responda diretamente ao que o CEO Matheus Paes falou, de forma paranoica e destr
 
 export class AiChatService {
   // Lista de modelos 100% FREE verificados e testados com HTTP 200 no 9Router
+  // 100% FREE MODELS TESTADOS E APROVADOS: Respostas diretas sem vazamento de raciocínio
   private verifiedFreeModels = [
-    'nvidia/nemotron-3.5-lightning:free',
-    'nvidia/nemotron-3-super-120b-a12b:free',
     'minimax/minimax-m2.7:free',
-    'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+    'minimax/minimax-m3:free',
     'inclusionai/ling-3.0-flash-fin:free',
+    'google/gemma-4-26b-a4b-it:free',
+    'nvidia/nemotron-3.5-lightning:free',
   ];
 
   private routerBaseUrl = 'https://pub-9router.contato-pubcore.workers.dev/v1';
@@ -112,7 +141,7 @@ export class AiChatService {
               },
             ],
             temperature: 0.88,
-            max_tokens: 250,
+            max_tokens: 350,
           }),
           signal: controller.signal,
         });
@@ -122,7 +151,7 @@ export class AiChatService {
           const data = await response.json() as any;
           const content = data.choices?.[0]?.message?.content;
           if (content && content.trim().length > 0) {
-            return content.trim();
+            return cleanCharacterReply(content);
           }
         }
       } catch (e) {

@@ -1,3 +1,31 @@
+function cleanCharacterReply(text: string): string {
+  let cleaned = text.trim();
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  if (cleaned.includes("Here's a thinking process") || cleaned.includes("Thinking Process:")) {
+    const lines = cleaned.split('\n');
+    let contentLines: string[] = [];
+    let pastThinking = false;
+    for (const line of lines) {
+      if (line.includes('**Response:**') || line.includes('**Resposta:**') || line.includes('Response:') || line.includes('Resposta:')) {
+        pastThinking = true;
+        continue;
+      }
+      if (pastThinking) {
+        contentLines.push(line);
+      }
+    }
+    if (contentLines.length > 0) {
+      cleaned = contentLines.join('\n').trim();
+    } else {
+      const parts = cleaned.split(/\n\s*\n/);
+      const candidates = parts.filter(p => !p.toLowerCase().includes('thinking process') && !p.trim().startsWith('1.') && !p.trim().startsWith('2.') && !p.trim().startsWith('*') && !p.trim().startsWith('-'));
+      if (candidates.length > 0) {
+        cleaned = candidates[candidates.length - 1].trim();
+      }
+    }
+  }
+  return cleaned.replace(/^["']|["']$/g, '').trim();
+}
 import { Container, getContainer } from '@cloudflare/containers';
 import pkg from 'pg';
 const { Pool } = pkg;
@@ -776,11 +804,11 @@ Humor The Office (Dwight Schrute + Creed Bratton). Responda dizendo como você v
           const openRouterUrl = env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
           // 100% FREE MODELS NO OPENROUTER - Zero custos de API
           const openRouterModels = [
-            'nvidia/nemotron-3.5-lightning:free',
-            'nvidia/nemotron-3-super-120b-a12b:free',
             'minimax/minimax-m2.7:free',
-            'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+            'minimax/minimax-m3:free',
             'inclusionai/ling-3.0-flash-fin:free',
+            'google/gemma-4-26b-a4b-it:free',
+            'nvidia/nemotron-3.5-lightning:free',
           ];
 
           let reply: string | null = null;
@@ -806,14 +834,14 @@ Humor The Office (Dwight Schrute + Creed Bratton). Responda dizendo como você v
                       { role: 'user', content: `O CEO Matheus Paes disse: "${prompt}". Responda em português como seu personagem, sendo consciente do que ele falou e mantendo seu humor negro único.` },
                     ],
                     temperature: 0.85,
-                    max_tokens: 220,
+                    max_tokens: 350,
                   }),
                 });
                 if (res.ok) {
                   const data = await res.json() as any;
                   const text = data.choices?.[0]?.message?.content;
                   if (text && text.trim().length > 0) {
-                    reply = text.trim();
+                    reply = cleanCharacterReply(text);
                     usedGateway = 'openrouter';
                     usedModel = model;
                     break;
@@ -829,11 +857,11 @@ Humor The Office (Dwight Schrute + Creed Bratton). Responda dizendo como você v
             const routerKey = env.ROUTER_API_KEY || '';
             // 100% FREE MODELS VERIFICADOS E ATIVOS COM 200 OK
             const routerModels = [
-              'nvidia/nemotron-3.5-lightning:free',
-              'nvidia/nemotron-3-super-120b-a12b:free',
               'minimax/minimax-m2.7:free',
-              'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+              'minimax/minimax-m3:free',
               'inclusionai/ling-3.0-flash-fin:free',
+              'google/gemma-4-26b-a4b-it:free',
+              'nvidia/nemotron-3.5-lightning:free',
             ];
 
             for (const model of routerModels) {
