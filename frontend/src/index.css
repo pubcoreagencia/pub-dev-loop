@@ -934,10 +934,156 @@ code, pre, .mono-font, .crt-text, .sender-tag, .snippet-worker, .dep-tag {
 }
 
 .chat-text {
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 13.5px;
+  line-height: 1.6;
   color: #f1f5f9;
   user-select: text;
+  word-break: break-word;
+}
+
+.formatted-chat-content {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: #f1f5f9;
+  user-select: text;
+  word-break: break-word;
+}
+
+.chief-content-layout {
+  letter-spacing: 0.2px;
+}
+
+.chat-heading {
+  margin: 12px 0 6px 0;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.chat-heading-1 {
+  font-size: 16px;
+  color: #38bdf8;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.25);
+  padding-bottom: 4px;
+}
+
+.chat-heading-2 {
+  font-size: 14.5px;
+  color: #fde047;
+  border-bottom: 1px solid rgba(253, 224, 71, 0.2);
+  padding-bottom: 3px;
+}
+
+.chat-heading-3,
+.chat-heading-4 {
+  font-size: 13.5px;
+  color: #34d399;
+}
+
+.chat-paragraph {
+  margin: 8px 0;
+  line-height: 1.65;
+  color: #e2e8f0;
+}
+
+.chat-bullet-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 5px 0 5px 4px;
+  line-height: 1.55;
+}
+
+.bullet-marker {
+  color: #38bdf8;
+  font-size: 12px;
+  line-height: 1.6;
+  flex-shrink: 0;
+}
+
+.bullet-body {
+  flex: 1;
+  color: #e2e8f0;
+}
+
+.chat-bold {
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.chat-inline-code {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: #7dd3fc;
+}
+
+.chat-code-card {
+  margin: 10px 0;
+  border-radius: 6px;
+  background: #090d16;
+  border: 1px solid #1e293b;
+  overflow: hidden;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+.chat-code-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: #111827;
+  border-bottom: 1px solid #1e293b;
+}
+
+.chat-code-lang {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #94a3b8;
+  letter-spacing: 0.5px;
+}
+
+.chat-copy-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #e2e8f0;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.chat-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: #38bdf8;
+  color: #38bdf8;
+}
+
+.chat-code-pre {
+  margin: 0;
+  padding: 12px;
+  overflow-x: auto;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #e2e8f0;
+  background: transparent;
+}
+
+.chat-link {
+  color: #38bdf8;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.15s;
+}
+
+.chat-link:hover {
+  color: #7dd3fc;
 }
 
 .thinking-bubble {

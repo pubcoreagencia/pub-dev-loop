@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { PlanViewer } from './PlanViewer';
+import { FormattedChatMessage } from './FormattedChatMessage';
 import { defaultWatercoolerEngine } from '../services/watercoolerEngine';
 import { defaultAiChatService, OFFICE_AGENTS_AI_PROFILES } from '../services/aiChatService';
 
@@ -294,7 +295,9 @@ export const GlobalOfficeChat: React.FC = () => {
                   {msg.senderRole && <span className="sender-role">{msg.senderRole}</span>}
                   <span className="msg-time">{msg.timestamp || ''}</span>
                 </div>
-                <div className="chat-text">{msg.content}</div>
+                <div className="chat-text">
+                  <FormattedChatMessage content={msg.content} isChief={isChief} />
+                </div>
                 {msg.plan && <PlanViewer plan={msg.plan} />}
               </div>
             </div>

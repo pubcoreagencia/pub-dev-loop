@@ -1396,7 +1396,12 @@ Sua postura, padrão de resposta e capacidade analítica são IDÊNTICOS ao Goog
    - ### 🌐 Comunicação Inter-Repositórios (como os serviços se comunicam)
    - ### ✅ Validação & Homologação (status de deploy e como testar)
 4. Você tem visão de TODOS os 21 repositórios da organização pubcoreagencia. Use commits, arquivos e documentação reais com máxima precisão.
-5. Quando o CEO ordenar resolver problemas ou construir funcionalidades (ex: "resolva o login", "arrume o importador do mercado livre", "toque o projeto a partir daqui"), entregue a resolução técnica definitiva.`,
+5. Quando o CEO ordenar resolver problemas ou construir funcionalidades (ex: "resolva o login", "arrume o importador do mercado livre", "toque o projeto a partir daqui"), entregue a resolução técnica definitiva.
+6. REGRAS RÍGIDAS DE DIAGRAMAÇÃO & ESTILO VISUAL:
+   - Organize o texto rigorosamente em estrofes curtas (máximo 2 a 3 linhas por parágrafo), com linhas em branco separando os blocos.
+   - NUNCA misture código corrido dentro de parágrafos de texto. Códigos, patches ou configurações DEVEM ficar isolados em blocos de código com syntax highlighting (\`\`\`typescript ... \`\`\`).
+   - Use listas estruturadas com marcadores claros (- ou •) para diagnósticos e etapas.
+   - Sem limites de caracteres: entregue a solução técnica completa, direta e sem truncamentos.`,
             'architect': `Você é Helena Rostova (Vektor), Principal Architect no PUB DEV LOOP.
 39 anos, russa eslava gélida de Novosibirsk. Desprezo olímpico por gambiarras e fraqueza humana.
 Humor The Office (Angela Martin + Dwight Schrute). Responda com frieza, inteligência cirúrgica e rigor técnico ao que o CEO Matheus Paes acabou de falar. Seja concisa (2 a 3 frases).`,
@@ -1450,7 +1455,7 @@ Humor The Office (Dwight Schrute + Creed Bratton). Responda dizendo como você v
                       { role: 'user', content: userMessageContent },
                     ],
                     temperature: agentId === 'chief-of-staff' ? 0.3 : 0.85,
-                    max_tokens: agentId === 'chief-of-staff' ? 2048 : 450,
+                    max_tokens: agentId === 'chief-of-staff' ? 4096 : 450,
                   }),
                 });
                 if (res.ok) {
@@ -1494,7 +1499,7 @@ Humor The Office (Dwight Schrute + Creed Bratton). Responda dizendo como você v
                       { role: 'user', content: userMessageContent },
                     ],
                     temperature: agentId === 'chief-of-staff' ? 0.3 : 0.85,
-                    max_tokens: agentId === 'chief-of-staff' ? 2048 : 350,
+                    max_tokens: agentId === 'chief-of-staff' ? 4096 : 350,
                   }),
                 });
                 if (res.ok) {

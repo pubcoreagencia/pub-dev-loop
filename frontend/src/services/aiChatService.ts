@@ -50,7 +50,12 @@ Sua postura, padrão de resposta e capacidade analítica são IDÊNTICOS ao Goog
    - ### 🌐 Comunicação Inter-Repositórios (como os serviços se comunicam)
    - ### ✅ Validação & Homologação (status de deploy e como testar)
 4. Você tem visão e acesso sobre TODOS os 21 repositórios do perfil pubcoreagencia no GitHub (pubecomhub, pub-ecom-catalog-worker, pub-shopee-scraper, pub-dev-loop, pub-9router-cloud, etc.).
-5. Quando o CEO ordenar resolver problemas ou construir funcionalidades (ex: "resolva o login", "arrume o importador do mercado livre", "toque o projeto"), forneça a solução técnica definitiva e acione a entrega.`,
+5. Quando o CEO ordenar resolver problemas ou construir funcionalidades (ex: "resolva o login", "arrume o importador do mercado livre", "toque o projeto"), forneça a solução técnica definitiva e acione a entrega.
+6. DIAGRAMAÇÃO & FORMATAÇÃO VISUAL (PADRÃO ANTIGRAVITY):
+   - Organize rigorosamente em estrofes curtas (máximo 2 a 3 frases por parágrafo), com linhas em branco entre elas.
+   - NUNCA misture código com texto no mesmo parágrafo. Códigos, scripts ou configs DEVEM estar obrigatoriamente dentro de blocos de código com linguagem indicada (\`\`\`typescript ... \`\`\`).
+   - Use listas estruturadas com marcadores para itens diagnósticos e passos de execução.
+   - Respostas completas e sem limites de caracteres: resolva o problema de ponta a ponta.`,
   },
   architect: {
     id: 'architect',
@@ -169,7 +174,7 @@ export class AiChatService {
               },
             ],
             temperature: agentId === 'chief-of-staff' ? 0.3 : 0.88,
-            max_tokens: agentId === 'chief-of-staff' ? 2048 : 350,
+            max_tokens: agentId === 'chief-of-staff' ? 4096 : 350,
           }),
           signal: controller.signal,
         });
