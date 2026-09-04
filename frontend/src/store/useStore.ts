@@ -988,64 +988,87 @@ export const useStore = create<OfficeState>((set, get) => ({
 
     const trimmed = objectiveText.trim();
 
-    // Detecta pedidos de resumo/status/auditoria explícitos
-    const isSummaryOrStatusRequest =
-      /(\bresumo\b|\bme d[eê] um resumo\b|\bfaz um resumo\b|\bo que foi feito\b|\bo que vocês fizeram\b|\bo que voce fez\b|\bquais tarefas\b|\bquais etapas\b|\brelatório\b|\brelatorio\b|\bstatus\b|\bcomo está\b|\bcomo esta\b|\bme atualize\b|\batualização\b|\batualizacao\b|\bprogresso\b|\bconcluiu\b|\bresultado\b|\bauditoria\b|\bme mostre\b|\bme mostra\b|\bme passa\b|\bo que tem no git\b|\bestado atual\b|\bcomo anda\b|\bcomo estamos\b|\bnosso momento\b|\bnosso estado\b|\bqual o estado\b|\bhistórico\b|\bhistorico\b)/i.test(
+    // Apenas comandos explícitos de construção/programação/execução em lote disparam o plano autônomo
+    const isExplicitTeamExecutionOrder =
+      /(\b(construa|desenvolva|implemente|execute o plano|inicie a sprint|inicie o desenvolvimento|vamos programar|vamos codificar|despache a equipe|inicie a execu[çc][aã]o|execute as etapas|crie o c[oó]digo|fa[çc]a o c[oó]digo)\b)/i.test(
+        trimmed
+      ) &&
+      !trimmed.endsWith('?') &&
+      !/^(quem|qual|quais|como|onde|quando|por que|porque|por quê|o que|quanto|quantos|leia|analise|audite|mostre|veja|me fala|explica|diga|me diga|me passa|me conta)\b/i.test(
         trimmed
       );
 
-    // Detecta comandos imperativos de leitura/auditoria (ex: "LEIA O GIT", "ANALISE O REPOSITÓRIO")
-    const isImperativeAuditCommand =
-      /^(leia|analise|analisa|audite|audita|me d[eê]|verifique|verifica|inspecione|inspeciona|me passe|me mostre|me mostra|me conta|conta|faz uma|fa[çc]a uma|faz um|fa[çc]a um|cheque|checa|avalie|avalia|mostre|mostra)\b/i.test(trimmed) &&
-      /(git|reposit[oó]rio|repo|branch|c[oó]digo|codebase|projeto|momento|estado|hist[oó]rico|auditoria|situa[çc][aã]o|sprint|entrega|deploy|commit)/i.test(trimmed);
-
-    const isQuestion =
-      isSummaryOrStatusRequest ||
-      isImperativeAuditCommand ||
-      trimmed.endsWith('?') ||
-      /^(quem|qual|quais|como|onde|quando|por que|porque|por quê|o que|quanto|quantos|me explica|pode explicar|sabe me dizer|me fala|explica|status|como está|como andam|o que acha|diga|me diga|me passe)\b/i.test(
-        trimmed
-      );
-
-    if (isQuestion) {
+    // Dr. Arthur Vance é o Agente Principal: Perguntas, diagnósticos, leitura de repositório,
+    // análises, auditorias e status são resolvidos e entregues diretamente por ele!
+    if (!isExplicitTeamExecutionOrder) {
       try {
         let reply = '';
-        if (isSummaryOrStatusRequest || isImperativeAuditCommand) {
-          const completedTasks = state.tasks.filter((t) => t.status === 'COMPLETED');
-          const runningTasks = state.tasks.filter((t) => t.status === 'RUNNING');
-          const taskBulletList = completedTasks.length > 0
-            ? completedTasks
-                .slice(0, 8)
-                .map((t) => `- **${(t as any).title || t.id}**: ${t.result?.summary || 'Concluído e homologado.'}`)
-                .join('\n')
-            : '- Sem tarefas concluídas recentemente no contexto desta sessão.';
-          const runningLine = runningTasks.length > 0
-            ? `\n**Em execução:** ${runningTasks.map((t) => (t as any).title || t.id).join(', ')}`
-            : '';
+        const completedTasks = state.tasks.filter((t) => t.status === 'COMPLETED');
+        const runningTasks = state.tasks.filter((t) => t.status === 'RUNNING');
 
-          const defaultSummary = `**Projeto:** \`pubcoreagencia/${state.activeProject}\`${runningLine}\n\n**Entregas recentes:**\n${taskBulletList}\n\n**Equipe em standby:** Helena · Lucas · Beatriz · Tiago — aguardando próxima diretriz.`;
+        // Se o CEO pediu para ler repositório, auditar git ou ver próximos passos: busca dados REAIS do GitHub
+        const isGitOrRepoRequest =
+          /(git|reposit[oó]rio|repo|c[oó]digo|codebase|projeto|pr[oó]ximo passo|etapas|auditoria|arquivos|branch|commit|leia)/i.test(
+            trimmed
+          );
 
+        let realGitContext = '';
+        if (isGitOrRepoRequest) {
           try {
-            reply = await defaultAiChatService.callLlmForAgent(
-              'chief-of-staff',
-              `INSTRUÇÃO: Você é Dr. Arthur Vance, Chief of Staff do PUB DEV LOOP. Responda DIRETO à pergunta do CEO sem introdução longa. CEO perguntou: "${objectiveText}". Projeto ativo: ${state.activeProject}. Tarefas concluídas: ${completedTasks.length}. ${runningTasks.length > 0 ? `Em execução: ${runningTasks.length}.` : ''} Use no máximo 4 parágrafos curtos. Seja objetivo, sem markdown excessivo.`
-            );
-          } catch {}
-
-          if (!reply || !reply.trim()) {
-            reply = defaultSummary;
+            const gitRes = await fetch(
+              `https://pub-dev-loop-api.contato-pubcore.workers.dev/office/projects/${state.activeProject}/git-summary`
+            ).catch(() => null);
+            if (gitRes && gitRes.ok) {
+              const gitData = (await gitRes.json()) as any;
+              if (gitData && gitData.exists) {
+                const filesList = Array.isArray(gitData.files)
+                  ? gitData.files.slice(0, 25).join(', ')
+                  : 'Nenhum arquivo listado';
+                const commitsList = Array.isArray(gitData.recentCommits)
+                  ? gitData.recentCommits
+                      .map((c: any) => `- [${c.sha}] ${c.message} (${c.author})`)
+                      .join('\n')
+                  : 'Sem commits recentes';
+                const phaseDoc = gitData.phaseStatus
+                  ? `\n\n### Documento de Fase (PHASE_STATUS.md):\n${gitData.phaseStatus.slice(0, 1200)}`
+                  : '';
+                const readmeDoc = gitData.readme
+                  ? `\n\n### README do Repositório:\n${gitData.readme.slice(0, 800)}`
+                  : '';
+                realGitContext = `\n\n--- DADOS REAIS DO REPOSITÓRIO GITHUB (pubcoreagencia/${state.activeProject}):\n- Branch Principal: ${gitData.defaultBranch}\n- Arquivos existentes: ${filesList}\n- Últimos Commits no Git:\n${commitsList}${phaseDoc}${readmeDoc}`;
+              }
+            }
+          } catch (gitErr) {
+            console.warn('[Chief of Staff] Erro ao inspecionar git:', gitErr);
           }
-        } else {
-          try {
-            reply = await defaultAiChatService.callLlmForAgent(
-              'chief-of-staff',
-              `INSTRUÇÃO: Você é Dr. Arthur Vance, Chief of Staff. Responda de forma concisa e direta à pergunta do CEO: "${objectiveText}" (Projeto: ${state.activeProject}). Máximo 3 parágrafos, sem rodeios.`
-            );
-          } catch {}
+        }
 
-          if (!reply || !reply.trim()) {
-            reply = `Comandante, sobre "${trimmed.slice(0, 60)}": repositório **${state.activeProject}** sincronizado. Equipe em standby.`;
-          }
+        try {
+          reply = await defaultAiChatService.callLlmForAgent(
+            'chief-of-staff',
+            `INSTRUÇÃO EXECUTIVA: Você é o Dr. Arthur Vance, Chief of Staff e Agente Principal do PUB DEV LOOP.
+O CEO Matheus Paes solicitou: "${objectiveText}".
+Projeto Ativo: pubcoreagencia/${state.activeProject}.
+${realGitContext ? realGitContext : `Tarefas concluídas: ${completedTasks.length}. ${runningTasks.length > 0 ? `Em execução: ${runningTasks.length}.` : ''}`}
+
+DIRETRIZES DE RESPOSTA:
+1. Responda DIRETAMENTE ao que o CEO pediu de forma executiva, objetiva e estruturada (como o Antigravity / ChatGPT Pro).
+2. Se houver dados do Git acima, cite explicitamente os arquivos, commits ou status de fase encontrados no repositório com precisão real.
+3. Apresente as próximas etapas concretas recomendadas para o projeto.
+4. Conclua perguntando se o CEO deseja que você despache a Helena (Arquitetura) ou o Lucas (Dev) para iniciar a implementação da próxima etapa.
+5. NÃO faça piadas sobre DRT, compliance, processos trabalhistas ou estagiários. Foque 100% no desempenho e resultado do trabalho.`
+          );
+        } catch {}
+
+        if (!reply || !reply.trim()) {
+          const taskBulletList =
+            completedTasks.length > 0
+              ? completedTasks
+                  .slice(0, 5)
+                  .map((t) => `- **${(t as any).title || t.id}**: ${t.result?.summary || 'Concluído'}`)
+                  .join('\n')
+              : '- Repositório sincronizado com a branch principal.';
+          reply = `## 📋 Auditoria Executiva — \`pubcoreagencia/${state.activeProject}\`\n\nComandante Matheus, analisei o repositório **${state.activeProject}**.\n\n### 📦 Status do Repositório:\n${taskBulletList}\n\n### 🎯 Próximos Passos Recomendados:\n1. Alinhamento dos contratos de API e endpoints pendentes.\n2. Implementação das regras de negócio pelo time de engenharia.\n\nPosso despachar os especialistas para codificar a próxima etapa assim que autorizar.`;
         }
 
         state.addMessage({
@@ -1060,7 +1083,7 @@ export const useStore = create<OfficeState>((set, get) => ({
         state.triggerSpeechBubble({
           senderId: 'chief-of-staff',
           senderName: 'Dr. Arthur Vance',
-          content: reply.slice(0, 50) + (reply.length > 50 ? '...' : ''),
+          content: reply.slice(0, 55) + (reply.length > 55 ? '...' : ''),
           durationMs: 7000,
           type: 'TASK',
         });

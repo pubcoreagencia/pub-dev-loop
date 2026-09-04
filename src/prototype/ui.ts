@@ -717,17 +717,9 @@ async function loadProjects() {
       }
     });
 
-    const projectMap = new Map();
-    sessionMap.forEach((s, key) => {
-      const projKey = (s.project || '').trim().toLowerCase();
-      if (!projKey) return;
-      const existing = projectMap.get(projKey);
-      if (!existing || new Date(s.updatedAt) > new Date(existing.updatedAt)) {
-        projectMap.set(projKey, { ...s, id: key });
-      }
-    });
-    projectsCache = Array.from(projectMap.values())
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    // Cada sessão/projeto tem seu ID único garantido — nunca colapsa projetos por nome
+    projectsCache = Array.from(sessionMap.values())
+      .sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
     renderProjects();
   } catch (e) {
     console.error('Failed to load projects:', e);
@@ -1198,6 +1190,15 @@ async function initApp() {
   initSplitter();
   setPreviewState('idle');
   renderChatEmpty();
+
+  // 1. Renderiza IMEDIATAMENTE os projetos locais salvos no navegador (0ms delay no F5)
+  const localSessions = getLocalProjects();
+  if (localSessions.length > 0) {
+    projectsCache = [...localSessions];
+    renderProjects();
+  }
+
+  // 2. Sincroniza em segundo plano com o servidor
   await loadProjects();
   let targetId = localStorage.getItem(STORAGE_KEY);
   if (!targetId || !projectsCache.some(p => p.id === targetId)) {

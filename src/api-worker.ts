@@ -753,6 +753,92 @@ export default {
         }
       }
 
+      // Office Git Project Summary & Real Content Audit
+      const gitSummaryMatch = path.match(/^\/office\/projects\/([^\/]+)\/git-summary$/);
+      if (method === 'GET' && gitSummaryMatch) {
+        const projectName = gitSummaryMatch[1];
+        const ghToken = env.GITHUB_TOKEN || env.PROTOTYPE_BOT_TOKEN || process.env.GITHUB_TOKEN || process.env.PROTOTYPE_BOT_TOKEN || '';
+        const headers: Record<string, string> = {
+          'User-Agent': 'PUB-DEV-LOOP-API',
+          'Accept': 'application/vnd.github.v3+json',
+        };
+        if (ghToken) {
+          headers['Authorization'] = `Bearer ${ghToken}`;
+        }
+
+        try {
+          // 1. Informações básicas do repositório
+          const repoRes = await fetch(`https://api.github.com/repos/pubcoreagencia/${projectName}`, { headers });
+          if (!repoRes.ok) {
+            return jsonResponse({
+              exists: false,
+              project: projectName,
+              error: 'Repositório não encontrado no GitHub da organização pubcoreagencia.',
+            }, 404);
+          }
+          const repoData = await repoRes.json() as any;
+          const defaultBranch = repoData.default_branch || 'main';
+
+          // 2. Commits recentes
+          let recentCommits: any[] = [];
+          try {
+            const commitsRes = await fetch(`https://api.github.com/repos/pubcoreagencia/${projectName}/commits?per_page=5`, { headers });
+            if (commitsRes.ok) {
+              const commitsData = await commitsRes.json() as any[];
+              if (Array.isArray(commitsData)) {
+                recentCommits = commitsData.map(c => ({
+                  sha: (c.sha || '').slice(0, 7),
+                  message: c.commit?.message?.split('\n')?.[0] || '',
+                  author: c.commit?.author?.name || c.author?.login || 'desconhecido',
+                  date: c.commit?.author?.date || '',
+                }));
+              }
+            }
+          } catch {}
+
+          // 3. Árvore de arquivos na branch principal
+          let files: string[] = [];
+          try {
+            const treeRes = await fetch(`https://api.github.com/repos/pubcoreagencia/${projectName}/git/trees/${defaultBranch}`, { headers });
+            if (treeRes.ok) {
+              const treeData = await treeRes.json() as any;
+              if (Array.isArray(treeData.tree)) {
+                files = treeData.tree.map((item: any) => item.path);
+              }
+            }
+          } catch {}
+
+          // 4. Leitura dos documentos essenciais se existirem (PHASE_STATUS.md, README.md)
+          let phaseStatusContent = '';
+          let readmeContent = '';
+          try {
+            if (files.includes('PHASE_STATUS.md')) {
+              const phaseRes = await fetch(`https://raw.githubusercontent.com/pubcoreagencia/${projectName}/${defaultBranch}/PHASE_STATUS.md`);
+              if (phaseRes.ok) phaseStatusContent = await phaseRes.text();
+            }
+            if (files.includes('README.md')) {
+              const readmeRes = await fetch(`https://raw.githubusercontent.com/pubcoreagencia/${projectName}/${defaultBranch}/README.md`);
+              if (readmeRes.ok) readmeContent = (await readmeRes.text()).slice(0, 1500);
+            }
+          } catch {}
+
+          return jsonResponse({
+            exists: true,
+            project: projectName,
+            fullName: repoData.full_name,
+            defaultBranch,
+            description: repoData.description || '',
+            updatedAt: repoData.updated_at,
+            files,
+            recentCommits,
+            phaseStatus: phaseStatusContent || null,
+            readme: readmeContent || null,
+          });
+        } catch (err: any) {
+          return jsonResponse({ error: 'Erro ao consultar GitHub: ' + err.message }, 500);
+        }
+      }
+
       const officeAgentMatch = path.match(/^\/office\/agents\/([^\/]+)$/);
       if (method === 'GET' && officeAgentMatch) {
         const id = officeAgentMatch[1];
