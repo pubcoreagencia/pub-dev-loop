@@ -1180,6 +1180,18 @@ $('confirmNewProject').addEventListener('click', confirmNewProject);
 $('newProjectName').addEventListener('keydown', e => { if (e.key === 'Enter') confirmNewProject(); if (e.key === 'Escape') hideNewProjectModal(); });
 $('newProjectModal').addEventListener('click', e => { if (e.target === $('newProjectModal')) hideNewProjectModal(); });
 $('collapseSidebar').addEventListener('click', () => { $('sidebar').classList.toggle('collapsed'); const app = document.querySelector('.app'); if ($('sidebar').classList.contains('collapsed')) app.style.gridTemplateColumns = '40px 1fr 6px 1.2fr'; else app.style.gridTemplateColumns = '280px 1fr 6px 1.2fr'; });
+if ($('chatHeaderTitle')) {
+  $('chatHeaderTitle').style.cursor = 'pointer';
+  $('chatHeaderTitle').title = 'Clique para abrir a lista de projetos';
+  $('chatHeaderTitle').addEventListener('click', () => {
+    const sidebar = $('sidebar');
+    if (sidebar) {
+      sidebar.classList.remove('collapsed');
+      const app = document.querySelector('.app');
+      if (app) app.style.gridTemplateColumns = '280px 1fr 6px 1.2fr';
+    }
+  });
+}
 
 // === MOBILE ===
 $('mobilePreviewShowBtn').addEventListener('click', () => { document.getElementById('app').classList.add('preview-mode'); });

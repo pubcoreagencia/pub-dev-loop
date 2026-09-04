@@ -29,14 +29,27 @@ export const ProjectSelector: React.FC = () => {
 
   // Close dropdown on outside click
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setIsOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
   }, []);
+
+  const handleToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = !isOpen;
+    setIsOpen(next);
+    if (next) {
+      void fetchProjectsList();
+    }
+  };
 
   const filteredProjects = projects.filter((p) =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -90,27 +103,30 @@ export const ProjectSelector: React.FC = () => {
   };
 
   return (
-    <div className="project-selector-wrapper" ref={dropdownRef} style={{ position: 'relative' }}>
+    <div className="project-selector-wrapper" ref={dropdownRef} style={{ position: 'relative', zIndex: 1000 }}>
       {/* Botão de Seleção Principal no Topo */}
       <button
+        id="activeProjectButton"
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        aria-expanded={isOpen}
+        onClick={handleToggle}
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
-          background: 'rgba(15, 23, 42, 0.85)',
-          border: '1px solid #38bdf8',
+          background: isOpen ? 'rgba(2, 132, 199, 0.3)' : 'rgba(15, 23, 42, 0.95)',
+          border: isOpen ? '1px solid #38bdf8' : '1px solid #0284c7',
           borderRadius: '6px',
-          padding: '5px 12px',
+          padding: '6px 14px',
           color: '#f8fafc',
           cursor: 'pointer',
           fontSize: '11px',
           fontWeight: 600,
-          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+          boxShadow: isOpen ? '0 0 12px rgba(56, 189, 248, 0.4)' : '0 2px 8px rgba(0, 0, 0, 0.4)',
           transition: 'all 0.2s ease',
+          userSelect: 'none',
         }}
-        title={`Projeto Ativo: ${activeProject}\nRepositório: ${activeRepository}`}
+        title={`Projeto Ativo: ${activeProject}\nRepositório: ${activeRepository}\nClique para alternar ou criar novos repositórios.`}
       >
         <span style={{ fontSize: '13px' }}>📂</span>
         <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', lineHeight: '1.2' }}>
@@ -127,15 +143,15 @@ export const ProjectSelector: React.FC = () => {
         <div
           style={{
             position: 'absolute',
-            top: 'calc(100% + 6px)',
+            top: 'calc(100% + 8px)',
             right: 0,
-            width: '320px',
-            maxHeight: '420px',
+            width: '340px',
+            maxHeight: '440px',
             backgroundColor: '#0b0f19',
-            border: '1px solid #1e293b',
+            border: '1px solid #38bdf8',
             borderRadius: '8px',
-            boxShadow: '0 12px 32px rgba(0, 0, 0, 0.7)',
-            zIndex: 1000,
+            boxShadow: '0 16px 40px rgba(0, 0, 0, 0.9), 0 0 15px rgba(56, 189, 248, 0.2)',
+            zIndex: 99999,
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
