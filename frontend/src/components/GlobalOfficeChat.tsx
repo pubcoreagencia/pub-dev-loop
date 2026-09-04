@@ -17,7 +17,7 @@ export const GlobalOfficeChat: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'COMMAND' | 'WATERCOOLER'>('COMMAND');
   const [inputText, setInputText] = useState('');
-  const [isAiResponding, setIsAiResponding] = useState(false);
+  const [respondingAgent, setRespondingAgent] = useState<{ id: string; name: string; role: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -26,11 +26,11 @@ export const GlobalOfficeChat: React.FC = () => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, actionLoading, pendingApprovals, activeTab, isAiResponding]);
+  }, [messages, actionLoading, pendingApprovals, activeTab, respondingAgent]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim() || actionLoading || isAiResponding) return;
+    if (!inputText.trim() || actionLoading || Boolean(respondingAgent)) return;
     const text = inputText.trim();
     setInputText('');
 
@@ -47,8 +47,7 @@ export const GlobalOfficeChat: React.FC = () => {
         type: 'TEXT',
       });
 
-      // Executa chamada real para os gateways configurados (OpenRouter / 9Router / Fallback)
-      setIsAiResponding(true);
+      // Executa chamada real exibindo o nome de cada funcionário respondendo
       const agentKeys = selectedAgent && selectedAgent.id !== 'ceo'
         ? [selectedAgent.id]
         : ['developer', 'architect', 'reviewer', 'qa-engineer', 'chief-of-staff'];
@@ -57,6 +56,9 @@ export const GlobalOfficeChat: React.FC = () => {
         const agentId = agentKeys[i];
         const profile = OFFICE_AGENTS_AI_PROFILES[agentId];
         if (!profile) continue;
+
+        // Atualiza para o nome exato do funcionário que está respondendo
+        setRespondingAgent({ id: agentId, name: profile.name, role: profile.role });
 
         try {
           const aiContent = await defaultAiChatService.callLlmForAgent(agentId, text);
@@ -88,7 +90,7 @@ export const GlobalOfficeChat: React.FC = () => {
           }
         }
       }
-      setIsAiResponding(false);
+      setRespondingAgent(null);
     }
   };
 
@@ -225,11 +227,15 @@ export const GlobalOfficeChat: React.FC = () => {
           );
         })}
 
-        {isAiResponding && (
+        {respondingAgent && (
           <div className="chat-bubble-row agent">
             <div className="chat-bubble-wrapper thinking-bubble">
+              <div className="chat-sender-header" style={{ marginBottom: '4px' }}>
+                <span className="sender-tag" style={{ color: '#38bdf8' }}>{respondingAgent.name}</span>
+                <span className="sender-role">{respondingAgent.role}</span>
+              </div>
               <div className="thinking-dots">
-                ⚡ Processando réplica via Grok / 9Router...
+                💬 {respondingAgent.name} está respondendo...
               </div>
             </div>
           </div>
@@ -261,19 +267,19 @@ export const GlobalOfficeChat: React.FC = () => {
           }
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          disabled={actionLoading || isAiResponding}
+          disabled={actionLoading || Boolean(respondingAgent)}
         />
         <button
           type="submit"
           className="btn-dispatch-objective"
-          disabled={actionLoading || isAiResponding || !inputText.trim()}
+          disabled={actionLoading || Boolean(respondingAgent) || !inputText.trim()}
           style={{
             background: activeTab === 'COMMAND'
               ? 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)'
               : 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
           }}
         >
-          {actionLoading || isAiResponding ? '...' : activeTab === 'COMMAND' ? 'DESPACHAR' : 'FALAR'}
+          {actionLoading || Boolean(respondingAgent) ? '...' : activeTab === 'COMMAND' ? 'DESPACHAR' : 'FALAR'}
         </button>
       </form>
     </div>
