@@ -24,27 +24,69 @@ export const TurntablePlayer: React.FC = () => {
     isPlayingVinyl,
     activeAlbumId,
     vinylVolume,
+    isVinylShuffle,
+    isRadioMode,
     togglePlayVinyl,
-    selectVinylAlbum,
     setVinylVolume,
     setJukeboxOpen,
+    setVinylShuffle,
+    toggleRadioMode,
+    playNextVinylTrack,
+    playPrevVinylTrack,
   } = useStore();
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const widgetRef = useRef<any>(null);
 
   const currentAlbum = VINYL_ALBUMS.find((a) => a.id === activeAlbumId) || VINYL_ALBUMS[0];
-  const currentTrackIndex = VINYL_ALBUMS.findIndex((a) => a.id === currentAlbum.id);
 
-  const handleNext = () => {
-    const nextIdx = (currentTrackIndex + 1) % VINYL_ALBUMS.length;
-    selectVinylAlbum(VINYL_ALBUMS[nextIdx].id);
-  };
+  // Listener global de postMessage do SoundCloud para avançar faixa automaticamente no fim
+  useEffect(() => {
+    const handleMessage = (e: MessageEvent) => {
+      try {
+        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+        if (
+          data &&
+          (data.method === 'finish' ||
+            data.event === 'finish' ||
+            data.event === 'onFinish' ||
+            (data.widgetId && data.method === 'finish'))
+        ) {
+          console.log('[TurntablePlayer] SoundCloud track finish detected via postMessage, advancing track!');
+          playNextVinylTrack();
+        }
+      } catch {}
+    };
 
-  const handlePrev = () => {
-    const prevIdx = (currentTrackIndex - 1 + VINYL_ALBUMS.length) % VINYL_ALBUMS.length;
-    selectVinylAlbum(VINYL_ALBUMS[prevIdx].id);
-  };
+    window.addEventListener('message', handleMessage);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [playNextVinylTrack]);
+
+  // Watchdog ativo: detecta fim da música por polling de posição para garantir avanço contínuo
+  useEffect(() => {
+    if (!isPlayingVinyl) return;
+
+    let hasTriggered = false;
+    const interval = setInterval(() => {
+      if (widgetRef.current && !hasTriggered) {
+        try {
+          widgetRef.current.getPosition((pos: number) => {
+            widgetRef.current.getDuration((dur: number) => {
+              if (dur > 0 && pos > 0 && dur - pos <= 1800) {
+                console.log('[TurntablePlayer Watchdog] Fim da música alcançado, avançando automaticamente!');
+                hasTriggered = true;
+                playNextVinylTrack();
+              }
+            });
+          });
+        } catch {}
+      }
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, [isPlayingVinyl, activeAlbumId, playNextVinylTrack]);
 
   // Inicializa o SoundCloud Widget API no iframe e sincroniza volume
   useEffect(() => {
@@ -58,16 +100,14 @@ export const TurntablePlayer: React.FC = () => {
           widgetRef.current = widget;
 
           widget.bind(window.SC.Widget.Events.READY, () => {
-            // Aplica o volume atual da vitrola (0 a 100)
             widget.setVolume(vinylVolume);
           });
 
           widget.bind(window.SC.Widget.Events.FINISH, () => {
-            // Avança para a próxima faixa automaticamente
-            handleNext();
+            console.log('[TurntablePlayer] SoundCloud FINISH event triggered!');
+            playNextVinylTrack();
           });
 
-          // Define volume imediatamente caso já esteja pronto
           widget.setVolume(vinylVolume);
         }
       } catch (err) {
@@ -75,14 +115,13 @@ export const TurntablePlayer: React.FC = () => {
       }
     };
 
-    // Tenta configurar logo ou aguarda o iframe carregar
     setupWidget();
     iframe.addEventListener('load', setupWidget);
 
     return () => {
       iframe.removeEventListener('load', setupWidget);
     };
-  }, [activeAlbumId, isPlayingVinyl]);
+  }, [activeAlbumId, isPlayingVinyl, playNextVinylTrack]);
 
   // Sincroniza o volume do som do SoundCloud em tempo real quando o slider é alterado
   useEffect(() => {
@@ -145,27 +184,76 @@ export const TurntablePlayer: React.FC = () => {
         </span>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
         <button
-          onClick={handlePrev}
+          onClick={playPrevVinylTrack}
           title="Faixa Anterior"
-          style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '11px' }}
+          style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '11px', padding: '2px' }}
         >
           ⏮
         </button>
         <button
           onClick={togglePlayVinyl}
           title={isPlayingVinyl ? 'Pausar' : 'Tocar'}
-          style={{ background: 'transparent', border: 'none', color: '#38bdf8', cursor: 'pointer', fontSize: '13px' }}
+          style={{ background: 'transparent', border: 'none', color: '#38bdf8', cursor: 'pointer', fontSize: '13px', padding: '2px' }}
         >
           {isPlayingVinyl ? '⏸' : '▶'}
         </button>
         <button
-          onClick={handleNext}
+          onClick={playNextVinylTrack}
           title="Próxima Faixa"
-          style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '11px' }}
+          style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '11px', padding: '2px' }}
         >
           ⏭
+        </button>
+        <button
+          onClick={() => setVinylShuffle(!isVinylShuffle)}
+          title={isVinylShuffle ? 'Modo Aleatório Ativado (Clique para desativar)' : 'Ativar Modo Aleatório (Shuffle)'}
+          style={{
+            background: isVinylShuffle ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
+            border: isVinylShuffle ? '1px solid rgba(56, 189, 248, 0.5)' : '1px solid transparent',
+            borderRadius: '4px',
+            color: isVinylShuffle ? '#38bdf8' : '#64748b',
+            cursor: 'pointer',
+            fontSize: '11px',
+            padding: '1px 4px',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          🔀
+        </button>
+        <button
+          onClick={toggleRadioMode}
+          title={isRadioMode ? 'Rádio PUB Records Ativa (Clique para desativar)' : 'Ativar Modo Rádio 24h com o CEO Matheus Paes'}
+          style={{
+            background: isRadioMode ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+            border: isRadioMode ? '1.5px solid #ef4444' : '1px solid #475569',
+            borderRadius: '6px',
+            color: isRadioMode ? '#f87171' : '#94a3b8',
+            cursor: 'pointer',
+            fontSize: '10px',
+            padding: '2px 7px',
+            fontWeight: 800,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            transition: 'all 0.2s ease',
+            boxShadow: isRadioMode ? '0 0 12px rgba(239, 68, 68, 0.5)' : 'none',
+          }}
+        >
+          <span>📻</span>
+          <span>RÁDIO</span>
+          {isRadioMode && (
+            <span
+              style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                background: '#ef4444',
+                boxShadow: '0 0 6px #ef4444',
+              }}
+            />
+          )}
         </button>
       </div>
 
@@ -185,17 +273,26 @@ export const TurntablePlayer: React.FC = () => {
         <span style={{ fontSize: '9px', color: '#64748b', minWidth: '22px' }}>{vinylVolume}%</span>
       </div>
 
-      {/* SoundCloud Audio Stream Oficial da Pub Records com controle de volume pelo Widget API */}
+      {/* SoundCloud Audio Stream Oficial da Pub Records - Unthrottled offscreen iframe */}
       {isPlayingVinyl && (
         <iframe
           ref={iframeRef}
-          width="1"
-          height="1"
+          width="300"
+          height="80"
           scrolling="no"
           frameBorder="no"
           allow="autoplay"
           src={soundcloudSrc}
-          style={{ position: 'absolute', width: '1px', height: '1px', opacity: 0, pointerEvents: 'none' }}
+          style={{
+            position: 'fixed',
+            left: '-9999px',
+            top: '-9999px',
+            width: '300px',
+            height: '80px',
+            opacity: 0.01,
+            pointerEvents: 'none',
+            zIndex: -1,
+          }}
           title="SoundCloud Stream"
         />
       )}

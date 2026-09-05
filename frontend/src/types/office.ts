@@ -66,6 +66,10 @@ export interface AvatarProfile {
   accentColor: string;
   initials: string;
   hairColor?: string;
+  shirtColor?: string;
+  hasGlasses?: boolean;
+  hasHeadphones?: boolean;
+  role?: string;
   suitColor?: string;
   tieColor?: string;
   accessory?: string;

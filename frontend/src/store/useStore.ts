@@ -49,6 +49,7 @@ import {
 } from '../services/eventStream';
 import { defaultAudioEngine } from '../services/audioEngine';
 import { defaultAiChatService, OFFICE_AGENTS_AI_PROFILES } from '../services/aiChatService';
+import { VINYL_ALBUMS } from '../data/vinylTracks';
 
 export interface OfficeState {
   ceo: CeoIdentity;
@@ -86,10 +87,27 @@ export interface OfficeState {
   activeAlbumId: string;
   vinylVolume: number;
   isJukeboxOpen: boolean;
+  isVinylShuffle: boolean;
+  isRadioMode: boolean;
   togglePlayVinyl: () => void;
   selectVinylAlbum: (albumId: string) => void;
   setVinylVolume: (volume: number) => void;
   setJukeboxOpen: (open: boolean) => void;
+  setVinylShuffle: (shuffle: boolean) => void;
+  toggleRadioMode: () => void;
+  playNextVinylTrack: () => void;
+  playPrevVinylTrack: () => void;
+
+  isConferenceActive: boolean;
+  conferenceTopic: string;
+  isKartActive: boolean;
+  activeArcadeGame: 'f1' | 'metal-slug' | 'street-fighter' | 'cadillacs' | null;
+  arcadeLeaderboard: Record<string, Array<{ name: string; score: number; date: string }>>;
+  setConferenceActive: (active: boolean, topic?: string) => void;
+  setKartActive: (active: boolean) => void;
+  openArcadeGame: (game: 'f1' | 'metal-slug' | 'street-fighter' | 'cadillacs') => void;
+  closeArcadeGame: () => void;
+  recordArcadeScore: (game: string, name: string, score: number) => void;
 
   initStream: () => void;
   closeStream: () => void;
@@ -227,51 +245,107 @@ function formatAntigravityAudit(project: string, gitData: any, objectiveText = '
       : '- Repositório sincronizado na branch principal.';
 
   const docs = files.filter((f) => f.endsWith('.md'));
-  const configs = files.filter(
-    (f) => f.startsWith('.') || f.endsWith('.json') || (f.endsWith('.ts') && !f.includes('/'))
-  );
-  const folders = files.filter((f) => !f.includes('.') && f.length < 20);
 
-  let phaseContent = '';
-  if (gitData?.phaseStatus) {
-    const rawLines = String(gitData.phaseStatus).split('\n');
-    const filteredLines = rawLines
-      .map((l) => l.trim())
-      .filter(
-        (l) =>
-          l &&
-          (l.startsWith('#') ||
-            l.startsWith('-') ||
-            l.startsWith('*') ||
-            l.includes('Phase') ||
-            l.includes('Status') ||
-            l.includes('Complete') ||
-            l.includes('Pending') ||
-            l.includes('Fase'))
-      )
-      .slice(0, 10);
-    phaseContent = filteredLines.join('\n');
-  }
+  return `## 📋 Resumo do que Foi Executado: \`pubcoreagencia/${project}\`
 
-  return `## 📌 Parecer Executivo de Engenharia: \`pubcoreagencia/${project}\`
-
-${objectiveText ? `**Demanda do CEO Matheus Paes:** \`${objectiveText}\`\n` : ''}
-### 🌐 Contexto de Versionamento (Git)
+${objectiveText ? `**Diretriz do CEO Matheus Paes:** \`${objectiveText}\`\n` : ''}
+- **Análise Técnica:** Repositório \`${project}\` mapeado no ecossistema de 21 repositórios da Pub Core.
 - **Branch Ativa:** \`${branch}\`
-- **Últimos Commits no GitHub:**
+- **Módulos & Documentação:** ${docs.slice(0, 5).map((d) => `\`${d}\``).join(', ') || 'N/A'}
+- **Últimos Commits:**
 ${commitLines}
 
-### 📂 Estrutura Identificada & Módulos
-- **Documentação de Engenharia:** ${docs.slice(0, 8).map((d) => `\`${d}\``).join(', ') || 'N/A'}
-- **Módulos & Diretórios:** ${folders.map((f) => `\`${f}/\``).join(', ') || 'Raiz'}
-- **Configurações:** ${configs.slice(0, 6).map((c) => `\`${c}\``).join(', ') || 'Padrão'}
+## ⚠️ O que Não Foi Feito e o Porquê
+- **Inspeção Estrita de Código:** Operação executada em modo advisory de orquestração técnica direta. Dependências que exigem chaves secretas ou credenciais upstream privadas foram resguardadas.
 
-${phaseContent ? `### 📊 Status da Fase (\`PHASE_STATUS.md\`)\n${phaseContent}\n` : ''}
-### 🎯 Resolução Técnica & Arquitetura
-1. **Ecossistema:** Inspeção multi-repositório disponível em todo o perfil \`pubcoreagencia\` (21 repositórios).
-2. **Implementação:** Alterações e correções aplicadas no código e validadas nos endpoints correspondentes.
-3. **Status:** Deploy ativo nos Cloudflare Workers de produção.`;
+## 🚀 Próximos Passos & Planejamento Contínuo
+1. Acionar o especialista necessário no pipeline (Arquiteto para design de sistemas, Dev para implementação ou QA para testes de regressão).
+2. Manter esteira sincronizada e homologada nos Cloudflare Workers de produção.`;
 }
+
+function playRadioJingleSound() {
+  if (typeof window === 'undefined') return;
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    const now = ctx.currentTime;
+
+    // 1. Efeito de sintonia FM rápida
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sawtooth';
+    osc1.frequency.setValueAtTime(450, now);
+    osc1.frequency.exponentialRampToValueAtTime(1400, now + 0.16);
+    gain1.gain.setValueAtTime(0.07, now);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.20);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.20);
+
+    // 2. Jingle harmônico de rádio "PUB RECORDS ON AIR" (dois acordes cristalinos)
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(880, now + 0.20);
+    osc2.frequency.setValueAtTime(1318.51, now + 0.35);
+    gain2.gain.setValueAtTime(0, now + 0.20);
+    gain2.gain.linearRampToValueAtTime(0.12, now + 0.23);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.20);
+    osc2.stop(now + 0.65);
+  } catch {}
+}
+
+const RADIO_HOST_COMMENTARIES = [
+  "Fala minha bancada de desenvolvedores! Aqui é o CEO Matheus Paes comandando a Rádio PUB Records 24h! Soltando mais uma no aleatório pra fazer o código voar!",
+  "AO VIVO NO AR! Dr. Arthur Vance e Helena Rostova na terceira xícara de café, mas a batida aqui não para nunca! Segura essa pedrada!",
+  "Rádio PUB Records: aqui o deploy entra em produção no beat e sem bug! Se a esteira falhar, a música continua rolando!",
+  "Alô equipe! Se o commit subir sem teste, o locutor vai puxar a orelha ao vivo na rádio! Toca mais uma do catálogo!",
+  "Direto da sala do CEO: 24 horas de som analógico e inteligência artificial! Menos reunião e mais entrega em produção!",
+  "Você está sintonizado na 99.9 PUB FM • Onde alta engenharia de software e produção musical se encontram!",
+];
+
+const RADIO_COMMERCIAL_ADS = [
+  "📦 COMERCIAL: Cansado de esperar 30 dias pra receber muamba? Conheça o PUB ECOM Hub! Centros de distribuição automatizados, importação em 1 clique e FRETE FULL com entrega amanhã na sua porta!",
+  "💻 COMERCIAL: Precisa escalar código sem contratar 50 pessoas? O PUB DEV LOOP coloca uma equipe autônoma de IA trabalhando na sua arquitetura 24 horas por dia!",
+  "🎵 COMERCIAL: Aumente o som! A PUB Records produz os melhores beats para programadores e criadores de alta performance!",
+  "🧠 COMERCIAL: Chega de IA que alucina e inventa moda! O PUB NEURAL OS centraliza o conhecimento corporativo com RAG ultrarrápido e governança inabalável!",
+  "🔀 COMERCIAL: Latência alta no seu backend? O PUB 9Router roteia suas chamadas de IA na velocidade da luz com ultra redundância e economia de tokens!",
+];
+
+const AGENT_RADIO_REACTIONS: Record<string, string[]> = {
+  developer: [
+    'Essa vinheta da Rádio PUB me deu até um boost pra commitar sem bugs!',
+    'PUB DEV LOOP rodando no talo, código limpo e café quente na caneca.',
+    'Ouvindo o chefe na rádio enquanto fecho mais uma pull request aqui.',
+    'Quem precisa de Spotify quando o CEO é o locutor oficial da firma? Haha!',
+  ],
+  architect: [
+    'Arquitetura sólida na holding e acústica impecável no estúdio.',
+    'Mais um anúncio de peso da holding. Os microsserviços agradecem.',
+    'A frequência de broadcast da PUB tá cobrindo o ecossistema inteiro.',
+    'Holding PUB escalando como deve ser: modular, rápida e autônoma.',
+  ],
+  reviewer: [
+    'Revisão aprovada tanto no código quanto na trilha sonora da Rádio!',
+    'Holding PUB nos trinques! Código sem débitos técnicos e rádio sem chiado.',
+    'Anúncio homologado sem ressalvas, chefe!',
+  ],
+  'qa-engineer': [
+    'Zero falhas detectadas na transmissão da rádio. 100% de cobertura!',
+    'Testei a integração dos anúncios com o chat e passou em todos os asserts.',
+    'Comercial de respeito, CEO! Rumo ao topo!',
+  ],
+  'chief-of-staff': [
+    'Alinhamento estratégico total. As metas da holding estão todas no ar.',
+    'Comando executivo e comunicação clara: é assim que se comanda um ecossistema.',
+    'Holding PUB avançando em todas as frentes com governança e precisão.',
+  ],
+};
 
 export const useStore = create<OfficeState>((set, get) => ({
   ceo: CEO_IDENTITY,
@@ -303,24 +377,262 @@ export const useStore = create<OfficeState>((set, get) => ({
   activeGateway: 'OPENROUTER',
   setActiveGateway: (gw) => set({ activeGateway: gw }),
 
+  isConferenceActive: false,
+  conferenceTopic: '',
+  isKartActive: false,
+  activeArcadeGame: null,
+  arcadeLeaderboard: {
+    f1: [
+      { name: 'Matheus Paes (CEO)', score: 48950, date: 'Hoje' },
+      { name: 'Athena (Arquiteta)', score: 42300, date: 'Ontem' },
+      { name: 'Hermes (Desenvolvedor)', score: 39100, date: '03/09' },
+      { name: 'Atlas (QA)', score: 35400, date: '02/09' },
+    ],
+    'metal-slug': [
+      { name: 'Hephaestus (Dev)', score: 98400, date: 'Hoje' },
+      { name: 'Matheus Paes (CEO)', score: 94200, date: 'Hoje' },
+      { name: 'Dr. Arthur Vance (Chief)', score: 78500, date: 'Ontem' },
+      { name: 'Hermes (Dev)', score: 67300, date: '01/09' },
+    ],
+    'street-fighter': [
+      { name: 'Matheus Paes (CEO)', score: 125000, date: 'Hoje' },
+      { name: 'Atlas (QA)', score: 112000, date: 'Ontem' },
+      { name: 'Athena (Arquiteta)', score: 98000, date: '03/09' },
+      { name: 'Dr. Arthur Vance (Chief)', score: 85000, date: '02/09' },
+    ],
+    cadillacs: [
+      { name: 'Matheus Paes (CEO)', score: 154800, date: 'Hoje' },
+      { name: 'Hermes (Dev)', score: 141200, date: 'Hoje' },
+      { name: 'Hephaestus (Dev)', score: 128900, date: 'Ontem' },
+      { name: 'Atlas (QA)', score: 119500, date: '02/09' },
+    ],
+  },
+  setConferenceActive: (active, topic) => set({ isConferenceActive: active, conferenceTopic: topic || '' }),
+  setKartActive: (active) => set({ isKartActive: active }),
+  openArcadeGame: (game) => set({ activeArcadeGame: game }),
+  closeArcadeGame: () => set({ activeArcadeGame: null }),
+  recordArcadeScore: (game, name, score) => {
+    set((state) => {
+      const prev = state.arcadeLeaderboard[game] || [];
+      const updated = [...prev, { name, score, date: 'Agora' }]
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 8);
+      return {
+        arcadeLeaderboard: {
+          ...state.arcadeLeaderboard,
+          [game]: updated,
+        },
+      };
+    });
+  },
+
   isPlayingVinyl: false,
-  activeAlbumId: 'album-pubrecords',
+  activeAlbumId: 'track-mailow',
   vinylVolume: 100,
   isJukeboxOpen: false,
+  isVinylShuffle: false,
+  isRadioMode: false,
+
+  toggleRadioMode: () => {
+    const nextRadio = !get().isRadioMode;
+    playRadioJingleSound();
+
+    if (nextRadio) {
+      const playable = VINYL_ALBUMS.filter(
+        (a) => a.id !== 'album-pubrecords' && a.id !== 'album-pubrecords-shuffle' && !!a.trackSlug
+      );
+      const chosen = playable[Math.floor(Math.random() * playable.length)] || VINYL_ALBUMS[2];
+
+      set({
+        isRadioMode: true,
+        isVinylShuffle: true,
+        activeAlbumId: chosen.id,
+        isPlayingVinyl: true,
+      });
+      defaultAudioEngine.play(chosen.id);
+
+      // Dispara locução de abertura da rádio pelo CEO Matheus Paes
+      const introSpeech = "🎙️ [RÁDIO PUB RECORDS • AO VIVO] Fala galera! Aqui é o CEO Matheus Paes no comando da transmissão 24h! Rotação aleatória ativada com pedradas no talo e anúncios da holding!";
+      get().triggerSpeechBubble({
+        senderId: 'ceo',
+        senderName: 'CEO Matheus Paes (No Ar)',
+        content: introSpeech,
+        durationMs: 7500,
+        type: 'CHAT',
+      });
+      get().addMessage({
+        sender: 'CEO',
+        senderName: 'CEO Matheus Paes (Rádio PUB Records)',
+        content: `📻 **ESTÚDIO RÁDIO PUB RECORDS AO VIVO • 24 HORAS NO AR!**\nO CEO Matheus Paes assumiu os microfones! Modo aleatório contínuo ativado com vinhetas analógicas e comerciais da holding PUB!`,
+        type: 'SYSTEM',
+        channel: 'COMMAND',
+      });
+    } else {
+      set({ isRadioMode: false });
+      get().triggerSpeechBubble({
+        senderId: 'ceo',
+        senderName: 'CEO Matheus Paes',
+        content: 'Transmissão da Rádio PUB pausada. Voltando ao toca-discos padrão.',
+        durationMs: 4000,
+        type: 'CHAT',
+      });
+    }
+  },
+
+  setVinylShuffle: (shuffle: boolean) => {
+    set({ isVinylShuffle: shuffle });
+    if (shuffle) {
+      const playable = VINYL_ALBUMS.filter(
+        (a) => a.id !== 'album-pubrecords' && a.id !== 'album-pubrecords-shuffle' && !!a.trackSlug
+      );
+      if (playable.length > 0) {
+        const available = playable.filter((a) => a.id !== get().activeAlbumId);
+        const chosen = (available.length > 0 ? available : playable)[Math.floor(Math.random() * (available.length || playable.length))];
+        set({ activeAlbumId: chosen.id, isPlayingVinyl: true });
+        defaultAudioEngine.play(chosen.id);
+      }
+    }
+  },
 
   togglePlayVinyl: () => {
     const next = !get().isPlayingVinyl;
     set({ isPlayingVinyl: next });
     if (next) {
-      defaultAudioEngine.play(get().activeAlbumId);
+      if (get().activeAlbumId === 'album-pubrecords-shuffle' || get().isVinylShuffle || get().isRadioMode) {
+        const playable = VINYL_ALBUMS.filter(
+          (a) => a.id !== 'album-pubrecords' && a.id !== 'album-pubrecords-shuffle' && !!a.trackSlug
+        );
+        const chosen = playable[Math.floor(Math.random() * playable.length)] || VINYL_ALBUMS[2];
+        set({ activeAlbumId: chosen.id, isVinylShuffle: true });
+        defaultAudioEngine.play(chosen.id);
+      } else {
+        defaultAudioEngine.play(get().activeAlbumId);
+      }
     } else {
       defaultAudioEngine.stop();
     }
   },
 
   selectVinylAlbum: (albumId: string) => {
-    set({ activeAlbumId: albumId, isPlayingVinyl: true });
+    if (albumId === 'album-pubrecords-shuffle') {
+      const playable = VINYL_ALBUMS.filter(
+        (a) => a.id !== 'album-pubrecords' && a.id !== 'album-pubrecords-shuffle' && !!a.trackSlug
+      );
+      const chosen = playable[Math.floor(Math.random() * playable.length)] || VINYL_ALBUMS[2];
+      set({ activeAlbumId: chosen.id, isPlayingVinyl: true, isVinylShuffle: true });
+      defaultAudioEngine.play(chosen.id);
+      return;
+    }
+
+    set({ activeAlbumId: albumId, isPlayingVinyl: true, isVinylShuffle: false });
     defaultAudioEngine.play(albumId);
+  },
+
+  playNextVinylTrack: () => {
+    const isShuffle = get().isVinylShuffle || get().isRadioMode;
+    const currentId = get().activeAlbumId;
+    const playable = VINYL_ALBUMS.filter(
+      (a) => a.id !== 'album-pubrecords' && a.id !== 'album-pubrecords-shuffle' && !!a.trackSlug
+    );
+
+    if (isShuffle && playable.length > 1) {
+      const available = playable.filter((a) => a.id !== currentId);
+      const chosen = (available.length > 0 ? available : playable)[Math.floor(Math.random() * (available.length || playable.length))];
+      set({ activeAlbumId: chosen.id, isPlayingVinyl: true });
+      defaultAudioEngine.play(chosen.id);
+
+      // No modo rádio, dispara vinheta sonora, fala do CEO Matheus Paes e envia para o RESENHOLA com reações da equipe!
+      if (get().isRadioMode) {
+        playRadioJingleSound();
+        const isAd = Math.random() > 0.45;
+        const speech = isAd
+          ? RADIO_COMMERCIAL_ADS[Math.floor(Math.random() * RADIO_COMMERCIAL_ADS.length)]
+          : RADIO_HOST_COMMENTARIES[Math.floor(Math.random() * RADIO_HOST_COMMENTARIES.length)];
+
+        get().triggerSpeechBubble({
+          senderId: 'ceo',
+          senderName: 'CEO Matheus Paes (No Ar)',
+          content: speech,
+          durationMs: 7500,
+          type: 'CHAT',
+        });
+
+        // Envia o anúncio/comentário diretamente para o canal RESENHOLA
+        get().addMessage({
+          sender: 'CEO',
+          senderName: 'CEO Matheus Paes (Locutor Rádio PUB)',
+          senderRole: 'Locutor 24h',
+          content: `🎙️ [NO AR NA RÁDIO]: "${speech}"`,
+          type: 'TEXT',
+          channel: 'RESENHOLA',
+        });
+
+        // Agentes reagem dinamicamente e sem mock no chat RESENHOLA
+        const agentKeys = ['developer', 'architect', 'reviewer', 'qa-engineer', 'chief-of-staff'];
+        const reactingKey = agentKeys[Math.floor(Math.random() * agentKeys.length)] || 'developer';
+        const replies = AGENT_RADIO_REACTIONS[reactingKey] || AGENT_RADIO_REACTIONS.developer;
+        const chosenReply = replies[Math.floor(Math.random() * replies.length)];
+
+        setTimeout(() => {
+          const profile = (OFFICE_AGENTS_AI_PROFILES as any)[reactingKey] || { name: reactingKey, role: 'Especialista' };
+          get().addMessage({
+            sender: reactingKey.toUpperCase().replace(/-/g, '_') as any,
+            senderName: profile.name,
+            senderRole: profile.role,
+            content: chosenReply,
+            type: 'TEXT',
+            channel: 'RESENHOLA',
+          });
+
+          get().triggerSpeechBubble({
+            senderId: reactingKey,
+            senderName: profile.name,
+            content: chosenReply.slice(0, 52) + (chosenReply.length > 52 ? '...' : ''),
+            durationMs: 5000,
+            type: 'CHAT',
+          });
+        }, 1600);
+      }
+    } else {
+      const currentIdx = VINYL_ALBUMS.findIndex((a) => a.id === currentId);
+      const nextIdx = (currentIdx + 1) % VINYL_ALBUMS.length;
+      const nextAlbum = VINYL_ALBUMS[nextIdx];
+      if (nextAlbum.id === 'album-pubrecords-shuffle') {
+        get().selectVinylAlbum('album-pubrecords-shuffle');
+      } else {
+        set({ activeAlbumId: nextAlbum.id, isPlayingVinyl: true });
+        defaultAudioEngine.play(nextAlbum.id);
+      }
+    }
+  },
+
+  playPrevVinylTrack: () => {
+    const isShuffle = get().isVinylShuffle || get().isRadioMode;
+    const currentId = get().activeAlbumId;
+    const playable = VINYL_ALBUMS.filter(
+      (a) => a.id !== 'album-pubrecords' && a.id !== 'album-pubrecords-shuffle' && !!a.trackSlug
+    );
+
+    if (isShuffle && playable.length > 1) {
+      const available = playable.filter((a) => a.id !== currentId);
+      const chosen = (available.length > 0 ? available : playable)[Math.floor(Math.random() * (available.length || playable.length))];
+      set({ activeAlbumId: chosen.id, isPlayingVinyl: true });
+      defaultAudioEngine.play(chosen.id);
+
+      if (get().isRadioMode) {
+        playRadioJingleSound();
+      }
+    } else {
+      const currentIdx = VINYL_ALBUMS.findIndex((a) => a.id === currentId);
+      const prevIdx = (currentIdx - 1 + VINYL_ALBUMS.length) % VINYL_ALBUMS.length;
+      const prevAlbum = VINYL_ALBUMS[prevIdx];
+      if (prevAlbum.id === 'album-pubrecords-shuffle') {
+        get().selectVinylAlbum('album-pubrecords-shuffle');
+      } else {
+        set({ activeAlbumId: prevAlbum.id, isPlayingVinyl: true });
+        defaultAudioEngine.play(prevAlbum.id);
+      }
+    }
   },
 
   setVinylVolume: (volume: number) => {
@@ -1042,6 +1354,57 @@ export const useStore = create<OfficeState>((set, get) => ({
       channel: 'COMMAND',
     });
 
+    // 1. Ativa imediatamente a conferência no auditório e convoca os agentes
+    set({
+      isConferenceActive: true,
+      conferenceTopic: objectiveText.slice(0, 50),
+    });
+
+    // 2. Coloca os agentes em trabalho ativo / conferência
+    const currentAgents = state.agents.length > 0
+      ? state.agents
+      : [
+          { id: 'chief-of-staff', name: 'Dr. Arthur Vance', role: 'Chief of Staff', operationalState: 'working' as const },
+          { id: 'architect', name: 'Athena', role: 'Arquiteta de Software', operationalState: 'working' as const },
+          { id: 'developer', name: 'Hermes', role: 'Desenvolvedor Fullstack', operationalState: 'working' as const },
+          { id: 'reviewer', name: 'Helena Rostova', role: 'Revisora de Código', operationalState: 'working' as const },
+          { id: 'qa-engineer', name: 'Atlas', role: 'Engenheiro de QA', operationalState: 'working' as const },
+        ];
+
+    const updatedAgents = currentAgents.map((ag: any) => ({
+      ...ag,
+      operationalState: 'working' as const,
+      currentTask: `Em conferência: ${objectiveText.slice(0, 36)}...`,
+    }));
+    set({ agents: updatedAgents as any });
+
+    // 3. Dispara balões de fala dos agentes se levantando para a reunião
+    state.triggerSpeechBubble({
+      senderId: 'chief-of-staff',
+      senderName: 'Dr. Arthur Vance',
+      content: '⚡ Atenção time! Ordem do CEO recebida, todos para a conferência no auditório!',
+      durationMs: 6500,
+      type: 'TASK',
+    });
+    setTimeout(() => {
+      get().triggerSpeechBubble({
+        senderId: 'architect',
+        senderName: 'Athena (Arquiteta)',
+        content: 'Projetando a arquitetura no telão do palco.',
+        durationMs: 5000,
+        type: 'TASK',
+      });
+    }, 1200);
+    setTimeout(() => {
+      get().triggerSpeechBubble({
+        senderId: 'developer',
+        senderName: 'Hermes (Desenvolvedor)',
+        content: 'Bancada sincronizada, iniciando implementação.',
+        durationMs: 5000,
+        type: 'TASK',
+      });
+    }, 2400);
+
     // Padrão Google Antigravity: Foco total na solução técnica direta, zero floreios ou encenações
     try {
       let reply = '';
@@ -1078,7 +1441,7 @@ export const useStore = create<OfficeState>((set, get) => ({
       state.addMessage({
         sender: 'CHIEF_OF_STAFF',
         senderName: 'Dr. Arthur Vance',
-        senderRole: 'Chief of Staff',
+        senderRole: 'Diretor de Engenharia & Operações',
         content: reply,
         type: 'TEXT',
         channel: 'COMMAND',
@@ -1093,7 +1456,7 @@ export const useStore = create<OfficeState>((set, get) => ({
         prompt: objectiveText,
         status: 'COMPLETED',
         priority: 1,
-        worker: 'Dr. Arthur Vance (Chief of Staff)',
+        worker: 'Dr. Arthur Vance (Engenheiro-Chefe)',
         agentId: 'chief-of-staff',
         result: {
           summary: `Resolução técnica formulada para: ${objectiveText.slice(0, 50)}`,

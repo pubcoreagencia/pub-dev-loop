@@ -19,13 +19,41 @@ export const GlobalOfficeChat: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'COMMAND' | 'WATERCOOLER'>('COMMAND');
   const [inputText, setInputText] = useState('');
   const [respondingAgent, setRespondingAgent] = useState<{ id: string; name: string; role: string } | null>(null);
+  const [isScrolledUp, setIsScrolledUp] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTo({
+        top: messagesContainerRef.current.scrollHeight,
+        behavior,
+      });
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior });
+    }
   };
 
-  // Rolagem automática em background REMOVIDA: Usuário tem controle total do scroll
+  const handleScroll = () => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setIsScrolledUp(distanceFromBottom > 120);
+  };
+
+  // Inicializa SEMPRE no final da lista no carregamento inicial e ao trocar de aba
+  useEffect(() => {
+    scrollToBottom('auto');
+    const timer = setTimeout(() => scrollToBottom('auto'), 80);
+    return () => clearTimeout(timer);
+  }, [activeTab]);
+
+  // Se novas mensagens chegarem e o usuário não tiver rolado para cima manualmente, acompanha o feed
+  useEffect(() => {
+    if (!isScrolledUp) {
+      scrollToBottom('smooth');
+    }
+  }, [messages.length, respondingAgent, actionLoading]);
 
   // Vida própria no escritório: A equipe conversa espontaneamente no canal RESENHOLA com IA real
   useEffect(() => {
@@ -250,7 +278,11 @@ export const GlobalOfficeChat: React.FC = () => {
       </div>
 
       {/* ÁREA DE MENSAGENS COM CSS CLASSES OFICIAIS */}
-      <div className="chat-messages-area">
+      <div
+        className="chat-messages-area"
+        ref={messagesContainerRef}
+        onScroll={handleScroll}
+      >
         {activeTab === 'WATERCOOLER' && (
           <div
             style={{
@@ -322,7 +354,7 @@ export const GlobalOfficeChat: React.FC = () => {
           <div className="chat-bubble-row system">
             <div className="chat-bubble-wrapper thinking-bubble">
               <div className="thinking-dots">
-                ⚙️ Chief of Staff formulando plano estratégico...
+                ⚙️ Dr. Arthur Vance (Engenheiro-Chefe) analisando demanda e orquestrando esteira técnica...
               </div>
             </div>
           </div>
@@ -330,6 +362,19 @@ export const GlobalOfficeChat: React.FC = () => {
 
         <div ref={messagesEndRef} />
       </div>
+
+      {/* BOTÃO FLUTUANTE DE ROLAGEM AO FIM (APARECE QUANDO HÁ ROLAGEM PARA CIMA) */}
+      {isScrolledUp && (
+        <button
+          type="button"
+          onClick={() => scrollToBottom('smooth')}
+          className="btn-floating-scroll-bottom"
+          title="Rolar até as mensagens mais recentes"
+        >
+          <span style={{ fontSize: '13px', fontWeight: 900 }}>↓</span>
+          <span>Rolar ao Fim</span>
+        </button>
+      )}
 
       {/* ÁREA DE INPUT INTEGRADA AO DESIGN DO ESCRITÓRIO */}
       <form onSubmit={handleSubmit} className="chat-input-bar">

@@ -7,16 +7,25 @@ import {
   OfficeFloor,
   OfficeWalls,
   WorkstationTable,
-  MeetingRoomArea,
   DunderBreakroom,
   ClassicWatercooler,
   LoungeSofa,
   OfficePlant,
 } from './Office3DFurniture';
+import {
+  StudioAcousticTreatment,
+  StudioMixingConsole,
+  StudioInstruments,
+  DrumRecordingBooth,
+} from './Studio3DFurniture';
 import { TurntableVinyl } from './TurntableVinyl';
 import { Office3DAvatar } from './Office3DAvatar';
+import { OfficeAuditorium } from './OfficeAuditorium';
+import { OfficeGameRoom } from './OfficeGameRoom';
+import { OfficeDrivableKart } from './OfficeDrivableKart';
 import { AGENT_AVATAR_PROFILES } from '../config/officeLayout';
 import { VinylJukeboxModal, VINYL_ALBUMS } from '../components/VinylJukeboxModal';
+import { PlayableArcadeModal } from '../components/PlayableArcadeModal';
 
 export const Office3DScene: React.FC = () => {
   const {
@@ -31,6 +40,10 @@ export const Office3DScene: React.FC = () => {
     selectVinylAlbum,
     isJukeboxOpen,
     setJukeboxOpen,
+    isConferenceActive,
+    setConferenceActive,
+    isKartActive,
+    setKartActive,
   } = useStore();
 
   const controlsRef = useRef<OrbitControlsImpl>(null);
@@ -48,39 +61,70 @@ export const Office3DScene: React.FC = () => {
   > = {
     ceo: {
       table: [0, 0, -8],
-      avatar: [0, 0, -7.28], // Sentado na cadeira do CEO (z = -7.28), de frente para o monitor (olhando em -z)
+      avatar: [0, 0, -7.28],
       tableRot: [0, 0, 0],
       avatarRot: [0, 0, 0],
     },
     'chief-of-staff': {
       table: [0, 0, -1],
-      avatar: [0, 0, -0.28], // Sentado na cadeira do Chief (z = -0.28), de frente para o monitor
+      avatar: [0, 0, -0.28],
       tableRot: [0, 0, 0],
       avatarRot: [0, 0, 0],
     },
     architect: {
       table: [-6, 0, 5],
-      avatar: [-6, 0, 4.28], // Sentado na cadeira (z = 4.28), rotacionado 180° olhando em +z para o monitor
+      avatar: [-6, 0, 4.28],
       tableRot: [0, Math.PI, 0],
       avatarRot: [0, Math.PI, 0],
     },
     developer: {
       table: [6, 0, 5],
-      avatar: [6, 0, 4.28], // Sentado na cadeira (z = 4.28), rotacionado 180° olhando em +z para o monitor
+      avatar: [6, 0, 4.28],
       tableRot: [0, Math.PI, 0],
       avatarRot: [0, Math.PI, 0],
     },
     reviewer: {
       table: [-6, 0, 10],
-      avatar: [-6, 0, 9.28], // Sentado na cadeira (z = 9.28), rotacionado 180° olhando em +z para o monitor
+      avatar: [-6, 0, 9.28],
       tableRot: [0, Math.PI, 0],
       avatarRot: [0, Math.PI, 0],
     },
     'qa-engineer': {
       table: [6, 0, 10],
-      avatar: [6, 0, 9.28], // Sentado na cadeira (z = 9.28), rotacionado 180° olhando em +z para o monitor
+      avatar: [6, 0, 9.28],
       tableRot: [0, Math.PI, 0],
       avatarRot: [0, Math.PI, 0],
+    },
+  };
+
+  // Coordenadas no Auditório: Agentes sentados nas cadeiras da Fileira 1 e CEO no púlpito do palco
+  const conferencePositions: Record<
+    string,
+    { pos: [number, number, number]; rot: [number, number, number] }
+  > = {
+    ceo: {
+      pos: [0, 0.72, 27.8], // No púlpito central do palco de frente para a plateia
+      rot: [0, Math.PI, 0],
+    },
+    'chief-of-staff': {
+      pos: [-3.2, 0.44, 22.5], // Cadeira da Fileira 1 voltada para o palco
+      rot: [0, 0, 0],
+    },
+    architect: {
+      pos: [-1.6, 0.44, 22.5], // Cadeira da Fileira 1 voltada para o palco
+      rot: [0, 0, 0],
+    },
+    developer: {
+      pos: [0, 0.44, 22.5], // Cadeira da Fileira 1 voltada para o palco
+      rot: [0, 0, 0],
+    },
+    reviewer: {
+      pos: [1.6, 0.44, 22.5], // Cadeira da Fileira 1 voltada para o palco
+      rot: [0, 0, 0],
+    },
+    'qa-engineer': {
+      pos: [3.2, 0.44, 22.5], // Cadeira da Fileira 1 voltada para o palco
+      rot: [0, 0, 0],
     },
   };
 
@@ -129,52 +173,88 @@ export const Office3DScene: React.FC = () => {
           🌐 Visão Geral
         </button>
         <button
-          onClick={() => handleCameraFocus([0, 1.0, -7.6], [0, 2.3, -5.2])}
-          style={{ background: 'transparent', border: 'none', color: '#facc15', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
-          title="Zoom na Caneca World's Best Boss do CEO"
+          onClick={() => handleCameraFocus([0, 1.2, -7.8], [0, 2.4, -4.8])}
+          style={{ background: 'transparent', border: 'none', color: '#facc15', fontSize: '11px', cursor: 'pointer', fontWeight: 700 }}
+          title="Zoom no Estúdio de Produção Musical, Mesa de Som e Monitores do CEO"
         >
-          👑 Gabinete CEO &amp; Caneca
+          🎙️ Estúdio PUB Records (CEO)
         </button>
         <button
-          onClick={() => handleCameraFocus([0, 1.0, -0.6], [0, 2.2, 1.8])}
-          style={{ background: 'transparent', border: 'none', color: '#cbd5e1', fontSize: '11px', cursor: 'pointer' }}
+          onClick={() => handleCameraFocus([-11.5, 1.2, -8.0], [-11.5, 2.6, -4.2])}
+          style={{ background: 'transparent', border: 'none', color: '#ef4444', fontSize: '11px', cursor: 'pointer', fontWeight: 700 }}
+          title="Zoom no Aquário Acústico de Bateria de Gravação"
         >
-          👔 Chief of Staff
+          🥁 Aquário de Bateria
         </button>
         <button
-          onClick={() => handleCameraFocus([6, 1.1, 4.8], [6, 2.2, 2.8])}
-          style={{ background: 'transparent', border: 'none', color: '#cbd5e1', fontSize: '11px', cursor: 'pointer' }}
+          onClick={() => handleCameraFocus([0, 2.0, 25], [0, 7, 14])}
+          style={{
+            background: isConferenceActive ? '#38bdf8' : 'transparent',
+            color: isConferenceActive ? '#020617' : '#38bdf8',
+            border: 'none',
+            borderRadius: '12px',
+            padding: '2px 8px',
+            fontSize: '11px',
+            cursor: 'pointer',
+            fontWeight: 800,
+          }}
+          title="Zoom no Auditório de Eventos, Palco, Telão LED e Plateia"
         >
-          💻 Bancada Dev &amp; CRT
+          🏛️ Auditório &amp; Palco
         </button>
         <button
-          onClick={() => handleCameraFocus([12, 1.2, 0], [12, 2.8, 4.2])}
-          style={{ background: 'transparent', border: 'none', color: '#f97316', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
-          title="Zoom na Cafeteria, Expresso, Vapor e Watercooler"
+          onClick={() => handleCameraFocus([-14, 1.5, 16], [-14, 10, 24])}
+          style={{ background: 'transparent', border: 'none', color: '#a855f7', fontSize: '11px', cursor: 'pointer', fontWeight: 700 }}
+          title="Zoom na Sala de Jogos Retrô, Fliperamas e Mobis do Habbo"
         >
-          ☕ Cafeteria &amp; Vapor
+          🕹️ Arcade Zone (Habbo)
+        </button>
+        <button
+          onClick={() => setKartActive(!isKartActive)}
+          style={{
+            background: isKartActive ? '#dc2626' : 'transparent',
+            color: isKartActive ? '#ffffff' : '#f87171',
+            border: 'none',
+            borderRadius: '12px',
+            padding: '2px 8px',
+            fontSize: '11px',
+            cursor: 'pointer',
+            fontWeight: 700,
+          }}
+          title="Pilotar Kart pelo escritório estilo Gather"
+        >
+          🏎️ {isKartActive ? 'Sair do Kart' : 'Pilotar Kart'}
         </button>
         <button
           onClick={() => {
-            handleCameraFocus([-12, 1.2, 0], [-12, 2.4, 3.2]);
+            setConferenceActive(!isConferenceActive, 'Alinhamento Estratégico com CEO Matheus Paes');
+            handleCameraFocus([0, 2.0, 25], [0, 7, 14]);
           }}
-          style={{ background: 'transparent', border: 'none', color: '#38bdf8', fontSize: '11px', cursor: 'pointer', fontWeight: 700 }}
-          title="Zoom na Vitrola de Vinil, Braço Mecânico e Ondas Sonoras"
+          style={{
+            background: isConferenceActive ? '#10b981' : '#1e293b',
+            color: '#ffffff',
+            border: 'none',
+            borderRadius: '12px',
+            padding: '2px 8px',
+            fontSize: '11px',
+            cursor: 'pointer',
+            fontWeight: 700,
+          }}
+          title="Convocar todos os agentes para o auditório"
         >
-          🎵 Lounge &amp; Vitrola
+          {isConferenceActive ? '✅ Em Conferência' : '📢 Convocar Reunião'}
         </button>
       </div>
 
       <Canvas shadows>
         <PerspectiveCamera makeDefault position={[0, 18, 22]} fov={40} />
-        {/* OrbitControls com Zoom Mínimo de 0.5 para permitir ver qualquer detalhe */}
         <OrbitControls
           ref={controlsRef}
           enableDamping
           dampingFactor={0.05}
           maxPolarAngle={Math.PI / 2.05}
           minDistance={0.5}
-          maxDistance={50}
+          maxDistance={55}
           target={[0, 1.0, 2]}
         />
 
@@ -190,10 +270,14 @@ export const Office3DScene: React.FC = () => {
         <directionalLight position={[-12, 16, -10]} intensity={0.5} color="#38bdf8" />
         <directionalLight position={[14, 14, 4]} intensity={0.6} color="#f59e0b" />
 
-        {/* Chão de Madeira Nobre, Tapetes Ricos, Persianas e Painéis Ripados */}
+        {/* Chão de Madeira Nobre Expandido e Paredes com Painéis */}
         <OfficeFloor />
         <OfficeWalls />
-        <MeetingRoomArea />
+
+        {/* 🎙️ PUB RECORDS • SALA TÉCNICA, TRATAMENTO ACÚSTICO E AQUÁRIO DE GRAVAÇÃO */}
+        <StudioAcousticTreatment />
+        <DrumRecordingBooth position={[-11.5, 0, -8.0]} isRecording={isPlayingVinyl} />
+        <StudioInstruments position={[4.8, 0, -8.5]} />
 
         {/* ☕ A CAFETERIA & BREAKROOM DUNDER MIFFLIN */}
         <DunderBreakroom position={[12, 0, 0]} />
@@ -216,17 +300,26 @@ export const Office3DScene: React.FC = () => {
         />
         <LoungeSofa position={[-12, 0, 3.2]} />
 
-        {/* 1. MESA E AVATAR DO CEO (Matheus Paes) */}
-        <WorkstationTable
+        {/* 🏛️ AUDITÓRIO DE EVENTOS, PALCO, TELÃO LED PUB REC E PLATEIA */}
+        <OfficeAuditorium position={[0, 0, 0]} />
+
+        {/* 🕹️ SALA DE JOGOS RETRÔ COM OS 4 FLIPERAMAS E MOBIS HABBO HOTEL */}
+        <OfficeGameRoom position={[-14, 0, 16]} />
+
+        {/* 🏎️ KART PILOTÁVEL (GATHER.TOWN STYLE) */}
+        <OfficeDrivableKart initialPosition={[-15, 0, 11]} />
+
+        {/* 1. MESA DE SOM / CONSOLE E AVATAR DO CEO (Matheus Paes) */}
+        <StudioMixingConsole
           position={positions.ceo.table}
           rotation={positions.ceo.tableRot}
-          glowColor="#8b5cf6"
-          isCeo={true}
-          onClick={() => selectAgent(ceo)}
+          isPlaying={isPlayingVinyl}
         />
         <Office3DAvatar
           position={positions.ceo.avatar}
           rotation={positions.ceo.avatarRot}
+          conferencePosition={conferencePositions.ceo.pos}
+          conferenceRotation={conferencePositions.ceo.rot}
           avatar={ceo.avatar || AGENT_AVATAR_PROFILES['chief-of-staff']}
           operationalState={ceo.operationalState || 'idle'}
           isCeo={true}
@@ -246,6 +339,8 @@ export const Office3DScene: React.FC = () => {
         <Office3DAvatar
           position={positions['chief-of-staff'].avatar}
           rotation={positions['chief-of-staff'].avatarRot}
+          conferencePosition={conferencePositions['chief-of-staff'].pos}
+          conferenceRotation={conferencePositions['chief-of-staff'].rot}
           avatar={AGENT_AVATAR_PROFILES['chief-of-staff']}
           operationalState={getAgentOperationalState('chief-of-staff')}
           speechBubble={getSpeechForEntity('chief-of-staff')}
@@ -264,6 +359,8 @@ export const Office3DScene: React.FC = () => {
         <Office3DAvatar
           position={positions.architect.avatar}
           rotation={positions.architect.avatarRot}
+          conferencePosition={conferencePositions.architect.pos}
+          conferenceRotation={conferencePositions.architect.rot}
           avatar={AGENT_AVATAR_PROFILES.architect}
           operationalState={getAgentOperationalState('architect')}
           speechBubble={getSpeechForEntity('architect')}
@@ -282,6 +379,8 @@ export const Office3DScene: React.FC = () => {
         <Office3DAvatar
           position={positions.developer.avatar}
           rotation={positions.developer.avatarRot}
+          conferencePosition={conferencePositions.developer.pos}
+          conferenceRotation={conferencePositions.developer.rot}
           avatar={AGENT_AVATAR_PROFILES.developer}
           operationalState={getAgentOperationalState('developer')}
           speechBubble={getSpeechForEntity('developer')}
@@ -300,6 +399,8 @@ export const Office3DScene: React.FC = () => {
         <Office3DAvatar
           position={positions.reviewer.avatar}
           rotation={positions.reviewer.avatarRot}
+          conferencePosition={conferencePositions.reviewer.pos}
+          conferenceRotation={conferencePositions.reviewer.rot}
           avatar={AGENT_AVATAR_PROFILES.reviewer}
           operationalState={getAgentOperationalState('reviewer')}
           speechBubble={getSpeechForEntity('reviewer')}
@@ -318,6 +419,8 @@ export const Office3DScene: React.FC = () => {
         <Office3DAvatar
           position={positions['qa-engineer'].avatar}
           rotation={positions['qa-engineer'].avatarRot}
+          conferencePosition={conferencePositions['qa-engineer'].pos}
+          conferenceRotation={conferencePositions['qa-engineer'].rot}
           avatar={AGENT_AVATAR_PROFILES['qa-engineer']}
           operationalState={getAgentOperationalState('qa-engineer')}
           speechBubble={getSpeechForEntity('qa-engineer')}
@@ -337,6 +440,9 @@ export const Office3DScene: React.FC = () => {
         isPlaying={isPlayingVinyl}
         onTogglePlay={togglePlayVinyl}
       />
+
+      {/* Modal de Fliperama Retrô Jogável com Highscores */}
+      <PlayableArcadeModal />
     </div>
   );
 };

@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
+import { useStore } from '../store/useStore';
 
 interface TurntableVinylProps {
   isPlaying?: boolean;
@@ -16,6 +17,7 @@ export const TurntableVinyl: React.FC<TurntableVinylProps> = ({
   albumTitle = 'Midnight Compile Session',
   onClick,
 }) => {
+  const isJukeboxOpen = useStore((s) => s.isJukeboxOpen);
   const discRef = useRef<THREE.Group>(null);
   const armGroupRef = useRef<THREE.Group>(null);
   const needleLightRef = useRef<THREE.PointLight>(null);
@@ -81,32 +83,34 @@ export const TurntableVinyl: React.FC<TurntableVinylProps> = ({
 
   return (
     <group position={[-12, 0, 0]} onClick={onClick}>
-      {/* Placa Indicativa Flutuante no 3D */}
-      <Html position={[0, 2.3, 0]} center distanceFactor={12}>
-        <div
-          style={{
-            background: 'rgba(15, 23, 42, 0.95)',
-            border: `1.5px solid ${labelColor}`,
-            borderRadius: '6px',
-            padding: '3px 10px',
-            color: '#f8fafc',
-            fontSize: '11px',
-            fontWeight: 700,
-            whiteSpace: 'nowrap',
-            boxShadow: '0 4px 15px rgba(0,0,0,0.6)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            cursor: 'pointer',
-          }}
-        >
-          <span>{isPlaying ? '▶' : '⏸'}</span>
-          <span style={{ color: labelColor }}>{albumTitle}</span>
-          <span style={{ fontSize: '9px', background: isPlaying ? '#22c55e' : '#64748b', color: '#000', padding: '1px 4px', borderRadius: '3px' }}>
-            {isPlaying ? 'TOCANDO' : 'PAUSADO'}
-          </span>
-        </div>
-      </Html>
+      {/* Placa Indicativa Flutuante no 3D (oculta quando o jukebox está aberto) */}
+      {!isJukeboxOpen && (
+        <Html position={[0, 2.3, 0]} center distanceFactor={12} zIndexRange={[100, 0]}>
+          <div
+            style={{
+              background: 'rgba(15, 23, 42, 0.95)',
+              border: `1.5px solid ${labelColor}`,
+              borderRadius: '6px',
+              padding: '3px 10px',
+              color: '#f8fafc',
+              fontSize: '11px',
+              fontWeight: 700,
+              whiteSpace: 'nowrap',
+              boxShadow: '0 4px 15px rgba(0,0,0,0.6)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer',
+            }}
+          >
+            <span>{isPlaying ? '▶' : '⏸'}</span>
+            <span style={{ color: labelColor }}>{albumTitle}</span>
+            <span style={{ fontSize: '9px', background: isPlaying ? '#22c55e' : '#64748b', color: '#000', padding: '1px 4px', borderRadius: '3px' }}>
+              {isPlaying ? 'TOCANDO' : 'PAUSADO'}
+            </span>
+          </div>
+        </Html>
+      )}
 
       {/* Móvel de Madeira Maciça Nobre com Prateleiras */}
       <mesh position={[0, 0.5, 0]} castShadow receiveShadow>

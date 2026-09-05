@@ -1,3 +1,5 @@
+import { Html } from '@react-three/drei';
+import { PubRecLogo } from '../components/PubRecLogo';
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -7,8 +9,8 @@ export const OfficeFloor: React.FC = () => {
   return (
     <group>
       {/* 1.1 Piso Principal de Madeira Nobre Aconchegante (Warm Oak Hardwood) */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
-        <planeGeometry args={[44, 34]} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 9]} receiveShadow>
+        <planeGeometry args={[56, 56]} />
         <meshStandardMaterial
           color="#2e1b10"
           roughness={0.45}
@@ -98,11 +100,16 @@ export const OfficeWalls: React.FC = () => {
       </mesh>
       {woodSlats}
 
-      {/* Letreiro Neon Holográfico PUB DEV LOOP */}
+      {/* Letreiro Neon Holográfico com Logo Oficial PUB REC */}
       <mesh ref={neonRef} position={[0, 5.4, -14.5]}>
-        <planeGeometry args={[12, 1.2]} />
-        <meshBasicMaterial color="#38bdf8" transparent opacity={0.9} />
+        <boxGeometry args={[14, 1.6, 0.1]} />
+        <meshStandardMaterial color="#09090b" roughness={0.4} metalness={0.8} />
       </mesh>
+      <Html position={[0, 5.4, -14.4]} transform scale={0.22} center style={{ pointerEvents: 'none' }}>
+        <div style={{ background: 'rgba(9, 9, 11, 0.92)', padding: '10px 24px', borderRadius: '16px', border: '1.5px solid #ca8a04', boxShadow: '0 0 35px rgba(202, 138, 4, 0.4)' }}>
+          <PubRecLogo size="md" variant="light" showSubtitle={true} showGridLines={true} />
+        </div>
+      </Html>
 
       {/* Quadro Artístico Corporativo 1 (Emoldurado em Nogueira e Bronze) */}
       <group position={[-6.5, 4.2, -14.55]}>
@@ -144,22 +151,22 @@ export const OfficeWalls: React.FC = () => {
         </mesh>
       </group>
 
-      {/* Parede Oeste (Lounge do Toca-Discos) */}
-      <mesh position={[-21.5, 3.2, 0]} receiveShadow>
-        <boxGeometry args={[0.6, 6.4, 34]} />
+      {/* Parede Oeste (Lounge do Toca-Discos até Arcade & Auditório) */}
+      <mesh position={[-21.5, 3.2, 9]} receiveShadow>
+        <boxGeometry args={[0.6, 6.4, 50]} />
         <meshStandardMaterial color="#0f172a" roughness={0.9} />
       </mesh>
 
       {/* Janelas Panorâmicas de Vidro Leste com Persianas */}
-      <mesh position={[21, 3.2, 0]}>
-        <boxGeometry args={[0.2, 6.4, 34]} />
+      <mesh position={[21, 3.2, 9]}>
+        <boxGeometry args={[0.2, 6.4, 50]} />
         <meshStandardMaterial color="#38bdf8" transparent opacity={0.12} roughness={0.1} />
       </mesh>
       {blindSlats}
 
-      {/* Parede Sul */}
-      <mesh position={[0, 3.2, 16.5]} receiveShadow>
-        <boxGeometry args={[44, 6.4, 0.4]} />
+      {/* Parede Sul Perimetral (Fundo do Auditório e Games Room) */}
+      <mesh position={[0, 3.2, 34]} receiveShadow>
+        <boxGeometry args={[44, 6.4, 0.6]} />
         <meshStandardMaterial color="#0f172a" roughness={0.9} />
       </mesh>
     </group>

@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { type VinylAlbum, PUB_ARTWORK, VINYL_ALBUMS } from '../data/vinylTracks';
+import { useStore } from '../store/useStore';
 
 export type { VinylAlbum };
 export { PUB_ARTWORK, VINYL_ALBUMS };
@@ -21,6 +23,11 @@ export const VinylJukeboxModal: React.FC<VinylJukeboxModalProps> = ({
   isPlaying,
   onTogglePlay,
 }) => {
+  const isVinylShuffle = useStore((s) => s.isVinylShuffle);
+  const setVinylShuffle = useStore((s) => s.setVinylShuffle);
+  const isRadioMode = useStore((s) => s.isRadioMode);
+  const toggleRadioMode = useStore((s) => s.toggleRadioMode);
+  const selectVinylAlbumStore = useStore((s) => s.selectVinylAlbum);
   const [searchTerm, setSearchTerm] = useState('');
 
   const activeAlbum = VINYL_ALBUMS.find((a) => a.id === selectedAlbumId) || VINYL_ALBUMS[0];
@@ -38,7 +45,7 @@ export const VinylJukeboxModal: React.FC<VinylJukeboxModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
       style={{
         position: 'fixed',
@@ -48,7 +55,7 @@ export const VinylJukeboxModal: React.FC<VinylJukeboxModalProps> = ({
         bottom: 0,
         backgroundColor: 'rgba(2, 6, 23, 0.85)',
         backdropFilter: 'blur(16px)',
-        zIndex: 100,
+        zIndex: 20000000,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -97,20 +104,67 @@ export const VinylJukeboxModal: React.FC<VinylJukeboxModalProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#94a3b8',
-              fontSize: '20px',
-              cursor: 'pointer',
-              padding: '4px 8px',
-              borderRadius: '4px',
-            }}
-          >
-            ✕
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button
+              onClick={toggleRadioMode}
+              style={{
+                background: isRadioMode ? 'rgba(239, 68, 68, 0.25)' : 'rgba(30, 41, 59, 0.8)',
+                border: `1.5px solid ${isRadioMode ? '#ef4444' : '#475569'}`,
+                color: isRadioMode ? '#f87171' : '#cbd5e1',
+                padding: '6px 12px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.2s ease',
+                boxShadow: isRadioMode ? '0 0 15px rgba(239, 68, 68, 0.4)' : 'none',
+              }}
+              title={isRadioMode ? 'Rádio PUB Records Ativa (Clique para desativar)' : 'Ativar Modo Rádio 24h com locução do CEO'}
+            >
+              <span>📻</span>
+              <span>{isRadioMode ? 'Rádio PUB: AO VIVO 🔴' : 'Modo Rádio 24h'}</span>
+            </button>
+
+            <button
+              onClick={() => setVinylShuffle(!isVinylShuffle)}
+              style={{
+                background: isVinylShuffle ? 'rgba(56, 189, 248, 0.2)' : 'rgba(30, 41, 59, 0.8)',
+                border: `1.5px solid ${isVinylShuffle ? '#38bdf8' : '#475569'}`,
+                color: isVinylShuffle ? '#38bdf8' : '#cbd5e1',
+                padding: '6px 12px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.2s ease',
+              }}
+              title={isVinylShuffle ? 'Modo Aleatório Ativado' : 'Tocar faixas em modo aleatório'}
+            >
+              <span>🔀</span>
+              <span>{isVinylShuffle ? 'Aleatório: Ativo' : 'Modo Aleatório'}</span>
+            </button>
+
+            <button
+              onClick={onClose}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#94a3b8',
+                fontSize: '20px',
+                cursor: 'pointer',
+                padding: '4px 8px',
+                borderRadius: '4px',
+              }}
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* CORPO: PRATELEIRA DE DISCOS + REPRODUTOR ATUAL */}
@@ -171,6 +225,11 @@ export const VinylJukeboxModal: React.FC<VinylJukeboxModalProps> = ({
                   {activeAlbum.genre}
                 </span>
                 <span style={{ fontSize: '11px', color: '#94a3b8' }}>{activeAlbum.duration || activeAlbum.year}</span>
+                {isVinylShuffle && (
+                  <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: '#38bdf8', color: '#000', fontWeight: 700 }}>
+                    🔀 SHUFFLE ATIVO
+                  </span>
+                )}
               </div>
               <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', color: '#f8fafc' }}>
                 {activeAlbum.title}
@@ -311,7 +370,13 @@ export const VinylJukeboxModal: React.FC<VinylJukeboxModalProps> = ({
                 return (
                   <div
                     key={album.id}
-                    onClick={() => onSelectAlbum(album)}
+                    onClick={() => {
+                      if (album.id === 'album-pubrecords-shuffle') {
+                        selectVinylAlbumStore('album-pubrecords-shuffle');
+                      } else {
+                        onSelectAlbum(album);
+                      }
+                    }}
                     style={{
                       background: isSelected ? 'rgba(56, 189, 248, 0.15)' : '#1e293b',
                       border: `1.5px solid ${isSelected ? '#38bdf8' : '#334155'}`,
@@ -374,6 +439,7 @@ export const VinylJukeboxModal: React.FC<VinylJukeboxModalProps> = ({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
