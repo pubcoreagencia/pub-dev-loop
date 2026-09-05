@@ -592,3 +592,85 @@ export const OfficePlant: React.FC<{ position: [number, number, number] }> = ({ 
     </group>
   );
 };
+
+// 9. Cadeira de Escritório Executiva Ergonômica (OfficeChair)
+export const OfficeChair: React.FC<{
+  position: [number, number, number];
+  rotation?: [number, number, number];
+  color?: string;
+}> = ({ position, rotation = [0, 0, 0], color = '#0f172a' }) => {
+  return (
+    <group position={position} rotation={rotation}>
+      {/* 9.1 Base Estrela com 5 Rodízios */}
+      <group position={[0, 0.04, 0]}>
+        <mesh castShadow>
+          <cylinderGeometry args={[0.28, 0.28, 0.03, 12]} />
+          <meshStandardMaterial color="#334155" metalness={0.8} roughness={0.2} />
+        </mesh>
+        {/* 5 Braços da Estrela */}
+        {[0, 1, 2, 3, 4].map((i) => {
+          const angle = (i * Math.PI * 2) / 5;
+          const rx = Math.cos(angle) * 0.22;
+          const rz = Math.sin(angle) * 0.22;
+          return (
+            <group key={i} position={[rx, 0, rz]}>
+              <mesh castShadow>
+                <sphereGeometry args={[0.035, 8, 8]} />
+                <meshStandardMaterial color="#09090b" roughness={0.6} />
+              </mesh>
+            </group>
+          );
+        })}
+      </group>
+
+      {/* 9.2 Pistão Hidráulico / Coluna a Gás Cromada */}
+      <mesh position={[0, 0.22, 0]} castShadow>
+        <cylinderGeometry args={[0.035, 0.045, 0.34, 16]} />
+        <meshStandardMaterial color="#94a3b8" metalness={0.9} roughness={0.1} />
+      </mesh>
+
+      {/* 9.3 Assento Acolchoado Ergonômico */}
+      <mesh position={[0, 0.44, 0]} castShadow receiveShadow>
+        <boxGeometry args={[0.54, 0.08, 0.5]} />
+        <meshStandardMaterial color={color} roughness={0.7} />
+      </mesh>
+
+      {/* 9.4 Encosto Alto Ergonômico com Apoio Lombar (Inclinado Levemente) */}
+      <mesh position={[0, 0.82, -0.22]} rotation={[0.08, 0, 0]} castShadow receiveShadow>
+        <boxGeometry args={[0.5, 0.65, 0.07]} />
+        <meshStandardMaterial color={color} roughness={0.7} />
+      </mesh>
+      {/* Faixa Lombar */}
+      <mesh position={[0, 0.68, -0.24]} rotation={[0.08, 0, 0]}>
+        <boxGeometry args={[0.46, 0.1, 0.04]} />
+        <meshStandardMaterial color="#334155" metalness={0.6} roughness={0.3} />
+      </mesh>
+
+      {/* 9.5 Braços Laterais com Apoio Acolchoado */}
+      <group position={[-0.27, 0.58, 0]}>
+        {/* Haste Vertical do Braço */}
+        <mesh position={[0, -0.06, 0]} castShadow>
+          <boxGeometry args={[0.04, 0.2, 0.05]} />
+          <meshStandardMaterial color="#334155" metalness={0.7} />
+        </mesh>
+        {/* Apoio de Braço Superior */}
+        <mesh position={[0, 0.04, 0]} castShadow>
+          <boxGeometry args={[0.07, 0.03, 0.28]} />
+          <meshStandardMaterial color="#1e293b" roughness={0.5} />
+        </mesh>
+      </group>
+
+      <group position={[0.27, 0.58, 0]}>
+        <mesh position={[0, -0.06, 0]} castShadow>
+          <boxGeometry args={[0.04, 0.2, 0.05]} />
+          <meshStandardMaterial color="#334155" metalness={0.7} />
+        </mesh>
+        <mesh position={[0, 0.04, 0]} castShadow>
+          <boxGeometry args={[0.07, 0.03, 0.28]} />
+          <meshStandardMaterial color="#1e293b" roughness={0.5} />
+        </mesh>
+      </group>
+    </group>
+  );
+};
+

@@ -7,6 +7,7 @@ import {
   OfficeFloor,
   OfficeWalls,
   WorkstationTable,
+  OfficeChair,
   DunderBreakroom,
   ClassicWatercooler,
   LoungeSofa,
@@ -49,7 +50,7 @@ export const Office3DScene: React.FC = () => {
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const activeAlbum = VINYL_ALBUMS.find((a) => a.id === activeAlbumId) || VINYL_ALBUMS[0];
 
-  // Coordenadas calculadas milimetricamente para cada personagem sentar NA CADEIRA e de FRENTE PARA O PC
+  // Coordenadas das Estações de Trabalho (Mesas, Cadeiras e Avatares voltados para seus monitores)
   const positions: Record<
     string,
     {
@@ -57,73 +58,87 @@ export const Office3DScene: React.FC = () => {
       avatar: [number, number, number];
       tableRot?: [number, number, number];
       avatarRot: [number, number, number];
+      chair: [number, number, number];
+      chairRot: [number, number, number];
     }
   > = {
     ceo: {
       table: [0, 0, -8],
-      avatar: [0, 0, -7.28],
+      avatar: [0, 0.04, -7.3],
       tableRot: [0, 0, 0],
-      avatarRot: [0, 0, 0],
+      avatarRot: [0, Math.PI, 0],
+      chair: [0, 0, -7.3],
+      chairRot: [0, Math.PI, 0],
     },
     'chief-of-staff': {
       table: [0, 0, -1],
-      avatar: [0, 0, -0.28],
+      avatar: [0, 0.04, -0.45],
       tableRot: [0, 0, 0],
-      avatarRot: [0, 0, 0],
+      avatarRot: [0, Math.PI, 0],
+      chair: [0, 0, -0.45],
+      chairRot: [0, Math.PI, 0],
     },
     architect: {
       table: [-6, 0, 5],
-      avatar: [-6, 0, 4.28],
-      tableRot: [0, Math.PI, 0],
+      avatar: [-6, 0.04, 5.55],
+      tableRot: [0, 0, 0],
       avatarRot: [0, Math.PI, 0],
+      chair: [-6, 0, 5.55],
+      chairRot: [0, Math.PI, 0],
     },
     developer: {
       table: [6, 0, 5],
-      avatar: [6, 0, 4.28],
-      tableRot: [0, Math.PI, 0],
+      avatar: [6, 0.04, 5.55],
+      tableRot: [0, 0, 0],
       avatarRot: [0, Math.PI, 0],
+      chair: [6, 0, 5.55],
+      chairRot: [0, Math.PI, 0],
     },
     reviewer: {
       table: [-6, 0, 10],
-      avatar: [-6, 0, 9.28],
-      tableRot: [0, Math.PI, 0],
+      avatar: [-6, 0.04, 10.55],
+      tableRot: [0, 0, 0],
       avatarRot: [0, Math.PI, 0],
+      chair: [-6, 0, 10.55],
+      chairRot: [0, Math.PI, 0],
     },
     'qa-engineer': {
       table: [6, 0, 10],
-      avatar: [6, 0, 9.28],
-      tableRot: [0, Math.PI, 0],
+      avatar: [6, 0.04, 10.55],
+      tableRot: [0, 0, 0],
       avatarRot: [0, Math.PI, 0],
+      chair: [6, 0, 10.55],
+      chairRot: [0, Math.PI, 0],
     },
   };
 
-  // Coordenadas no Auditório: Agentes sentados nas cadeiras da Fileira 1 e CEO no púlpito do palco
+  // Coordenadas no Auditório: Agentes sentados nas cadeiras da Fileira 1 e CEO no palco ATRÁS do púlpito
   const conferencePositions: Record<
     string,
     { pos: [number, number, number]; rot: [number, number, number] }
   > = {
     ceo: {
-      pos: [0, 0.72, 27.8], // No púlpito central do palco de frente para a plateia
+      pos: [0, 0.74, 28.6], // Atrás do púlpito (z=27.8) no palco voltado para o auditório
       rot: [0, Math.PI, 0],
     },
     'chief-of-staff': {
-      pos: [-3.2, 0.44, 22.5], // Cadeira da Fileira 1 voltada para o palco
+      pos: [-3.2, 0.04, 22.5], // Cadeira da Fileira 1 voltada para o palco
       rot: [0, 0, 0],
     },
     architect: {
-      pos: [-1.6, 0.44, 22.5], // Cadeira da Fileira 1 voltada para o palco
+      pos: [-1.6, 0.04, 22.5], // Cadeira da Fileira 1 voltada para o palco
       rot: [0, 0, 0],
     },
     developer: {
-      pos: [0, 0.44, 22.5], // Cadeira da Fileira 1 voltada para o palco
+      pos: [0, 0.04, 22.5], // Cadeira da Fileira 1 voltada para o palco
       rot: [0, 0, 0],
     },
     reviewer: {
-      pos: [1.6, 0.44, 22.5], // Cadeira da Fileira 1 voltada para o palco
+      pos: [1.6, 0.04, 22.5], // Cadeira da Fileira 1 voltada para o palco
       rot: [0, 0, 0],
     },
     'qa-engineer': {
-      pos: [3.2, 0.44, 22.5], // Cadeira da Fileira 1 voltada para o palco
+      pos: [3.2, 0.04, 22.5], // Cadeira da Fileira 1 voltada para o palco
       rot: [0, 0, 0],
     },
   };
@@ -315,6 +330,11 @@ export const Office3DScene: React.FC = () => {
           rotation={positions.ceo.tableRot}
           isPlaying={isPlayingVinyl}
         />
+        <OfficeChair
+          position={positions.ceo.chair}
+          rotation={positions.ceo.chairRot}
+          color="#1e1b4b"
+        />
         <Office3DAvatar
           position={positions.ceo.avatar}
           rotation={positions.ceo.avatarRot}
@@ -336,6 +356,11 @@ export const Office3DScene: React.FC = () => {
           accessoryType="CLIPBOARD"
           onClick={() => selectAgent(agents.find((a) => a.id === 'chief-of-staff'))}
         />
+        <OfficeChair
+          position={positions['chief-of-staff'].chair}
+          rotation={positions['chief-of-staff'].chairRot}
+          color="#1e293b"
+        />
         <Office3DAvatar
           position={positions['chief-of-staff'].avatar}
           rotation={positions['chief-of-staff'].avatarRot}
@@ -355,6 +380,11 @@ export const Office3DScene: React.FC = () => {
           glowColor="#3b82f6"
           accessoryType="NONE"
           onClick={() => selectAgent(agents.find((a) => a.id === 'architect'))}
+        />
+        <OfficeChair
+          position={positions.architect.chair}
+          rotation={positions.architect.chairRot}
+          color="#1e293b"
         />
         <Office3DAvatar
           position={positions.architect.avatar}
@@ -376,6 +406,11 @@ export const Office3DScene: React.FC = () => {
           accessoryType="HEADPHONES"
           onClick={() => selectAgent(agents.find((a) => a.id === 'developer'))}
         />
+        <OfficeChair
+          position={positions.developer.chair}
+          rotation={positions.developer.chairRot}
+          color="#1e293b"
+        />
         <Office3DAvatar
           position={positions.developer.avatar}
           rotation={positions.developer.avatarRot}
@@ -396,6 +431,11 @@ export const Office3DScene: React.FC = () => {
           accessoryType="NONE"
           onClick={() => selectAgent(agents.find((a) => a.id === 'reviewer'))}
         />
+        <OfficeChair
+          position={positions.reviewer.chair}
+          rotation={positions.reviewer.chairRot}
+          color="#1e293b"
+        />
         <Office3DAvatar
           position={positions.reviewer.avatar}
           rotation={positions.reviewer.avatarRot}
@@ -415,6 +455,11 @@ export const Office3DScene: React.FC = () => {
           glowColor="#059669"
           accessoryType="RUBBER_DUCKS"
           onClick={() => selectAgent(agents.find((a) => a.id === 'qa-engineer'))}
+        />
+        <OfficeChair
+          position={positions['qa-engineer'].chair}
+          rotation={positions['qa-engineer'].chairRot}
+          color="#1e293b"
         />
         <Office3DAvatar
           position={positions['qa-engineer'].avatar}

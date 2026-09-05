@@ -6,55 +6,134 @@ export const PlayableArcadeModal: React.FC = () => {
   const closeArcade = useStore((s) => s.closeArcadeGame);
   const leaderboard = useStore((s) => s.arcadeLeaderboard);
   const recordScore = useStore((s) => s.recordArcadeScore);
+
   const [score, setScore] = useState(0);
   const [gameOver, setGameOver] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-
+  const [victory, setVictory] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [playerName, setPlayerName] = useState('Matheus Paes (CEO)');
+
+  const modalRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animFrameRef = useRef<number | null>(null);
 
-  // Sound synthesizer for arcade audio
-  const playArcadeSound = (type: 'coin' | 'jump' | 'hit' | 'boost' | 'ko') => {
+  // Toggle HTML5 Fullscreen
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      modalRef.current?.requestFullscreen?.();
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen?.();
+      setIsFullscreen(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
+  // Web Audio Synthesizer for Retro Arcade Sound Effects
+  const playArcadeSound = (type: 'coin' | 'jump' | 'hit' | 'boost' | 'ko' | 'shot' | 'hadouken') => {
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
       const now = ctx.currentTime;
 
       if (type === 'coin') {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
         osc.type = 'sine';
         osc.frequency.setValueAtTime(987.77, now);
         osc.frequency.setValueAtTime(1318.51, now + 0.08);
-        gain.gain.setValueAtTime(0.15, now);
+        gain.gain.setValueAtTime(0.2, now);
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
         osc.start(now);
         osc.stop(now + 0.35);
-      } else if (type === 'jump' || type === 'boost') {
+      } else if (type === 'jump') {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
         osc.type = 'square';
-        osc.frequency.setValueAtTime(200, now);
-        osc.frequency.exponentialRampToValueAtTime(600, now + 0.15);
+        osc.frequency.setValueAtTime(160, now);
+        osc.frequency.exponentialRampToValueAtTime(480, now + 0.15);
         gain.gain.setValueAtTime(0.12, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
         osc.start(now);
-        osc.stop(now + 0.2);
-      } else if (type === 'hit' || type === 'ko') {
+        osc.stop(now + 0.18);
+      } else if (type === 'shot') {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(150, now);
-        osc.frequency.linearRampToValueAtTime(40, now + 0.25);
-        gain.gain.setValueAtTime(0.2, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+        osc.frequency.setValueAtTime(600, now);
+        osc.frequency.exponentialRampToValueAtTime(80, now + 0.12);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
         osc.start(now);
-        osc.stop(now + 0.3);
+        osc.stop(now + 0.15);
+      } else if (type === 'hadouken') {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(320, now);
+        osc.frequency.exponentialRampToValueAtTime(120, now + 0.3);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.35);
+      } else if (type === 'hit') {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(220, now);
+        osc.frequency.linearRampToValueAtTime(60, now + 0.12);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.15);
+      } else if (type === 'ko') {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(180, now);
+        osc.frequency.linearRampToValueAtTime(30, now + 0.5);
+        gain.gain.setValueAtTime(0.4, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.6);
+      } else if (type === 'boost') {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(120, now);
+        osc.frequency.exponentialRampToValueAtTime(350, now + 0.2);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.25);
       }
-      osc.connect(gain);
-      gain.connect(ctx.destination);
     } catch {}
   };
 
-  // Game Loop logic per arcade game
+  // Game Loop
   useEffect(() => {
     if (!activeGame || !canvasRef.current) return;
     const canvas = canvasRef.current;
@@ -63,34 +142,122 @@ export const PlayableArcadeModal: React.FC = () => {
 
     let localScore = 0;
     let localGameOver = false;
+    let localVictory = false;
     let frameCount = 0;
 
-    // Game Specific States
-    let playerX = 200;
-    let playerY = 180;
-    let playerSpeed = 4;
+    // Common player state
+    let playerX = 80;
+    let playerY = canvas.height - 85;
+    let playerVy = 0;
+    let isJumping = false;
+    let isCrouching = false;
+    let playerHp = 100;
+
+    // Combat state for Street Fighter & Cadillacs
+    let punchTimer = 0;
+    let kickTimer = 0;
+    let hadoukenCooldown = 0;
+    let opponentHp = 100;
+    let opponentX = canvas.width - 120;
+    let opponentY = canvas.height - 85;
+    let opponentState: 'idle' | 'walk' | 'punch' | 'kick' | 'hurt' | 'special' = 'idle';
+    let opponentTimer = 0;
+
+    // Projectiles & Particles
+    let bullets: Array<{ x: number; y: number; vx: number; vy: number; color?: string; radius?: number; isEnemy?: boolean }> = [];
+    let enemies: Array<{ x: number; y: number; hp: number; maxHp: number; type: string; vx: number; shootCooldown: number }> = [];
+    let particles: Array<{ x: number; y: number; vx: number; vy: number; life: number; maxLife: number; color: string; size: number }> = [];
     let obstacles: Array<{ x: number; y: number; width: number; height: number; speed: number; color: string }> = [];
-    let enemies: Array<{ x: number; y: number; hp: number; type: string }> = [];
-    let bullets: Array<{ x: number; y: number; vx: number; vy: number }> = [];
 
     const keys: Record<string, boolean> = {};
 
     const handleKeyDown = (e: KeyboardEvent) => {
       keys[e.key] = true;
-      if (e.key === ' ' || e.key === 'z' || e.key === 'Z') {
-        if (activeGame === 'metal-slug' || activeGame === 'cadillacs') {
-          bullets.push({ x: playerX + 25, y: playerY + 12, vx: 10, vy: 0 });
-          playArcadeSound('boost');
-        } else if (activeGame === 'street-fighter') {
+      keys[e.code] = true;
+
+      // Street Fighter Controls
+      if (activeGame === 'street-fighter') {
+        if ((e.code === 'KeyJ' || e.key === 'j' || e.key === 'J') && punchTimer <= 0) {
+          punchTimer = 12;
           playArcadeSound('hit');
-          localScore += 250;
-          setScore(localScore);
+          // Hit check Ryu punch on Ken
+          if (Math.abs(opponentX - playerX) < 70 && !isCrouching) {
+            opponentHp = Math.max(0, opponentHp - 12);
+            localScore += 300;
+            setScore(localScore);
+            opponentState = 'hurt';
+            opponentTimer = 10;
+            for (let i = 0; i < 6; i++) {
+              particles.push({
+                x: opponentX + 10,
+                y: opponentY - 30,
+                vx: (Math.random() - 0.5) * 6,
+                vy: (Math.random() - 0.5) * 6,
+                life: 12,
+                maxLife: 12,
+                color: '#facc15',
+                size: 3,
+              });
+            }
+          }
+        } else if ((e.code === 'KeyK' || e.key === 'k' || e.key === 'K') && kickTimer <= 0) {
+          kickTimer = 15;
+          playArcadeSound('hit');
+          if (Math.abs(opponentX - playerX) < 80) {
+            opponentHp = Math.max(0, opponentHp - 18);
+            localScore += 450;
+            setScore(localScore);
+            opponentState = 'hurt';
+            opponentTimer = 12;
+            for (let i = 0; i < 8; i++) {
+              particles.push({
+                x: opponentX + 10,
+                y: opponentY - 20,
+                vx: (Math.random() - 0.5) * 8,
+                vy: (Math.random() - 0.5) * 8,
+                life: 14,
+                maxLife: 14,
+                color: '#ef4444',
+                size: 4,
+              });
+            }
+          }
+        } else if ((e.code === 'KeyL' || e.key === 'l' || e.key === 'L' || e.key === ' ') && hadoukenCooldown <= 0) {
+          hadoukenCooldown = 40;
+          playArcadeSound('hadouken');
+          bullets.push({
+            x: playerX + 35,
+            y: playerY - 30,
+            vx: 8,
+            vy: 0,
+            color: '#38bdf8',
+            radius: 12,
+          });
+        }
+      }
+
+      // Metal Slug & Cadillacs Shooting
+      if (activeGame === 'metal-slug' || activeGame === 'cadillacs') {
+        if (e.key === ' ' || e.code === 'Space' || e.key === 'z' || e.key === 'Z' || e.key === 'j' || e.key === 'J') {
+          playArcadeSound('shot');
+          bullets.push({
+            x: playerX + 28,
+            y: playerY - 18,
+            vx: 12,
+            vy: 0,
+            color: '#facc15',
+            radius: 4,
+          });
+          if (activeGame === 'cadillacs' && (e.key === 'j' || e.key === 'J')) {
+            punchTimer = 10;
+          }
         }
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
       keys[e.key] = false;
+      keys[e.code] = false;
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -99,6 +266,7 @@ export const PlayableArcadeModal: React.FC = () => {
     playArcadeSound('coin');
     setIsPlaying(true);
     setGameOver(false);
+    setVictory(false);
     setScore(0);
 
     const loop = () => {
@@ -106,68 +274,66 @@ export const PlayableArcadeModal: React.FC = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       if (!localGameOver) {
-        // ==========================================
+        // =========================================================
         // 1. F1 GRAND PRIX ARCADE
-        // ==========================================
+        // =========================================================
         if (activeGame === 'f1') {
-          // Track road background
           ctx.fillStyle = '#065f46';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
-          // Road
           ctx.fillStyle = '#1e293b';
-          ctx.fillRect(80, 0, 320, canvas.height);
-          // Curbs
-          const curbOffset = (frameCount * 8) % 40;
+          ctx.fillRect(70, 0, 340, canvas.height);
+
+          const curbOffset = (frameCount * 10) % 40;
           for (let y = -40 + curbOffset; y < canvas.height; y += 40) {
-            ctx.fillStyle = (Math.floor((y - curbOffset) / 40) % 2 === 0) ? '#ef4444' : '#ffffff';
-            ctx.fillRect(72, y, 8, 20);
-            ctx.fillRect(400, y, 8, 20);
-            // Road dashes
+            ctx.fillStyle = Math.floor((y - curbOffset) / 40) % 2 === 0 ? '#ef4444' : '#ffffff';
+            ctx.fillRect(62, y, 8, 20);
+            ctx.fillRect(410, y, 8, 20);
             ctx.fillStyle = '#facc15';
             ctx.fillRect(238, y, 4, 25);
           }
 
-          // Player controls
-          if (keys['ArrowLeft'] || keys['a'] || keys['A']) playerX = Math.max(90, playerX - playerSpeed);
-          if (keys['ArrowRight'] || keys['d'] || keys['D']) playerX = Math.min(380, playerX + playerSpeed);
+          if (keys['ArrowLeft'] || keys['KeyA'] || keys['a']) playerX = Math.max(80, playerX - 5);
+          if (keys['ArrowRight'] || keys['KeyD'] || keys['d']) playerX = Math.min(380, playerX + 5);
 
-          // Player F1 Car (Red Ferrari style)
           ctx.fillStyle = '#dc2626';
-          ctx.fillRect(playerX - 12, canvas.height - 70, 24, 45); // Body
+          ctx.fillRect(playerX - 12, canvas.height - 70, 24, 45);
           ctx.fillStyle = '#0f172a';
-          ctx.fillRect(playerX - 16, canvas.height - 65, 8, 14); // Front left tire
-          ctx.fillRect(playerX + 8, canvas.height - 65, 8, 14);  // Front right tire
-          ctx.fillRect(playerX - 18, canvas.height - 40, 9, 16); // Rear left tire
-          ctx.fillRect(playerX + 9, canvas.height - 40, 9, 16);  // Rear right tire
-          ctx.fillStyle = '#f8fafc';
-          ctx.fillRect(playerX - 6, canvas.height - 50, 12, 12); // Cockpit helmet
+          ctx.fillRect(playerX - 16, canvas.height - 65, 8, 14);
+          ctx.fillRect(playerX + 8, canvas.height - 65, 8, 14);
+          ctx.fillRect(playerX - 18, canvas.height - 40, 9, 16);
+          ctx.fillRect(playerX + 9, canvas.height - 40, 9, 16);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 10px monospace';
+          ctx.fillText('01', playerX - 6, canvas.height - 42);
 
-          // Spawn rival cars
           if (frameCount % 45 === 0) {
+            const rivalX = 90 + Math.random() * 280;
+            const colors = ['#2563eb', '#16a34a', '#ca8a04', '#9333ea'];
             obstacles.push({
-              x: 100 + Math.random() * 260,
+              x: rivalX,
               y: -50,
               width: 24,
               height: 42,
               speed: 4 + Math.random() * 3,
-              color: ['#3b82f6', '#eab308', '#8b5cf6', '#06b6d4'][Math.floor(Math.random() * 4)],
+              color: colors[Math.floor(Math.random() * colors.length)],
             });
           }
 
-          // Update rival cars
           for (let i = obstacles.length - 1; i >= 0; i--) {
-            const obs = obstacles[i];
-            obs.y += obs.speed;
-            ctx.fillStyle = obs.color;
-            ctx.fillRect(obs.x - 12, obs.y, obs.width, obs.height);
-            ctx.fillStyle = '#000000';
-            ctx.fillRect(obs.x - 15, obs.y + 4, 6, 12);
-            ctx.fillRect(obs.x + 9, obs.y + 4, 6, 12);
+            const o = obstacles[i];
+            o.y += o.speed;
+            ctx.fillStyle = o.color;
+            ctx.fillRect(o.x - 12, o.y, o.width, o.height);
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(o.x - 16, o.y + 5, 6, 12);
+            ctx.fillRect(o.x + 10, o.y + 5, 6, 12);
+            ctx.fillRect(o.x - 17, o.y + 24, 7, 14);
+            ctx.fillRect(o.x + 10, o.y + 24, 7, 14);
 
-            // Collision detection
             if (
-              Math.abs(playerX - obs.x) < 22 &&
-              Math.abs((canvas.height - 50) - obs.y) < 36
+              Math.abs(playerX - o.x) < 22 &&
+              canvas.height - 50 > o.y &&
+              canvas.height - 70 < o.y + o.height
             ) {
               localGameOver = true;
               setGameOver(true);
@@ -175,57 +341,109 @@ export const PlayableArcadeModal: React.FC = () => {
               recordScore(activeGame, playerName, localScore);
             }
 
-            // Off screen
-            if (obs.y > canvas.height + 50) {
+            if (o.y > canvas.height) {
               obstacles.splice(i, 1);
-              localScore += 150;
+              localScore += 200;
               setScore(localScore);
             }
           }
         }
 
-        // ==========================================
-        // 2. METAL SLUG RETRO ASSAULT
-        // ==========================================
+        // =========================================================
+        // 2. METAL SLUG RETRO ASSAULT (100% WORKING BULLETS & HITBOX)
+        // =========================================================
         else if (activeGame === 'metal-slug') {
-          // Desert war background
           ctx.fillStyle = '#78350f';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.fillStyle = '#b45309';
-          ctx.fillRect(0, canvas.height - 50, canvas.width, 50);
+          ctx.fillRect(0, canvas.height - 45, canvas.width, 45);
+          ctx.fillStyle = '#d97706';
+          ctx.fillRect(0, canvas.height - 42, canvas.width, 4);
 
-          // Controls
-          if (keys['ArrowLeft'] || keys['a'] || keys['A']) playerX = Math.max(20, playerX - 4);
-          if (keys['ArrowRight'] || keys['d'] || keys['D']) playerX = Math.min(canvas.width - 40, playerX + 4);
-
-          // Marco Rossi character (Retro pixel hero)
-          ctx.fillStyle = '#f8fafc'; // Shirt
-          ctx.fillRect(playerX, canvas.height - 85, 20, 22);
-          ctx.fillStyle = '#ef4444'; // Red vest
-          ctx.fillRect(playerX - 2, canvas.height - 82, 6, 18);
-          ctx.fillStyle = '#166534'; // Green pants
-          ctx.fillRect(playerX + 2, canvas.height - 63, 16, 16);
-          ctx.fillStyle = '#fef08a'; // Hair
-          ctx.fillRect(playerX + 4, canvas.height - 98, 14, 12);
-
-          // Spawn enemies
-          if (frameCount % 60 === 0) {
-            enemies.push({ x: canvas.width + 20, y: canvas.height - 85, hp: 2, type: 'soldier' });
+          if ((keys['ArrowUp'] || keys['KeyW'] || keys['w']) && !isJumping) {
+            playerVy = -9;
+            isJumping = true;
+            playArcadeSound('jump');
+          }
+          playerY += playerVy;
+          if (playerY < canvas.height - 85) {
+            playerVy += 0.5;
+          } else {
+            playerY = canvas.height - 85;
+            playerVy = 0;
+            isJumping = false;
           }
 
-          // Bullets
-          ctx.fillStyle = '#facc15';
-          for (let b = bullets.length - 1; b >= 0; b--) {
-            bullets[b].x += bullets[b].vx;
-            ctx.fillRect(bullets[b].x, bullets[b].y, 10, 4);
+          if (keys['ArrowLeft'] || keys['KeyA'] || keys['a']) playerX = Math.max(20, playerX - 4);
+          if (keys['ArrowRight'] || keys['KeyD'] || keys['d']) playerX = Math.min(canvas.width - 50, playerX + 4);
 
-            // Hit enemy
+          ctx.fillStyle = '#f8fafc';
+          ctx.fillRect(playerX, playerY, 20, 24);
+          ctx.fillStyle = '#ef4444';
+          ctx.fillRect(playerX - 2, playerY + 2, 6, 20);
+          ctx.fillStyle = '#166534';
+          ctx.fillRect(playerX + 2, playerY + 24, 16, 16);
+          ctx.fillStyle = '#fef08a';
+          ctx.fillRect(playerX + 4, playerY - 14, 14, 14);
+          ctx.fillStyle = '#334155';
+          ctx.fillRect(playerX + 18, playerY + 8, 12, 6);
+
+          if (frameCount % 75 === 0) {
+            enemies.push({
+              x: canvas.width + 20,
+              y: canvas.height - 85,
+              hp: 2,
+              maxHp: 2,
+              type: 'soldier',
+              vx: 1.8,
+              shootCooldown: 60,
+            });
+          }
+
+          for (let b = bullets.length - 1; b >= 0; b--) {
+            const bullet = bullets[b];
+            bullet.x += bullet.vx;
+            ctx.fillStyle = bullet.color || '#facc15';
+            ctx.fillRect(bullet.x, bullet.y, 10, 4);
+
             for (let e = enemies.length - 1; e >= 0; e--) {
-              if (Math.abs(bullets[b].x - enemies[e].x) < 20 && Math.abs(bullets[b].y - enemies[e].y) < 25) {
-                enemies[e].hp--;
+              const enemy = enemies[e];
+              if (
+                bullet.x > enemy.x &&
+                bullet.x < enemy.x + 24 &&
+                bullet.y > enemy.y - 15 &&
+                bullet.y < enemy.y + 40
+              ) {
+                enemy.hp--;
                 bullets.splice(b, 1);
                 playArcadeSound('hit');
-                if (enemies[e].hp <= 0) {
+
+                for (let p = 0; p < 6; p++) {
+                  particles.push({
+                    x: enemy.x + 10,
+                    y: enemy.y + 10,
+                    vx: (Math.random() - 0.5) * 5,
+                    vy: (Math.random() - 0.5) * 5,
+                    life: 10,
+                    maxLife: 10,
+                    color: '#f97316',
+                    size: 3,
+                  });
+                }
+
+                if (enemy.hp <= 0) {
+                  for (let p = 0; p < 14; p++) {
+                    particles.push({
+                      x: enemy.x + 10,
+                      y: enemy.y + 10,
+                      vx: (Math.random() - 0.5) * 8,
+                      vy: (Math.random() - 0.5) * 8,
+                      life: 18,
+                      maxLife: 18,
+                      color: Math.random() > 0.5 ? '#ef4444' : '#facc15',
+                      size: 5,
+                    });
+                  }
                   enemies.splice(e, 1);
                   localScore += 500;
                   setScore(localScore);
@@ -233,19 +451,29 @@ export const PlayableArcadeModal: React.FC = () => {
                 break;
               }
             }
-            if (bullets[b] && bullets[b].x > canvas.width) bullets.splice(b, 1);
+
+            if (bullets[b] && bullets[b].x > canvas.width) {
+              bullets.splice(b, 1);
+            }
           }
 
-          // Enemies update
-          ctx.fillStyle = '#374151';
           for (let e = enemies.length - 1; e >= 0; e--) {
-            enemies[e].x -= 2;
-            ctx.fillRect(enemies[e].x, enemies[e].y, 18, 24);
-            ctx.fillStyle = '#991b1b';
-            ctx.fillRect(enemies[e].x + 2, enemies[e].y - 8, 14, 8); // Helmet
-            ctx.fillStyle = '#374151';
+            const enemy = enemies[e];
+            enemy.x -= enemy.vx;
 
-            if (Math.abs(playerX - enemies[e].x) < 16) {
+            ctx.fillStyle = '#374151';
+            ctx.fillRect(enemy.x, enemy.y, 20, 24);
+            ctx.fillStyle = '#991b1b';
+            ctx.fillRect(enemy.x + 2, enemy.y - 12, 16, 12);
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(enemy.x + 2, enemy.y + 24, 16, 16);
+
+            ctx.fillStyle = '#ef4444';
+            ctx.fillRect(enemy.x, enemy.y - 18, 20, 3);
+            ctx.fillStyle = '#22c55e';
+            ctx.fillRect(enemy.x, enemy.y - 18, (enemy.hp / enemy.maxHp) * 20, 3);
+
+            if (Math.abs(playerX - enemy.x) < 18 && Math.abs(playerY - enemy.y) < 25) {
               localGameOver = true;
               setGameOver(true);
               playArcadeSound('ko');
@@ -254,116 +482,355 @@ export const PlayableArcadeModal: React.FC = () => {
           }
         }
 
-        // ==========================================
-        // 3. STREET FIGHTER RETRO DUEL
-        // ==========================================
+        // =========================================================
+        // 3. STREET FIGHTER II RETRO DUEL (RYU VS KEN 100% FUNCTIONAL)
+        // =========================================================
         else if (activeGame === 'street-fighter') {
-          // Dojo background
           ctx.fillStyle = '#1e1b4b';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = '#fef08a';
+          ctx.beginPath();
+          ctx.arc(canvas.width / 2, 80, 40, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#7f1d1d';
+          ctx.fillRect(0, canvas.height - 45, canvas.width, 45);
           ctx.fillStyle = '#991b1b';
-          ctx.fillRect(0, canvas.height - 40, canvas.width, 40);
+          ctx.fillRect(0, canvas.height - 42, canvas.width, 4);
 
-          // Ryu Player
-          ctx.fillStyle = '#f8fafc'; // White Gi
-          ctx.fillRect(120, canvas.height - 120, 36, 60);
-          ctx.fillStyle = '#dc2626'; // Red Headband
-          ctx.fillRect(126, canvas.height - 135, 24, 10);
-          ctx.fillStyle = '#1e293b'; // Black belt
-          ctx.fillRect(118, canvas.height - 85, 40, 8);
+          if ((keys['ArrowUp'] || keys['KeyW'] || keys['w']) && !isJumping) {
+            playerVy = -8.5;
+            isJumping = true;
+            playArcadeSound('jump');
+          }
+          playerY += playerVy;
+          if (playerY < canvas.height - 85) {
+            playerVy += 0.5;
+          } else {
+            playerY = canvas.height - 85;
+            playerVy = 0;
+            isJumping = false;
+          }
 
-          // Opponent (Ken)
-          const oppX = 320 + Math.sin(frameCount * 0.08) * 20;
-          ctx.fillStyle = '#dc2626'; // Red Gi
-          ctx.fillRect(oppX, canvas.height - 120, 36, 60);
-          ctx.fillStyle = '#fde047'; // Blonde Hair
-          ctx.fillRect(oppX + 4, canvas.height - 138, 28, 14);
+          isCrouching = !!(keys['ArrowDown'] || keys['KeyS'] || keys['s']) && !isJumping;
+
+          if (keys['ArrowLeft'] || keys['KeyA'] || keys['a']) playerX = Math.max(30, playerX - 3.5);
+          if (keys['ArrowRight'] || keys['KeyD'] || keys['d']) playerX = Math.min(opponentX - 35, playerX + 3.5);
+
+          if (punchTimer > 0) punchTimer--;
+          if (kickTimer > 0) kickTimer--;
+          if (hadoukenCooldown > 0) hadoukenCooldown--;
+
+          const ryuY = isCrouching ? playerY + 15 : playerY;
+          const ryuH = isCrouching ? 35 : 55;
+          ctx.fillStyle = '#f8fafc';
+          ctx.fillRect(playerX, ryuY, 32, ryuH);
+          ctx.fillStyle = '#1e293b';
+          ctx.fillRect(playerX - 2, ryuY + 25, 36, 6);
+          ctx.fillStyle = '#dc2626';
+          ctx.fillRect(playerX + 2, ryuY - 14, 28, 10);
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(playerX + 4, ryuY - 18, 24, 6);
+
+          if (punchTimer > 0) {
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(playerX + 30, ryuY + 10, 24, 10);
+            ctx.fillStyle = '#fed7aa';
+            ctx.fillRect(playerX + 54, ryuY + 9, 10, 12);
+          }
+          if (kickTimer > 0) {
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(playerX + 28, ryuY + 28, 30, 12);
+            ctx.fillStyle = '#fed7aa';
+            ctx.fillRect(playerX + 58, ryuY + 28, 10, 12);
+          }
+
+          opponentTimer++;
+          if (opponentTimer > 40) {
+            opponentTimer = 0;
+            const dist = opponentX - playerX;
+            if (dist > 120) {
+              opponentState = 'walk';
+            } else if (dist < 80) {
+              opponentState = Math.random() > 0.5 ? 'punch' : 'kick';
+              if (Math.abs(opponentX - playerX) < 75) {
+                if (!isCrouching) {
+                  playerHp = Math.max(0, playerHp - 10);
+                  playArcadeSound('hit');
+                  for (let p = 0; p < 5; p++) {
+                    particles.push({
+                      x: playerX + 15,
+                      y: playerY + 10,
+                      vx: (Math.random() - 0.5) * 6,
+                      vy: (Math.random() - 0.5) * 6,
+                      life: 10,
+                      maxLife: 10,
+                      color: '#facc15',
+                      size: 3,
+                    });
+                  }
+                  if (playerHp <= 0) {
+                    localGameOver = true;
+                    setGameOver(true);
+                    playArcadeSound('ko');
+                    recordScore(activeGame, playerName, localScore);
+                  }
+                }
+              }
+            } else {
+              opponentState = 'idle';
+            }
+          }
+
+          if (opponentState === 'walk' && opponentX > playerX + 65) {
+            opponentX -= 1.8;
+          }
+
+          ctx.fillStyle = opponentState === 'hurt' ? '#ffffff' : '#dc2626';
+          ctx.fillRect(opponentX, opponentY, 32, 55);
+          ctx.fillStyle = '#1e293b';
+          ctx.fillRect(opponentX - 2, opponentY + 25, 36, 6);
+          ctx.fillStyle = '#fde047';
+          ctx.fillRect(opponentX + 2, opponentY - 18, 28, 14);
+
+          if (opponentState === 'punch') {
+            ctx.fillStyle = '#dc2626';
+            ctx.fillRect(opponentX - 22, opponentY + 10, 24, 10);
+          }
+
+          for (let b = bullets.length - 1; b >= 0; b--) {
+            const fb = bullets[b];
+            fb.x += fb.vx;
+
+            ctx.fillStyle = '#38bdf8';
+            ctx.beginPath();
+            ctx.arc(fb.x, fb.y, fb.radius || 12, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(fb.x, fb.y, (fb.radius || 12) * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            if (fb.x > opponentX - 10 && fb.x < opponentX + 35) {
+              opponentHp = Math.max(0, opponentHp - 25);
+              localScore += 800;
+              setScore(localScore);
+              playArcadeSound('hit');
+              opponentState = 'hurt';
+              bullets.splice(b, 1);
+
+              for (let p = 0; p < 14; p++) {
+                particles.push({
+                  x: opponentX,
+                  y: opponentY + 10,
+                  vx: (Math.random() - 0.5) * 8,
+                  vy: (Math.random() - 0.5) * 8,
+                  life: 16,
+                  maxLife: 16,
+                  color: '#38bdf8',
+                  size: 4,
+                });
+              }
+              break;
+            }
+
+            if (bullets[b] && bullets[b].x > canvas.width) {
+              bullets.splice(b, 1);
+            }
+          }
 
           // HP Bars
-          ctx.fillStyle = '#22c55e';
-          ctx.fillRect(40, 20, 160, 16);
-          const oppHp = Math.max(0, 160 - Math.floor(localScore / 50));
-          ctx.fillStyle = oppHp > 40 ? '#22c55e' : '#ef4444';
-          ctx.fillRect(280, 20, oppHp, 16);
+          ctx.fillStyle = '#334155';
+          ctx.fillRect(20, 20, 180, 16);
+          ctx.fillStyle = playerHp > 30 ? '#eab308' : '#ef4444';
+          ctx.fillRect(20, 20, (playerHp / 100) * 180, 16);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 11px monospace';
+          ctx.fillText('RYU (1P)', 22, 16);
 
-          if (oppHp <= 0) {
+          ctx.fillStyle = '#334155';
+          ctx.fillRect(canvas.width - 200, 20, 180, 16);
+          ctx.fillStyle = opponentHp > 30 ? '#eab308' : '#ef4444';
+          ctx.fillRect(canvas.width - 200 + (180 - (opponentHp / 100) * 180), 20, (opponentHp / 100) * 180, 16);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText('KEN (2P)', canvas.width - 70, 16);
+
+          if (opponentHp <= 0) {
+            localVictory = true;
             localGameOver = true;
+            setVictory(true);
             setGameOver(true);
             playArcadeSound('coin');
             recordScore(activeGame, playerName, localScore + 10000);
           }
         }
 
-        // ==========================================
-        // 4. CADILLACS E DINOSSAUROS
-        // ==========================================
+        // =========================================================
+        // 4. CADILLACS E DINOSSAUROS BRAWL
+        // =========================================================
         else {
-          // Post-apocalyptic jungle
           ctx.fillStyle = '#14532d';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.fillStyle = '#3f6212';
-          ctx.fillRect(0, canvas.height - 60, canvas.width, 60);
+          ctx.fillStyle = '#365314';
+          ctx.fillRect(0, canvas.height - 50, canvas.width, 50);
 
-          // Player Jack Tenrec
-          if (keys['ArrowLeft'] || keys['a']) playerX = Math.max(30, playerX - 3.5);
-          if (keys['ArrowRight'] || keys['d']) playerX = Math.min(canvas.width - 50, playerX + 3.5);
+          if (keys['ArrowLeft'] || keys['KeyA'] || keys['a']) playerX = Math.max(30, playerX - 4);
+          if (keys['ArrowRight'] || keys['KeyD'] || keys['d']) playerX = Math.min(canvas.width - 50, playerX + 4);
 
-          ctx.fillStyle = '#f8fafc'; // White shirt
-          ctx.fillRect(playerX, canvas.height - 110, 26, 32);
-          ctx.fillStyle = '#1e3a8a'; // Blue jeans
-          ctx.fillRect(playerX + 2, canvas.height - 80, 22, 26);
+          if ((keys['ArrowUp'] || keys['KeyW'] || keys['w']) && !isJumping) {
+            playerVy = -8;
+            isJumping = true;
+            playArcadeSound('jump');
+          }
+          playerY += playerVy;
+          if (playerY < canvas.height - 85) {
+            playerVy += 0.5;
+          } else {
+            playerY = canvas.height - 85;
+            playerVy = 0;
+            isJumping = false;
+          }
 
-          // Dinosaur / Enemy Raptor
-          const dinoX = canvas.width - ((frameCount * 3) % (canvas.width + 60));
-          ctx.fillStyle = '#15803d'; // Green dinosaur
-          ctx.fillRect(dinoX, canvas.height - 95, 45, 30);
-          ctx.fillStyle = '#facc15'; // Dino eye
-          ctx.fillRect(dinoX + 4, canvas.height - 90, 6, 6);
+          if (punchTimer > 0) punchTimer--;
 
-          // Bullets
+          ctx.fillStyle = '#f8fafc';
+          ctx.fillRect(playerX, playerY, 26, 32);
+          ctx.fillStyle = '#1e3a8a';
+          ctx.fillRect(playerX + 2, playerY + 32, 22, 24);
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(playerX + 4, playerY - 14, 18, 14);
+
+          if (punchTimer > 0) {
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(playerX + 26, playerY + 8, 22, 10);
+          }
+
+          if (frameCount % 80 === 0) {
+            enemies.push({
+              x: canvas.width + 20,
+              y: canvas.height - 85,
+              hp: 3,
+              maxHp: 3,
+              type: Math.random() > 0.5 ? 'raptor' : 'poacher',
+              vx: 2.2,
+              shootCooldown: 0,
+            });
+          }
+
           for (let b = bullets.length - 1; b >= 0; b--) {
-            bullets[b].x += 8;
+            const bullet = bullets[b];
+            bullet.x += bullet.vx;
             ctx.fillStyle = '#f97316';
-            ctx.fillRect(bullets[b].x, bullets[b].y, 12, 5);
+            ctx.fillRect(bullet.x, bullet.y, 12, 5);
 
-            if (Math.abs(bullets[b].x - dinoX) < 30) {
+            for (let e = enemies.length - 1; e >= 0; e--) {
+              const enemy = enemies[e];
+              if (
+                bullet.x > enemy.x &&
+                bullet.x < enemy.x + 35 &&
+                bullet.y > enemy.y - 20 &&
+                bullet.y < enemy.y + 40
+              ) {
+                enemy.hp--;
+                bullets.splice(b, 1);
+                playArcadeSound('hit');
+
+                for (let p = 0; p < 6; p++) {
+                  particles.push({
+                    x: enemy.x + 10,
+                    y: enemy.y + 10,
+                    vx: (Math.random() - 0.5) * 6,
+                    vy: (Math.random() - 0.5) * 6,
+                    life: 10,
+                    maxLife: 10,
+                    color: '#22c55e',
+                    size: 3,
+                  });
+                }
+
+                if (enemy.hp <= 0) {
+                  enemies.splice(e, 1);
+                  localScore += 650;
+                  setScore(localScore);
+                }
+                break;
+              }
+            }
+
+            if (bullets[b] && bullets[b].x > canvas.width) {
               bullets.splice(b, 1);
-              playArcadeSound('hit');
-              localScore += 450;
-              setScore(localScore);
             }
           }
 
-          if (Math.abs(playerX - dinoX) < 22) {
-            localGameOver = true;
-            setGameOver(true);
-            playArcadeSound('ko');
-            recordScore(activeGame, playerName, localScore);
+          for (let e = enemies.length - 1; e >= 0; e--) {
+            const enemy = enemies[e];
+            enemy.x -= enemy.vx;
+
+            if (enemy.type === 'raptor') {
+              ctx.fillStyle = '#15803d';
+              ctx.fillRect(enemy.x, enemy.y, 40, 28);
+              ctx.fillStyle = '#ca8a04';
+              ctx.fillRect(enemy.x + 4, enemy.y + 4, 6, 6);
+              ctx.fillStyle = '#14532d';
+              ctx.fillRect(enemy.x + 38, enemy.y + 4, 18, 8);
+            } else {
+              ctx.fillStyle = '#b91c1c';
+              ctx.fillRect(enemy.x, enemy.y, 24, 30);
+              ctx.fillStyle = '#0f172a';
+              ctx.fillRect(enemy.x + 2, enemy.y + 30, 20, 20);
+            }
+
+            if (punchTimer > 0 && Math.abs(playerX + 26 - enemy.x) < 25) {
+              enemy.hp--;
+              playArcadeSound('hit');
+              enemy.x += 20;
+              if (enemy.hp <= 0) {
+                enemies.splice(e, 1);
+                localScore += 650;
+                setScore(localScore);
+              }
+            }
+
+            if (Math.abs(playerX - enemy.x) < 22 && Math.abs(playerY - enemy.y) < 25) {
+              localGameOver = true;
+              setGameOver(true);
+              playArcadeSound('ko');
+              recordScore(activeGame, playerName, localScore);
+            }
           }
         }
 
-        // HUD overlay in canvas
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        for (let p = particles.length - 1; p >= 0; p--) {
+          const pt = particles[p];
+          pt.x += pt.vx;
+          pt.y += pt.vy;
+          pt.life--;
+          ctx.fillStyle = pt.color;
+          ctx.fillRect(pt.x, pt.y, pt.size, pt.size);
+          if (pt.life <= 0) {
+            particles.splice(p, 1);
+          }
+        }
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
         ctx.fillRect(0, 0, canvas.width, 36);
         ctx.fillStyle = '#facc15';
         ctx.font = 'bold 14px monospace';
         ctx.fillText(`SCORE: ${localScore.toLocaleString()}`, 15, 24);
         ctx.fillStyle = '#38bdf8';
-        ctx.fillText(`PLAYER: ${playerName.toUpperCase()}`, canvas.width - 240, 24);
+        ctx.fillText(`PILOTO: ${playerName.toUpperCase()}`, canvas.width - 240, 24);
       } else {
-        // Game Over overlay
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.88)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#ef4444';
-        ctx.font = 'bold 28px monospace';
+        ctx.fillStyle = localVictory ? '#22c55e' : '#ef4444';
+        ctx.font = 'bold 30px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 20);
+        ctx.fillText(localVictory ? '🏆 K.O.! VITÓRIA TOTAL!' : 'GAME OVER', canvas.width / 2, canvas.height / 2 - 20);
         ctx.fillStyle = '#f8fafc';
         ctx.font = '16px monospace';
         ctx.fillText(`SCORE FINAL: ${localScore.toLocaleString()}`, canvas.width / 2, canvas.height / 2 + 15);
         ctx.fillStyle = '#38bdf8';
         ctx.font = '12px monospace';
-        ctx.fillText('CLIQUE EM "JOGAR NOVAMENTE" OU ESCOLHA OUTRO ARCADE', canvas.width / 2, canvas.height / 2 + 45);
+        ctx.fillText('PRESSIONE "JOGAR NOVAMENTE" PARA REINICIAR', canvas.width / 2, canvas.height / 2 + 45);
         ctx.textAlign = 'left';
       }
 
@@ -392,27 +859,29 @@ export const PlayableArcadeModal: React.FC = () => {
 
   return (
     <div
+      ref={modalRef}
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 9999,
-        background: 'rgba(0, 0, 0, 0.85)',
-        backdropFilter: 'blur(12px)',
+        zIndex: 999999,
+        background: 'rgba(2, 6, 23, 0.95)',
+        backdropFilter: 'blur(16px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '20px',
+        padding: isFullscreen ? '0' : '20px',
       }}
     >
       <div
         style={{
           width: '100%',
-          maxWidth: '860px',
+          maxWidth: isFullscreen ? '100vw' : '920px',
+          height: isFullscreen ? '100vh' : 'auto',
           background: '#090d16',
-          border: '2px solid #38bdf8',
-          borderRadius: '24px',
+          border: isFullscreen ? 'none' : '2px solid #38bdf8',
+          borderRadius: isFullscreen ? '0' : '24px',
           overflow: 'hidden',
-          boxShadow: '0 0 50px rgba(56, 189, 248, 0.35)',
+          boxShadow: '0 0 60px rgba(56, 189, 248, 0.4)',
           display: 'flex',
           flexDirection: 'column',
           animation: 'popIn 0.2s ease-out',
@@ -421,7 +890,7 @@ export const PlayableArcadeModal: React.FC = () => {
         {/* Top Header */}
         <div
           style={{
-            padding: '14px 20px',
+            padding: '14px 22px',
             background: 'linear-gradient(to right, #0f172a, #1e1b4b)',
             borderBottom: '1px solid rgba(56, 189, 248, 0.3)',
             display: 'flex',
@@ -429,77 +898,147 @@ export const PlayableArcadeModal: React.FC = () => {
             justifyContent: 'space-between',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '20px' }}>🕹️</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '24px' }}>🕹️</span>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 900, color: '#f8fafc', letterSpacing: '0.04em' }}>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900, color: '#f8fafc', letterSpacing: '0.04em' }}>
                   {gameTitles[activeGame]}
                 </h3>
-                <span style={{ fontSize: '11px', fontFamily: 'monospace', fontWeight: 800, padding: '2px 8px', borderRadius: '6px', background: isPlaying ? '#0284c7' : gameOver ? '#dc2626' : '#10b981', color: '#fff' }}>
-                  {isPlaying ? `PONTOS: ${score}` : gameOver ? 'GAME OVER' : 'PRONTO'}
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontFamily: 'monospace',
+                    fontWeight: 800,
+                    padding: '3px 10px',
+                    borderRadius: '6px',
+                    background: victory ? '#22c55e' : isPlaying ? '#0284c7' : gameOver ? '#dc2626' : '#10b981',
+                    color: '#fff',
+                  }}
+                >
+                  {victory ? '🏆 VITÓRIA!' : isPlaying ? `SCORE: ${score.toLocaleString()}` : gameOver ? 'GAME OVER' : 'PRONTO'}
                 </span>
               </div>
               <p style={{ margin: 0, fontSize: '10px', color: '#94a3b8', fontFamily: 'monospace' }}>
-                PUB REC FLIPERAMA RETRO ARCADE • 100% JOGÁVEL
+                PUB REC RETRO ARCADE • MOTOR RETRO 100% OPERACIONAL
               </p>
             </div>
           </div>
-          <button
-            onClick={closeArcade}
-            style={{
-              background: 'rgba(255,255,255,0.1)',
-              border: 'none',
-              borderRadius: '8px',
-              color: '#f8fafc',
-              padding: '6px 12px',
-              cursor: 'pointer',
-              fontWeight: 800,
-              fontSize: '12px',
-            }}
-          >
-            ✕ FECHAR
-          </button>
-        </div>
 
-        {/* Content Body: Canvas + Leaderboard */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', padding: '16px', gap: '16px' }}>
-          {/* Canvas Box */}
-          <div style={{ flex: '1 1 480px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <div
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* Fullscreen Button */}
+            <button
+              onClick={toggleFullscreen}
               style={{
-                borderRadius: '12px',
-                overflow: 'hidden',
-                border: '3px solid #1e293b',
-                boxShadow: 'inset 0 0 20px rgba(0,0,0,0.8), 0 0 25px rgba(56, 189, 248, 0.2)',
-                background: '#000',
+                background: 'rgba(56, 189, 248, 0.15)',
+                border: '1px solid rgba(56, 189, 248, 0.4)',
+                borderRadius: '8px',
+                color: '#38bdf8',
+                padding: '6px 12px',
+                cursor: 'pointer',
+                fontWeight: 800,
+                fontSize: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
               }}
             >
-              <canvas ref={canvasRef} width={480} height={320} style={{ display: 'block' }} />
-            </div>
+              {isFullscreen ? '⛶ Sair Tela Cheia' : '⛶ Tela Cheia'}
+            </button>
 
-            {/* Controls Helper */}
+            <button
+              onClick={closeArcade}
+              style={{
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                borderRadius: '8px',
+                color: '#f87171',
+                padding: '6px 12px',
+                cursor: 'pointer',
+                fontWeight: 800,
+                fontSize: '12px',
+              }}
+            >
+              ✕ FECHAR
+            </button>
+          </div>
+        </div>
+
+        {/* Content Body */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', padding: '18px', gap: '18px', flex: 1 }}>
+          <div style={{ flex: '1 1 520px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <div
               style={{
-                marginTop: '10px',
+                borderRadius: '16px',
+                overflow: 'hidden',
+                border: '3px solid #1e293b',
+                boxShadow: 'inset 0 0 25px rgba(0,0,0,0.9), 0 0 30px rgba(56, 189, 248, 0.25)',
+                background: '#000',
+                width: '100%',
                 display: 'flex',
+                justifyContent: 'center',
+              }}
+            >
+              <canvas
+                ref={canvasRef}
+                width={520}
+                height={340}
+                style={{ display: 'block', maxWidth: '100%', height: 'auto' }}
+              />
+            </div>
+
+            <div
+              style={{
+                marginTop: '12px',
+                width: '100%',
+                boxSizing: 'border-box',
+                display: 'flex',
+                justifyContent: 'center',
+                flexWrap: 'wrap',
                 gap: '12px',
                 fontSize: '11px',
-                color: '#94a3b8',
+                color: '#cbd5e1',
                 fontFamily: 'monospace',
-                background: 'rgba(15, 23, 42, 0.6)',
-                padding: '6px 14px',
-                borderRadius: '8px',
+                background: 'rgba(15, 23, 42, 0.7)',
+                padding: '8px 16px',
+                borderRadius: '10px',
                 border: '1px solid #1e293b',
               }}
             >
-              <span>⌨️ <strong>WASD / Setas</strong>: Mover</span>
-              <span>•</span>
-              <span><strong>ESPAÇO / Z</strong>: Ação / Tiro / Golpe</span>
+              {activeGame === 'street-fighter' ? (
+                <>
+                  <span>⌨️ <strong>WASD</strong>: Mover/Pular/Agachar</span>
+                  <span>•</span>
+                  <span><strong>J</strong>: Soco</span>
+                  <span>•</span>
+                  <span><strong>K</strong>: Chute</span>
+                  <span>•</span>
+                  <span style={{ color: '#38bdf8' }}><strong>L / ESPAÇO</strong>: HADOUKEN!</span>
+                </>
+              ) : activeGame === 'metal-slug' ? (
+                <>
+                  <span>⌨️ <strong>WASD / Setas</strong>: Mover & Pular</span>
+                  <span>•</span>
+                  <span style={{ color: '#facc15' }}><strong>ESPAÇO / J / Z</strong>: Tiro Contínuo</span>
+                </>
+              ) : activeGame === 'cadillacs' ? (
+                <>
+                  <span>⌨️ <strong>WASD</strong>: Mover & Pular</span>
+                  <span>•</span>
+                  <span><strong>J</strong>: Soco Combo</span>
+                  <span>•</span>
+                  <span style={{ color: '#f97316' }}><strong>ESPAÇO / L</strong>: Tiro de Espingarda</span>
+                </>
+              ) : (
+                <>
+                  <span>⌨️ <strong>A / D / Setas</strong>: Direção</span>
+                  <span>•</span>
+                  <span>Desvie dos rivais e acelere!</span>
+                </>
+              )}
             </div>
           </div>
 
-          {/* Leaderboard Panel */}
           <div
             style={{
               flex: '1 1 280px',
@@ -518,7 +1057,7 @@ export const PlayableArcadeModal: React.FC = () => {
                   🏆 RANKING & HIGHSCORES
                 </span>
                 <span style={{ fontSize: '10px', color: '#94a3b8', fontFamily: 'monospace' }}>
-                  PUB REC HALL
+                  PUB REC FLIPERAMA
                 </span>
               </div>
 
@@ -551,10 +1090,9 @@ export const PlayableArcadeModal: React.FC = () => {
               </div>
             </div>
 
-            {/* Change Player Name / Replay */}
             <div style={{ marginTop: '16px', borderTop: '1px solid #334155', paddingTop: '12px' }}>
               <label style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700, display: 'block', marginBottom: '4px' }}>
-                Nome do Jogador / Agente:
+                Nome do Jogador:
               </label>
               <input
                 type="text"

@@ -15,6 +15,8 @@ export const OfficeGameRoom: React.FC<OfficeGameRoomProps> = ({
   const openArcadeGame = useStore((s) => s.openArcadeGame);
   const arcadeLeaderboard = useStore((s) => s.arcadeLeaderboard);
   const isKartActive = useStore((s) => s.isKartActive);
+  const activeArcadeGame = useStore((s) => s.activeArcadeGame);
+  const hideOverlays = isKartActive || !!activeArcadeGame;
 
   const crtGlowRef1 = useRef<THREE.PointLight>(null);
   const crtGlowRef2 = useRef<THREE.PointLight>(null);
@@ -63,7 +65,7 @@ export const OfficeGameRoom: React.FC<OfficeGameRoomProps> = ({
           <boxGeometry args={[11.2, 0.95, 0.02]} />
           <meshBasicMaterial color="#0284c7" />
         </mesh>
-        {!isKartActive && (
+        {!hideOverlays && (
           <Html position={[0, 0, 0.12]} transform scale={0.16} center style={{ pointerEvents: 'none' }}>
             <div
               style={{
@@ -94,7 +96,6 @@ export const OfficeGameRoom: React.FC<OfficeGameRoomProps> = ({
           e.stopPropagation();
           openArcadeGame('f1');
         }}
-        
       >
         <ArcadeCabinet
           color="#dc2626"
@@ -102,6 +103,7 @@ export const OfficeGameRoom: React.FC<OfficeGameRoomProps> = ({
           screenColor="#ef4444"
           topScore={getTopScore('f1')}
           onPlay={() => openArcadeGame('f1')}
+          hideHtml={hideOverlays}
         />
       </group>
 
@@ -112,7 +114,6 @@ export const OfficeGameRoom: React.FC<OfficeGameRoomProps> = ({
           e.stopPropagation();
           openArcadeGame('metal-slug');
         }}
-        
       >
         <ArcadeCabinet
           color="#d97706"
@@ -120,6 +121,7 @@ export const OfficeGameRoom: React.FC<OfficeGameRoomProps> = ({
           screenColor="#f59e0b"
           topScore={getTopScore('metal-slug')}
           onPlay={() => openArcadeGame('metal-slug')}
+          hideHtml={hideOverlays}
         />
       </group>
 
@@ -130,7 +132,6 @@ export const OfficeGameRoom: React.FC<OfficeGameRoomProps> = ({
           e.stopPropagation();
           openArcadeGame('street-fighter');
         }}
-        
       >
         <ArcadeCabinet
           color="#2563eb"
@@ -138,6 +139,25 @@ export const OfficeGameRoom: React.FC<OfficeGameRoomProps> = ({
           screenColor="#38bdf8"
           topScore={getTopScore('street-fighter')}
           onPlay={() => openArcadeGame('street-fighter')}
+          hideHtml={hideOverlays}
+        />
+      </group>
+
+      {/* 3.4 Fliperama 4: CADILLACS E DINOSSAUROS */}
+      <group
+        position={[4.5, 0, -5.2]}
+        onClick={(e) => {
+          e.stopPropagation();
+          openArcadeGame('cadillacs');
+        }}
+      >
+        <ArcadeCabinet
+          color="#16a34a"
+          title="CADILLACS & DINOS"
+          screenColor="#22c55e"
+          topScore={getTopScore('cadillacs')}
+          onPlay={() => openArcadeGame('cadillacs')}
+          hideHtml={hideOverlays}
         />
       </group>
 
@@ -330,6 +350,7 @@ interface ArcadeCabinetProps {
   screenColor: string;
   topScore: number;
   onPlay: () => void;
+  hideHtml?: boolean;
 }
 
 const ArcadeCabinet: React.FC<ArcadeCabinetProps> = ({
@@ -338,6 +359,7 @@ const ArcadeCabinet: React.FC<ArcadeCabinetProps> = ({
   screenColor,
   topScore,
   onPlay,
+  hideHtml = false,
 }) => {
   return (
     <group>
@@ -397,32 +419,35 @@ const ArcadeCabinet: React.FC<ArcadeCabinetProps> = ({
         <meshStandardMaterial color="#ca8a04" metalness={0.8} roughness={0.3} />
       </mesh>
 
-      <Html position={[0, 2.8, 0]} center distanceFactor={8}>
-        <div
-          onClick={onPlay}
-          style={{
-            background: 'rgba(15, 23, 42, 0.95)',
-            border: `1px solid ${screenColor}`,
-            padding: '4px 10px',
-            borderRadius: '12px',
-            color: '#f8fafc',
-            textAlign: 'center',
-            boxShadow: `0 4px 16px ${screenColor}66`,
-            cursor: 'pointer',
-            minWidth: '110px',
-          }}
-        >
-          <div style={{ fontSize: '10px', fontWeight: 800, color: screenColor }}>
-            🕹️ {title}
+      {!hideHtml && (
+        <Html position={[0, 2.8, 0]} center distanceFactor={8}>
+          <div
+            onClick={onPlay}
+            style={{
+              background: 'rgba(15, 23, 42, 0.95)',
+              border: `1px solid ${screenColor}`,
+              padding: '4px 10px',
+              borderRadius: '12px',
+              color: '#f8fafc',
+              textAlign: 'center',
+              boxShadow: `0 4px 16px ${screenColor}66`,
+              cursor: 'pointer',
+              minWidth: '110px',
+            }}
+          >
+            <div style={{ fontSize: '10px', fontWeight: 800, color: screenColor }}>
+              🕹️ {title}
+            </div>
+            <div style={{ fontSize: '9px', color: '#94a3b8' }}>
+              Top: {topScore > 0 ? topScore.toLocaleString() : 'Sem recorde'}
+            </div>
+            <div style={{ fontSize: '9px', fontWeight: 700, color: '#facc15', marginTop: '2px' }}>
+              [CLIQUE P/ JOGAR]
+            </div>
           </div>
-          <div style={{ fontSize: '9px', color: '#94a3b8' }}>
-            Top: {topScore > 0 ? topScore.toLocaleString() : 'Sem recorde'}
-          </div>
-          <div style={{ fontSize: '9px', fontWeight: 700, color: '#facc15', marginTop: '2px' }}>
-            [CLIQUE P/ JOGAR]
-          </div>
-        </div>
-      </Html>
+        </Html>
+      )}
     </group>
   );
 };
+

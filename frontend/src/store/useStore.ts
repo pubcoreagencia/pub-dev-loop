@@ -43,6 +43,7 @@ import {
   AGENT_AVATAR_PROFILES,
   AGENT_OFFICE_POSITIONS,
 } from '../config/officeLayout';
+import { defaultAgentAutonomousEngine } from '../services/agentAutonomousEngine';
 import {
   OfficeEventStreamClient,
   type EventStreamStatus,
@@ -1405,36 +1406,35 @@ export const useStore = create<OfficeState>((set, get) => ({
       });
     }, 2400);
 
-    // Padrão Google Antigravity: Foco total na solução técnica direta, zero floreios ou encenações
+    // Padrão Google Antigravity: Foco total na solução técnica direta, execução autônoma de ferramentas
     try {
       let reply = '';
-      let gitData: any = null;
 
+      // Executa o loop autônomo diretamente no navegador (Mac / PC)
       try {
-        const gitRes = await fetch(
-          `https://pub-dev-loop-api.contato-pubcore.workers.dev/office/projects/${state.activeProject}/git-summary`
-        ).catch(() => null);
-        if (gitRes && gitRes.ok) {
-          gitData = (await gitRes.json()) as any;
-        }
-      } catch (gitErr) {
-        console.warn('[Chief of Staff] Erro ao inspecionar git:', gitErr);
+        const autoResult = await defaultAgentAutonomousEngine.executeAutonomousGoal(
+          objectiveText,
+          state.activeProject,
+          (prog) => {
+            state.triggerSpeechBubble({
+              senderId: 'chief-of-staff',
+              senderName: 'Dr. Arthur Vance',
+              content: `🛠️ [${prog.tool}] Executando...`,
+              durationMs: 3000,
+              type: 'TASK',
+            });
+          }
+        );
+        reply = autoResult.finalResponse;
+      } catch (autoErr: any) {
+        console.warn('[Chief of Staff] Falha no loop autônomo:', autoErr);
+        try {
+          reply = await defaultAiChatService.callLlmForAgent('chief-of-staff', objectiveText);
+        } catch {}
       }
 
-      try {
-        reply = await defaultAiChatService.callLlmForAgent('chief-of-staff', objectiveText);
-      } catch (err: any) {
-        console.warn('[Chief of Staff] Falha na chamada LLM:', err.message);
-      }
-
-      if (
-        !reply ||
-        reply.trim().length < 80 ||
-        reply.includes('passivos trabalhistas') ||
-        reply.includes('INSTRUÇÃO EXECUTIVA') ||
-        reply.includes('Alinhamento e governança evitam retrabalho')
-      ) {
-        reply = formatAntigravityAudit(state.activeProject, gitData, objectiveText);
+      if (!reply || reply.trim().length < 80) {
+        reply = formatAntigravityAudit(state.activeProject, null, objectiveText);
       }
 
       // Adiciona resposta executiva única e limpa no chat
@@ -1464,8 +1464,8 @@ export const useStore = create<OfficeState>((set, get) => ({
           exitCode: 0,
         },
         error: null,
-        branch: gitData?.defaultBranch || state.activeProject,
-        commitSha: gitData?.recentCommits?.[0]?.hash || null,
+        branch: 'main',
+        commitSha: null,
         gitStatus: 'clean',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),

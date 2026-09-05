@@ -4,6 +4,7 @@ import { PlanViewer } from './PlanViewer';
 import { FormattedChatMessage } from './FormattedChatMessage';
 import { defaultWatercoolerEngine } from '../services/watercoolerEngine';
 import { defaultAiChatService, OFFICE_AGENTS_AI_PROFILES } from '../services/aiChatService';
+import { AutonomousSettingsModal } from './AutonomousSettingsModal';
 
 export const GlobalOfficeChat: React.FC = () => {
   const {
@@ -20,6 +21,7 @@ export const GlobalOfficeChat: React.FC = () => {
   const [inputText, setInputText] = useState('');
   const [respondingAgent, setRespondingAgent] = useState<{ id: string; name: string; role: string } | null>(null);
   const [isScrolledUp, setIsScrolledUp] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
@@ -274,6 +276,26 @@ export const GlobalOfficeChat: React.FC = () => {
           >
             <span>☕</span> RESENHOLA
           </button>
+          <button
+            onClick={() => setIsSettingsOpen(true)}
+            title="Central de Autonomia Browser (Modo AG 2.0)"
+            style={{
+              marginLeft: 'auto',
+              background: 'rgba(56, 189, 248, 0.1)',
+              border: '1px solid rgba(56, 189, 248, 0.35)',
+              color: '#38bdf8',
+              borderRadius: '6px',
+              padding: '5px 10px',
+              fontSize: '11px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+            }}
+          >
+            <span>⚡</span> Central AG
+          </button>
         </div>
       </div>
 
@@ -404,6 +426,12 @@ export const GlobalOfficeChat: React.FC = () => {
           {actionLoading || Boolean(respondingAgent) ? '...' : activeTab === 'COMMAND' ? 'DESPACHAR' : 'FALAR'}
         </button>
       </form>
+
+      {/* Central de Autonomia Browser (Modo AG 2.0) Modal */}
+      <AutonomousSettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+      />
     </div>
   );
 };

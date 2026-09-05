@@ -170,6 +170,9 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
         return;
       } else {
         // CEO parado em pé ou sentado na mesa
+        if (leftArmRef.current) leftArmRef.current.rotation.x = 0;
+        if (rightArmRef.current) rightArmRef.current.rotation.x = 0;
+
         const isAtCeoDesk = Math.hypot(cur.x - position[0], cur.z - position[2]) < 0.4;
         if (isAtCeoDesk) {
           // Sentado na mesa de som executiva
@@ -190,6 +193,7 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
           if (leftLegGroupRef.current) leftLegGroupRef.current.rotation.x = 0;
           if (rightLegGroupRef.current) rightLegGroupRef.current.rotation.x = 0;
         }
+        return;
       }
     }
 
