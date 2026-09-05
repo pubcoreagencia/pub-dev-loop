@@ -1,5 +1,5 @@
 import { Container } from '@cloudflare/containers';
-import apiWorker, { type Env as ApiEnv, PubDevLoopWorkerContainer } from './api-worker.js';
+import apiWorker, { type Env as ApiEnv, PubDevLoopWorkerContainer, defaultAutonomousOrchestrator } from './api-worker.js';
 
 export interface Env extends ApiEnv {
   PROTOTYPE_TEMPLATE_REPOSITORY?: string;
@@ -20,5 +20,13 @@ export { PubDevLoopWorkerContainer };
 export default {
   async fetch(request: Request, env: Env, ctx: any): Promise<Response> {
     return apiWorker.fetch(request, env, ctx);
+  },
+  async scheduled(controller: any, env: Env, ctx: any): Promise<void> {
+    console.log('[Cloudflare Cron Trigger] 24/7 Autonomous Holding tick executed.');
+    if (ctx && typeof ctx.waitUntil === 'function') {
+      ctx.waitUntil(defaultAutonomousOrchestrator.runScheduledTick(env));
+    } else {
+      await defaultAutonomousOrchestrator.runScheduledTick(env);
+    }
   },
 };

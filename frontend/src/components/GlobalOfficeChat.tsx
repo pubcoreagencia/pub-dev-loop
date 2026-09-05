@@ -276,6 +276,48 @@ export const GlobalOfficeChat: React.FC = () => {
           >
             <span>☕</span> RESENHOLA
           </button>
+          {activeTab === 'COMMAND' && (
+            <>
+              <button
+                onClick={() => submitObjective('Resumo do dia e auditoria autônoma completa')}
+                title="Obter resumo e auditoria de todas as melhorias realizadas pelos agentes"
+                style={{
+                  background: 'rgba(34, 197, 94, 0.1)',
+                  border: '1px solid rgba(34, 197, 94, 0.35)',
+                  color: '#4ade80',
+                  borderRadius: '6px',
+                  padding: '5px 8px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <span>📋</span> Resumo do Dia
+              </button>
+              <button
+                onClick={() => submitObjective('Reverter última ação sensível (Rollback)')}
+                title="Desfazer e restaurar o último snapshot sensível feito pelos agentes"
+                style={{
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                  color: '#f87171',
+                  borderRadius: '6px',
+                  padding: '5px 8px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <span>⏪</span> Reverter
+              </button>
+            </>
+          )}
           <button
             onClick={() => setIsSettingsOpen(true)}
             title="Central de Autonomia Browser (Modo AG 2.0)"

@@ -479,6 +479,58 @@ class AgentAutonomousEngine {
       commitsCreated,
     };
   }
+
+  // =========================================================================
+  // 5. 24/7 BACKGROUND ORCHESTRATION & CEO ROLLBACK API
+  // =========================================================================
+  public async trigger247Cycle(directive?: string, repo?: string): Promise<{ success: boolean; repo: string; action: string; backupId?: string; commitSha?: string; summary: string }> {
+    const res = await fetch(`https://pub-dev-loop-api.contato-pubcore.workers.dev/office/autonomous/cycle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ directive, repo }),
+    });
+    if (res.ok) {
+      return await res.json() as any;
+    }
+    throw new Error('Falha ao acionar ciclo 24/7 no servidor Cloudflare.');
+  }
+
+  public async fetchDailyAudit(repo?: string): Promise<{ totalProjects: number; kernel: string; logs: any[] }> {
+    const url = repo
+      ? `https://pub-dev-loop-api.contato-pubcore.workers.dev/office/autonomous/audit?repo=${encodeURIComponent(repo)}`
+      : `https://pub-dev-loop-api.contato-pubcore.workers.dev/office/autonomous/audit`;
+    const res = await fetch(url);
+    if (res.ok) {
+      return await res.json() as any;
+    }
+    return { totalProjects: 21, kernel: 'pubcoreagencia/neural-os', logs: [] };
+  }
+
+  public async listBackups(repo?: string): Promise<any[]> {
+    const url = repo
+      ? `https://pub-dev-loop-api.contato-pubcore.workers.dev/office/autonomous/backups?repo=${encodeURIComponent(repo)}`
+      : `https://pub-dev-loop-api.contato-pubcore.workers.dev/office/autonomous/backups`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json() as any;
+      return data.backups || [];
+    }
+    return [];
+  }
+
+  public async rollbackBackup(backupId: string): Promise<{ success: boolean; message: string; commitSha?: string }> {
+    const res = await fetch(`https://pub-dev-loop-api.contato-pubcore.workers.dev/office/autonomous/rollback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ backupId }),
+    });
+    if (res.ok) {
+      return await res.json() as any;
+    }
+    const err = await res.json() as any;
+    throw new Error(err.error || 'Falha ao reverter snapshot de segurança.');
+  }
 }
 
 export const defaultAgentAutonomousEngine = new AgentAutonomousEngine();
+

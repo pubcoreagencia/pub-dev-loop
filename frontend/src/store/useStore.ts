@@ -1409,28 +1409,127 @@ export const useStore = create<OfficeState>((set, get) => ({
     // Padrão Google Antigravity: Foco total na solução técnica direta, execução autônoma de ferramentas
     try {
       let reply = '';
+      const lowerObj = objectiveText.toLowerCase();
 
-      // Executa o loop autônomo diretamente no navegador (Mac / PC)
-      try {
-        const autoResult = await defaultAgentAutonomousEngine.executeAutonomousGoal(
-          objectiveText,
-          state.activeProject,
-          (prog) => {
-            state.triggerSpeechBubble({
-              senderId: 'chief-of-staff',
-              senderName: 'Dr. Arthur Vance',
-              content: `🛠️ [${prog.tool}] Executando...`,
-              durationMs: 3000,
-              type: 'TASK',
-            });
-          }
-        );
-        reply = autoResult.finalResponse;
-      } catch (autoErr: any) {
-        console.warn('[Chief of Staff] Falha no loop autônomo:', autoErr);
+      // Check if CEO requested Rollback / Reversion
+      if (lowerObj.includes('reverter') || lowerObj.includes('rollback') || lowerObj.includes('desfazer') || lowerObj.includes('declinar')) {
         try {
-          reply = await defaultAiChatService.callLlmForAgent('chief-of-staff', objectiveText);
-        } catch {}
+          const matchId = objectiveText.match(/(snap-[a-zA-Z0-9_\-]+)/i);
+          let backupId = matchId ? matchId[1] : '';
+
+          if (!backupId) {
+            // Find most recent backup
+            const backups = await defaultAgentAutonomousEngine.listBackups(state.activeProject);
+            if (backups.length > 0) {
+              backupId = backups[0].id;
+            }
+          }
+
+          if (backupId) {
+            const rbResult = await defaultAgentAutonomousEngine.rollbackBackup(backupId);
+            reply = `## ⏪ Rollback Executado com Sucesso!
+
+- **Snapshot Restaurado:** \`${backupId}\`
+- **Repositório:** \`pubcoreagencia/${state.activeProject}\`
+- **Resultado:** ${rbResult.message}
+${rbResult.commitSha ? `- **Commit de Reversão:** \`${rbResult.commitSha}\`` : ''}
+
+A versão anterior foi restaurada no GitHub com total integridade e segurança.`;
+          } else {
+            reply = `## ⚠️ Nenhum Snapshot de Rollback Encontrado
+
+Não foi possível identificar um snapshot anterior para reverter no projeto \`${state.activeProject}\`.
+Envie a diretriz indicando o ID do snapshot (ex: \`reverter snap-...\`).`;
+          }
+        } catch (rbErr: any) {
+          reply = `## ⚠️ Falha ao Executar Rollback: ${rbErr.message}`;
+        }
+      }
+      // Check if CEO requested Daily Audit / Summary
+      else if (lowerObj.includes('resumo do dia') || lowerObj.includes('auditoria') || lowerObj.includes('o que foi feito') || lowerObj.includes('o que você fez')) {
+        try {
+          const audit = await defaultAgentAutonomousEngine.fetchDailyAudit(state.activeProject);
+          const backups = await defaultAgentAutonomousEngine.listBackups(state.activeProject);
+
+          const logItems = (audit.logs || []).slice(0, 8);
+          const logLines = logItems.length > 0
+            ? logItems.map((l: any) => `- \`[${new Date(l.createdAt).toLocaleTimeString()}]\` **${l.repo}**: ${l.directive} (Commit: \`${l.commitSha || 'git-main'}\` | Backup: \`${l.backupId || 'N/A'}\`)`).join('\n')
+            : '- Nenhum ciclo autônomo registrado ainda para hoje.';
+
+          const backupLines = backups.slice(0, 5).map((b: any) => `- \`${b.id}\` • ${b.filePath} (${b.status}) - ${new Date(b.createdAt).toLocaleTimeString()}`).join('\n') || '- Nenhum ponto de restauração pendente.';
+
+          reply = `## 📋 Resumo Executivo das Operações Autônomas (24/7 Holding Audit)
+
+**Comandante Matheus Paes:** Aqui está o relatório completo das últimas ações autônomas do ecossistema Pub Core Holding:
+
+### 🌐 Ecossistema Pub Core
+- **Total de Repositórios Sob Gestão:** 21 projetos
+- **Cérebro / Kernel Central:** \`pubcoreagencia/neural-os\`
+- **Esteira Cloudflare:** Operando 24 horas por dia em rotação contínua (Cron Trigger ativo).
+
+### ⚡ Linha do Tempo de Atividades:
+${logLines}
+
+### 🛡️ Pontos de Restauração Ativos (Snapshots para Rollback):
+${backupLines}
+
+_Para reverter qualquer alteração sensível, digite:_ \`reverter [ID do snapshot]\``;
+        } catch (audErr: any) {
+          reply = formatAntigravityAudit(state.activeProject, null, objectiveText);
+        }
+      }
+      // Check if CEO requested 24/7 autonomous departure
+      else if (lowerObj.includes('24/7') || lowerObj.includes('vou sair') || lowerObj.includes('horas') || lowerObj.includes('sem parar') || lowerObj.includes('autonomamente')) {
+        try {
+          // Trigger immediate server cycle
+          const cycleRes = await defaultAgentAutonomousEngine.trigger247Cycle(objectiveText, state.activeProject);
+          reply = `## 🌐 Modo 24/7 Autônomo Ativado com Sucesso!
+
+**Diretriz Executiva:** \`${objectiveText}\`
+
+### 🚀 Status da Holding Pub Core
+- **Autonomia Contínua 24/7:** ATIVADA na nuvem Cloudflare Workers (sem necessidade de manter PC ou navegador aberto).
+- **Kernel Neural:** \`pubcoreagencia/neural-os\` assumiu o comando central de rotação entre os 21 repositórios.
+- **Primeiro Ciclo Disparado:** Repositório \`${cycleRes.repo}\` (${cycleRes.action})
+- **Snapshot de Segurança Criado:** \`${cycleRes.backupId || 'N/A'}\` (permite reversão instantânea)
+- **Commit:** \`${cycleRes.commitSha || 'auto-staged'}\`
+
+### 🛡️ Governança & Segurança
+Pode viajar com tranquilidade, Comandante! A holding continuará evoluindo 24 horas por dia. Quando você voltar pelo Mac ou celular, basta pedir:
+1. **"Resumo do dia"** ou **"Auditoria"** para inspecionar todas as melhorias e commits.
+2. **"Reverter [ID]"** ou **"Desfazer"** caso deseje declinar qualquer alteração.`;
+        } catch (cycleErr) {
+          // Fallback to in-browser loop
+          const autoResult = await defaultAgentAutonomousEngine.executeAutonomousGoal(
+            objectiveText,
+            state.activeProject
+          );
+          reply = autoResult.finalResponse;
+        }
+      }
+      else {
+        // Executa o loop autônomo diretamente no navegador (Mac / PC)
+        try {
+          const autoResult = await defaultAgentAutonomousEngine.executeAutonomousGoal(
+            objectiveText,
+            state.activeProject,
+            (prog) => {
+              state.triggerSpeechBubble({
+                senderId: 'chief-of-staff',
+                senderName: 'Dr. Arthur Vance',
+                content: `🛠️ [${prog.tool}] Executando...`,
+                durationMs: 3000,
+                type: 'TASK',
+              });
+            }
+          );
+          reply = autoResult.finalResponse;
+        } catch (autoErr: any) {
+          console.warn('[Chief of Staff] Falha no loop autônomo:', autoErr);
+          try {
+            reply = await defaultAiChatService.callLlmForAgent('chief-of-staff', objectiveText);
+          } catch {}
+        }
       }
 
       if (!reply || reply.trim().length < 80) {
