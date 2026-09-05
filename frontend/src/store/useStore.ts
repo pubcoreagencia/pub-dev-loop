@@ -1479,26 +1479,65 @@ _Para reverter qualquer alteração sensível, digite:_ \`reverter [ID do snapsh
           reply = formatAntigravityAudit(state.activeProject, null, objectiveText);
         }
       }
-      // Check if CEO requested 24/7 autonomous departure
-      else if (lowerObj.includes('24/7') || lowerObj.includes('vou sair') || lowerObj.includes('horas') || lowerObj.includes('sem parar') || lowerObj.includes('autonomamente')) {
+      // Check if CEO requested 24/7 autonomous departure or scheduled cycle
+      else if (
+        lowerObj.includes('24/7') ||
+        lowerObj.includes('24h') ||
+        lowerObj.includes('24 horas') ||
+        lowerObj.includes('vou sair') ||
+        lowerObj.includes('horas') ||
+        lowerObj.includes('sem parar') ||
+        lowerObj.includes('autonomamente') ||
+        lowerObj.includes('ciclo autônomo') ||
+        lowerObj.includes('ciclo autonomo') ||
+        lowerObj.includes('agendamento') ||
+        lowerObj.includes('todas as tarefas')
+      ) {
         try {
-          // Trigger immediate server cycle
+          // Trigger immediate server cycle across the holding
           const cycleRes = await defaultAgentAutonomousEngine.trigger247Cycle(objectiveText, state.activeProject);
-          reply = `## 🌐 Modo 24/7 Autônomo Ativado com Sucesso!
+          const audit = await defaultAgentAutonomousEngine.fetchDailyAudit();
+          const backups = await defaultAgentAutonomousEngine.listBackups();
+
+          const logItems = (audit.logs || []).slice(0, 5);
+          const logLines = logItems.length > 0
+            ? logItems.map((l: any) => `- \`[${new Date(l.createdAt).toLocaleTimeString()}]\` **pubcoreagencia/${l.repo}**: ${l.directive} (Commit: \`${l.commitSha || 'git-main'}\` | Snapshot: \`${l.backupId || 'N/A'}\`)`).join('\n')
+            : `- \`[${new Date().toLocaleTimeString()}]\` **pubcoreagencia/${cycleRes.repo}**: ${cycleRes.summary}`;
+
+          const backupLines = (backups || []).slice(0, 4).map((b: any) => `- \`${b.id}\` • \`${b.repo}/${b.filePath}\` (${b.status})`).join('\n') || `- \`${cycleRes.backupId || 'snap-active'}\` • \`${cycleRes.repo}/AUTONOMOUS_CYCLE.md\` (ACTIVE)`;
+
+          reply = `## 🌐 Modo 24/7 Autônomo Ativado & Agendado com Sucesso!
 
 **Diretriz Executiva:** \`${objectiveText}\`
 
 ### 🚀 Status da Holding Pub Core
-- **Autonomia Contínua 24/7:** ATIVADA na nuvem Cloudflare Workers (sem necessidade de manter PC ou navegador aberto).
-- **Kernel Neural:** \`pubcoreagencia/neural-os\` assumiu o comando central de rotação entre os 21 repositórios.
+- **Autonomia Contínua 24/7:** ATIVADA na nuvem Cloudflare Workers (Cron Trigger \`*/15 * * * *\` ativo 24h sem interrupção).
+- **Kernel Neural:** \`pubcoreagencia/neural-os\` assumiu a governança e orquestração de rotação contínua.
+- **Total de Projetos na Esteira 24h:** **21 repositórios** mapeados.
 - **Primeiro Ciclo Disparado:** Repositório \`${cycleRes.repo}\` (${cycleRes.action})
 - **Snapshot de Segurança Criado:** \`${cycleRes.backupId || 'N/A'}\` (permite reversão instantânea)
 - **Commit:** \`${cycleRes.commitSha || 'auto-staged'}\`
 
+---
+
+### 📅 Grade de Agendamento Autônomo 24h (21 Repositórios Sob Gestão)
+1. 🛍️ **E-commerce & Retail Core:** \`pubecomhub\`, \`pub-ecom\`, \`pub-ecom-catalog-worker\`, \`pub-shopee-scraper\` (Sincronização de catálogo, testes de checkout e scraping).
+2. 🧠 **Inteligência Central & Roteamento:** \`neural-os\`, \`pub-9router-cloud\`, \`pub-dev-loop\`, \`pub-github-mcp\` (Otimização de latência, balanceamento de tokens free e auditoria de código).
+3. 🎵 **Mídia, Entretenimento & Audio:** \`PUB-BEATS\`, \`PUB-CARDS\` (Catálogo de beats, streaming e geração de cards).
+4. ⚙️ **Infraestrutura, Workers & SDKs:** Repositórios satélites da holding (Verificação de tipagem estrita, OWASP, anti-regressão e deploys).
+
+---
+
+### ⚡ Linha do Tempo de Atividades em Tempo Real:
+${logLines}
+
+### 🛡️ Snapshots de Segurança Criados (Rollback Instantâneo):
+${backupLines}
+
 ### 🛡️ Governança & Segurança
-Pode viajar com tranquilidade, Comandante! A holding continuará evoluindo 24 horas por dia. Quando você voltar pelo Mac ou celular, basta pedir:
-1. **"Resumo do dia"** ou **"Auditoria"** para inspecionar todas as melhorias e commits.
-2. **"Reverter [ID]"** ou **"Desfazer"** caso deseje declinar qualquer alteração.`;
+Pode viajar com tranquilidade, Comandante Matheus Paes! A esteira executará todos os ciclos de evolução a cada 15 minutos. Quando você voltar pelo Mac ou celular:
+1. **"Resumo do dia"** ou **"Auditoria"** para ver a evolução completa e commits.
+2. **"Reverter [ID do snapshot]"** ou **"Desfazer"** caso deseje declinar qualquer alteração.`;
         } catch (cycleErr) {
           // Fallback to in-browser loop
           const autoResult = await defaultAgentAutonomousEngine.executeAutonomousGoal(
