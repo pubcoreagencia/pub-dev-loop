@@ -1446,17 +1446,18 @@ Envie a diretriz indicando o ID do snapshot (ex: \`reverter snap-...\`).`;
         }
       }
       // Check if CEO requested Daily Audit / Summary
-      else if (lowerObj.includes('resumo do dia') || lowerObj.includes('auditoria') || lowerObj.includes('o que foi feito') || lowerObj.includes('o que você fez')) {
+      else if (lowerObj.includes('resumo do dia') || lowerObj.includes('auditoria') || lowerObj.includes('o que foi feito') || lowerObj.includes('o que você fez') || lowerObj.includes('oq eles já fizeram') || lowerObj.includes('oq eles ja fizeram') || lowerObj.includes('oq ja fizeram')) {
         try {
-          const audit = await defaultAgentAutonomousEngine.fetchDailyAudit(state.activeProject);
-          const backups = await defaultAgentAutonomousEngine.listBackups(state.activeProject);
+          // Fetch global holding audit (all 21 projects)
+          const audit = await defaultAgentAutonomousEngine.fetchDailyAudit();
+          const backups = await defaultAgentAutonomousEngine.listBackups();
 
-          const logItems = (audit.logs || []).slice(0, 8);
+          const logItems = (audit.logs || []).slice(0, 10);
           const logLines = logItems.length > 0
-            ? logItems.map((l: any) => `- \`[${new Date(l.createdAt).toLocaleTimeString()}]\` **${l.repo}**: ${l.directive} (Commit: \`${l.commitSha || 'git-main'}\` | Backup: \`${l.backupId || 'N/A'}\`)`).join('\n')
+            ? logItems.map((l: any) => `- \`[${new Date(l.createdAt).toLocaleTimeString()}]\` **pubcoreagencia/${l.repo}**: ${l.directive} (Commit: \`${l.commitSha || 'git-main'}\` | Snapshot: \`${l.backupId || 'N/A'}\`)`).join('\n')
             : '- Nenhum ciclo autônomo registrado ainda para hoje.';
 
-          const backupLines = backups.slice(0, 5).map((b: any) => `- \`${b.id}\` • ${b.filePath} (${b.status}) - ${new Date(b.createdAt).toLocaleTimeString()}`).join('\n') || '- Nenhum ponto de restauração pendente.';
+          const backupLines = backups.slice(0, 8).map((b: any) => `- \`${b.id}\` • \`${b.repo}/${b.filePath}\` (${b.status}) - ${new Date(b.createdAt).toLocaleTimeString()}`).join('\n') || '- Nenhum ponto de restauração pendente.';
 
           reply = `## 📋 Resumo Executivo das Operações Autônomas (24/7 Holding Audit)
 
