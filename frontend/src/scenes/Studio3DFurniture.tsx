@@ -1,6 +1,8 @@
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
+import { Html } from '@react-three/drei';
 import * as THREE from 'three';
+import { useStore } from '../store/useStore';
 
 /**
  * PUB RECORDS • ESTÚDIO DE PRODUÇÃO MUSICAL, SALA TÉCNICA E AQUÁRIO DE GRAVAÇÃO
@@ -122,7 +124,50 @@ export const StudioMixingConsole: React.FC<StudioMixingConsoleProps> = ({
   });
 
   return (
-    <group position={position} rotation={rotation}>
+    <group
+      position={position}
+      rotation={rotation}
+      onClick={(e) => {
+        e.stopPropagation();
+        useStore.getState().setActiveStudioModal('daw');
+      }}
+      onPointerOver={() => {
+        document.body.style.cursor = 'pointer';
+      }}
+      onPointerOut={() => {
+        document.body.style.cursor = 'default';
+      }}
+    >
+      {/* Badge Flutuante 3D Clicável em cima da Mesa de Som SSL */}
+      <Html position={[0, 2.2, 0]} center distanceFactor={12}>
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            useStore.getState().setActiveStudioModal('daw');
+          }}
+          style={{
+            background: 'linear-gradient(135deg, #0284c7 0%, #38bdf8 100%)',
+            color: '#000000',
+            fontWeight: 900,
+            fontSize: '11px',
+            padding: '5px 12px',
+            borderRadius: '20px',
+            border: '2px solid #ffffff',
+            boxShadow: '0 0 22px rgba(56, 189, 248, 0.9)',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            animation: 'bounce 1s infinite alternate',
+            userSelect: 'none',
+          }}
+        >
+          <span>🎛️</span>
+          <span>CLIQUE PARA ABRIR LOGIC PRO DAW</span>
+        </div>
+      </Html>
+
       {/* 2.1 ESTRUTURA DA MESA DE PRODUÇÃO ESTILO ARGOSY / ZAOR */}
       {/* Tampo Central Rebaixado com Braço Angulado */}
       <mesh position={[0, 0.76, 0]} castShadow receiveShadow>

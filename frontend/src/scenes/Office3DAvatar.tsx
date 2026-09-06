@@ -71,15 +71,15 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
       if (e.code === 'KeyE') {
         const p = ceoPosRef.current;
         // Bateria
-        if (Math.hypot(p.x - (-11.5), p.z - (-8.0)) < 3.2) {
+        if (Math.hypot(p.x - (-11.5), p.z - (-8.0)) < 4.5) {
           useStore.getState().setActiveStudioModal('drums');
         }
-        // Mesa de Som SSL (Abre DAW Suno style)
-        else if (Math.hypot(p.x - 0, p.z - (-7.5)) < 2.8) {
+        // Mesa de Som SSL (Abre Logic Pro DAW)
+        else if (Math.hypot(p.x - 0, p.z - (-7.5)) < 5.0) {
           useStore.getState().setActiveStudioModal('daw');
         }
         // Sintetizador / Teclado
-        else if (Math.hypot(p.x - 4.8, p.z - (-8.5)) < 3.2) {
+        else if (Math.hypot(p.x - 4.8, p.z - (-8.5)) < 4.5) {
           useStore.getState().setActiveStudioModal('keyboard');
         }
       }
@@ -144,9 +144,9 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
       const dConsole = Math.hypot(cur.x - 0, cur.z - (-7.5));
       const dSynth = Math.hypot(cur.x - 4.8, cur.z - (-8.5));
 
-      if (dDrums < 3.0) setNearbyInstrument('drums');
-      else if (dConsole < 2.6) setNearbyInstrument('console');
-      else if (dSynth < 3.0) setNearbyInstrument('synth');
+      if (dDrums < 4.5) setNearbyInstrument('drums');
+      else if (dConsole < 5.0) setNearbyInstrument('console');
+      else if (dSynth < 4.5) setNearbyInstrument('synth');
       else setNearbyInstrument(null);
 
       // Animação de caminhada do CEO
@@ -467,7 +467,7 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
             }}
           >
             {nearbyInstrument === 'drums' && '🥁 [E] ABRIR BATERIA COMPLETA'}
-            {nearbyInstrument === 'console' && '🎛️ [E] ABRIR DAW / SUNO AI STUDIO'}
+            {nearbyInstrument === 'console' && '🎛️ [E] ABRIR LOGIC PRO DAW'}
             {nearbyInstrument === 'synth' && '🎹 [E] TOCAR TECLADO (DÓ A DÓ)'}
           </div>
         </Html>
