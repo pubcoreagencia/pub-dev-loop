@@ -53,6 +53,84 @@ export const OfficeFloor: React.FC = () => {
           <meshStandardMaterial color="#f1f5f9" roughness={0.3} metalness={0.1} />
         </mesh>
       </group>
+
+      {/* 1.5 🏎️ PISTA DE KART PROFISSIONAL COM ZEBRAS E ASFALTO DE CORRIDA */}
+      <group position={[0, 0.003, 10]}>
+        {/* Retas e Curvas de Asfalto Cinza Escuro Antiderrapante */}
+        {/* Reta Principal Oeste (Corredor dos Fliperamas para a Recepção) */}
+        <mesh position={[-15, 0, 0]} receiveShadow>
+          <boxGeometry args={[3.8, 0.01, 26]} />
+          <meshStandardMaterial color="#1e293b" roughness={0.7} />
+        </mesh>
+
+        {/* Reta Leste (Corredor do Auditório e Mesas de Dev) */}
+        <mesh position={[15, 0, 0]} receiveShadow>
+          <boxGeometry args={[3.8, 0.01, 26]} />
+          <meshStandardMaterial color="#1e293b" roughness={0.7} />
+        </mesh>
+
+        {/* Reta Sul (Passagem em frente ao Auditório) */}
+        <mesh position={[0, 0, 13]} receiveShadow>
+          <boxGeometry args={[33.8, 0.01, 3.8]} />
+          <meshStandardMaterial color="#1e293b" roughness={0.7} />
+        </mesh>
+
+        {/* Reta Norte (Passagem entre Lounge e Breakroom) */}
+        <mesh position={[0, 0, -13]} receiveShadow>
+          <boxGeometry args={[33.8, 0.01, 3.8]} />
+          <meshStandardMaterial color="#1e293b" roughness={0.7} />
+        </mesh>
+
+        {/* Linha de Chegada / Largada Xadrez */}
+        <group position={[-15, 0.008, 11]}>
+          <mesh>
+            <boxGeometry args={[3.8, 0.012, 1.2]} />
+            <meshStandardMaterial color="#0f172a" />
+          </mesh>
+          {[-1.4, -0.6, 0.2, 1.0].map((x, i) => (
+            <mesh key={`grid-1-${i}`} position={[x, 0.008, -0.3]}>
+              <boxGeometry args={[0.6, 0.014, 0.5]} />
+              <meshStandardMaterial color="#ffffff" />
+            </mesh>
+          ))}
+          {[-1.0, -0.2, 0.6, 1.4].map((x, i) => (
+            <mesh key={`grid-2-${i}`} position={[x, 0.008, 0.3]}>
+              <boxGeometry args={[0.6, 0.014, 0.5]} />
+              <meshStandardMaterial color="#ffffff" />
+            </mesh>
+          ))}
+        </group>
+
+        {/* Zebras Vermelhas e Brancas de Corrida nas Curvas da Pista */}
+        {/* Curva Noroeste */}
+        {[-1, 0, 1, 2, 3].map((idx) => (
+          <mesh key={`cnw-${idx}`} position={[-16.8, 0.006, -12 - idx * 0.8]}>
+            <boxGeometry args={[0.6, 0.018, 0.7]} />
+            <meshStandardMaterial color={idx % 2 === 0 ? '#ef4444' : '#ffffff'} roughness={0.4} />
+          </mesh>
+        ))}
+        {/* Curva Sudoeste */}
+        {[-1, 0, 1, 2, 3].map((idx) => (
+          <mesh key={`csw-${idx}`} position={[-16.8, 0.006, 12 + idx * 0.8]}>
+            <boxGeometry args={[0.6, 0.018, 0.7]} />
+            <meshStandardMaterial color={idx % 2 === 0 ? '#ef4444' : '#ffffff'} roughness={0.4} />
+          </mesh>
+        ))}
+        {/* Curva Nordeste */}
+        {[-1, 0, 1, 2, 3].map((idx) => (
+          <mesh key={`cne-${idx}`} position={[16.8, 0.006, -12 - idx * 0.8]}>
+            <boxGeometry args={[0.6, 0.018, 0.7]} />
+            <meshStandardMaterial color={idx % 2 === 0 ? '#ef4444' : '#ffffff'} roughness={0.4} />
+          </mesh>
+        ))}
+        {/* Curva Sudeste */}
+        {[-1, 0, 1, 2, 3].map((idx) => (
+          <mesh key={`cse-${idx}`} position={[16.8, 0.006, 12 + idx * 0.8]}>
+            <boxGeometry args={[0.6, 0.018, 0.7]} />
+            <meshStandardMaterial color={idx % 2 === 0 ? '#ef4444' : '#ffffff'} roughness={0.4} />
+          </mesh>
+        ))}
+      </group>
     </group>
   );
 };

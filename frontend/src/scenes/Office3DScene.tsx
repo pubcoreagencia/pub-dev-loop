@@ -27,6 +27,8 @@ import { OfficeDrivableKart } from './OfficeDrivableKart';
 import { AGENT_AVATAR_PROFILES } from '../config/officeLayout';
 import { VinylJukeboxModal, VINYL_ALBUMS } from '../components/VinylJukeboxModal';
 import { PlayableArcadeModal } from '../components/PlayableArcadeModal';
+import { MusicStudioModal } from '../components/MusicStudioModal';
+import { LiveDashboardModal } from '../components/LiveDashboardModal';
 
 export const Office3DScene: React.FC = () => {
   const {
@@ -488,6 +490,12 @@ export const Office3DScene: React.FC = () => {
 
       {/* Modal de Fliperama Retrô Jogável com Highscores */}
       <PlayableArcadeModal />
+
+      {/* Modal de Instrumentos Musicais do Estúdio PUB REC (Teclado, Bateria, DAW SSL) */}
+      <MusicStudioModal />
+
+      {/* Modal de Dashboard Executivo em Tempo Real (Sem Mock, Interativo) */}
+      <LiveDashboardModal />
     </div>
   );
 };

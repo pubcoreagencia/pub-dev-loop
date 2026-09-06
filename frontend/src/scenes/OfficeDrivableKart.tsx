@@ -68,11 +68,21 @@ export const OfficeDrivableKart: React.FC<OfficeDrivableKartProps> = ({
       camDistRef.current = THREE.MathUtils.clamp(camDistRef.current + delta, 3.5, 14.0);
     };
 
+    // Toggle camera mode with KeyC
+    const handleExtraKeys = (e: KeyboardEvent) => {
+      if (!useStore.getState().isKartActive) return;
+      if (e.code === 'KeyC') {
+        setCameraMode((prev) => (prev === 'third' ? 'first' : 'third'));
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleExtraKeys);
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('wheel', handleWheel, { passive: true });
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keydown', handleExtraKeys);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('wheel', handleWheel);
     };
@@ -80,12 +90,24 @@ export const OfficeDrivableKart: React.FC<OfficeDrivableKartProps> = ({
 
   const { camera } = useThree();
   const camDistRef = useRef(6.5);
+  const [cameraMode, setCameraMode] = useState<'third' | 'first'>('third');
+  const [fovThird, setFovThird] = useState(65);
+  const [fovFirst, setFovFirst] = useState(85);
 
   useFrame((_, delta) => {
     const s = stateRef.current;
     const dt = Math.min(delta, 0.1);
 
     if (isKartActive) {
+      // Set appropriate FOV on camera
+      if ('fov' in camera) {
+        const targetFov = cameraMode === 'first' ? fovFirst : fovThird;
+        if ((camera as THREE.PerspectiveCamera).fov !== targetFov) {
+          (camera as THREE.PerspectiveCamera).fov = targetFov;
+          (camera as THREE.PerspectiveCamera).updateProjectionMatrix();
+        }
+      }
+
       // Acceleration & Braking
       const maxSpeed = s.keys.drift ? 14 : 9.5;
       const acceleration = 12;
@@ -125,17 +147,36 @@ export const OfficeDrivableKart: React.FC<OfficeDrivableKartProps> = ({
         setCurrentKmh(Math.round(Math.abs(s.speed) * 6));
       }
 
-      // Smooth camera follow with scroll wheel zoom adjustment
-      const camDist = camDistRef.current;
-      const camHeight = camDist * 0.65;
-      const camOffset = new THREE.Vector3(
-        -Math.sin(s.rotationY) * camDist,
-        camHeight,
-        -Math.cos(s.rotationY) * camDist
-      );
-      const targetCamPos = s.pos.clone().add(camOffset);
-      camera.position.lerp(targetCamPos, dt * 5);
-      camera.lookAt(s.pos.x, s.pos.y + 0.8, s.pos.z);
+      // Dynamic Camera: Third Person vs Cockpit First Person
+      if (cameraMode === 'first') {
+        // Cockpit POV (Right above steering wheel looking forward)
+        const cockpitHeight = 0.58;
+        const forwardOffset = 0.35;
+        const camPos = new THREE.Vector3(
+          s.pos.x + Math.sin(s.rotationY) * forwardOffset,
+          s.pos.y + cockpitHeight,
+          s.pos.z + Math.cos(s.rotationY) * forwardOffset
+        );
+        camera.position.lerp(camPos, dt * 25);
+        const lookTarget = new THREE.Vector3(
+          s.pos.x + Math.sin(s.rotationY) * 10,
+          s.pos.y + cockpitHeight * 0.9,
+          s.pos.z + Math.cos(s.rotationY) * 10
+        );
+        camera.lookAt(lookTarget);
+      } else {
+        // Third Person Chase Cam
+        const camDist = camDistRef.current;
+        const camHeight = camDist * 0.65;
+        const camOffset = new THREE.Vector3(
+          -Math.sin(s.rotationY) * camDist,
+          camHeight,
+          -Math.cos(s.rotationY) * camDist
+        );
+        const targetCamPos = s.pos.clone().add(camOffset);
+        camera.position.lerp(targetCamPos, dt * 6);
+        camera.lookAt(s.pos.x, s.pos.y + 0.8, s.pos.z);
+      }
     }
 
     // Update 3D Group Position & Rotation
@@ -349,7 +390,7 @@ export const OfficeDrivableKart: React.FC<OfficeDrivableKartProps> = ({
             style={{
               background: 'rgba(15, 23, 42, 0.95)',
               color: '#f8fafc',
-              padding: '5px 12px',
+              padding: '6px 14px',
               borderRadius: '16px',
               fontSize: '11px',
               fontWeight: 700,
@@ -357,12 +398,56 @@ export const OfficeDrivableKart: React.FC<OfficeDrivableKartProps> = ({
               boxShadow: '0 4px 18px rgba(0,0,0,0.6)',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
+              gap: '10px',
               pointerEvents: 'auto',
             }}
           >
-            <span style={{ color: '#38bdf8' }}>{currentKmh} km/h</span>
-            <span style={{ color: '#94a3b8' }}>| WASD / Setas | Drift: Espaço</span>
+            <span style={{ color: '#38bdf8', fontWeight: 800 }}>{currentKmh} km/h</span>
+            <span style={{ color: '#64748b' }}>|</span>
+
+            {/* Toggle de Câmera 1ª vs 3ª Pessoa */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setCameraMode((m) => (m === 'third' ? 'first' : 'third'));
+              }}
+              title="Alternar Câmera (Atalho: tecla C)"
+              style={{
+                background: cameraMode === 'first' ? '#0284c7' : '#334155',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '3px 8px',
+                fontSize: '10px',
+                cursor: 'pointer',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+              <span>📷</span>
+              <span>{cameraMode === 'first' ? '1ª Pessoa (Cockpit)' : '3ª Pessoa'} [C]</span>
+            </button>
+
+            {/* Ajuste de FOV */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#94a3b8' }}>
+              <span>FOV:</span>
+              <input
+                type="range"
+                min="55"
+                max="105"
+                value={cameraMode === 'first' ? fovFirst : fovThird}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  if (cameraMode === 'first') setFovFirst(val);
+                  else setFovThird(val);
+                }}
+                style={{ width: '55px', cursor: 'pointer', accentColor: '#38bdf8' }}
+              />
+              <span style={{ color: '#38bdf8' }}>{cameraMode === 'first' ? fovFirst : fovThird}°</span>
+            </div>
+
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -373,13 +458,14 @@ export const OfficeDrivableKart: React.FC<OfficeDrivableKartProps> = ({
                 color: '#fff',
                 border: 'none',
                 borderRadius: '8px',
-                padding: '2px 8px',
+                padding: '3px 8px',
                 fontSize: '10px',
                 cursor: 'pointer',
                 fontWeight: 700,
               }}
+              title="Sair do Kart (E ou ESC)"
             >
-              [E] Sair
+              ✕ Sair [E]
             </button>
           </div>
         )}

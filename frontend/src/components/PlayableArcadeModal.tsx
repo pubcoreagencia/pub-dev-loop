@@ -283,7 +283,8 @@ export const PlayableArcadeModal: React.FC = () => {
           ctx.fillStyle = '#1e293b';
           ctx.fillRect(70, 0, 340, canvas.height);
 
-          const curbOffset = (frameCount * 10) % 40;
+          // Suavizado e calibrado: asfalto e zebras com rolagem constante sem estresse
+          const curbOffset = (frameCount * 5) % 40;
           for (let y = -40 + curbOffset; y < canvas.height; y += 40) {
             ctx.fillStyle = Math.floor((y - curbOffset) / 40) % 2 === 0 ? '#ef4444' : '#ffffff';
             ctx.fillRect(62, y, 8, 20);
@@ -292,8 +293,8 @@ export const PlayableArcadeModal: React.FC = () => {
             ctx.fillRect(238, y, 4, 25);
           }
 
-          if (keys['ArrowLeft'] || keys['KeyA'] || keys['a']) playerX = Math.max(80, playerX - 5);
-          if (keys['ArrowRight'] || keys['KeyD'] || keys['d']) playerX = Math.min(380, playerX + 5);
+          if (keys['ArrowLeft'] || keys['KeyA'] || keys['a']) playerX = Math.max(80, playerX - 3.8);
+          if (keys['ArrowRight'] || keys['KeyD'] || keys['d']) playerX = Math.min(380, playerX + 3.8);
 
           ctx.fillStyle = '#dc2626';
           ctx.fillRect(playerX - 12, canvas.height - 70, 24, 45);
@@ -306,7 +307,8 @@ export const PlayableArcadeModal: React.FC = () => {
           ctx.font = 'bold 10px monospace';
           ctx.fillText('01', playerX - 6, canvas.height - 42);
 
-          if (frameCount % 45 === 0) {
+          // Spawn moderado de rivais (a cada 65 frames em vez de 45) com velocidade controlada (2.2 a 3.6)
+          if (frameCount % 65 === 0) {
             const rivalX = 90 + Math.random() * 280;
             const colors = ['#2563eb', '#16a34a', '#ca8a04', '#9333ea'];
             obstacles.push({
@@ -314,7 +316,7 @@ export const PlayableArcadeModal: React.FC = () => {
               y: -50,
               width: 24,
               height: 42,
-              speed: 4 + Math.random() * 3,
+              speed: 2.2 + Math.random() * 1.5,
               color: colors[Math.floor(Math.random() * colors.length)],
             });
           }

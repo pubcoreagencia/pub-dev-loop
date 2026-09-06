@@ -5,7 +5,6 @@ import * as THREE from 'three';
 import type { AvatarProfile, EmployeeOperationalState } from '../types/office';
 import { OPERATIONAL_STATE_LABELS_PT } from '../config/officeLayout';
 import { useStore } from '../store/useStore';
-import { studioSynthAudio } from '../utils/StudioSynthAudio';
 
 interface Office3DAvatarProps {
   position: [number, number, number];
@@ -68,20 +67,20 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
       if (e.code === 'KeyA' || e.code === 'ArrowLeft') setCeoKeys((k) => ({ ...k, left: true }));
       if (e.code === 'KeyD' || e.code === 'ArrowRight') setCeoKeys((k) => ({ ...k, right: true }));
 
-      // Interação musical com tecla E
+      // Interação musical com tecla E (Abre instrumentos operacionais ou DAW)
       if (e.code === 'KeyE') {
         const p = ceoPosRef.current;
         // Bateria
         if (Math.hypot(p.x - (-11.5), p.z - (-8.0)) < 3.2) {
-          studioSynthAudio.playDrumPattern();
+          useStore.getState().setActiveStudioModal('drums');
         }
-        // Mesa de Som
+        // Mesa de Som SSL (Abre DAW Suno style)
         else if (Math.hypot(p.x - 0, p.z - (-7.5)) < 2.8) {
-          studioSynthAudio.playConsoleEffect();
+          useStore.getState().setActiveStudioModal('daw');
         }
-        // Sintetizador / Guitarra
+        // Sintetizador / Teclado
         else if (Math.hypot(p.x - 4.8, p.z - (-8.5)) < 3.2) {
-          studioSynthAudio.playSynthAndGuitar();
+          useStore.getState().setActiveStudioModal('keyboard');
         }
       }
     };
@@ -444,32 +443,32 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
         )}
       </group>
 
-      {/* PROMPT INTERATIVO DE INSTRUMENTOS MUSICAIS PARA O CEO */}
+      {/* PROMPT INTERATIVO DE INSTRUMENTOS MUSICAIS PARA O CEO (Aparece apenas quando perto no estúdio e não no kart) */}
       {isCeo && nearbyInstrument && !isKartActive && (
-        <Html position={[0, 2.6, 0]} center distanceFactor={10}>
+        <Html position={[0, 2.5, 0]} center distanceFactor={10}>
           <div
             onClick={() => {
-              if (nearbyInstrument === 'drums') studioSynthAudio.playDrumPattern();
-              else if (nearbyInstrument === 'console') studioSynthAudio.playConsoleEffect();
-              else if (nearbyInstrument === 'synth') studioSynthAudio.playSynthAndGuitar();
+              if (nearbyInstrument === 'drums') useStore.getState().setActiveStudioModal('drums');
+              else if (nearbyInstrument === 'console') useStore.getState().setActiveStudioModal('daw');
+              else if (nearbyInstrument === 'synth') useStore.getState().setActiveStudioModal('keyboard');
             }}
             style={{
-              background: 'linear-gradient(135deg, #ca8a04 0%, #eab308 100%)',
+              background: 'linear-gradient(135deg, #0284c7 0%, #38bdf8 100%)',
               color: '#000000',
               fontWeight: 900,
-              fontSize: '12px',
-              padding: '6px 14px',
+              fontSize: '11px',
+              padding: '5px 12px',
               borderRadius: '20px',
               border: '2px solid #ffffff',
-              boxShadow: '0 0 20px rgba(234, 179, 8, 0.8)',
+              boxShadow: '0 0 20px rgba(56, 189, 248, 0.8)',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
               animation: 'bounce 1s infinite alternate',
             }}
           >
-            {nearbyInstrument === 'drums' && '🥁 [E] ou Toque: BATERIA PUB REC'}
-            {nearbyInstrument === 'console' && '🎛️ [E] ou Toque: MESA SSL STUDIO'}
-            {nearbyInstrument === 'synth' && '🎹 [E] ou Toque: SINTETIZADOR & GUITARRA'}
+            {nearbyInstrument === 'drums' && '🥁 [E] ABRIR BATERIA COMPLETA'}
+            {nearbyInstrument === 'console' && '🎛️ [E] ABRIR DAW / SUNO AI STUDIO'}
+            {nearbyInstrument === 'synth' && '🎹 [E] TOCAR TECLADO (DÓ A DÓ)'}
           </div>
         </Html>
       )}

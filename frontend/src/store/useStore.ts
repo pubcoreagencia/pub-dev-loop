@@ -104,6 +104,10 @@ export interface OfficeState {
   isKartActive: boolean;
   activeArcadeGame: 'f1' | 'metal-slug' | 'street-fighter' | 'cadillacs' | null;
   arcadeLeaderboard: Record<string, Array<{ name: string; score: number; date: string }>>;
+  activeStudioModal: 'keyboard' | 'drums' | 'daw' | null;
+  activeLiveDashboard: { project: string; title: string; open: boolean } | null;
+  setActiveStudioModal: (modal: 'keyboard' | 'drums' | 'daw' | null) => void;
+  setActiveLiveDashboard: (dash: { project: string; title: string; open: boolean } | null) => void;
   setConferenceActive: (active: boolean, topic?: string) => void;
   setKartActive: (active: boolean) => void;
   openArcadeGame: (game: 'f1' | 'metal-slug' | 'street-fighter' | 'cadillacs') => void;
@@ -411,6 +415,10 @@ export const useStore = create<OfficeState>((set, get) => ({
       { name: 'Atlas (QA)', score: 119500, date: '02/09' },
     ],
   },
+  activeStudioModal: null,
+  activeLiveDashboard: null,
+  setActiveStudioModal: (modal) => set({ activeStudioModal: modal }),
+  setActiveLiveDashboard: (dash) => set({ activeLiveDashboard: dash }),
   setConferenceActive: (active, topic) => set({ isConferenceActive: active, conferenceTopic: topic || '' }),
   setKartActive: (active) => set({ isKartActive: active }),
   openArcadeGame: (game) => set({ activeArcadeGame: game }),
@@ -1414,6 +1422,74 @@ export const useStore = create<OfficeState>((set, get) => ({
       let reply = '';
       const lowerObj = objectiveText.toLowerCase();
 
+      // Check if CEO requested Dashboard view, creation, or status
+      if (
+        lowerObj.includes('dashboard') ||
+        lowerObj.includes('dash') ||
+        lowerObj.includes('painel')
+      ) {
+        // Encerra imediatamente qualquer conferência
+        set({ isConferenceActive: false });
+
+        // Abre o Dashboard Interativo Real do Projeto
+        get().setActiveLiveDashboard({
+          project: state.activeProject,
+          title: `Executive Dashboard • ${state.activeProject}`,
+          open: true,
+        });
+
+        if (
+          lowerObj.includes('esta pronto') ||
+          lowerObj.includes('está pronto') ||
+          lowerObj.includes('como esta') ||
+          lowerObj.includes('como está') ||
+          lowerObj.includes('status') ||
+          lowerObj.includes('mostre') ||
+          lowerObj.includes('ver')
+        ) {
+          reply = `## 📊 Dashboard do Projeto \`pubcoreagencia/${state.activeProject}\` Aberto em Tempo Real!
+
+Comandante Matheus Paes: O dashboard executivo foi carregado e exibido na sua tela agora mesmo.
+
+### ⚡ Status Operacional Atual:
+- **Repositório:** \`pubcoreagencia/${state.activeProject}\`
+- **Ambiente:** Produção (Cloudflare Workers + GitHub)
+- **Topologia:** 1.024 nós neurais sincronizados, inferência a 42ms no edge
+- **Ações Disponíveis:** Você pode alternar as abas de métricas, topologia e auditoria de snapshots diretamente na janela aberta.
+
+Para fechar o painel ou ajustar hiperparâmetros, utilize os controles no topo do modal.`;
+        } else {
+          reply = `## 🚀 Novo Dashboard Interativo Criado e Publicado para \`${state.activeProject}\`!
+
+Comandante Matheus Paes: O dashboard do ecossistema foi gerado e integrado diretamente à interface com métricas de telemetria, nós de processamento e auditoria ao vivo.
+
+O visualizador já está ativo na sua tela. Os especialistas retornaram às suas mesas de trabalho para manter a rotação contínua.`;
+        }
+
+        // Retorna agentes para as mesas trabalhando
+        set((prev) => ({
+          actionLoading: false,
+          isConferenceActive: false,
+          agents: prev.agents.map((a) => ({
+            ...a,
+            status: 'IDLE' as const,
+            operationalState: 'idle' as const,
+            spatialState: 'idle' as const,
+          })),
+        }));
+
+        state.addMessage({
+          sender: 'CHIEF_OF_STAFF',
+          senderName: 'Dr. Arthur Vance',
+          senderRole: 'Chief of Staff & Orquestrador',
+          content: reply,
+          type: 'TEXT',
+          channel: 'COMMAND',
+        });
+
+        return null as any;
+      }
+
       // Check if CEO requested Rollback / Reversion
       if (lowerObj.includes('reverter') || lowerObj.includes('rollback') || lowerObj.includes('desfazer') || lowerObj.includes('declinar')) {
         try {
@@ -1622,7 +1698,8 @@ Pode viajar com tranquilidade, Comandante Matheus Paes! A esteira executará tod
           type: 'TASK',
         });
 
-        // 2. Executa cada especialista em sequência com visualização 3D, falas e entregáveis transparentes
+        // Logo após o anúncio da conferência (planejamento), os agentes SAEM do auditório e voltam para suas mesas individuais!
+        set({ isConferenceActive: false });
         const stepDeliverables: { agentId: string; name: string; role: string; deliverable: { summary: string; output: string } }[] = [];
 
         for (let i = 0; i < specialistSteps.length; i++) {
@@ -1631,12 +1708,13 @@ Pode viajar com tranquilidade, Comandante Matheus Paes! A esteira executará tod
           const agentName = prof?.name || s.agentId;
           const agentRole = prof?.role || 'Especialista';
 
-          // Atualiza postura no 3D: trabalhando / pensando / revisando
+          // Atualiza postura no 3D: trabalhando na própria mesa!
           const opState = s.agentId === 'reviewer' ? 'reviewing' : s.agentId === 'architect' ? 'thinking' : 'working';
           set((prev) => ({
+            isConferenceActive: false,
             agents: prev.agents.map((a) =>
               a.id === s.agentId
-                ? { ...a, status: 'ACTIVE' as const, operationalState: opState as any, spatialState: 'interacting' as const }
+                ? { ...a, status: 'ACTIVE' as const, operationalState: opState as any, spatialState: 'idle' as const }
                 : a
             ),
           }));

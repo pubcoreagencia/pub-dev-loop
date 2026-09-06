@@ -1,9 +1,9 @@
-// Web Audio API Synthesizer para Instrumentos do Estúdio PUB REC (Zero dependências externas)
+export type DrumComponent = 'kick' | 'snare' | 'hihat_closed' | 'hihat_open' | 'tom_high' | 'tom_low' | 'floor_tom' | 'crash' | 'ride';
 
 class StudioAudioEngine {
   private ctx: AudioContext | null = null;
 
-  private getContext(): AudioContext | null {
+  getContext(): AudioContext | null {
     if (typeof window === 'undefined') return null;
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -15,6 +15,76 @@ class StudioAudioEngine {
       this.ctx.resume();
     }
     return this.ctx;
+  }
+
+  // =========================================================================
+  // 1. NOTAS DO TECLADO / SINTETIZADOR REALISTA (DÓ A DÓ COM SUSTENIDOS)
+  // =========================================================================
+  playNote(frequency: number, waveType: OscillatorType = 'sawtooth', duration: number = 0.8) {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+
+    osc.type = waveType;
+    osc.frequency.setValueAtTime(frequency, now);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(frequency * 3.5, now);
+    filter.frequency.exponentialRampToValueAtTime(frequency * 0.8, now + duration);
+
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.25, now + 0.04);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + duration + 0.05);
+  }
+
+  // =========================================================================
+  // 2. COMPONENTES INDIVIDUAIS DA BATERIA PUB REC
+  // =========================================================================
+  triggerDrum(piece: DrumComponent) {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    switch (piece) {
+      case 'kick':
+        this.triggerKick(now);
+        break;
+      case 'snare':
+        this.triggerSnare(now);
+        break;
+      case 'hihat_closed':
+        this.triggerHiHat(now, false);
+        break;
+      case 'hihat_open':
+        this.triggerHiHat(now, true);
+        break;
+      case 'tom_high':
+        this.triggerTom(now, 190, 0.22);
+        break;
+      case 'tom_low':
+        this.triggerTom(now, 135, 0.26);
+        break;
+      case 'floor_tom':
+        this.triggerTom(now, 95, 0.35);
+        break;
+      case 'crash':
+        this.triggerCymbal(now, 'crash');
+        break;
+      case 'ride':
+        this.triggerCymbal(now, 'ride');
+        break;
+    }
   }
 
   // 1. Tocar Batida de Bateria (Kick + Snare + Hi-Hat roll)
@@ -96,11 +166,12 @@ class StudioAudioEngine {
     osc.stop(time + 0.15);
   }
 
-  private triggerHiHat(time: number) {
+  private triggerHiHat(time: number, isOpen: boolean = false) {
     const ctx = this.getContext();
     if (!ctx) return;
 
-    const bufferSize = ctx.sampleRate * 0.05;
+    const duration = isOpen ? 0.32 : 0.05;
+    const bufferSize = Math.floor(ctx.sampleRate * duration);
     const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
     const data = buffer.getChannelData(0);
     for (let i = 0; i < bufferSize; i++) {
@@ -112,18 +183,71 @@ class StudioAudioEngine {
 
     const filter = ctx.createBiquadFilter();
     filter.type = 'highpass';
-    filter.frequency.value = 7500;
+    filter.frequency.value = isOpen ? 6000 : 7500;
 
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.35, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+    gain.gain.setValueAtTime(isOpen ? 0.4 : 0.3, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
 
     noise.connect(filter);
     filter.connect(gain);
     gain.connect(ctx.destination);
 
     noise.start(time);
-    noise.stop(time + 0.05);
+    noise.stop(time + duration);
+  }
+
+  private triggerTom(time: number, freq: number, duration: number) {
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, time);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.5, time + duration);
+
+    gain.gain.setValueAtTime(0.8, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(time);
+    osc.stop(time + duration);
+  }
+
+  private triggerCymbal(time: number, type: 'crash' | 'ride') {
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const duration = type === 'crash' ? 1.2 : 0.8;
+    const bufferSize = Math.floor(ctx.sampleRate * duration);
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = type === 'crash' ? 4500 : 6500;
+    filter.Q.value = 1.2;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(type === 'crash' ? 0.6 : 0.35, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+
+    noise.start(time);
+    noise.stop(time + duration);
   }
 
   // 2. Tocar Acorde de Sintetizador & Riff de Guitarra (Cmaj9 / Fmaj7)
