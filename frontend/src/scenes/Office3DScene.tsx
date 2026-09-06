@@ -28,6 +28,7 @@ import { AGENT_AVATAR_PROFILES } from '../config/officeLayout';
 import { VinylJukeboxModal, VINYL_ALBUMS } from '../components/VinylJukeboxModal';
 import { PlayableArcadeModal } from '../components/PlayableArcadeModal';
 import { MusicStudioModal } from '../components/MusicStudioModal';
+import { LogicProDawModal } from '../components/LogicProDawModal';
 import { LiveDashboardModal } from '../components/LiveDashboardModal';
 
 export const Office3DScene: React.FC = () => {
@@ -47,6 +48,7 @@ export const Office3DScene: React.FC = () => {
     setConferenceActive,
     isKartActive,
     setKartActive,
+    activeStudioModal,
   } = useStore();
 
   const controlsRef = useRef<OrbitControlsImpl>(null);
@@ -491,8 +493,13 @@ export const Office3DScene: React.FC = () => {
       {/* Modal de Fliperama Retrô Jogável com Highscores */}
       <PlayableArcadeModal />
 
-      {/* Modal de Instrumentos Musicais do Estúdio PUB REC (Teclado, Bateria, DAW SSL) */}
+      {/* Modal de Instrumentos Musicais do Estúdio PUB REC (Teclado, Bateria) */}
       <MusicStudioModal />
+
+      {/* Logic Pro DAW Multitrack Profissional com Master Bus, Quantizer e Exportador WAV */}
+      {activeStudioModal === 'daw' && (
+        <LogicProDawModal onClose={() => useStore.getState().setActiveStudioModal(null)} />
+      )}
 
       {/* Modal de Dashboard Executivo em Tempo Real (Sem Mock, Interativo) */}
       <LiveDashboardModal />

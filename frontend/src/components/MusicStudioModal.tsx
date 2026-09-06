@@ -111,7 +111,7 @@ export const MusicStudioModal: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeModal, waveType]);
 
-  if (!activeModal) return null;
+  if (!activeModal || (activeModal as string) === 'daw') return null;
 
   return createPortal(
     <div
