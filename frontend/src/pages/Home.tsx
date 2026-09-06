@@ -200,6 +200,28 @@ export const Home: React.FC = () => {
         >
           <span>🗺️</span> Planta 2D
         </button>
+
+        <button
+          onClick={() => useStore.getState().setActiveStudioModal('daw')}
+          title="Abrir Logic Pro DAW Multitrack"
+          style={{
+            background: 'linear-gradient(135deg, #0284c7, #0369a1)',
+            border: '1px solid #38bdf8',
+            borderRadius: '20px',
+            padding: '6px 14px',
+            color: '#ffffff',
+            fontSize: '12px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            boxShadow: '0 0 12px rgba(56, 189, 248, 0.5)',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          <span>🎛️</span> Logic Pro DAW
+        </button>
       </div>
 
       {/* 7. MODAIS E PAINÉIS DE INSPEÇÃO */}

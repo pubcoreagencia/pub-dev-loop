@@ -25,6 +25,30 @@ export const OfficeHeader: React.FC = () => {
         {/* Toca-Discos SoundCloud Pub Records */}
         <TurntablePlayer />
 
+        {/* Botão de Acesso Direto à DAW Logic Pro PUB REC */}
+        <button
+          onClick={() => useStore.getState().setActiveStudioModal('daw')}
+          title="Abrir Apple Logic Pro DAW Multitrack"
+          style={{
+            background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+            border: '1px solid #38bdf8',
+            borderRadius: '20px',
+            padding: '4px 12px',
+            color: '#ffffff',
+            fontSize: '11px',
+            fontWeight: 800,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            boxShadow: '0 0 14px rgba(56, 189, 248, 0.4)',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <span>🎛️</span>
+          <span>LOGIC PRO DAW</span>
+        </button>
+
         {/* Gateway Dinâmico em Tempo Real */}
         <div className="status-badge" title="Gateway ativo em tempo real">
           <span className={`status-dot ${activeGateway === '9ROUTER' ? 'blue' : 'green'}`}></span>

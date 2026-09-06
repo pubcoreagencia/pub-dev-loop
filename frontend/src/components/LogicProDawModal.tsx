@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { studioSynthAudio, type NoteEvent, type InstrumentCategory, type SynthPreset, type DrumComponent, type MasterPluginSettings } from '../utils/StudioSynthAudio';
 
 export interface DAWTrack {
@@ -434,7 +435,7 @@ export const LogicProDawModal: React.FC<Props> = ({ onClose }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [viewMode, armedTrackId, isRecording, currentTimeSec, activeProject]);
 
-  return (
+  return createPortal(
     <div
       style={{
         position: 'fixed',
@@ -618,6 +619,26 @@ export const LogicProDawModal: React.FC<Props> = ({ onClose }) => {
             }}
           >
             {viewMode === 'chooser' ? 'Ir para a DAW' : '📁 Projetos'}
+          </button>
+
+          <button
+            onClick={onClose}
+            title="Fechar Logic Pro DAW"
+            style={{
+              background: 'rgba(239, 68, 68, 0.2)',
+              color: '#f87171',
+              border: '1px solid #ef4444',
+              borderRadius: '6px',
+              padding: '6px 12px',
+              fontSize: '11px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+          >
+            <span>✕ Fechar</span>
           </button>
         </div>
       </div>
@@ -1575,6 +1596,7 @@ export const LogicProDawModal: React.FC<Props> = ({ onClose }) => {
           </div>
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   );
 };
