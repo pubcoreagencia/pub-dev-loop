@@ -586,9 +586,15 @@ export const Office3DScene: React.FC = () => {
           position={[12, 24, 16]}
           intensity={1.3}
           castShadow
-          shadow-mapSize-width={1024}
-          shadow-mapSize-height={1024}
-          shadow-bias={-0.0004}
+          shadow-mapSize-width={512}
+          shadow-mapSize-height={512}
+          shadow-bias={-0.001}
+          shadow-camera-left={-40}
+          shadow-camera-right={40}
+          shadow-camera-top={40}
+          shadow-camera-bottom={-40}
+          shadow-camera-near={1}
+          shadow-camera-far={60}
         />
         <directionalLight position={[-12, 16, -10]} intensity={0.5} color="#38bdf8" />
         <directionalLight position={[14, 14, 4]} intensity={0.6} color="#f59e0b" />

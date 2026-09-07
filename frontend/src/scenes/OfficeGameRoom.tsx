@@ -1,7 +1,5 @@
-import React, { useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
+import React from 'react';
 import { Html } from '@react-three/drei';
-import * as THREE from 'three';
 import { useStore } from '../store/useStore';
 import { PubRecLogo } from '../components/PubRecLogo';
 
@@ -17,19 +15,6 @@ export const OfficeGameRoom: React.FC<OfficeGameRoomProps> = ({
   const isKartActive = useStore((s) => s.isKartActive);
   const activeArcadeGame = useStore((s) => s.activeArcadeGame);
   const hideOverlays = isKartActive || !!activeArcadeGame;
-
-  const crtGlowRef1 = useRef<THREE.PointLight>(null);
-  const crtGlowRef2 = useRef<THREE.PointLight>(null);
-
-  useFrame(({ clock }) => {
-    const t = clock.getElapsedTime();
-    if (crtGlowRef1.current) {
-      crtGlowRef1.current.intensity = 1.2 + Math.sin(t * 8) * 0.4;
-    }
-    if (crtGlowRef2.current) {
-      crtGlowRef2.current.intensity = 1.2 + Math.cos(t * 7) * 0.4;
-    }
-  });
 
   const getTopScore = (game: string) => {
     const list = arcadeLeaderboard[game];
@@ -57,7 +42,7 @@ export const OfficeGameRoom: React.FC<OfficeGameRoomProps> = ({
 
       {/* 2. PLACA NEON SUPERIOR: PUB REC • ARCADE & GAMES */}
       <group position={[0, 4.2, -6.8]}>
-        <mesh castShadow>
+        <mesh>
           <boxGeometry args={[11.5, 1.2, 0.15]} />
           <meshStandardMaterial color="#09090b" roughness={0.3} metalness={0.8} />
         </mesh>
@@ -161,24 +146,6 @@ export const OfficeGameRoom: React.FC<OfficeGameRoomProps> = ({
         />
       </group>
 
-      {/* 3.4 Fliperama 4: CADILLACS AND DINOSAURS */}
-      <group
-        position={[4.5, 0, -5.2]}
-        onClick={(e) => {
-          e.stopPropagation();
-          openArcadeGame('cadillacs');
-        }}
-        
-      >
-        <ArcadeCabinet
-          color="#059669"
-          title="CADILLACS & DINO"
-          screenColor="#10b981"
-          topScore={getTopScore('cadillacs')}
-          onPlay={() => openArcadeGame('cadillacs')}
-        />
-      </group>
-
       {/* 4. MOBIS CLÁSSICOS HABBO HOTEL */}
       {/* 4.1 Sofá HC (Habbo Club Sofa Clássico Verde com Frisos Dourados) */}
       <group position={[4.8, 0, 1.5]} rotation={[0, -Math.PI / 2, 0]}>
@@ -186,7 +153,7 @@ export const OfficeGameRoom: React.FC<OfficeGameRoomProps> = ({
           <boxGeometry args={[2.4, 0.35, 0.85]} />
           <meshStandardMaterial color="#15803d" roughness={0.4} />
         </mesh>
-        <mesh position={[0, 0.9, -0.32]} castShadow>
+        <mesh position={[0, 0.9, -0.32]}>
           <boxGeometry args={[2.4, 0.7, 0.22]} />
           <meshStandardMaterial color="#166534" roughness={0.4} />
         </mesh>
@@ -194,11 +161,11 @@ export const OfficeGameRoom: React.FC<OfficeGameRoomProps> = ({
           <boxGeometry args={[2.42, 0.05, 0.24]} />
           <meshStandardMaterial color="#eab308" metalness={0.9} roughness={0.2} />
         </mesh>
-        <mesh position={[-1.25, 0.65, 0]} castShadow>
+        <mesh position={[-1.25, 0.65, 0]}>
           <boxGeometry args={[0.25, 0.5, 0.88]} />
           <meshStandardMaterial color="#15803d" roughness={0.4} />
         </mesh>
-        <mesh position={[1.25, 0.65, 0]} castShadow>
+        <mesh position={[1.25, 0.65, 0]}>
           <boxGeometry args={[0.25, 0.5, 0.88]} />
           <meshStandardMaterial color="#15803d" roughness={0.4} />
         </mesh>
@@ -206,31 +173,31 @@ export const OfficeGameRoom: React.FC<OfficeGameRoomProps> = ({
 
       {/* 4.2 Mesa de Vidro Plasto Habbo & O Pato Amarelo Clássico */}
       <group position={[4.8, 0, 3.8]}>
-        <mesh position={[0, 0.32, 0]} castShadow>
-          <cylinderGeometry args={[0.08, 0.08, 0.64, 16]} />
+        <mesh position={[0, 0.32, 0]}>
+          <cylinderGeometry args={[0.08, 0.08, 0.64, 8]} />
           <meshStandardMaterial color="#cbd5e1" metalness={0.9} roughness={0.2} />
         </mesh>
         <mesh position={[0, 0.02, 0]} receiveShadow>
-          <cylinderGeometry args={[0.45, 0.45, 0.04, 24]} />
+          <cylinderGeometry args={[0.45, 0.45, 0.04, 12]} />
           <meshStandardMaterial color="#cbd5e1" metalness={0.9} roughness={0.2} />
         </mesh>
         <mesh position={[0, 0.66, 0]}>
-          <cylinderGeometry args={[0.65, 0.65, 0.04, 24]} />
-          <meshPhysicalMaterial color="#38bdf8" transmission={0.7} opacity={0.8} transparent roughness={0.1} />
+          <cylinderGeometry args={[0.65, 0.65, 0.04, 12]} />
+          <meshStandardMaterial color="#38bdf8" opacity={0.6} transparent roughness={0.1} />
         </mesh>
 
         {/* O PATO AMARELO DO HABBO HOTEL */}
         <group position={[0, 0.76, 0]} scale={0.7}>
-          <mesh castShadow>
-            <sphereGeometry args={[0.18, 16, 16]} />
+          <mesh>
+            <sphereGeometry args={[0.18, 10, 10]} />
             <meshStandardMaterial color="#eab308" roughness={0.3} />
           </mesh>
-          <mesh position={[0.1, 0.16, 0]} castShadow>
-            <sphereGeometry args={[0.12, 16, 16]} />
+          <mesh position={[0.1, 0.16, 0]}>
+            <sphereGeometry args={[0.12, 10, 10]} />
             <meshStandardMaterial color="#eab308" roughness={0.3} />
           </mesh>
           <mesh position={[0.22, 0.14, 0]} rotation={[0, 0, -0.2]}>
-            <coneGeometry args={[0.06, 0.12, 12]} />
+            <coneGeometry args={[0.06, 0.12, 8]} />
             <meshStandardMaterial color="#f97316" roughness={0.4} />
           </mesh>
           <mesh position={[0.16, 0.2, 0.08]}>
@@ -274,7 +241,7 @@ export const OfficeGameRoom: React.FC<OfficeGameRoomProps> = ({
           <sphereGeometry args={[0.04, 8, 8]} />
           <meshStandardMaterial color="#ca8a04" metalness={0.9} roughness={0.2} />
         </mesh>
-        {!isKartActive && (
+        {!hideOverlays && (
           <Html position={[0, 2.3, 0.48]} transform scale={0.08} center style={{ pointerEvents: 'none' }}>
             <div style={{ background: '#ca8a04', color: '#000', fontWeight: 900, padding: '2px 8px', borderRadius: '4px', fontSize: '10px' }}>
               TELEPORT
@@ -291,34 +258,34 @@ export const OfficeGameRoom: React.FC<OfficeGameRoomProps> = ({
         </mesh>
         {/* Troféu Ouro */}
         <group position={[-0.6, 0.95, 0]}>
-          <mesh castShadow>
-            <cylinderGeometry args={[0.08, 0.04, 0.35, 16]} />
+          <mesh>
+            <cylinderGeometry args={[0.08, 0.04, 0.35, 8]} />
             <meshStandardMaterial color="#ca8a04" metalness={0.9} roughness={0.2} />
           </mesh>
           <mesh position={[0, 0.22, 0]}>
-            <sphereGeometry args={[0.12, 16, 16]} />
+            <sphereGeometry args={[0.12, 10, 10]} />
             <meshStandardMaterial color="#eab308" metalness={0.9} roughness={0.2} />
           </mesh>
         </group>
         {/* Troféu Prata */}
         <group position={[0, 0.95, 0]}>
-          <mesh castShadow>
-            <cylinderGeometry args={[0.08, 0.04, 0.35, 16]} />
+          <mesh>
+            <cylinderGeometry args={[0.08, 0.04, 0.35, 8]} />
             <meshStandardMaterial color="#94a3b8" metalness={0.9} roughness={0.2} />
           </mesh>
           <mesh position={[0, 0.22, 0]}>
-            <sphereGeometry args={[0.12, 16, 16]} />
+            <sphereGeometry args={[0.12, 10, 10]} />
             <meshStandardMaterial color="#cbd5e1" metalness={0.9} roughness={0.2} />
           </mesh>
         </group>
         {/* Troféu Bronze */}
         <group position={[0.6, 0.95, 0]}>
-          <mesh castShadow>
-            <cylinderGeometry args={[0.08, 0.04, 0.35, 16]} />
+          <mesh>
+            <cylinderGeometry args={[0.08, 0.04, 0.35, 8]} />
             <meshStandardMaterial color="#b45309" metalness={0.9} roughness={0.2} />
           </mesh>
           <mesh position={[0, 0.22, 0]}>
-            <sphereGeometry args={[0.12, 16, 16]} />
+            <sphereGeometry args={[0.12, 10, 10]} />
             <meshStandardMaterial color="#d97706" metalness={0.9} roughness={0.2} />
           </mesh>
         </group>
@@ -334,11 +301,13 @@ export const OfficeGameRoom: React.FC<OfficeGameRoomProps> = ({
           <boxGeometry args={[4.0, 0.01, 0.3]} />
           <meshStandardMaterial color="#eab308" roughness={0.3} />
         </mesh>
-        <Html position={[0, 0.01, 0]} transform rotation={[-Math.PI / 2, 0, 0]} scale={0.12} center style={{ pointerEvents: 'none' }}>
-          <div style={{ color: '#64748b', fontFamily: 'monospace', fontWeight: 900, fontSize: '14px', letterSpacing: '4px' }}>
-            🏁 START / FINISH • KART PUB REC 01
-          </div>
-        </Html>
+        {!hideOverlays && (
+          <Html position={[0, 0.01, 0]} transform rotation={[-Math.PI / 2, 0, 0]} scale={0.12} center style={{ pointerEvents: 'none' }}>
+            <div style={{ color: '#64748b', fontFamily: 'monospace', fontWeight: 900, fontSize: '14px', letterSpacing: '4px' }}>
+              🏁 START / FINISH • KART PUB REC 01
+            </div>
+          </Html>
+        )}
       </group>
     </group>
   );
@@ -368,11 +337,11 @@ const ArcadeCabinet: React.FC<ArcadeCabinetProps> = ({
         <meshStandardMaterial color="#0f172a" roughness={0.4} metalness={0.3} />
       </mesh>
 
-      <mesh position={[-0.61, 1.25, 0]} castShadow>
+      <mesh position={[-0.61, 1.25, 0]}>
         <boxGeometry args={[0.04, 2.45, 1.05]} />
         <meshStandardMaterial color={color} roughness={0.3} />
       </mesh>
-      <mesh position={[0.61, 1.25, 0]} castShadow>
+      <mesh position={[0.61, 1.25, 0]}>
         <boxGeometry args={[0.04, 2.45, 1.05]} />
         <meshStandardMaterial color={color} roughness={0.3} />
       </mesh>
@@ -391,7 +360,7 @@ const ArcadeCabinet: React.FC<ArcadeCabinetProps> = ({
         <meshBasicMaterial color={screenColor} />
       </mesh>
 
-      <mesh position={[0, 0.95, 0.52]} rotation={[0.4, 0, 0]} castShadow>
+      <mesh position={[0, 0.95, 0.52]} rotation={[0.4, 0, 0]}>
         <boxGeometry args={[1.12, 0.45, 0.12]} />
         <meshStandardMaterial color="#1e293b" roughness={0.6} />
       </mesh>
@@ -402,14 +371,14 @@ const ArcadeCabinet: React.FC<ArcadeCabinetProps> = ({
           <meshStandardMaterial color="#94a3b8" metalness={0.9} />
         </mesh>
         <mesh position={[0, 0.14, 0]}>
-          <sphereGeometry args={[0.05, 12, 12]} />
+          <sphereGeometry args={[0.05, 8, 8]} />
           <meshStandardMaterial color="#dc2626" roughness={0.2} />
         </mesh>
       </group>
 
       {[-0.05, 0.12, 0.28].map((xBtn, bIdx) => (
         <mesh key={bIdx} position={[xBtn, 1.05, 0.52]} rotation={[0.4, 0, 0]}>
-          <cylinderGeometry args={[0.035, 0.035, 0.02, 12]} />
+          <cylinderGeometry args={[0.035, 0.035, 0.02, 8]} />
           <meshStandardMaterial color={['#ef4444', '#3b82f6', '#eab308'][bIdx]} roughness={0.3} />
         </mesh>
       ))}

@@ -391,42 +391,54 @@ export const SectorRoom3D: React.FC<SectorRoom3DProps> = ({
         <meshStandardMaterial color={accentColor} emissive={accentColor} emissiveIntensity={isSelected ? 3.0 : isRoomHovered ? 2.4 : 1.5} />
       </mesh>
 
-      {/* Placa Letreiro Holográfico da Entrada */}
-      <Html
-        position={[0, 3.4, 3.8]}
-        transform
-        scale={0.18}
-        center
-      >
-        <div
-          onClick={handleRoomClick}
-          style={{
-            cursor: 'pointer',
-            background: (isSelected || isRoomHovered) ? 'rgba(15, 23, 42, 0.98)' : 'rgba(15, 23, 42, 0.88)',
-            border: `2px solid ${accentColor}`,
-            boxShadow: `0 0 20px ${accentColor}${isSelected ? 'bb' : isRoomHovered ? '99' : '55'}`,
-            borderRadius: '16px',
-            padding: '6px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            userSelect: 'none',
-            whiteSpace: 'nowrap',
-            transition: 'all 0.2s ease',
-          }}
-          title={`Clique para focar na sala do Setor ${sectorNumber}`}
+      {/* Placa Letreiro Neon da Entrada (WebGL nativo para zero overhead DOM nas 10 salas) */}
+      <mesh position={[0, 3.4, 3.78]} onClick={handleRoomClick}>
+        <boxGeometry args={[2.8, 0.6, 0.06]} />
+        <meshStandardMaterial
+          color="#0f172a"
+          emissive={accentColor}
+          emissiveIntensity={isSelected ? 1.8 : isRoomHovered ? 1.2 : 0.5}
+          roughness={0.3}
+          metalness={0.6}
+        />
+      </mesh>
+      {/* Letreiro interativo completo (Html) - montado apenas quando hover ou selecionado */}
+      {(isSelected || isRoomHovered) && (
+        <Html
+          position={[0, 3.4, 3.8]}
+          transform
+          scale={0.18}
+          center
         >
-          <span style={{ fontSize: '18px' }}>{icon}</span>
-          <div>
-            <div style={{ fontSize: '12px', fontWeight: 900, color: accentColor, letterSpacing: '0.5px' }}>
-              SETOR {sectorNumber} • {sector.name.split(':')[1]?.trim().split(',')[0].slice(0, 20) || sector.name}
-            </div>
-            <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 600 }}>
-              5 Especialistas • Benchmark Ativo
+          <div
+            onClick={handleRoomClick}
+            style={{
+              cursor: 'pointer',
+              background: 'rgba(15, 23, 42, 0.98)',
+              border: `2px solid ${accentColor}`,
+              boxShadow: `0 0 20px ${accentColor}${isSelected ? 'bb' : '99'}`,
+              borderRadius: '16px',
+              padding: '6px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              userSelect: 'none',
+              whiteSpace: 'nowrap',
+            }}
+            title={`Clique para focar na sala do Setor ${sectorNumber}`}
+          >
+            <span style={{ fontSize: '18px' }}>{icon}</span>
+            <div>
+              <div style={{ fontSize: '12px', fontWeight: 900, color: accentColor, letterSpacing: '0.5px' }}>
+                SETOR {sectorNumber} • {sector.name.split(':')[1]?.trim().split(',')[0].slice(0, 20) || sector.name}
+              </div>
+              <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 600 }}>
+                5 Especialistas • Benchmark Ativo
+              </div>
             </div>
           </div>
-        </div>
-      </Html>
+        </Html>
+      )}
 
       {/* Plantas decorativas no canto da sala */}
       <OfficePlant position={[-3.8, 0, -2.8]} />

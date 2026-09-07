@@ -170,7 +170,7 @@ export const OfficeWalls: React.FC = () => {
   const woodSlats = [];
   for (let x = -8; x <= 8; x += 0.45) {
     woodSlats.push(
-      <mesh key={`slat-${x}`} position={[x, 3.2, -14.65]} castShadow>
+      <mesh key={`slat-${x}`} position={[x, 3.2, -14.65]}>
         <boxGeometry args={[0.22, 6.2, 0.06]} />
         <meshStandardMaterial color="#5c3826" roughness={0.5} />
       </mesh>
@@ -199,7 +199,7 @@ export const OfficeWalls: React.FC = () => {
 
       {/* Quadro Artístico Corporativo 1 (Emoldurado em Nogueira e Bronze) */}
       <group position={[-5.5, 4.2, -14.55]}>
-        <mesh castShadow>
+        <mesh>
           <boxGeometry args={[2.0, 1.4, 0.08]} />
           <meshStandardMaterial color="#1c120c" roughness={0.4} metalness={0.2} />
         </mesh>
@@ -211,7 +211,7 @@ export const OfficeWalls: React.FC = () => {
 
       {/* Quadro Artístico Corporativo 2 (Emoldurado em Nogueira e Titânio) */}
       <group position={[5.5, 4.2, -14.55]}>
-        <mesh castShadow>
+        <mesh>
           <boxGeometry args={[2.0, 1.4, 0.08]} />
           <meshStandardMaterial color="#1c120c" roughness={0.4} metalness={0.2} />
         </mesh>
@@ -467,7 +467,7 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
       <group position={[-tableWidth / 2 + 0.45, tableHeight + 0.1, 0.2]}>
         {isCeo ? (
           <>
-            <mesh castShadow>
+            <mesh>
               <cylinderGeometry args={[0.075, 0.065, 0.14, 28]} />
               <meshStandardMaterial color="#facc15" roughness={0.12} metalness={0.08} />
             </mesh>
@@ -487,7 +487,7 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
         ) : deskProps?.beverageType === 'ENERGY_DRINK' ? (
           /* Lata de Energético (Lucas Silveira) */
           <group position={[0, 0.02, 0]}>
-            <mesh castShadow>
+            <mesh>
               <cylinderGeometry args={[0.045, 0.045, 0.16, 20]} />
               <meshStandardMaterial color="#0284c7" metalness={0.85} roughness={0.2} />
             </mesh>
@@ -499,7 +499,7 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
         ) : deskProps?.beverageType === 'MATCHA' ? (
           /* Copo de Vidro com Chá Matcha Verde (Beatriz & Renata) */
           <group position={[0, 0.02, 0]}>
-            <mesh castShadow>
+            <mesh>
               <cylinderGeometry args={[0.055, 0.045, 0.15, 20]} />
               <meshStandardMaterial color="#10b981" transparent opacity={0.65} roughness={0.1} />
             </mesh>
@@ -518,7 +518,7 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
               <meshStandardMaterial color="#f8fafc" roughness={0.1} />
             </mesh>
             {/* Xícara */}
-            <mesh position={[0, 0.05, 0]} castShadow>
+            <mesh position={[0, 0.05, 0]}>
               <cylinderGeometry args={[0.065, 0.045, 0.09, 24]} />
               <meshStandardMaterial color="#f8fafc" roughness={0.1} />
             </mesh>
@@ -531,7 +531,7 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
         ) : deskProps?.beverageType === 'COLD_BREW' ? (
           /* Garrafa de Vidro Cold Brew com Laranja (Cauã Martins) */
           <group position={[0, 0.03, 0]}>
-            <mesh castShadow>
+            <mesh>
               <cylinderGeometry args={[0.048, 0.048, 0.16, 20]} />
               <meshStandardMaterial color="#451a03" transparent opacity={0.7} roughness={0.2} />
             </mesh>
@@ -547,7 +547,7 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
         ) : (
           /* Caneca Cerâmica Padrão */
           <>
-            <mesh castShadow>
+            <mesh>
               <cylinderGeometry args={[0.07, 0.06, 0.13, 24]} />
               <meshStandardMaterial color={glowColor} roughness={0.2} />
             </mesh>
@@ -567,7 +567,7 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
       {deskProps?.plantType && deskProps.plantType !== 'NONE' && (
         <group position={[-tableWidth / 2 + 0.35, tableHeight + 0.08, -tableDepth / 3 + 0.1]}>
           {/* Vaso de Cerâmica Minimalista */}
-          <mesh castShadow>
+          <mesh>
             <cylinderGeometry args={[0.07, 0.05, 0.1, 16]} />
             <meshStandardMaterial color="#334155" roughness={0.4} />
           </mesh>
@@ -576,14 +576,14 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
             <meshStandardMaterial color="#3f2e21" roughness={0.9} />
           </mesh>
           {deskProps.plantType === 'CACTUS' && (
-            <mesh position={[0, 0.12, 0]} castShadow>
+            <mesh position={[0, 0.12, 0]}>
               <cylinderGeometry args={[0.035, 0.035, 0.15, 12]} />
               <meshStandardMaterial color="#15803d" roughness={0.8} />
             </mesh>
           )}
           {deskProps.plantType === 'SUCCULENT' && (
             <group position={[0, 0.07, 0]}>
-              <mesh castShadow>
+              <mesh>
                 <sphereGeometry args={[0.05, 8, 8]} />
                 <meshStandardMaterial color="#10b981" roughness={0.6} />
               </mesh>
@@ -619,7 +619,7 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
       {agentId === 'developer' && (
         <group position={[tableWidth / 2 - 0.42, tableHeight + 0.05, 0.1]}>
           {/* Mini Action Figure / Mascote */}
-          <mesh position={[0, 0.06, 0]} castShadow>
+          <mesh position={[0, 0.06, 0]}>
             <cylinderGeometry args={[0.03, 0.035, 0.12, 10]} />
             <meshStandardMaterial color="#38bdf8" metalness={0.6} roughness={0.2} />
           </mesh>
@@ -635,7 +635,7 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
         <group position={[tableWidth / 2 - 0.55, tableHeight + 0.05, 0.18]}>
           {[0, 0.12, 0.24, 0.36].map((dx, idx) => (
             <group key={`duck-squad-${idx}`} position={[dx, 0, 0]}>
-              <mesh castShadow>
+              <mesh>
                 <sphereGeometry args={[0.045, 14, 14]} />
                 <meshStandardMaterial color="#facc15" roughness={0.3} />
               </mesh>
@@ -663,7 +663,7 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
           </mesh>
           {/* Escultura 3D Impressa do Pinscher (Dourada Metálica) */}
           <group position={[-0.18, 0.04, -0.15]}>
-            <mesh castShadow>
+            <mesh>
               <boxGeometry args={[0.08, 0.07, 0.12]} />
               <meshStandardMaterial color="#eab308" metalness={0.9} roughness={0.15} />
             </mesh>
@@ -688,7 +688,7 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
       {agentId === 'video-editor' && (
         <group position={[tableWidth / 2 - 0.42, tableHeight + 0.05, 0.16]}>
           {/* Mini Drone DJI com 4 Hélices */}
-          <mesh position={[0, 0.02, 0]} castShadow>
+          <mesh position={[0, 0.02, 0]}>
             <boxGeometry args={[0.12, 0.025, 0.12]} />
             <meshStandardMaterial color="#0f172a" metalness={0.8} roughness={0.3} />
           </mesh>
@@ -703,7 +703,7 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
           )}
           {/* Claquete de Cinema */}
           <group position={[-0.18, 0.02, 0]} rotation={[0, 0.3, 0]}>
-            <mesh castShadow>
+            <mesh>
               <boxGeometry args={[0.14, 0.015, 0.11]} />
               <meshStandardMaterial color="#18181b" roughness={0.5} />
             </mesh>
@@ -748,7 +748,7 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
       {/* 7. Dr. Arthur Vance - Prancheta Executiva em Madeira e Caneta Dourada */}
       {agentId === 'chief-of-staff' && (
         <group position={[tableWidth / 2 - 0.45, tableHeight + 0.03, 0.15]}>
-          <mesh position={[0, 0.01, 0]} rotation={[0, 0.15, 0]} castShadow>
+          <mesh position={[0, 0.01, 0]} rotation={[0, 0.15, 0]}>
             <boxGeometry args={[0.22, 0.018, 0.32]} />
             <meshStandardMaterial color="#d97706" roughness={0.6} />
           </mesh>
@@ -785,7 +785,7 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
         <group position={[tableWidth / 2 - 0.42, tableHeight + 0.04, 0.16]}>
           {/* Miniatura do Foguete Falcon Metálico (Símbolo de Escala) */}
           <group position={[0, 0.06, 0]}>
-            <mesh castShadow>
+            <mesh>
               <cylinderGeometry args={[0.02, 0.03, 0.15, 12]} />
               <meshStandardMaterial color="#f8fafc" metalness={0.7} roughness={0.3} />
             </mesh>
@@ -846,14 +846,14 @@ export const DunderBreakroom: React.FC<{ position: [number, number, number] }> =
         <boxGeometry args={[4.2, 0.9, 1.2]} />
         <meshStandardMaterial color="#1f2937" roughness={0.4} />
       </mesh>
-      <mesh position={[0, 1.32, -1.8]} castShadow receiveShadow>
+      <mesh position={[0, 1.32, -1.8]} receiveShadow>
         <boxGeometry args={[4.4, 0.06, 1.3]} />
         <meshStandardMaterial color="#111827" roughness={0.2} metalness={0.3} />
       </mesh>
 
       {/* Máquina de Expresso Italiana em Inox Escovado */}
       <group position={[0, 1.45, -1.8]}>
-        <mesh castShadow>
+        <mesh>
           <boxGeometry args={[1.0, 0.65, 0.6]} />
           <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.1} />
         </mesh>
@@ -880,23 +880,22 @@ export const DunderBreakroom: React.FC<{ position: [number, number, number] }> =
         <sphereGeometry args={[0.08, 12, 12]} />
         <meshBasicMaterial color="#ffffff" transparent opacity={0.6} />
       </mesh>
-      <pointLight color="#f59e0b" intensity={1.5} distance={3.0} position={[0, 1.8, -1.5]} />
 
       {/* Geladeira Corporativa */}
-      <mesh position={[-2.8, 1.6, -1.8]} castShadow receiveShadow>
+      <mesh position={[-2.8, 1.6, -1.8]} receiveShadow>
         <boxGeometry args={[1.0, 2.4, 1.0]} />
         <meshStandardMaterial color="#94a3b8" metalness={0.7} roughness={0.3} />
       </mesh>
 
       {/* Micro-ondas */}
-      <mesh position={[1.4, 1.5, -1.8]} castShadow>
+      <mesh position={[1.4, 1.5, -1.8]}>
         <boxGeometry args={[0.7, 0.4, 0.45]} />
         <meshStandardMaterial color="#0f172a" metalness={0.6} />
       </mesh>
 
       {/* Mesa Redonda de Almoço */}
       <group position={[0, 0, 1.8]}>
-        <mesh position={[0, 0.75, 0]} castShadow receiveShadow>
+        <mesh position={[0, 0.75, 0]} receiveShadow>
           <cylinderGeometry args={[1.1, 1.1, 0.06, 24]} />
           <meshStandardMaterial color="#334155" roughness={0.4} />
         </mesh>
@@ -907,7 +906,7 @@ export const DunderBreakroom: React.FC<{ position: [number, number, number] }> =
 
         {[-Math.PI / 3, Math.PI / 3, Math.PI].map((ang, i) => (
           <group key={`chair-${i}`} position={[Math.sin(ang) * 1.5, 0, Math.cos(ang) * 1.5]} rotation={[0, ang + Math.PI, 0]}>
-            <mesh position={[0, 0.42, 0]} castShadow>
+            <mesh position={[0, 0.42, 0]}>
               <cylinderGeometry args={[0.26, 0.26, 0.05, 16]} />
               <meshStandardMaterial color="#ef4444" roughness={0.6} />
             </mesh>
@@ -926,8 +925,8 @@ export const DunderBreakroom: React.FC<{ position: [number, number, number] }> =
 export const ClassicWatercooler: React.FC<{ position: [number, number, number] }> = ({ position }) => {
   return (
     <group position={position}>
-      <mesh position={[0, 0.45, 0]} castShadow>
-        <cylinderGeometry args={[0.22, 0.26, 0.9, 20]} />
+      <mesh position={[0, 0.45, 0]}>
+        <cylinderGeometry args={[0.22, 0.26, 0.9, 10]} />
         <meshStandardMaterial color="#f8fafc" roughness={0.3} />
       </mesh>
       <mesh position={[0, 1.15, 0]}>
@@ -964,18 +963,17 @@ export const MeetingRoomArea: React.FC = () => {
 
   return (
     <group position={[-11, 0, -8]}>
-      <mesh position={[0, 0.9, 0]} castShadow receiveShadow>
-        <cylinderGeometry args={[2.4, 2.4, 0.08, 32]} />
-        <meshPhysicalMaterial
+      <mesh position={[0, 0.9, 0]} receiveShadow>
+        <cylinderGeometry args={[2.4, 2.4, 0.08, 12]} />
+        <meshStandardMaterial
           color="#38bdf8"
-          transmission={0.85}
           opacity={0.3}
           transparent
           roughness={0.1}
         />
       </mesh>
-      <mesh position={[0, 0.45, 0]} castShadow>
-        <cylinderGeometry args={[0.55, 0.75, 0.9, 32]} />
+      <mesh position={[0, 0.45, 0]}>
+        <cylinderGeometry args={[0.55, 0.75, 0.9, 12]} />
         <meshStandardMaterial color="#0f172a" metalness={0.8} roughness={0.3} />
       </mesh>
 
@@ -993,8 +991,6 @@ export const MeetingRoomArea: React.FC = () => {
           <meshBasicMaterial color="#818cf8" transparent opacity={0.45} />
         </mesh>
       </group>
-
-      <pointLight color="#38bdf8" intensity={1.5} distance={4.5} position={[0, 1.6, 0]} />
     </group>
   );
 };
@@ -1007,7 +1003,7 @@ export const LoungeSofa: React.FC<{ position: [number, number, number] }> = ({ p
         <boxGeometry args={[2.8, 0.42, 1.0]} />
         <meshStandardMaterial color="#451a03" roughness={0.8} />
       </mesh>
-      <mesh position={[0, 0.75, 0.4]} castShadow>
+      <mesh position={[0, 0.75, 0.4]}>
         <boxGeometry args={[2.8, 0.5, 0.22]} />
         <meshStandardMaterial color="#451a03" roughness={0.8} />
       </mesh>
@@ -1025,32 +1021,22 @@ export const LoungeSofa: React.FC<{ position: [number, number, number] }> = ({ p
 
 // 8. Plantas Decorativas de Escritório (OfficePlant)
 export const OfficePlant: React.FC<{ position: [number, number, number] }> = ({ position }) => {
-  const leavesRef = useRef<THREE.Group>(null);
-
-  useFrame(({ clock }) => {
-    if (leavesRef.current) {
-      const t = clock.getElapsedTime();
-      leavesRef.current.rotation.z = Math.sin(t * 1.5) * 0.05;
-      leavesRef.current.rotation.x = Math.cos(t * 1.2) * 0.04;
-    }
-  });
-
   return (
     <group position={position}>
-      <mesh position={[0, 0.3, 0]} castShadow>
+      <mesh position={[0, 0.3, 0]}>
         <cylinderGeometry args={[0.26, 0.18, 0.6, 16]} />
         <meshStandardMaterial color="#f8fafc" roughness={0.3} />
       </mesh>
-      <group ref={leavesRef} position={[0, 0.6, 0]}>
-        <mesh position={[0, 0.2, 0]} castShadow>
+      <group position={[0, 0.6, 0]}>
+        <mesh position={[0, 0.2, 0]}>
           <sphereGeometry args={[0.38, 12, 12]} />
           <meshStandardMaterial color="#15803d" roughness={0.6} />
         </mesh>
-        <mesh position={[0.15, 0.35, 0]} castShadow>
+        <mesh position={[0.15, 0.35, 0]}>
           <sphereGeometry args={[0.24, 10, 10]} />
           <meshStandardMaterial color="#16a34a" roughness={0.6} />
         </mesh>
-        <mesh position={[-0.15, 0.3, 0.1]} castShadow>
+        <mesh position={[-0.15, 0.3, 0.1]}>
           <sphereGeometry args={[0.22, 10, 10]} />
           <meshStandardMaterial color="#22c55e" roughness={0.6} />
         </mesh>
@@ -1069,7 +1055,7 @@ export const OfficeChair: React.FC<{
     <group position={position} rotation={rotation}>
       {/* 9.1 Base Estrela com 5 Rodízios */}
       <group position={[0, 0.04, 0]}>
-        <mesh castShadow>
+        <mesh>
           <cylinderGeometry args={[0.28, 0.28, 0.03, 12]} />
           <meshStandardMaterial color="#334155" metalness={0.8} roughness={0.2} />
         </mesh>
@@ -1080,8 +1066,8 @@ export const OfficeChair: React.FC<{
           const rz = Math.sin(angle) * 0.22;
           return (
             <group key={i} position={[rx, 0, rz]}>
-              <mesh castShadow>
-                <sphereGeometry args={[0.035, 8, 8]} />
+              <mesh>
+                <sphereGeometry args={[0.035, 6, 6]} />
                 <meshStandardMaterial color="#09090b" roughness={0.6} />
               </mesh>
             </group>
@@ -1090,7 +1076,7 @@ export const OfficeChair: React.FC<{
       </group>
 
       {/* 9.2 Pistão Hidráulico / Coluna a Gás Cromada */}
-      <mesh position={[0, 0.22, 0]} castShadow>
+      <mesh position={[0, 0.22, 0]}>
         <cylinderGeometry args={[0.035, 0.045, 0.34, 16]} />
         <meshStandardMaterial color="#94a3b8" metalness={0.9} roughness={0.1} />
       </mesh>
@@ -1115,23 +1101,23 @@ export const OfficeChair: React.FC<{
       {/* 9.5 Braços Laterais com Apoio Acolchoado */}
       <group position={[-0.27, 0.58, 0]}>
         {/* Haste Vertical do Braço */}
-        <mesh position={[0, -0.06, 0]} castShadow>
+        <mesh position={[0, -0.06, 0]}>
           <boxGeometry args={[0.04, 0.2, 0.05]} />
           <meshStandardMaterial color="#334155" metalness={0.7} />
         </mesh>
         {/* Apoio de Braço Superior */}
-        <mesh position={[0, 0.04, 0]} castShadow>
+        <mesh position={[0, 0.04, 0]}>
           <boxGeometry args={[0.07, 0.03, 0.28]} />
           <meshStandardMaterial color="#1e293b" roughness={0.5} />
         </mesh>
       </group>
 
       <group position={[0.27, 0.58, 0]}>
-        <mesh position={[0, -0.06, 0]} castShadow>
+        <mesh position={[0, -0.06, 0]}>
           <boxGeometry args={[0.04, 0.2, 0.05]} />
           <meshStandardMaterial color="#334155" metalness={0.7} />
         </mesh>
-        <mesh position={[0, 0.04, 0]} castShadow>
+        <mesh position={[0, 0.04, 0]}>
           <boxGeometry args={[0.07, 0.03, 0.28]} />
           <meshStandardMaterial color="#1e293b" roughness={0.5} />
         </mesh>

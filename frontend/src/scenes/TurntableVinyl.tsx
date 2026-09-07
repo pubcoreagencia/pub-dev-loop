@@ -20,7 +20,6 @@ export const TurntableVinyl: React.FC<TurntableVinylProps> = ({
   const isJukeboxOpen = useStore((s) => s.isJukeboxOpen);
   const discRef = useRef<THREE.Group>(null);
   const armGroupRef = useRef<THREE.Group>(null);
-  const needleLightRef = useRef<THREE.PointLight>(null);
   const wave1Ref = useRef<THREE.Mesh>(null);
   const wave2Ref = useRef<THREE.Mesh>(null);
   const wave3Ref = useRef<THREE.Mesh>(null);
@@ -35,49 +34,48 @@ export const TurntableVinyl: React.FC<TurntableVinylProps> = ({
 
     // 2. Movimento físico nítido e visível do braço da agulha (Tonearm)
     if (armGroupRef.current) {
-      // Quando tocando: gira para cima do disco (0.55 rad) e desce a agulha (-0.12 rad)
-      // Quando parado: sobe a agulha (0.12 rad) e recolhe para o suporte de repouso (-0.2 rad)
       const targetRotY = isPlaying ? 0.55 : -0.2;
       const targetRotZ = isPlaying ? -0.12 : 0.12;
       armGroupRef.current.rotation.y = THREE.MathUtils.lerp(armGroupRef.current.rotation.y, targetRotY, delta * 5);
       armGroupRef.current.rotation.z = THREE.MathUtils.lerp(armGroupRef.current.rotation.z, targetRotZ, delta * 5);
     }
 
-    // 3. LED da agulha muda de cor e intensidade
-    if (needleLightRef.current) {
-      needleLightRef.current.color.set(isPlaying ? '#22c55e' : '#ef4444');
-      needleLightRef.current.intensity = isPlaying ? 1.5 : 0.4;
-    }
-
-    // 4. Ondas sonoras volumétricas pulsando das caixas de som
-    const t = Date.now() * 0.006;
-    if (wave1Ref.current) {
+    // 3. Ondas sonoras visuais (calcula apenas se estiver tocando)
+    if (isPlaying) {
+      const t = Date.now() * 0.006;
       const s1 = 0.6 + ((t * 1.6) % 2.4);
-      wave1Ref.current.scale.set(s1, s1, s1);
-      wave1Ref.current.position.z = 0.25 + ((t * 0.8) % 1.5);
-      const mat = wave1Ref.current.material as THREE.MeshBasicMaterial;
-      if (mat) mat.opacity = isPlaying ? Math.max(0, 0.9 - (s1 / 2.8)) : 0;
-    }
-    if (wave2Ref.current) {
+      const posZ1 = 0.25 + ((t * 0.8) % 1.5);
+      const op1 = Math.max(0, 0.9 - (s1 / 2.8));
+
       const s2 = 0.6 + (((t + 0.5) * 1.6) % 2.4);
-      wave2Ref.current.scale.set(s2, s2, s2);
-      wave2Ref.current.position.z = 0.25 + (((t + 0.5) * 0.8) % 1.5);
-      const mat = wave2Ref.current.material as THREE.MeshBasicMaterial;
-      if (mat) mat.opacity = isPlaying ? Math.max(0, 0.9 - (s2 / 2.8)) : 0;
-    }
-    if (wave3Ref.current) {
-      const s3 = 0.6 + ((t * 1.6) % 2.4);
-      wave3Ref.current.scale.set(s3, s3, s3);
-      wave3Ref.current.position.z = 0.25 + ((t * 0.8) % 1.5);
-      const mat = wave3Ref.current.material as THREE.MeshBasicMaterial;
-      if (mat) mat.opacity = isPlaying ? Math.max(0, 0.9 - (s3 / 2.8)) : 0;
-    }
-    if (wave4Ref.current) {
-      const s4 = 0.6 + (((t + 0.5) * 1.6) % 2.4);
-      wave4Ref.current.scale.set(s4, s4, s4);
-      wave4Ref.current.position.z = 0.25 + (((t + 0.5) * 0.8) % 1.5);
-      const mat = wave4Ref.current.material as THREE.MeshBasicMaterial;
-      if (mat) mat.opacity = isPlaying ? Math.max(0, 0.9 - (s4 / 2.8)) : 0;
+      const posZ2 = 0.25 + (((t + 0.5) * 0.8) % 1.5);
+      const op2 = Math.max(0, 0.9 - (s2 / 2.8));
+
+      if (wave1Ref.current) {
+        wave1Ref.current.scale.set(s1, s1, s1);
+        wave1Ref.current.position.z = posZ1;
+        (wave1Ref.current.material as THREE.MeshBasicMaterial).opacity = op1;
+      }
+      if (wave3Ref.current) {
+        wave3Ref.current.scale.set(s1, s1, s1);
+        wave3Ref.current.position.z = posZ1;
+        (wave3Ref.current.material as THREE.MeshBasicMaterial).opacity = op1;
+      }
+      if (wave2Ref.current) {
+        wave2Ref.current.scale.set(s2, s2, s2);
+        wave2Ref.current.position.z = posZ2;
+        (wave2Ref.current.material as THREE.MeshBasicMaterial).opacity = op2;
+      }
+      if (wave4Ref.current) {
+        wave4Ref.current.scale.set(s2, s2, s2);
+        wave4Ref.current.position.z = posZ2;
+        (wave4Ref.current.material as THREE.MeshBasicMaterial).opacity = op2;
+      }
+    } else if (wave1Ref.current && (wave1Ref.current.material as THREE.MeshBasicMaterial).opacity > 0) {
+      (wave1Ref.current.material as THREE.MeshBasicMaterial).opacity = 0;
+      if (wave2Ref.current) (wave2Ref.current.material as THREE.MeshBasicMaterial).opacity = 0;
+      if (wave3Ref.current) (wave3Ref.current.material as THREE.MeshBasicMaterial).opacity = 0;
+      if (wave4Ref.current) (wave4Ref.current.material as THREE.MeshBasicMaterial).opacity = 0;
     }
   });
 
@@ -119,48 +117,48 @@ export const TurntableVinyl: React.FC<TurntableVinylProps> = ({
       </mesh>
 
       {/* Prateleira com Discos de Vinil Verticais */}
-      <mesh position={[0, 0.35, 0.48]} castShadow>
+      <mesh position={[0, 0.35, 0.48]}>
         <boxGeometry args={[1.4, 0.58, 0.08]} />
         <meshStandardMaterial color="#1e293b" />
       </mesh>
 
       {/* Chassi Metálico Superior da Vitrola */}
-      <mesh position={[0, 1.04, 0]} castShadow>
+      <mesh position={[0, 1.04, 0]}>
         <boxGeometry args={[1.2, 0.09, 0.9]} />
         <meshStandardMaterial color="#18181b" metalness={0.85} roughness={0.15} />
       </mesh>
 
       {/* Prato Base Fixo da Vitrola */}
       <mesh position={[-0.15, 1.095, 0]}>
-        <cylinderGeometry args={[0.38, 0.38, 0.018, 32]} />
+        <cylinderGeometry args={[0.38, 0.38, 0.018, 16]} />
         <meshStandardMaterial color="#27272a" metalness={0.9} roughness={0.2} />
       </mesh>
 
       {/* CONJUNTO GIRATÓRIO DO VINIL (Platter, Disco com ranhuras, Rótulo e Marcadores Visíveis de 33 RPM) */}
       <group ref={discRef} position={[-0.15, 1.115, 0]}>
         {/* Disco de Vinil Preto */}
-        <mesh castShadow receiveShadow>
-          <cylinderGeometry args={[0.36, 0.36, 0.015, 48]} />
+        <mesh>
+          <cylinderGeometry args={[0.36, 0.36, 0.015, 24]} />
           <meshStandardMaterial color="#09090b" roughness={0.3} metalness={0.4} />
         </mesh>
 
         {/* Ranhuras Concêntricas Brilhantes do Vinil */}
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]}>
-          <ringGeometry args={[0.18, 0.19, 32]} />
+          <ringGeometry args={[0.18, 0.19, 16]} />
           <meshBasicMaterial color="#3f3f46" />
         </mesh>
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]}>
-          <ringGeometry args={[0.25, 0.26, 32]} />
+          <ringGeometry args={[0.25, 0.26, 16]} />
           <meshBasicMaterial color="#3f3f46" />
         </mesh>
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]}>
-          <ringGeometry args={[0.32, 0.33, 32]} />
+          <ringGeometry args={[0.32, 0.33, 16]} />
           <meshBasicMaterial color="#3f3f46" />
         </mesh>
 
         {/* Rótulo Central Colorido */}
         <mesh position={[0, 0.009, 0]}>
-          <cylinderGeometry args={[0.13, 0.13, 0.006, 32]} />
+          <cylinderGeometry args={[0.13, 0.13, 0.006, 16]} />
           <meshBasicMaterial color={labelColor} />
         </mesh>
 
@@ -176,7 +174,7 @@ export const TurntableVinyl: React.FC<TurntableVinylProps> = ({
 
         {/* Pino Central Prateado */}
         <mesh position={[0, 0.03, 0]}>
-          <cylinderGeometry args={[0.016, 0.016, 0.045, 16]} />
+          <cylinderGeometry args={[0.016, 0.016, 0.045, 8]} />
           <meshStandardMaterial color="#e4e4e7" metalness={0.95} roughness={0.1} />
         </mesh>
       </group>
@@ -185,12 +183,12 @@ export const TurntableVinyl: React.FC<TurntableVinylProps> = ({
       <group ref={armGroupRef} position={[0.34, 1.14, 0.26]}>
         {/* Base Pivô Metálica de Rotação */}
         <mesh>
-          <cylinderGeometry args={[0.045, 0.045, 0.08, 16]} />
+          <cylinderGeometry args={[0.045, 0.045, 0.08, 8]} />
           <meshStandardMaterial color="#d4d4d8" metalness={0.9} roughness={0.2} />
         </mesh>
         {/* Haste Longa de Alumínio Escovado */}
         <mesh position={[-0.26, 0.04, -0.26]} rotation={[0, 0.5, 0]}>
-          <cylinderGeometry args={[0.01, 0.01, 0.52, 12]} />
+          <cylinderGeometry args={[0.01, 0.01, 0.52, 8]} />
           <meshStandardMaterial color="#e4e4e7" metalness={0.95} roughness={0.1} />
         </mesh>
         {/* Cabeçote / Cápsula da Agulha (Cartridge) */}
@@ -203,7 +201,6 @@ export const TurntableVinyl: React.FC<TurntableVinylProps> = ({
           <sphereGeometry args={[0.015, 8, 8]} />
           <meshBasicMaterial color={isPlaying ? '#22c55e' : '#ef4444'} />
         </mesh>
-        <pointLight ref={needleLightRef} distance={1.2} intensity={1.5} position={[-0.45, 0.08, -0.45]} />
       </group>
 
       {/* Suporte de Repouso da Agulha */}
@@ -214,58 +211,58 @@ export const TurntableVinyl: React.FC<TurntableVinylProps> = ({
 
       {/* Amplificador Valvulado com Válvulas Brilhantes */}
       <group position={[0.72, 1.1, 0]}>
-        <mesh castShadow>
+        <mesh>
           <boxGeometry args={[0.32, 0.18, 0.55]} />
           <meshStandardMaterial color="#09090b" metalness={0.8} />
         </mesh>
         {/* Válvula de Vidro */}
         <mesh position={[0, 0.15, 0]}>
-          <cylinderGeometry args={[0.035, 0.035, 0.12, 12]} />
-          <meshPhysicalMaterial color="#f59e0b" transmission={0.7} opacity={0.6} transparent />
+          <cylinderGeometry args={[0.035, 0.035, 0.12, 8]} />
+          <meshStandardMaterial color="#f59e0b" roughness={0.1} opacity={0.6} transparent />
         </mesh>
         <pointLight color="#f59e0b" intensity={isPlaying ? 1.8 : 0.3} distance={2.8} position={[0, 0.25, 0]} />
       </group>
 
       {/* Caixa de Som Acústica Esquerda */}
       <group position={[-1.35, 0.65, 0]}>
-        <mesh castShadow>
+        <mesh>
           <boxGeometry args={[0.48, 1.05, 0.48]} />
           <meshStandardMaterial color="#3b1f14" roughness={0.7} />
         </mesh>
         {/* Cone da Caixa de Som */}
         <mesh position={[0, 0.12, 0.25]} rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[0.18, 0.09, 0.05, 24]} />
+          <cylinderGeometry args={[0.18, 0.09, 0.05, 12]} />
           <meshStandardMaterial color="#18181b" roughness={0.3} />
         </mesh>
         {/* Ondas Sonoras Visuais Pulsantes (Esquerda) */}
         <mesh ref={wave1Ref} position={[0, 0.12, 0.28]}>
-          <ringGeometry args={[0.18, 0.25, 24]} />
+          <ringGeometry args={[0.18, 0.25, 12]} />
           <meshBasicMaterial color={labelColor} transparent opacity={0.7} side={THREE.DoubleSide} />
         </mesh>
         <mesh ref={wave2Ref} position={[0, 0.12, 0.28]}>
-          <ringGeometry args={[0.26, 0.35, 24]} />
+          <ringGeometry args={[0.26, 0.35, 12]} />
           <meshBasicMaterial color="#a855f7" transparent opacity={0.5} side={THREE.DoubleSide} />
         </mesh>
       </group>
 
       {/* Caixa de Som Acústica Direita */}
       <group position={[1.35, 0.65, 0]}>
-        <mesh castShadow>
+        <mesh>
           <boxGeometry args={[0.48, 1.05, 0.48]} />
           <meshStandardMaterial color="#3b1f14" roughness={0.7} />
         </mesh>
         {/* Cone da Caixa de Som */}
         <mesh position={[0, 0.12, 0.25]} rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[0.18, 0.09, 0.05, 24]} />
+          <cylinderGeometry args={[0.18, 0.09, 0.05, 12]} />
           <meshStandardMaterial color="#18181b" roughness={0.3} />
         </mesh>
         {/* Ondas Sonoras Visuais Pulsantes (Direita) */}
         <mesh ref={wave3Ref} position={[0, 0.12, 0.28]}>
-          <ringGeometry args={[0.18, 0.25, 24]} />
+          <ringGeometry args={[0.18, 0.25, 12]} />
           <meshBasicMaterial color={labelColor} transparent opacity={0.7} side={THREE.DoubleSide} />
         </mesh>
         <mesh ref={wave4Ref} position={[0, 0.12, 0.28]}>
-          <ringGeometry args={[0.26, 0.35, 24]} />
+          <ringGeometry args={[0.26, 0.35, 12]} />
           <meshBasicMaterial color="#a855f7" transparent opacity={0.5} side={THREE.DoubleSide} />
         </mesh>
       </group>

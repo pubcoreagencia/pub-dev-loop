@@ -60,6 +60,8 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
   const ceoPosRef = useRef<THREE.Vector3>(new THREE.Vector3(position[0], position[1], position[2]));
   const ceoRotYRef = useRef<number>(rotation[1]);
   const [nearbyInstrument, setNearbyInstrument] = useState<string | null>(null);
+  const nearbyInstrumentRef = useRef<string | null>(null);
+  const frameCountRef = useRef<number>(0);
 
   useEffect(() => {
     if (!isCeo) return;
@@ -111,6 +113,7 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
 
   // Animação procedural completa e articulação biomecânica
   useFrame(({ clock }, delta) => {
+    frameCountRef.current++;
     const t = clock.getElapsedTime() + (position[0] * 2.1);
     const dt = Math.min(delta, 0.1);
 
@@ -166,10 +169,15 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
       const dConsole = Math.hypot(cur.x - 0, cur.z - (-7.5));
       const dSynth = Math.hypot(cur.x - 4.8, cur.z - (-8.5));
 
-      if (dDrums < 4.5) setNearbyInstrument('drums');
-      else if (dConsole < 5.0) setNearbyInstrument('console');
-      else if (dSynth < 4.5) setNearbyInstrument('synth');
-      else setNearbyInstrument(null);
+      let nextInstrument: string | null = null;
+      if (dDrums < 4.5) nextInstrument = 'drums';
+      else if (dConsole < 5.0) nextInstrument = 'console';
+      else if (dSynth < 4.5) nextInstrument = 'synth';
+
+      if (nearbyInstrumentRef.current !== nextInstrument) {
+        nearbyInstrumentRef.current = nextInstrument;
+        setNearbyInstrument(nextInstrument);
+      }
 
       // Animação de caminhada / corrida do CEO
       if (isCeoManualWalking) {
@@ -291,6 +299,10 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
         if (rightThighRef.current) rightThighRef.current.rotation.x = -Math.PI / 2;
         if (leftShinRef.current) leftShinRef.current.rotation.x = Math.PI / 2;
         if (rightShinRef.current) rightShinRef.current.rotation.x = Math.PI / 2;
+
+        // Frame-skip: only run idle calculations every 3rd frame for non-CEO avatars
+        const shouldRunIdle = isCeo || (frameCountRef.current % 3 === 0);
+        if (!shouldRunIdle) return;
 
         // Digitação dinâmica de acordo com o estado do funcionário
         if (operationalState === 'working' || operationalState === 'reviewing') {

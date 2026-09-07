@@ -18,9 +18,13 @@ export const OfficeDrivableKart: React.FC<OfficeDrivableKartProps> = ({
   const frontLeftWheelRef = useRef<THREE.Group>(null);
   const frontRightWheelRef = useRef<THREE.Group>(null);
   const steeringWheelRef = useRef<THREE.Group>(null);
-  const exhaustGlowRef = useRef<THREE.PointLight>(null);
-
+  const kmhSpanRef = useRef<HTMLSpanElement>(null);
   // Kart Physics & State
+  // Pre-allocated Vector3s for camera calculations (zero GC pressure at 60fps)
+  const _camPos = useRef(new THREE.Vector3());
+  const _lookTarget = useRef(new THREE.Vector3());
+  const _camOffset = useRef(new THREE.Vector3());
+  const _targetCamPos = useRef(new THREE.Vector3());
   const stateRef = useRef({
     pos: new THREE.Vector3(initialPosition[0], initialPosition[1], initialPosition[2]),
     rotationY: -Math.PI / 2, // Apontando para o corredor
@@ -34,8 +38,6 @@ export const OfficeDrivableKart: React.FC<OfficeDrivableKartProps> = ({
       drift: false,
     },
   });
-
-  const [currentKmh, setCurrentKmh] = useState(0);
 
   // Keyboard Event Listeners when driving
   useEffect(() => {
@@ -142,9 +144,9 @@ export const OfficeDrivableKart: React.FC<OfficeDrivableKartProps> = ({
       s.pos.x = THREE.MathUtils.clamp(s.pos.x, -21, 21);
       s.pos.z = THREE.MathUtils.clamp(s.pos.z, -13, 33);
 
-      // Speed display update (throttled)
-      if (Math.random() < 0.2) {
-        setCurrentKmh(Math.round(Math.abs(s.speed) * 6));
+      // Speed display update direct to DOM (zero React re-renders)
+      if (kmhSpanRef.current) {
+        kmhSpanRef.current.textContent = `${Math.round(Math.abs(s.speed) * 6)} km/h`;
       }
 
       // Dynamic Camera: Third Person vs Cockpit First Person
@@ -152,29 +154,29 @@ export const OfficeDrivableKart: React.FC<OfficeDrivableKartProps> = ({
         // Cockpit POV (Right above steering wheel looking forward)
         const cockpitHeight = 0.58;
         const forwardOffset = 0.35;
-        const camPos = new THREE.Vector3(
+        _camPos.current.set(
           s.pos.x + Math.sin(s.rotationY) * forwardOffset,
           s.pos.y + cockpitHeight,
           s.pos.z + Math.cos(s.rotationY) * forwardOffset
         );
-        camera.position.lerp(camPos, dt * 25);
-        const lookTarget = new THREE.Vector3(
+        camera.position.lerp(_camPos.current, dt * 25);
+        _lookTarget.current.set(
           s.pos.x + Math.sin(s.rotationY) * 10,
           s.pos.y + cockpitHeight * 0.9,
           s.pos.z + Math.cos(s.rotationY) * 10
         );
-        camera.lookAt(lookTarget);
+        camera.lookAt(_lookTarget.current);
       } else {
         // Third Person Chase Cam
         const camDist = camDistRef.current;
         const camHeight = camDist * 0.65;
-        const camOffset = new THREE.Vector3(
+        _camOffset.current.set(
           -Math.sin(s.rotationY) * camDist,
           camHeight,
           -Math.cos(s.rotationY) * camDist
         );
-        const targetCamPos = s.pos.clone().add(camOffset);
-        camera.position.lerp(targetCamPos, dt * 6);
+        _targetCamPos.current.copy(s.pos).add(_camOffset.current);
+        camera.position.lerp(_targetCamPos.current, dt * 6);
         camera.lookAt(s.pos.x, s.pos.y + 0.8, s.pos.z);
       }
     }
@@ -195,12 +197,6 @@ export const OfficeDrivableKart: React.FC<OfficeDrivableKartProps> = ({
     if (steeringWheelRef.current) {
       steeringWheelRef.current.rotation.z = -s.steeringAngle * 2.5;
     }
-
-    // Exhaust light flicker
-    if (exhaustGlowRef.current) {
-      const isMoving = Math.abs(s.speed) > 0.5;
-      exhaustGlowRef.current.intensity = isMoving ? 1.5 + Math.random() * 1.2 : 0.2;
-    }
   });
 
   return (
@@ -218,28 +214,28 @@ export const OfficeDrivableKart: React.FC<OfficeDrivableKartProps> = ({
       </mesh>
 
       {/* Faixa Branca de Corrida no Bico */}
-      <mesh position={[0, 0.245, 0.2]} castShadow>
+      <mesh position={[0, 0.245, 0.2]}>
         <boxGeometry args={[0.3, 0.02, 1.6]} />
         <meshStandardMaterial color="#ffffff" roughness={0.2} />
       </mesh>
 
       {/* Para-choque Dianteiro Aerodinâmico com Número 01 */}
-      <mesh position={[0, 0.18, 1.05]} castShadow>
+      <mesh position={[0, 0.18, 1.05]}>
         <boxGeometry args={[1.35, 0.16, 0.3]} />
         <meshStandardMaterial color="#111827" roughness={0.4} />
       </mesh>
-      <mesh position={[0, 0.26, 0.9]} rotation={[-0.4, 0, 0]} castShadow>
+      <mesh position={[0, 0.26, 0.9]} rotation={[-0.4, 0, 0]}>
         <boxGeometry args={[0.7, 0.22, 0.35]} />
         <meshStandardMaterial color="#dc2626" roughness={0.2} metalness={0.5} />
       </mesh>
 
       {/* 2. BANCO DE PILOTO ESPORTIVO TIPO CONCHA (Preto com Costuras) */}
-      <mesh position={[0, 0.36, -0.2]} castShadow>
+      <mesh position={[0, 0.36, -0.2]}>
         <boxGeometry args={[0.65, 0.38, 0.55]} />
         <meshStandardMaterial color="#18181b" roughness={0.8} />
       </mesh>
       {/* Encosto Alto de Cabeça */}
-      <mesh position={[0, 0.65, -0.45]} rotation={[-0.2, 0, 0]} castShadow>
+      <mesh position={[0, 0.65, -0.45]} rotation={[-0.2, 0, 0]}>
         <boxGeometry args={[0.55, 0.45, 0.14]} />
         <meshStandardMaterial color="#18181b" roughness={0.8} />
       </mesh>
@@ -251,11 +247,11 @@ export const OfficeDrivableKart: React.FC<OfficeDrivableKartProps> = ({
       </mesh>
       <group ref={steeringWheelRef} position={[0, 0.58, 0.12]} rotation={[0.65, 0, 0]}>
         <mesh>
-          <torusGeometry args={[0.18, 0.025, 8, 24]} />
+          <torusGeometry args={[0.18, 0.025, 6, 12]} />
           <meshStandardMaterial color="#27272a" roughness={0.4} />
         </mesh>
         <mesh>
-          <cylinderGeometry args={[0.04, 0.04, 0.02, 16]} />
+          <cylinderGeometry args={[0.04, 0.04, 0.02, 8]} />
           <meshStandardMaterial color="#dc2626" />
         </mesh>
       </group>
@@ -269,84 +265,77 @@ export const OfficeDrivableKart: React.FC<OfficeDrivableKartProps> = ({
         <cylinderGeometry args={[0.025, 0.025, 0.5, 8]} />
         <meshStandardMaterial color="#52525b" metalness={0.8} />
       </mesh>
-      <mesh position={[0, 0.8, -0.95]} rotation={[-0.1, 0, 0]} castShadow>
+      <mesh position={[0, 0.8, -0.95]} rotation={[-0.1, 0, 0]}>
         <boxGeometry args={[1.38, 0.05, 0.35]} />
         <meshStandardMaterial color="#09090b" roughness={0.2} metalness={0.7} />
       </mesh>
 
-      {/* 5. RODAS DE KART COM PNEUS SLICK E CALOTAS DE ALUMÍNIO */}
+      {/* 5. RODAS DE KART COM PNEUS SLICK E CALOTAS DE ALUMÍNIO (8 segmentos) */}
       {/* Roda Dianteira Esquerda (Direcionável) */}
       <group ref={frontLeftWheelRef} position={[-0.72, 0.16, 0.72]}>
-        <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-          <cylinderGeometry args={[0.17, 0.17, 0.22, 18]} />
+        <mesh rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.17, 0.17, 0.22, 8]} />
           <meshStandardMaterial color="#18181b" roughness={0.9} />
         </mesh>
         <mesh rotation={[0, 0, Math.PI / 2]} position={[-0.01, 0, 0]}>
-          <cylinderGeometry args={[0.1, 0.1, 0.23, 16]} />
+          <cylinderGeometry args={[0.1, 0.1, 0.23, 8]} />
           <meshStandardMaterial color="#e2e8f0" metalness={0.9} roughness={0.2} />
         </mesh>
       </group>
 
       {/* Roda Dianteira Direita (Direcionável) */}
       <group ref={frontRightWheelRef} position={[0.72, 0.16, 0.72]}>
-        <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-          <cylinderGeometry args={[0.17, 0.17, 0.22, 18]} />
+        <mesh rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.17, 0.17, 0.22, 8]} />
           <meshStandardMaterial color="#18181b" roughness={0.9} />
         </mesh>
         <mesh rotation={[0, 0, Math.PI / 2]} position={[0.01, 0, 0]}>
-          <cylinderGeometry args={[0.1, 0.1, 0.23, 16]} />
+          <cylinderGeometry args={[0.1, 0.1, 0.23, 8]} />
           <meshStandardMaterial color="#e2e8f0" metalness={0.9} roughness={0.2} />
         </mesh>
       </group>
 
       {/* Roda Traseira Esquerda (Tração mais Larga) */}
       <group position={[-0.75, 0.18, -0.65]}>
-        <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-          <cylinderGeometry args={[0.2, 0.2, 0.28, 18]} />
+        <mesh rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.2, 0.2, 0.28, 8]} />
           <meshStandardMaterial color="#18181b" roughness={0.9} />
         </mesh>
         <mesh rotation={[0, 0, Math.PI / 2]} position={[-0.01, 0, 0]}>
-          <cylinderGeometry args={[0.11, 0.11, 0.29, 16]} />
+          <cylinderGeometry args={[0.11, 0.11, 0.29, 8]} />
           <meshStandardMaterial color="#ca8a04" metalness={0.9} roughness={0.2} />
         </mesh>
       </group>
 
       {/* Roda Traseira Direita (Tração mais Larga) */}
       <group position={[0.75, 0.18, -0.65]}>
-        <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-          <cylinderGeometry args={[0.2, 0.2, 0.28, 18]} />
+        <mesh rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.2, 0.2, 0.28, 8]} />
           <meshStandardMaterial color="#18181b" roughness={0.9} />
         </mesh>
         <mesh rotation={[0, 0, Math.PI / 2]} position={[0.01, 0, 0]}>
-          <cylinderGeometry args={[0.11, 0.11, 0.29, 16]} />
+          <cylinderGeometry args={[0.11, 0.11, 0.29, 8]} />
           <meshStandardMaterial color="#ca8a04" metalness={0.9} roughness={0.2} />
         </mesh>
       </group>
 
-      {/* 6. ESCAPAMENTO DUPLO & FOGO/BRILHO */}
+      {/* 6. ESCAPAMENTO DUPLO */}
       <mesh position={[-0.24, 0.22, -1.08]} rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[0.045, 0.045, 0.35, 12]} />
+        <cylinderGeometry args={[0.045, 0.045, 0.35, 8]} />
         <meshStandardMaterial color="#475569" metalness={0.95} />
       </mesh>
       <mesh position={[0.24, 0.22, -1.08]} rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[0.045, 0.045, 0.35, 12]} />
+        <cylinderGeometry args={[0.045, 0.045, 0.35, 8]} />
         <meshStandardMaterial color="#475569" metalness={0.95} />
       </mesh>
-      <pointLight
-        ref={exhaustGlowRef}
-        position={[0, 0.22, -1.25]}
-        color="#f97316"
-        distance={2.5}
-        intensity={0.4}
-      />
 
       {/* 7. FARÓIS DIANTEIROS DE LED */}
       <mesh position={[-0.45, 0.22, 1.15]}>
-        <sphereGeometry args={[0.06, 12, 12]} />
+        <sphereGeometry args={[0.06, 8, 8]} />
         <meshBasicMaterial color="#38bdf8" />
       </mesh>
       <mesh position={[0.45, 0.22, 1.15]}>
-        <sphereGeometry args={[0.06, 12, 12]} />
+        <sphereGeometry args={[0.06, 8, 8]} />
         <meshBasicMaterial color="#38bdf8" />
       </mesh>
       {isKartActive && (
@@ -402,7 +391,7 @@ export const OfficeDrivableKart: React.FC<OfficeDrivableKartProps> = ({
               pointerEvents: 'auto',
             }}
           >
-            <span style={{ color: '#38bdf8', fontWeight: 800 }}>{currentKmh} km/h</span>
+            <span ref={kmhSpanRef} style={{ color: '#38bdf8', fontWeight: 800 }}>0 km/h</span>
             <span style={{ color: '#64748b' }}>|</span>
 
             {/* Toggle de Câmera 1ª vs 3ª Pessoa */}

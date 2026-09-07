@@ -1,7 +1,5 @@
-import React, { useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
+import React from 'react';
 import { Html } from '@react-three/drei';
-import * as THREE from 'three';
 import { useStore } from '../store/useStore';
 import { PubRecLogo } from '../components/PubRecLogo';
 
@@ -14,16 +12,6 @@ export const OfficeAuditorium: React.FC<OfficeAuditoriumProps> = ({
 }) => {
   const isConferenceActive = useStore((s) => s.isConferenceActive);
   const conferenceTopic = useStore((s) => s.conferenceTopic);
-  const screenGlowRef = useRef<THREE.PointLight>(null);
-
-  useFrame(({ clock }) => {
-    if (screenGlowRef.current) {
-      const t = clock.getElapsedTime();
-      screenGlowRef.current.intensity = isConferenceActive
-        ? 2.8 + Math.sin(t * 3) * 0.4
-        : 1.4 + Math.sin(t * 1.5) * 0.2;
-    }
-  });
 
   return (
     <group position={position}>
@@ -41,7 +29,7 @@ export const OfficeAuditorium: React.FC<OfficeAuditoriumProps> = ({
 
       {/* 2. PALCO ELEVADO DE EVENTOS (Frente para o Auditório e Fundo Sul) */}
       <group position={[0, 0, 29]}>
-        {/* Base Principal do Palco em Madeira Nobre Escura */}
+        {/* Base Principal do Palco em Madeira Nobre Escura - mantido castShadow */}
         <mesh position={[0, 0.36, 0]} castShadow receiveShadow>
           <boxGeometry args={[24, 0.72, 5.8]} />
           <meshStandardMaterial color="#18181b" roughness={0.4} metalness={0.2} />
@@ -54,7 +42,7 @@ export const OfficeAuditorium: React.FC<OfficeAuditoriumProps> = ({
         </mesh>
 
         {/* Degraus Frontais de Acesso ao Palco */}
-        <mesh position={[0, 0.18, -3.1]} castShadow receiveShadow>
+        <mesh position={[0, 0.18, -3.1]} receiveShadow>
           <boxGeometry args={[8, 0.36, 0.8]} />
           <meshStandardMaterial color="#27272a" roughness={0.5} />
         </mesh>
@@ -68,7 +56,7 @@ export const OfficeAuditorium: React.FC<OfficeAuditoriumProps> = ({
         {/* 3. TELÃO GIGANTE DE LED (Backdrop com PUB REC e Logo Oficial - Voltado para o Norte) */}
         <group position={[0, 3.4, 2.2]}>
           {/* Moldura de Alumínio Escovado do Telão */}
-          <mesh position={[0, 0, 0]} castShadow>
+          <mesh position={[0, 0, 0]}>
             <boxGeometry args={[18.4, 4.8, 0.2]} />
             <meshStandardMaterial color="#09090b" roughness={0.2} metalness={0.8} />
           </mesh>
@@ -79,14 +67,15 @@ export const OfficeAuditorium: React.FC<OfficeAuditoriumProps> = ({
             <meshBasicMaterial color="#030712" />
           </mesh>
 
-          {/* Luz emissiva do telão iluminando o palco e a plateia */}
-          <pointLight
-            ref={screenGlowRef}
-            position={[0, 0, -1.2]}
-            color={isConferenceActive ? '#38bdf8' : '#f43f5e'}
-            distance={14}
-            intensity={2.0}
-          />
+          {/* Luz emissiva condicional do telão ativa apenas durante conferência */}
+          {isConferenceActive && (
+            <pointLight
+              position={[0, 0, -1.2]}
+              color="#38bdf8"
+              distance={12}
+              intensity={2.4}
+            />
+          )}
 
           {/* Conteúdo Interativo do Telão em HTML 3D voltado para a plateia */}
           <Html
@@ -144,7 +133,7 @@ export const OfficeAuditorium: React.FC<OfficeAuditoriumProps> = ({
 
         {/* 4. PÚLPITO DE EVENTOS (Podium do Orador / CEO no Centro do Palco voltado para a plateia) */}
         <group position={[0, 0.72, -1.2]}>
-          <mesh position={[0, 0.55, 0]} castShadow>
+          <mesh position={[0, 0.55, 0]}>
             <boxGeometry args={[1.2, 1.1, 0.8]} />
             <meshStandardMaterial color="#111827" roughness={0.3} metalness={0.7} />
           </mesh>
@@ -175,30 +164,30 @@ export const OfficeAuditorium: React.FC<OfficeAuditoriumProps> = ({
             {[-4.8, -3.2, -1.6, 0, 1.6, 3.2, 4.8].map((xChair, cIdx) => (
               <group key={cIdx} position={[xChair, 0, 0]}>
                 {/* Assento Acolchoado Azul Corporativo */}
-                <mesh position={[0, 0.44, 0]} castShadow receiveShadow>
+                <mesh position={[0, 0.44, 0]} receiveShadow>
                   <boxGeometry args={[0.7, 0.12, 0.62]} />
                   <meshStandardMaterial color="#1e3a8a" roughness={0.7} />
                 </mesh>
                 {/* Encosto Ergonômico com Inclinação para Trás (ao Norte) para olhar para o Sul (+Z) */}
-                <mesh position={[0, 0.85, -0.27]} rotation={[0.1, 0, 0]} castShadow>
+                <mesh position={[0, 0.85, -0.27]} rotation={[0.1, 0, 0]}>
                   <boxGeometry args={[0.7, 0.7, 0.1]} />
                   <meshStandardMaterial color="#1e3a8a" roughness={0.7} />
                 </mesh>
                 {/* Pés Metálicos */}
                 <mesh position={[-0.28, 0.22, -0.22]}>
-                  <cylinderGeometry args={[0.02, 0.02, 0.44]} />
+                  <cylinderGeometry args={[0.02, 0.02, 0.44, 8]} />
                   <meshStandardMaterial color="#334155" metalness={0.8} />
                 </mesh>
                 <mesh position={[0.28, 0.22, -0.22]}>
-                  <cylinderGeometry args={[0.02, 0.02, 0.44]} />
+                  <cylinderGeometry args={[0.02, 0.02, 0.44, 8]} />
                   <meshStandardMaterial color="#334155" metalness={0.8} />
                 </mesh>
                 <mesh position={[-0.28, 0.22, 0.22]}>
-                  <cylinderGeometry args={[0.02, 0.02, 0.44]} />
+                  <cylinderGeometry args={[0.02, 0.02, 0.44, 8]} />
                   <meshStandardMaterial color="#334155" metalness={0.8} />
                 </mesh>
                 <mesh position={[0.28, 0.22, 0.22]}>
-                  <cylinderGeometry args={[0.02, 0.02, 0.44]} />
+                  <cylinderGeometry args={[0.02, 0.02, 0.44, 8]} />
                   <meshStandardMaterial color="#334155" metalness={0.8} />
                 </mesh>
               </group>
