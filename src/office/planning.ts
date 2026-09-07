@@ -2,6 +2,7 @@ import type { Task } from '../domain.js';
 import { defaultAgentRegistry, AgentRegistry } from './registry.js';
 import { resolveAgentAssignment, type AssignmentSource } from './assignment.js';
 import type { AgentAssignmentDecisionContext } from './assignment-context.js';
+import type { EngineeringTask } from './intent.js';
 
 export interface OrganizationalObjective {
   readonly id?: string;
@@ -334,4 +335,32 @@ export function planStepToTask(
     agentId: step.agentId,
     ...overrides,
   };
+}
+
+/**
+ * Creates an OrganizationalPlan directly from a canonical EngineeringTask.
+ * Integrates Phase 0 Intent Engine with Chief of Staff planning.
+ */
+export function createPlanFromEngineeringTask(
+  engTask: EngineeringTask,
+  options?: CreateOrganizationalPlanOptions,
+  registry: AgentRegistry = defaultAgentRegistry
+): OrganizationalPlan {
+  return createOrganizationalPlan(
+    {
+      id: engTask.id,
+      objective: engTask.objective,
+      project: engTask.project,
+      context: {
+        task_type: engTask.task_type,
+        risk_level: engTask.risk_level,
+        user_observation: engTask.user_observation,
+        user_proposed_solution: engTask.user_proposed_solution,
+        scope: engTask.scope,
+        acceptance_criteria: engTask.acceptance_criteria,
+      },
+    },
+    options,
+    registry
+  );
 }
