@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import type { SectorDefinition } from '../config/squadsData';
 import { FIFTY_SPECIALIZED_AGENTS } from '../config/squadsData';
@@ -51,7 +50,6 @@ export const SectorRoom3D: React.FC<SectorRoom3DProps> = ({
   onFocusRoom,
 }) => {
   const [isRoomHovered, setIsRoomHovered] = useState(false);
-  const { camera } = useThree();
   const {
     agents,
     selectedAgent,
@@ -65,10 +63,9 @@ export const SectorRoom3D: React.FC<SectorRoom3DProps> = ({
   const accentColor = SECTOR_COLORS[sector.id] || '#38bdf8';
   const icon = SECTOR_ICONS[sector.id] || '🏢';
 
-  // Distância do setor até a câmera: quando em visão macro / overview (>48m) e não selecionado,
-  // desativa as 5 bancadas internas e 5 avatares detalhados, mantendo piso, letreiro e arquitetura.
-  const distToCamera = Math.hypot(camera.position.x - position[0], camera.position.z - position[2]);
-  const showInternalDetails = isSelected || isRoomHovered || distToCamera < 46;
+  // Os 5 agentes especialistas detalhados só são instanciados na sala ativa (selecionada ou com mouse em cima).
+  // Isso impede que 50 avatares simultâneos saturem a GPU/CPU na mudança de câmera!
+  const showInternalDetails = isSelected || isRoomHovered;
 
   // Obter os 5 especialistas oficiais desta Squad
   const squadAgents = FIFTY_SPECIALIZED_AGENTS.filter((a) => a.sectorId === sector.id);

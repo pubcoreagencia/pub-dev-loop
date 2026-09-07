@@ -662,8 +662,14 @@ export const Office3DScene: React.FC = () => {
           onClick={() => selectAgent(ceo)}
         />
 
-        {/* 2. MESA E AVATAR DO CHIEF OF STAFF (Dr. Arthur Vance) */}
-        <WorkstationTable
+        {/* ========================================================================= */}
+        {/* 🏢 BANCADA CENTRAL DE COWORKING (DIRETORIA E ENGENHARIA PRINCIPAL) */}
+        {/* Renderizada apenas quando o foco é a Liderança Central ou em Conferência Geral */}
+        {/* ========================================================================= */}
+        {(selectedSectorId === 'executive' || isConferenceActive) && (
+          <>
+            {/* 2. MESA E AVATAR DO CHIEF OF STAFF (Dr. Arthur Vance) */}
+            <WorkstationTable
           position={positions['chief-of-staff'].table}
           rotation={positions['chief-of-staff'].tableRot}
           glowColor="#f59e0b"
@@ -920,6 +926,8 @@ export const Office3DScene: React.FC = () => {
           currentShiftTask={getAgentData('growth-ops')?.currentShiftTask}
           onClick={() => selectAgent(getAgentData('growth-ops') || agents.find((a) => a.id === 'growth-ops'))}
         />
+      </>
+    )}
 
         {/* ========================================================================= */}
         {/* 🏢 AS 10 SALAS DOS SETORES ESPALHADAS NO ENTORNO (50 ESPECIALISTAS ATIVOS) */}
