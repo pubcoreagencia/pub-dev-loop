@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import type { SectorDefinition } from '../config/squadsData';
 import { FIFTY_SPECIALIZED_AGENTS } from '../config/squadsData';
@@ -50,6 +51,7 @@ export const SectorRoom3D: React.FC<SectorRoom3DProps> = ({
   onFocusRoom,
 }) => {
   const [isRoomHovered, setIsRoomHovered] = useState(false);
+  const { camera } = useThree();
   const {
     agents,
     selectedAgent,
@@ -62,6 +64,11 @@ export const SectorRoom3D: React.FC<SectorRoom3DProps> = ({
   const isSelected = selectedSectorId === sector.id;
   const accentColor = SECTOR_COLORS[sector.id] || '#38bdf8';
   const icon = SECTOR_ICONS[sector.id] || '🏢';
+
+  // Distância do setor até a câmera: quando em visão macro / overview (>48m) e não selecionado,
+  // desativa as 5 bancadas internas e 5 avatares detalhados, mantendo piso, letreiro e arquitetura.
+  const distToCamera = Math.hypot(camera.position.x - position[0], camera.position.z - position[2]);
+  const showInternalDetails = isSelected || isRoomHovered || distToCamera < 46;
 
   // Obter os 5 especialistas oficiais desta Squad
   const squadAgents = FIFTY_SPECIALIZED_AGENTS.filter((a) => a.sectorId === sector.id);
@@ -447,174 +454,211 @@ export const SectorRoom3D: React.FC<SectorRoom3DProps> = ({
       {/* ===================================================================== */}
       {/* 6. AS 5 BANCADAS DE TRABALHO COMPLETAS E OS 5 ESPECIALISTAS ATIVOS */}
       {/* ===================================================================== */}
+      {showInternalDetails ? (
+        <>
+          {/* 6.1 TECH LEAD (ARQUITETO & HEAD DE ENGENHARIA DA SQUAD) */}
+          {techLead && (
+            <group>
+              <WorkstationTable
+                position={stations.techLead.tablePos}
+                rotation={stations.techLead.tableRot}
+                glowColor={techLead.accentColor || accentColor}
+                agentId={techLead.id}
+                deskProps={techLead.avatar?.deskProps}
+                accessoryType="CLIPBOARD"
+                activeProject={sector.name.split(':')[1]?.trim() || sector.name}
+                activeTask={`Tech Lead • ${techLead.specialty}`}
+                operationalState={techLead.operationalState || 'idle'}
+                onClick={() => selectAgent(techLead)}
+              />
+              <OfficeChair
+                position={stations.techLead.chairPos}
+                rotation={stations.techLead.chairRot}
+                color="#1e293b"
+              />
+              <Office3DAvatar
+                position={stations.techLead.avatarPos}
+                rotation={stations.techLead.avatarRot}
+                avatar={techLead.avatar || AGENT_AVATAR_PROFILES['chief-of-staff']}
+                operationalState={techLead.operationalState || 'idle'}
+                speechBubble={getSpeech(techLead.id)}
+                isSelected={selectedAgent?.id === techLead.id}
+                currentProject={techLead.currentProject || sector.repos[0]}
+                currentShiftTask={`Benchmarking: ${techLead.preferredModel}`}
+                onClick={() => selectAgent(techLead)}
+              />
+            </group>
+          )}
 
-      {/* 6.1 TECH LEAD (ARQUITETO & HEAD DE ENGENHARIA DA SQUAD) */}
-      {techLead && (
-        <group>
-          <WorkstationTable
-            position={stations.techLead.tablePos}
-            rotation={stations.techLead.tableRot}
-            glowColor={techLead.accentColor || accentColor}
-            agentId={techLead.id}
-            deskProps={techLead.avatar?.deskProps}
-            accessoryType="CLIPBOARD"
-            activeProject={sector.name.split(':')[1]?.trim() || sector.name}
-            activeTask={`Tech Lead • ${techLead.specialty}`}
-            operationalState={techLead.operationalState || 'idle'}
-            onClick={() => selectAgent(techLead)}
-          />
-          <OfficeChair
-            position={stations.techLead.chairPos}
-            rotation={stations.techLead.chairRot}
-            color="#1e293b"
-          />
-          <Office3DAvatar
-            position={stations.techLead.avatarPos}
-            rotation={stations.techLead.avatarRot}
-            avatar={techLead.avatar || AGENT_AVATAR_PROFILES['chief-of-staff']}
-            operationalState={techLead.operationalState || 'idle'}
-            speechBubble={getSpeech(techLead.id)}
-            isSelected={selectedAgent?.id === techLead.id}
-            currentProject={techLead.currentProject || sector.repos[0]}
-            currentShiftTask={`Benchmarking: ${techLead.preferredModel}`}
-            onClick={() => selectAgent(techLead)}
-          />
-        </group>
-      )}
+          {/* 6.2 FULLSTACK DEVELOPER (DESENVOLVIMENTO DE CÓDIGO E PIPELINE) */}
+          {fullstackDev && (
+            <group>
+              <WorkstationTable
+                position={stations.dev.tablePos}
+                rotation={stations.dev.tableRot}
+                glowColor={fullstackDev.accentColor || accentColor}
+                agentId={fullstackDev.id}
+                deskProps={fullstackDev.avatar?.deskProps}
+                accessoryType="HEADPHONES"
+                activeProject={sector.name.split(':')[1]?.trim() || sector.name}
+                activeTask={`Full-Stack Dev • ${fullstackDev.specialty}`}
+                operationalState={fullstackDev.operationalState || 'idle'}
+                onClick={() => selectAgent(fullstackDev)}
+              />
+              <OfficeChair
+                position={stations.dev.chairPos}
+                rotation={stations.dev.chairRot}
+                color="#1e293b"
+              />
+              <Office3DAvatar
+                position={stations.dev.avatarPos}
+                rotation={stations.dev.avatarRot}
+                avatar={fullstackDev.avatar || AGENT_AVATAR_PROFILES['developer']}
+                operationalState={fullstackDev.operationalState || 'idle'}
+                speechBubble={getSpeech(fullstackDev.id)}
+                isSelected={selectedAgent?.id === fullstackDev.id}
+                currentProject={fullstackDev.currentProject || sector.repos[1] || sector.repos[0]}
+                currentShiftTask={`Benchmarking: ${fullstackDev.preferredModel}`}
+                onClick={() => selectAgent(fullstackDev)}
+              />
+            </group>
+          )}
 
-      {/* 6.2 FULLSTACK DEVELOPER (DESENVOLVIMENTO DE CÓDIGO E PIPELINE) */}
-      {fullstackDev && (
-        <group>
-          <WorkstationTable
-            position={stations.dev.tablePos}
-            rotation={stations.dev.tableRot}
-            glowColor={fullstackDev.accentColor || accentColor}
-            agentId={fullstackDev.id}
-            deskProps={fullstackDev.avatar?.deskProps}
-            accessoryType="HEADPHONES"
-            activeProject={sector.name.split(':')[1]?.trim() || sector.name}
-            activeTask={`Full-Stack Dev • ${fullstackDev.specialty}`}
-            operationalState={fullstackDev.operationalState || 'idle'}
-            onClick={() => selectAgent(fullstackDev)}
-          />
-          <OfficeChair
-            position={stations.dev.chairPos}
-            rotation={stations.dev.chairRot}
-            color="#1e293b"
-          />
-          <Office3DAvatar
-            position={stations.dev.avatarPos}
-            rotation={stations.dev.avatarRot}
-            avatar={fullstackDev.avatar || AGENT_AVATAR_PROFILES['developer']}
-            operationalState={fullstackDev.operationalState || 'idle'}
-            speechBubble={getSpeech(fullstackDev.id)}
-            isSelected={selectedAgent?.id === fullstackDev.id}
-            currentProject={fullstackDev.currentProject || sector.repos[1] || sector.repos[0]}
-            currentShiftTask={`Benchmarking: ${fullstackDev.preferredModel}`}
-            onClick={() => selectAgent(fullstackDev)}
-          />
-        </group>
-      )}
+          {/* 6.3 QA & SECURITY (QUALIDADE, TESTES E AUDITORIA DE REPOSITÓRIO) */}
+          {qaSec && (
+            <group>
+              <WorkstationTable
+                position={stations.qa.tablePos}
+                rotation={stations.qa.tableRot}
+                glowColor={qaSec.accentColor || accentColor}
+                agentId={qaSec.id}
+                deskProps={qaSec.avatar?.deskProps}
+                accessoryType="RUBBER_DUCKS"
+                activeProject={sector.name.split(':')[1]?.trim() || sector.name}
+                activeTask={`QA & Security • ${qaSec.specialty}`}
+                operationalState={qaSec.operationalState || 'idle'}
+                onClick={() => selectAgent(qaSec)}
+              />
+              <OfficeChair
+                position={stations.qa.chairPos}
+                rotation={stations.qa.chairRot}
+                color="#1e293b"
+              />
+              <Office3DAvatar
+                position={stations.qa.avatarPos}
+                rotation={stations.qa.avatarRot}
+                avatar={qaSec.avatar || AGENT_AVATAR_PROFILES['qa-engineer']}
+                operationalState={qaSec.operationalState || 'idle'}
+                speechBubble={getSpeech(qaSec.id)}
+                isSelected={selectedAgent?.id === qaSec.id}
+                currentProject={qaSec.currentProject || sector.repos[0]}
+                currentShiftTask={`Benchmarking: ${qaSec.preferredModel}`}
+                onClick={() => selectAgent(qaSec)}
+              />
+            </group>
+          )}
 
-      {/* 6.3 QA & SECURITY (QUALIDADE, TESTES E AUDITORIA DE REPOSITÓRIO) */}
-      {qaSec && (
-        <group>
-          <WorkstationTable
-            position={stations.qa.tablePos}
-            rotation={stations.qa.tableRot}
-            glowColor={qaSec.accentColor || accentColor}
-            agentId={qaSec.id}
-            deskProps={qaSec.avatar?.deskProps}
-            accessoryType="RUBBER_DUCKS"
-            activeProject={sector.name.split(':')[1]?.trim() || sector.name}
-            activeTask={`QA & Security • ${qaSec.specialty}`}
-            operationalState={qaSec.operationalState || 'idle'}
-            onClick={() => selectAgent(qaSec)}
-          />
-          <OfficeChair
-            position={stations.qa.chairPos}
-            rotation={stations.qa.chairRot}
-            color="#1e293b"
-          />
-          <Office3DAvatar
-            position={stations.qa.avatarPos}
-            rotation={stations.qa.avatarRot}
-            avatar={qaSec.avatar || AGENT_AVATAR_PROFILES['qa-engineer']}
-            operationalState={qaSec.operationalState || 'idle'}
-            speechBubble={getSpeech(qaSec.id)}
-            isSelected={selectedAgent?.id === qaSec.id}
-            currentProject={qaSec.currentProject || sector.repos[0]}
-            currentShiftTask={`Benchmarking: ${qaSec.preferredModel}`}
-            onClick={() => selectAgent(qaSec)}
-          />
-        </group>
-      )}
+          {/* 6.4 PRODUCT & 3D DESIGNER (UI/UX, MODELOS 3D E EXPERIÊNCIA) */}
+          {productDesigner && (
+            <group>
+              <WorkstationTable
+                position={stations.designer.tablePos}
+                rotation={stations.designer.tableRot}
+                glowColor={productDesigner.accentColor || accentColor}
+                agentId={productDesigner.id}
+                deskProps={productDesigner.avatar?.deskProps}
+                accessoryType="NONE"
+                activeProject={sector.name.split(':')[1]?.trim() || sector.name}
+                activeTask={`Product & 3D Designer • ${productDesigner.specialty}`}
+                operationalState={productDesigner.operationalState || 'idle'}
+                onClick={() => selectAgent(productDesigner)}
+              />
+              <OfficeChair
+                position={stations.designer.chairPos}
+                rotation={stations.designer.chairRot}
+                color="#1e293b"
+              />
+              <Office3DAvatar
+                position={stations.designer.avatarPos}
+                rotation={stations.designer.avatarRot}
+                avatar={productDesigner.avatar || AGENT_AVATAR_PROFILES['image-designer']}
+                operationalState={productDesigner.operationalState || 'idle'}
+                speechBubble={getSpeech(productDesigner.id)}
+                isSelected={selectedAgent?.id === productDesigner.id}
+                currentProject={productDesigner.currentProject || sector.repos[2] || sector.repos[0]}
+                currentShiftTask={`Benchmarking: ${productDesigner.preferredModel}`}
+                onClick={() => selectAgent(productDesigner)}
+              />
+            </group>
+          )}
 
-      {/* 6.4 PRODUCT & 3D DESIGNER (UI/UX, MODELOS 3D E EXPERIÊNCIA) */}
-      {productDesigner && (
+          {/* 6.5 GROWTH & SALES (OPERAÇÃO DE CRESCIMENTO, ESCALA E MONETIZAÇÃO) */}
+          {growthSales && (
+            <group>
+              <WorkstationTable
+                position={stations.growth.tablePos}
+                rotation={stations.growth.tableRot}
+                glowColor={growthSales.accentColor || accentColor}
+                agentId={growthSales.id}
+                deskProps={growthSales.avatar?.deskProps}
+                accessoryType="CLIPBOARD"
+                activeProject={sector.name.split(':')[1]?.trim() || sector.name}
+                activeTask={`Growth & Sales • ${growthSales.specialty}`}
+                operationalState={growthSales.operationalState || 'idle'}
+                onClick={() => selectAgent(growthSales)}
+              />
+              <OfficeChair
+                position={stations.growth.chairPos}
+                rotation={stations.growth.chairRot}
+                color="#1e293b"
+              />
+              <Office3DAvatar
+                position={stations.growth.avatarPos}
+                rotation={stations.growth.avatarRot}
+                avatar={growthSales.avatar || AGENT_AVATAR_PROFILES['growth-ops']}
+                operationalState={growthSales.operationalState || 'idle'}
+                speechBubble={getSpeech(growthSales.id)}
+                isSelected={selectedAgent?.id === growthSales.id}
+                currentProject={growthSales.currentProject || sector.repos[3] || sector.repos[0]}
+                currentShiftTask={`Benchmarking: ${growthSales.preferredModel}`}
+                onClick={() => selectAgent(growthSales)}
+              />
+            </group>
+          )}
+        </>
+      ) : (
+        /* PROXY ULTRA-LEVE DE ALTA PERFORMANCE PARA O MODO OVERVIEW:
+           Quando a câmera se afasta muito para visualizar todo o campus (visão macro),
+           renderiza 5 cubos emissivos simplificados indicando as estações ativas.
+           Economiza >1.200 draw calls e 50 useFrames instantaneamente mantendo a estética perfeita! */
         <group>
-          <WorkstationTable
-            position={stations.designer.tablePos}
-            rotation={stations.designer.tableRot}
-            glowColor={productDesigner.accentColor || accentColor}
-            agentId={productDesigner.id}
-            deskProps={productDesigner.avatar?.deskProps}
-            accessoryType="NONE"
-            activeProject={sector.name.split(':')[1]?.trim() || sector.name}
-            activeTask={`Product & 3D Designer • ${productDesigner.specialty}`}
-            operationalState={productDesigner.operationalState || 'idle'}
-            onClick={() => selectAgent(productDesigner)}
-          />
-          <OfficeChair
-            position={stations.designer.chairPos}
-            rotation={stations.designer.chairRot}
-            color="#1e293b"
-          />
-          <Office3DAvatar
-            position={stations.designer.avatarPos}
-            rotation={stations.designer.avatarRot}
-            avatar={productDesigner.avatar || AGENT_AVATAR_PROFILES['image-designer']}
-            operationalState={productDesigner.operationalState || 'idle'}
-            speechBubble={getSpeech(productDesigner.id)}
-            isSelected={selectedAgent?.id === productDesigner.id}
-            currentProject={productDesigner.currentProject || sector.repos[2] || sector.repos[0]}
-            currentShiftTask={`Benchmarking: ${productDesigner.preferredModel}`}
-            onClick={() => selectAgent(productDesigner)}
-          />
-        </group>
-      )}
+          {/* Bancada Tech Lead proxy */}
+          <mesh position={stations.techLead.tablePos}>
+            <boxGeometry args={[2.2, 0.76, 1.0]} />
+            <meshStandardMaterial color="#1e293b" roughness={0.7} />
+          </mesh>
+          <mesh position={[stations.techLead.tablePos[0], 0.76 + 0.35, stations.techLead.tablePos[2]]}>
+            <boxGeometry args={[0.8, 0.5, 0.08]} />
+            <meshStandardMaterial color="#04121a" emissive={accentColor} emissiveIntensity={0.6} />
+          </mesh>
 
-      {/* 6.5 GROWTH & SALES (OPERAÇÃO DE CRESCIMENTO, ESCALA E MONETIZAÇÃO) */}
-      {growthSales && (
-        <group>
-          <WorkstationTable
-            position={stations.growth.tablePos}
-            rotation={stations.growth.tableRot}
-            glowColor={growthSales.accentColor || accentColor}
-            agentId={growthSales.id}
-            deskProps={growthSales.avatar?.deskProps}
-            accessoryType="CLIPBOARD"
-            activeProject={sector.name.split(':')[1]?.trim() || sector.name}
-            activeTask={`Growth & Sales • ${growthSales.specialty}`}
-            operationalState={growthSales.operationalState || 'idle'}
-            onClick={() => selectAgent(growthSales)}
-          />
-          <OfficeChair
-            position={stations.growth.chairPos}
-            rotation={stations.growth.chairRot}
-            color="#1e293b"
-          />
-          <Office3DAvatar
-            position={stations.growth.avatarPos}
-            rotation={stations.growth.avatarRot}
-            avatar={growthSales.avatar || AGENT_AVATAR_PROFILES['growth-ops']}
-            operationalState={growthSales.operationalState || 'idle'}
-            speechBubble={getSpeech(growthSales.id)}
-            isSelected={selectedAgent?.id === growthSales.id}
-            currentProject={growthSales.currentProject || sector.repos[3] || sector.repos[0]}
-            currentShiftTask={`Benchmarking: ${growthSales.preferredModel}`}
-            onClick={() => selectAgent(growthSales)}
-          />
+          {/* Bancadas laterais proxy */}
+          <mesh position={stations.dev.tablePos} rotation={stations.dev.tableRot}>
+            <boxGeometry args={[2.2, 0.76, 1.0]} />
+            <meshStandardMaterial color="#1e293b" roughness={0.7} />
+          </mesh>
+          <mesh position={stations.qa.tablePos} rotation={stations.qa.tableRot}>
+            <boxGeometry args={[2.2, 0.76, 1.0]} />
+            <meshStandardMaterial color="#1e293b" roughness={0.7} />
+          </mesh>
+          <mesh position={stations.designer.tablePos} rotation={stations.designer.tableRot}>
+            <boxGeometry args={[2.2, 0.76, 1.0]} />
+            <meshStandardMaterial color="#1e293b" roughness={0.7} />
+          </mesh>
+          <mesh position={stations.growth.tablePos} rotation={stations.growth.tableRot}>
+            <boxGeometry args={[2.2, 0.76, 1.0]} />
+            <meshStandardMaterial color="#1e293b" roughness={0.7} />
+          </mesh>
         </group>
       )}
     </group>

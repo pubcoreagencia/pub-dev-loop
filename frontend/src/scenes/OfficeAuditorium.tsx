@@ -204,7 +204,6 @@ export const OfficeAuditorium: React.FC<OfficeAuditoriumProps> = ({
         penumbra={0.6}
         intensity={isConferenceActive ? 3.8 : 2.0}
         color="#ffffff"
-        castShadow
       />
     </group>
   );

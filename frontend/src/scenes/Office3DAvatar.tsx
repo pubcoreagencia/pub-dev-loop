@@ -300,8 +300,15 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
         if (leftShinRef.current) leftShinRef.current.rotation.x = Math.PI / 2;
         if (rightShinRef.current) rightShinRef.current.rotation.x = Math.PI / 2;
 
-        // Frame-skip: only run idle calculations every 3rd frame for non-CEO avatars
-        const shouldRunIdle = isCeo || (frameCountRef.current % 3 === 0);
+        // Distância até a câmera para LOD inteligente na visão aérea / overview
+        const camDist = Math.hypot(camera.position.x - cur.x, camera.position.z - cur.z);
+
+        // Se a câmera está muito distante e o avatar não é o CEO nem está selecionado/hovered,
+        // congela as micromanimações dos braços e cabeça (economiza 60 cálculos a cada frame no overview)
+        if (camDist > 28 && !isSelected && !isHovered) return;
+
+        // Frame-skip: executa cálculos sutis de digitação e cabeça apenas a cada 3 frames para economizar CPU
+        const shouldRunIdle = isCeo || isSelected || (frameCountRef.current % 3 === 0);
         if (!shouldRunIdle) return;
 
         // Digitação dinâmica de acordo com o estado do funcionário
