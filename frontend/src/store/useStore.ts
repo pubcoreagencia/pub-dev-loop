@@ -499,7 +499,7 @@ export const useStore = create<OfficeState>((set, get) => ({
   activeGateway: 'OPENROUTER',
   setActiveGateway: (gw) => set({ activeGateway: gw }),
 
-  selectedSectorId: 'executive',
+  selectedSectorId: 'overview',
   setSelectedSectorId: (sectorId: string) => set({ selectedSectorId: sectorId }),
   isFiftyAgentsModalOpen: false,
   setFiftyAgentsModalOpen: (open: boolean) => set({ isFiftyAgentsModalOpen: open }),

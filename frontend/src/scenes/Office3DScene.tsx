@@ -358,8 +358,20 @@ export const Office3DScene: React.FC = () => {
         }}
       >
         <button
-          onClick={() => handleCameraFocus([0, 1.0, 2], [0, 18, 22])}
-          style={{ background: 'transparent', border: 'none', color: '#38bdf8', fontSize: '11px', cursor: 'pointer', fontWeight: 700 }}
+          onClick={() => {
+            setSelectedSectorId('overview');
+            handleCameraFocus([0, 1.0, 2], [0, 18, 22]);
+          }}
+          style={{
+            background: selectedSectorId === 'overview' ? '#38bdf8' : 'transparent',
+            color: selectedSectorId === 'overview' ? '#020617' : '#38bdf8',
+            border: 'none',
+            borderRadius: '12px',
+            padding: '2px 8px',
+            fontSize: '11px',
+            cursor: 'pointer',
+            fontWeight: 700,
+          }}
         >
           🌐 Visão Geral
         </button>
@@ -649,24 +661,37 @@ export const Office3DScene: React.FC = () => {
           rotation={positions.ceo.chairRot}
           color="#1e1b4b"
         />
-        <Office3DAvatar
-          position={positions.ceo.avatar}
-          rotation={positions.ceo.avatarRot}
-          conferencePosition={conferencePositions.ceo.pos}
-          conferenceRotation={conferencePositions.ceo.rot}
-          avatar={ceo.avatar || AGENT_AVATAR_PROFILES['chief-of-staff']}
-          operationalState={ceo.operationalState || 'idle'}
-          isCeo={true}
-          speechBubble={getSpeechForEntity('ceo')}
-          isSelected={selectedAgent?.id === 'ceo'}
-          onClick={() => selectAgent(ceo)}
-        />
+        {selectedSectorId === 'executive' || isConferenceActive || selectedSectorId === 'overview' ? (
+          <Office3DAvatar
+            position={positions.ceo.avatar}
+            rotation={positions.ceo.avatarRot}
+            conferencePosition={conferencePositions.ceo.pos}
+            conferenceRotation={conferencePositions.ceo.rot}
+            avatar={ceo.avatar || AGENT_AVATAR_PROFILES['chief-of-staff']}
+            operationalState={ceo.operationalState || 'idle'}
+            isCeo={true}
+            speechBubble={getSpeechForEntity('ceo')}
+            isSelected={selectedAgent?.id === 'ceo'}
+            onClick={() => selectAgent(ceo)}
+          />
+        ) : (
+          <group position={positions.ceo.avatar} rotation={positions.ceo.avatarRot}>
+            <mesh position={[0, 0.75, 0]}>
+              <boxGeometry args={[0.42, 0.55, 0.28]} />
+              <meshStandardMaterial color="#312e81" roughness={0.8} />
+            </mesh>
+            <mesh position={[0, 1.15, 0]}>
+              <sphereGeometry args={[0.16, 8, 8]} />
+              <meshStandardMaterial color="#fed7aa" roughness={0.7} />
+            </mesh>
+          </group>
+        )}
 
         {/* ========================================================================= */}
         {/* 🏢 BANCADA CENTRAL DE COWORKING (DIRETORIA E ENGENHARIA PRINCIPAL) */}
         {/* Renderizada apenas quando o foco é a Liderança Central ou em Conferência Geral */}
         {/* ========================================================================= */}
-        {(selectedSectorId === 'executive' || isConferenceActive) && (
+        {selectedSectorId === 'executive' || isConferenceActive ? (
           <>
             {/* 2. MESA E AVATAR DO CHIEF OF STAFF (Dr. Arthur Vance) */}
             <WorkstationTable
@@ -927,6 +952,53 @@ export const Office3DScene: React.FC = () => {
           onClick={() => selectAgent(getAgentData('growth-ops') || agents.find((a) => a.id === 'growth-ops'))}
         />
       </>
+    ) : (
+      /* Silhueta ultra-leve estática da bancada executiva para visão geral sem overhead */
+      <group>
+        {/* Mesa Coworking central */}
+        <mesh position={[0, 0.38, 4.4]}>
+          <boxGeometry args={[11.5, 0.76, 3.2]} />
+          <meshStandardMaterial color="#0f172a" roughness={0.6} />
+        </mesh>
+        {/* Monitores executivos com leve brilho azul neon */}
+        {[-4.2, -1.4, 1.4, 4.2].map((x, i) => (
+          <React.Fragment key={`mon-${i}`}>
+            <mesh position={[x, 0.95, 3.8]}>
+              <boxGeometry args={[1.1, 0.45, 0.05]} />
+              <meshStandardMaterial color="#0284c7" emissive="#0284c7" emissiveIntensity={0.3} />
+            </mesh>
+            <mesh position={[x, 0.95, 5.0]}>
+              <boxGeometry args={[1.1, 0.45, 0.05]} />
+              <meshStandardMaterial color="#0284c7" emissive="#0284c7" emissiveIntensity={0.3} />
+            </mesh>
+          </React.Fragment>
+        ))}
+        {/* Figuras estáticas sentadas (Low-poly) */}
+        {[-4.2, -1.4, 1.4, 4.2].map((x, i) => (
+          <React.Fragment key={`exec-fig-${i}`}>
+            <group position={[x, 0, 4.15]}>
+              <mesh position={[0, 0.75, 0]}>
+                <boxGeometry args={[0.42, 0.55, 0.28]} />
+                <meshStandardMaterial color="#1e293b" roughness={0.8} />
+              </mesh>
+              <mesh position={[0, 1.15, 0]}>
+                <sphereGeometry args={[0.16, 8, 8]} />
+                <meshStandardMaterial color="#fed7aa" roughness={0.7} />
+              </mesh>
+            </group>
+            <group position={[x, 0, 4.65]}>
+              <mesh position={[0, 0.75, 0]}>
+                <boxGeometry args={[0.42, 0.55, 0.28]} />
+                <meshStandardMaterial color="#1e293b" roughness={0.8} />
+              </mesh>
+              <mesh position={[0, 1.15, 0]}>
+                <sphereGeometry args={[0.16, 8, 8]} />
+                <meshStandardMaterial color="#fed7aa" roughness={0.7} />
+              </mesh>
+            </group>
+          </React.Fragment>
+        ))}
+      </group>
     )}
 
         {/* ========================================================================= */}

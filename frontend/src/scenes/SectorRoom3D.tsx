@@ -625,11 +625,12 @@ export const SectorRoom3D: React.FC<SectorRoom3DProps> = ({
         </>
       ) : (
         /* PROXY ULTRA-LEVE DE ALTA PERFORMANCE PARA O MODO OVERVIEW:
-           Quando a câmera se afasta muito para visualizar todo o campus (visão macro),
-           renderiza 5 cubos emissivos simplificados indicando as estações ativas.
-           Economiza >1.200 draw calls e 50 useFrames instantaneamente mantendo a estética perfeita! */
+           Quando a câmera está fora da sala (visão geral/outro setor),
+           renderiza bancadas e as silhuetas estáticas dos 5 agentes sentados com monitores acesos.
+           Zero useFrame, zero rigging, zero cálculo biomecânico - os agentes aparecem visualmente
+           na visualização geral, mas a renderização pesada e interativa só acontece ao entrar de fato na sala! */
         <group>
-          {/* Bancada Tech Lead proxy */}
+          {/* Tech Lead: Bancada, Monitor e Silhueta Estática */}
           <mesh position={stations.techLead.tablePos}>
             <boxGeometry args={[2.2, 0.76, 1.0]} />
             <meshStandardMaterial color="#1e293b" roughness={0.7} />
@@ -638,24 +639,81 @@ export const SectorRoom3D: React.FC<SectorRoom3DProps> = ({
             <boxGeometry args={[0.8, 0.5, 0.08]} />
             <meshStandardMaterial color="#04121a" emissive={accentColor} emissiveIntensity={0.6} />
           </mesh>
+          {/* Silhueta do Agente Tech Lead sentado */}
+          <group position={stations.techLead.avatarPos} rotation={stations.techLead.avatarRot}>
+            <mesh position={[0, 0.75, 0]}>
+              <boxGeometry args={[0.42, 0.55, 0.28]} />
+              <meshStandardMaterial color="#1e293b" roughness={0.8} />
+            </mesh>
+            <mesh position={[0, 1.15, 0]}>
+              <sphereGeometry args={[0.16, 8, 8]} />
+              <meshStandardMaterial color="#fed7aa" roughness={0.7} />
+            </mesh>
+          </group>
 
-          {/* Bancadas laterais proxy */}
+          {/* Dev: Bancada, Monitor e Silhueta Estática */}
           <mesh position={stations.dev.tablePos} rotation={stations.dev.tableRot}>
             <boxGeometry args={[2.2, 0.76, 1.0]} />
             <meshStandardMaterial color="#1e293b" roughness={0.7} />
           </mesh>
+          <group position={stations.dev.avatarPos} rotation={stations.dev.avatarRot}>
+            <mesh position={[0, 0.75, 0]}>
+              <boxGeometry args={[0.42, 0.55, 0.28]} />
+              <meshStandardMaterial color="#1e293b" roughness={0.8} />
+            </mesh>
+            <mesh position={[0, 1.15, 0]}>
+              <sphereGeometry args={[0.16, 8, 8]} />
+              <meshStandardMaterial color="#fed7aa" roughness={0.7} />
+            </mesh>
+          </group>
+
+          {/* QA: Bancada, Monitor e Silhueta Estática */}
           <mesh position={stations.qa.tablePos} rotation={stations.qa.tableRot}>
             <boxGeometry args={[2.2, 0.76, 1.0]} />
             <meshStandardMaterial color="#1e293b" roughness={0.7} />
           </mesh>
+          <group position={stations.qa.avatarPos} rotation={stations.qa.avatarRot}>
+            <mesh position={[0, 0.75, 0]}>
+              <boxGeometry args={[0.42, 0.55, 0.28]} />
+              <meshStandardMaterial color="#1e293b" roughness={0.8} />
+            </mesh>
+            <mesh position={[0, 1.15, 0]}>
+              <sphereGeometry args={[0.16, 8, 8]} />
+              <meshStandardMaterial color="#fed7aa" roughness={0.7} />
+            </mesh>
+          </group>
+
+          {/* Designer: Bancada, Monitor e Silhueta Estática */}
           <mesh position={stations.designer.tablePos} rotation={stations.designer.tableRot}>
             <boxGeometry args={[2.2, 0.76, 1.0]} />
             <meshStandardMaterial color="#1e293b" roughness={0.7} />
           </mesh>
+          <group position={stations.designer.avatarPos} rotation={stations.designer.avatarRot}>
+            <mesh position={[0, 0.75, 0]}>
+              <boxGeometry args={[0.42, 0.55, 0.28]} />
+              <meshStandardMaterial color="#1e293b" roughness={0.8} />
+            </mesh>
+            <mesh position={[0, 1.15, 0]}>
+              <sphereGeometry args={[0.16, 8, 8]} />
+              <meshStandardMaterial color="#fed7aa" roughness={0.7} />
+            </mesh>
+          </group>
+
+          {/* Growth: Bancada, Monitor e Silhueta Estática */}
           <mesh position={stations.growth.tablePos} rotation={stations.growth.tableRot}>
             <boxGeometry args={[2.2, 0.76, 1.0]} />
             <meshStandardMaterial color="#1e293b" roughness={0.7} />
           </mesh>
+          <group position={stations.growth.avatarPos} rotation={stations.growth.avatarRot}>
+            <mesh position={[0, 0.75, 0]}>
+              <boxGeometry args={[0.42, 0.55, 0.28]} />
+              <meshStandardMaterial color="#1e293b" roughness={0.8} />
+            </mesh>
+            <mesh position={[0, 1.15, 0]}>
+              <sphereGeometry args={[0.16, 8, 8]} />
+              <meshStandardMaterial color="#fed7aa" roughness={0.7} />
+            </mesh>
+          </group>
         </group>
       )}
     </group>
