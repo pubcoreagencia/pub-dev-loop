@@ -1,4 +1,4 @@
-export type AgentDepartment = 'EXECUTIVE' | 'ENGINEERING' | 'QA';
+export type AgentDepartment = 'EXECUTIVE' | 'ENGINEERING' | 'QA' | 'MULTIMEDIA' | 'GROWTH';
 
 export type AgentRole =
   | 'CHIEF_OF_STAFF'
@@ -6,6 +6,15 @@ export type AgentRole =
   | 'DEVELOPER'
   | 'REVIEWER'
   | 'QA_ENGINEER'
+  | 'VIDEO_EDITOR'
+  | 'IMAGE_DESIGNER'
+  | 'SOUND_ENGINEER'
+  | 'GROWTH_OPS'
+  | 'TECH_LEAD'
+  | 'FULLSTACK_DEV'
+  | 'PRODUCT_DESIGNER'
+  | 'QA_SECURITY'
+  | 'GROWTH_SALES'
   | 'CEO';
 
 export type AgentRoutingProfile =
@@ -13,6 +22,8 @@ export type AgentRoutingProfile =
   | 'coding'
   | 'review'
   | 'fast_prototype'
+  | 'multimedia'
+  | 'growth'
   | 'general';
 
 export type AgentStatus = 'ACTIVE' | 'IDLE' | 'PAUSED' | 'DEPRECATED';
@@ -41,7 +52,7 @@ export type EmployeeSpatialState =
 export interface SpatialTarget {
   targetDeskId?: string;
   targetAgentId?: string;
-  targetZoneId?: 'CEO_SUITE' | 'LEADERSHIP' | 'ENGINEERING' | 'QA' | 'MEETING_ROOM';
+  targetZoneId?: 'CEO_SUITE' | 'LEADERSHIP' | 'ENGINEERING' | 'QA' | 'MULTIMEDIA' | 'GROWTH' | 'MEETING_ROOM';
   coordinates?: { x: number; y: number };
   purpose?: 'HANDOFF' | 'MEETING' | 'APPROVAL' | 'RETURN';
   startedAt: number;
@@ -49,7 +60,7 @@ export interface SpatialTarget {
 }
 
 export interface OfficePosition {
-  zoneId: 'CEO_SUITE' | 'LEADERSHIP' | 'ENGINEERING' | 'QA' | 'MEETING_ROOM';
+  zoneId: 'CEO_SUITE' | 'LEADERSHIP' | 'ENGINEERING' | 'QA' | 'MULTIMEDIA' | 'GROWTH' | 'MEETING_ROOM';
   zoneName: string;
   deskId: string;
   deskLabel: string;
@@ -72,8 +83,19 @@ export interface AvatarProfile {
   role?: string;
   suitColor?: string;
   tieColor?: string;
+  gender?: 'M' | 'F' | 'OTHER';
+  hairStyle?: 'SHORT' | 'LONG' | 'PONYTAIL' | 'MESSY' | 'SLICK' | 'BOB';
+  clothingStyle?: 'SUIT' | 'HOODIE' | 'CASUAL_CHIC' | 'STREETWEAR' | 'CREATIVE';
+  deskProps?: {
+    matColor?: string;
+    beverageType?: 'COFFEE_MUG' | 'ENERGY_DRINK' | 'MATCHA' | 'TEA_CUP' | 'COLD_BREW' | 'WATER_BOTTLE';
+    items?: string[];
+    plantType?: 'BONSAI' | 'SUCCULENT' | 'CACTUS' | 'FERN' | 'NONE';
+    monitorLayout?: 'SINGLE' | 'DUAL' | 'ULTRAWIDE' | 'VERTICAL_DUAL' | 'STUDIO_TRIPLE';
+    lampColor?: string;
+  };
   accessory?: string;
-  avatarStyle?: 'EXECUTIVE' | 'STRATEGY' | 'ARCHITECT' | 'CODER' | 'REVIEWER' | 'QA';
+  avatarStyle?: 'EXECUTIVE' | 'STRATEGY' | 'ARCHITECT' | 'CODER' | 'REVIEWER' | 'QA' | 'CREATIVE' | 'AUDIO' | 'GROWTH';
   age?: number;
   nickname?: string;
   drinkPreference?: string;
@@ -82,6 +104,15 @@ export interface AvatarProfile {
   knownQuirks?: string[];
   rivalries?: string;
   backgroundLore?: string;
+}
+
+export interface AgentExecutionLog {
+  id: string;
+  timestamp: string;
+  level: 'info' | 'warn' | 'success' | 'exec';
+  message: string;
+  project?: string;
+  action?: string;
 }
 
 export interface AgentDefinition {
@@ -107,6 +138,18 @@ export interface AgentDefinition {
   spatialTarget?: SpatialTarget;
   facingDirection?: 'NORTH' | 'SOUTH' | 'EAST' | 'WEST';
   lastHandoffFrom?: string;
+  currentProject?: string;
+  currentShiftTask?: string;
+
+  // Telemetria e histórico em tempo real
+  executionMetrics?: {
+    tasksCompletedToday: number;
+    linesOfCodeOrAssets: number;
+    uptimePercent: number;
+    activeLatencyMs: number;
+  };
+  currentCodeSnippet?: string;
+  realtimeLogs?: AgentExecutionLog[];
 }
 
 export interface CeoIdentity {

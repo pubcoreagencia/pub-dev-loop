@@ -112,3 +112,28 @@ Transformação de lições institucionais validadas em **Skills Reutilizáveis 
 | **Decisão Humana em Recomendações** | Todas as recomendações geradas por inteligência organizacional possuem `requiresHumanDecision: true`. |
 | **pt-BR First** | Todos os textos visíveis ao usuário no THE OFFICE são em Português do Brasil. |
 | **Persistence-First** | O Git e o PostgreSQL são a única fonte durável de verdade da engenharia. |
+
+
+---
+
+## 5. Configurações de Autonomia 24h
+- **GITHUB_TOKEN / BOT_TOKEN:** [ENV_CONFIGURED_IN_CLOUDFLARE_SECRETS] (Runtime/Pipeline Access)
+- **Autonomous Engine Mode:** Enabled
+
+---
+
+## 6. Alinhamento Canônico do Ecossistema de Repositórios GitHub
+
+| Projeto / Repositório | Papel Canônico no Ecossistema | Classificação |
+| :--- | :--- | :--- |
+| **`pubcore`** | **PUB Core [SISTEMA]** — Plataforma e sistema web principal da PUB Core Holding (Vite + Supabase + Cloudflare). | Sistema / Aplicação Web |
+| **`pub-core-holding-portal`** | **PUB Core [LANDING PAGE]** — Portal institucional e comercial oficial da PUB Core Holding (Next.js + Tailwind). | Landing Page / Vitrine |
+| **`pub-core-os`** | **PUB Core OS [SISTEMA OPERACIONAL]** — Núcleo de governança institucional e sistema operacional unificador da holding. | Sistema Operacional / Governança |
+| **`pub-records`** | **PUB Records & Beats** — Gravadora oficial com plataforma `beats/` integrada (unificação de `PUB-BEATS`). | Gravadora & Música |
+| **`xp-audio-lab`** | **XP Audio Lab** — Estúdio oficial de produção de trilhas sonoras, sound design e engenharia acústica da PUB. | Produção Sonora & Soundtracks |
+| **`buzios-de-cima`** | **Búzios de Cima Drone** — Captação aérea, mapeamento e mídia audiovisual com drones em Armação dos Búzios. | Audiovisual & Drone |
+| **`eternize-seu-pinscher`** | **Eternize Seu Pinscher** — Marca oficial de eternização afetiva de animais em impressão 3D e memorabilia. | E-commerce / Impressão 3D |
+| **`pubet`** | **PUBET** — Setor oficial de entretenimento, apostas reguladas e iGaming da PUB Holding. | iGaming & Apostas |
+| **`pub-ecom`** | **PUB E-Commerce Monorepo** — Hub consolidado de e-commerce da holding reunindo Core, Hub Web App (`apps/hub`), Catalog Worker (`apps/catalog-worker`) e Landing Page (`apps/landing`). | Monorepo E-commerce |
+| **`pub-leads`** | **publeads** — Pipeline de prospecção, inteligência comercial e CRM unificado B2B. | CRM & Prospecção |
+| **`pub-dev-loop`** | **PUB DEV LOOP (THE OFFICE)** — Motor de engenharia autônoma 24h, escritório virtual 3D e orquestrador soberano. | Engenharia Autônoma 24h |

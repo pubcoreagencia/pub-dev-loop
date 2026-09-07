@@ -25,6 +25,7 @@ import { OfficeAuditorium } from './OfficeAuditorium';
 import { OfficeGameRoom } from './OfficeGameRoom';
 import { OfficeDrivableKart } from './OfficeDrivableKart';
 import { AGENT_AVATAR_PROFILES } from '../config/officeLayout';
+import { PUB_HOLDING_SECTORS, FIFTY_SPECIALIZED_AGENTS, getSectorById } from '../config/squadsData';
 import { VinylJukeboxModal, VINYL_ALBUMS } from '../components/VinylJukeboxModal';
 import { PlayableArcadeModal } from '../components/PlayableArcadeModal';
 import { MusicStudioModal } from '../components/MusicStudioModal';
@@ -49,7 +50,20 @@ export const Office3DScene: React.FC = () => {
     isKartActive,
     setKartActive,
     activeStudioModal,
+    selectedSectorId,
+    setSelectedSectorId,
+    setFiftyAgentsModalOpen,
   } = useStore();
+
+  const activeSector = selectedSectorId !== 'executive' ? getSectorById(selectedSectorId) : null;
+  const activeSectorSquad = selectedSectorId !== 'executive'
+    ? (FIFTY_SPECIALIZED_AGENTS as any[]).filter((a) => a.sectorId === selectedSectorId)
+    : [];
+  const techLead = activeSectorSquad.find((a) => a.role === 'TECH_LEAD');
+  const fullstackDev = activeSectorSquad.find((a) => a.role === 'FULLSTACK_DEV');
+  const productDesigner = activeSectorSquad.find((a) => a.role === 'PRODUCT_DESIGNER');
+  const qaSec = activeSectorSquad.find((a) => a.role === 'QA_SECURITY');
+  const growthSales = activeSectorSquad.find((a) => a.role === 'GROWTH_SALES');
 
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const activeAlbum = VINYL_ALBUMS.find((a) => a.id === activeAlbumId) || VINYL_ALBUMS[0];
@@ -74,45 +88,89 @@ export const Office3DScene: React.FC = () => {
       chair: [0, 0, -7.3],
       chairRot: [0, Math.PI, 0],
     },
+    // =========================================================================
+    // 🏢 GRANDE BANCADA CENTRAL DE COWORKING (Mesas Juntas / Open-Space Cohesivo)
+    // Fileira Norte (z = 3.2): 4 agentes lado a lado, voltados para o Sul
+    // Fileira Sul   (z = 5.8): 4 agentes lado a lado, voltados para o Norte
+    // Cabeceira     (x = 0, z = -0.5): Chief of Staff coordenando o centro
+    // =========================================================================
+
+    // Cabeceira da Bancada de Operações
     'chief-of-staff': {
-      table: [0, 0, -1],
-      avatar: [0, 0.04, -0.45],
+      table: [0, 0, 0.2],
+      avatar: [0, 0.04, 0.75],
       tableRot: [0, 0, 0],
       avatarRot: [0, Math.PI, 0],
-      chair: [0, 0, -0.45],
+      chair: [0, 0, 0.75],
       chairRot: [0, Math.PI, 0],
     },
+
+    // FILEIRA 1 (Lado A da grande mesa compartilhada - z = 3.6, olhando para z+)
     architect: {
-      table: [-6, 0, 5],
-      avatar: [-6, 0.04, 5.55],
+      table: [-4.2, 0, 3.6],
+      avatar: [-4.2, 0.04, 4.15],
       tableRot: [0, 0, 0],
       avatarRot: [0, Math.PI, 0],
-      chair: [-6, 0, 5.55],
-      chairRot: [0, Math.PI, 0],
-    },
-    developer: {
-      table: [6, 0, 5],
-      avatar: [6, 0.04, 5.55],
-      tableRot: [0, 0, 0],
-      avatarRot: [0, Math.PI, 0],
-      chair: [6, 0, 5.55],
+      chair: [-4.2, 0, 4.15],
       chairRot: [0, Math.PI, 0],
     },
     reviewer: {
-      table: [-6, 0, 10],
-      avatar: [-6, 0.04, 10.55],
+      table: [-1.4, 0, 3.6],
+      avatar: [-1.4, 0.04, 4.15],
       tableRot: [0, 0, 0],
       avatarRot: [0, Math.PI, 0],
-      chair: [-6, 0, 10.55],
+      chair: [-1.4, 0, 4.15],
       chairRot: [0, Math.PI, 0],
     },
-    'qa-engineer': {
-      table: [6, 0, 10],
-      avatar: [6, 0.04, 10.55],
+    'video-editor': {
+      table: [1.4, 0, 3.6],
+      avatar: [1.4, 0.04, 4.15],
       tableRot: [0, 0, 0],
       avatarRot: [0, Math.PI, 0],
-      chair: [6, 0, 10.55],
+      chair: [1.4, 0, 4.15],
       chairRot: [0, Math.PI, 0],
+    },
+    'sound-engineer': {
+      table: [4.2, 0, 3.6],
+      avatar: [4.2, 0.04, 4.15],
+      tableRot: [0, 0, 0],
+      avatarRot: [0, Math.PI, 0],
+      chair: [4.2, 0, 4.15],
+      chairRot: [0, Math.PI, 0],
+    },
+
+    // FILEIRA 2 (Lado B da grande mesa compartilhada - z = 6.2, olhando para z-)
+    developer: {
+      table: [-4.2, 0, 6.2],
+      avatar: [-4.2, 0.04, 5.65],
+      tableRot: [0, Math.PI, 0],
+      avatarRot: [0, 0, 0],
+      chair: [-4.2, 0, 5.65],
+      chairRot: [0, 0, 0],
+    },
+    'qa-engineer': {
+      table: [-1.4, 0, 6.2],
+      avatar: [-1.4, 0.04, 5.65],
+      tableRot: [0, Math.PI, 0],
+      avatarRot: [0, 0, 0],
+      chair: [-1.4, 0, 5.65],
+      chairRot: [0, 0, 0],
+    },
+    'image-designer': {
+      table: [1.4, 0, 6.2],
+      avatar: [1.4, 0.04, 5.65],
+      tableRot: [0, Math.PI, 0],
+      avatarRot: [0, 0, 0],
+      chair: [1.4, 0, 5.65],
+      chairRot: [0, 0, 0],
+    },
+    'growth-ops': {
+      table: [4.2, 0, 6.2],
+      avatar: [4.2, 0.04, 5.65],
+      tableRot: [0, Math.PI, 0],
+      avatarRot: [0, 0, 0],
+      chair: [4.2, 0, 5.65],
+      chairRot: [0, 0, 0],
     },
   };
 
@@ -126,23 +184,39 @@ export const Office3DScene: React.FC = () => {
       rot: [0, Math.PI, 0],
     },
     'chief-of-staff': {
-      pos: [-3.2, 0.04, 22.5], // Cadeira da Fileira 1 voltada para o palco
+      pos: [-3.2, 0.04, 22.5],
       rot: [0, 0, 0],
     },
     architect: {
-      pos: [-1.6, 0.04, 22.5], // Cadeira da Fileira 1 voltada para o palco
+      pos: [-1.6, 0.04, 22.5],
       rot: [0, 0, 0],
     },
     developer: {
-      pos: [0, 0.04, 22.5], // Cadeira da Fileira 1 voltada para o palco
+      pos: [0, 0.04, 22.5],
       rot: [0, 0, 0],
     },
     reviewer: {
-      pos: [1.6, 0.04, 22.5], // Cadeira da Fileira 1 voltada para o palco
+      pos: [1.6, 0.04, 22.5],
       rot: [0, 0, 0],
     },
     'qa-engineer': {
-      pos: [3.2, 0.04, 22.5], // Cadeira da Fileira 1 voltada para o palco
+      pos: [3.2, 0.04, 22.5],
+      rot: [0, 0, 0],
+    },
+    'video-editor': {
+      pos: [-4.0, 0.04, 20.5],
+      rot: [0, 0, 0],
+    },
+    'image-designer': {
+      pos: [-1.5, 0.04, 20.5],
+      rot: [0, 0, 0],
+    },
+    'sound-engineer': {
+      pos: [1.5, 0.04, 20.5],
+      rot: [0, 0, 0],
+    },
+    'growth-ops': {
+      pos: [4.0, 0.04, 20.5],
       rot: [0, 0, 0],
     },
   };
@@ -153,6 +227,10 @@ export const Office3DScene: React.FC = () => {
 
   const getAgentOperationalState = (id: string) => {
     return agents.find((a) => a.id === id)?.operationalState || 'idle';
+  };
+
+  const getAgentData = (id: string) => {
+    return agents.find((a) => a.id === id) || (FIFTY_SPECIALIZED_AGENTS as any[]).find((a) => a.id === id);
   };
 
   const handleCameraFocus = (target: [number, number, number], camPos?: [number, number, number]) => {
@@ -171,7 +249,7 @@ export const Office3DScene: React.FC = () => {
       <div
         style={{
           position: 'absolute',
-          top: 14,
+          top: 10,
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 10,
@@ -179,7 +257,7 @@ export const Office3DScene: React.FC = () => {
           gap: '6px',
           background: 'rgba(15, 23, 42, 0.88)',
           backdropFilter: 'blur(16px)',
-          padding: '6px 14px',
+          padding: '4px 12px',
           borderRadius: '24px',
           border: '1px solid #334155',
           boxShadow: '0 8px 32px rgba(0,0,0,0.65)',
@@ -264,6 +342,130 @@ export const Office3DScene: React.FC = () => {
           {isConferenceActive ? '✅ Em Conferência' : '📢 Convocar Reunião'}
         </button>
       </div>
+
+      {/* 🏢 BARRA DE NAVEGAÇÃO DE SQUADS (10 SETORES + LIDERANÇA EXECUTIVA) */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 48,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 10,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          background: 'rgba(10, 15, 29, 0.92)',
+          backdropFilter: 'blur(16px)',
+          padding: '3px 8px',
+          borderRadius: '20px',
+          border: '1px solid rgba(56, 189, 248, 0.2)',
+          boxShadow: '0 8px 25px rgba(0,0,0,0.7)',
+          maxWidth: '96vw',
+          overflowX: 'auto',
+        }}
+      >
+        <button
+          onClick={() => {
+            setSelectedSectorId('executive');
+            handleCameraFocus([0, 1.0, 4.5], [0, 14, 18]);
+          }}
+          style={{
+            background: selectedSectorId === 'executive' ? '#38bdf8' : 'transparent',
+            color: selectedSectorId === 'executive' ? '#020617' : '#94a3b8',
+            border: 'none',
+            borderRadius: '12px',
+            padding: '3px 8px',
+            fontSize: '10px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            transition: 'all 0.15s',
+          }}
+        >
+          🏛️ Liderança Geral
+        </button>
+
+        {PUB_HOLDING_SECTORS.map((sec, idx) => {
+          const isSelected = selectedSectorId === sec.id;
+          return (
+            <button
+              key={sec.id}
+              onClick={() => {
+                setSelectedSectorId(sec.id);
+                handleCameraFocus([0, 1.0, 4.5], [0, 12, 16]);
+              }}
+              style={{
+                background: isSelected ? '#0284c7' : 'transparent',
+                color: isSelected ? '#ffffff' : '#94a3b8',
+                border: isSelected ? '1px solid #38bdf8' : '1px solid transparent',
+                borderRadius: '12px',
+                padding: '3px 8px',
+                fontSize: '10px',
+                fontWeight: isSelected ? 700 : 500,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                transition: 'all 0.15s',
+              }}
+              title={sec.name}
+            >
+              {`${idx + 1}. ${sec.name.split(':')[1]?.trim().split(',')[0].slice(0, 14) || sec.name}`}
+            </button>
+          );
+        })}
+
+        <button
+          onClick={() => setFiftyAgentsModalOpen(true)}
+          style={{
+            background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(14, 165, 233, 0.4))',
+            color: '#38bdf8',
+            border: '1px solid #38bdf8',
+            borderRadius: '12px',
+            padding: '3px 10px',
+            fontSize: '10px',
+            fontWeight: 800,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '3px',
+          }}
+          title="Abrir Modal com Todos os 50 Funcionários"
+        >
+          <span>👥</span> 50 Agentes
+        </button>
+      </div>
+
+      {/* BANNER FLUTUANTE DE IDENTIFICAÇÃO DA SQUAD ATIVA */}
+      {activeSector && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 24,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 10,
+            background: 'rgba(15, 23, 42, 0.92)',
+            backdropFilter: 'blur(16px)',
+            border: '1px solid #38bdf8',
+            borderRadius: '10px',
+            padding: '6px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.7)',
+            fontSize: '11px',
+            color: '#cbd5e1',
+          }}
+        >
+          <span style={{ fontSize: '14px' }}>⚡</span>
+          <div>
+            <span style={{ fontWeight: 800, color: '#38bdf8' }}>{activeSector.name}</span>
+            <span style={{ marginLeft: '8px', fontSize: '10px', color: '#94a3b8' }}>
+              Squad de 5 Agentes Alocada na Bancada Coworking • Benchmarking de IA Ativo
+            </span>
+          </div>
+        </div>
+      )}
 
       <Canvas shadows>
         <PerspectiveCamera makeDefault position={[0, 18, 22]} fov={40} />
@@ -357,7 +559,12 @@ export const Office3DScene: React.FC = () => {
           position={positions['chief-of-staff'].table}
           rotation={positions['chief-of-staff'].tableRot}
           glowColor="#f59e0b"
+          agentId="chief-of-staff"
+          deskProps={AGENT_AVATAR_PROFILES['chief-of-staff'].deskProps}
           accessoryType="CLIPBOARD"
+          activeProject={getAgentData('chief-of-staff')?.currentProject}
+          activeTask={getAgentData('chief-of-staff')?.currentShiftTask}
+          operationalState={getAgentOperationalState('chief-of-staff')}
           onClick={() => selectAgent(agents.find((a) => a.id === 'chief-of-staff'))}
         />
         <OfficeChair
@@ -374,108 +581,389 @@ export const Office3DScene: React.FC = () => {
           operationalState={getAgentOperationalState('chief-of-staff')}
           speechBubble={getSpeechForEntity('chief-of-staff')}
           isSelected={selectedAgent?.id === 'chief-of-staff'}
+          currentProject={getAgentData('chief-of-staff')?.currentProject}
+          currentShiftTask={getAgentData('chief-of-staff')?.currentShiftTask}
           onClick={() => selectAgent(agents.find((a) => a.id === 'chief-of-staff'))}
         />
 
-        {/* 3. MESA E AVATAR DA PRINCIPAL ARCHITECT (Helena Rostova) */}
-        <WorkstationTable
-          position={positions.architect.table}
-          rotation={positions.architect.tableRot}
-          glowColor="#3b82f6"
-          accessoryType="NONE"
-          onClick={() => selectAgent(agents.find((a) => a.id === 'architect'))}
-        />
-        <OfficeChair
-          position={positions.architect.chair}
-          rotation={positions.architect.chairRot}
-          color="#1e293b"
-        />
-        <Office3DAvatar
-          position={positions.architect.avatar}
-          rotation={positions.architect.avatarRot}
-          conferencePosition={conferencePositions.architect.pos}
-          conferenceRotation={conferencePositions.architect.rot}
-          avatar={AGENT_AVATAR_PROFILES.architect}
-          operationalState={getAgentOperationalState('architect')}
-          speechBubble={getSpeechForEntity('architect')}
-          isSelected={selectedAgent?.id === 'architect'}
-          onClick={() => selectAgent(agents.find((a) => a.id === 'architect'))}
-        />
+        {/* ========================================================================= */}
+        {/* 🏢 BANCADA CENTRAL DINÂMICA: MODO EXECUTIVO OU SQUAD DO SETOR SELECIONADO */}
+        {/* ========================================================================= */}
+        {selectedSectorId === 'executive' ? (
+          <>
+            {/* 3. MESA E AVATAR DA PRINCIPAL ARCHITECT (Helena Rostova) */}
+            <WorkstationTable
+              position={positions.architect.table}
+              rotation={positions.architect.tableRot}
+              glowColor="#3b82f6"
+              agentId="architect"
+              deskProps={AGENT_AVATAR_PROFILES.architect.deskProps}
+              accessoryType="NONE"
+              activeProject={getAgentData('architect')?.currentProject}
+              activeTask={getAgentData('architect')?.currentShiftTask}
+              operationalState={getAgentOperationalState('architect')}
+              onClick={() => selectAgent(getAgentData('architect') || agents.find((a) => a.id === 'architect'))}
+            />
+            <OfficeChair position={positions.architect.chair} rotation={positions.architect.chairRot} color="#1e293b" />
+            <Office3DAvatar
+              position={positions.architect.avatar}
+              rotation={positions.architect.avatarRot}
+              conferencePosition={conferencePositions.architect.pos}
+              conferenceRotation={conferencePositions.architect.rot}
+              avatar={AGENT_AVATAR_PROFILES.architect}
+              operationalState={getAgentOperationalState('architect')}
+              speechBubble={getSpeechForEntity('architect')}
+              isSelected={selectedAgent?.id === 'architect'}
+              currentProject={getAgentData('architect')?.currentProject}
+              currentShiftTask={getAgentData('architect')?.currentShiftTask}
+              onClick={() => selectAgent(getAgentData('architect') || agents.find((a) => a.id === 'architect'))}
+            />
 
-        {/* 4. MESA E AVATAR DO SENIOR DEVELOPER (Lucas Silveira) */}
-        <WorkstationTable
-          position={positions.developer.table}
-          rotation={positions.developer.tableRot}
-          glowColor="#0ea5e9"
-          accessoryType="HEADPHONES"
-          onClick={() => selectAgent(agents.find((a) => a.id === 'developer'))}
-        />
-        <OfficeChair
-          position={positions.developer.chair}
-          rotation={positions.developer.chairRot}
-          color="#1e293b"
-        />
-        <Office3DAvatar
-          position={positions.developer.avatar}
-          rotation={positions.developer.avatarRot}
-          conferencePosition={conferencePositions.developer.pos}
-          conferenceRotation={conferencePositions.developer.rot}
-          avatar={AGENT_AVATAR_PROFILES.developer}
-          operationalState={getAgentOperationalState('developer')}
-          speechBubble={getSpeechForEntity('developer')}
-          isSelected={selectedAgent?.id === 'developer'}
-          onClick={() => selectAgent(agents.find((a) => a.id === 'developer'))}
-        />
+            {/* 4. MESA E AVATAR DO SENIOR DEVELOPER (Lucas Silveira) */}
+            <WorkstationTable
+              position={positions.developer.table}
+              rotation={positions.developer.tableRot}
+              glowColor="#0ea5e9"
+              agentId="developer"
+              deskProps={AGENT_AVATAR_PROFILES.developer.deskProps}
+              accessoryType="HEADPHONES"
+              activeProject={getAgentData('developer')?.currentProject}
+              activeTask={getAgentData('developer')?.currentShiftTask}
+              operationalState={getAgentOperationalState('developer')}
+              onClick={() => selectAgent(getAgentData('developer') || agents.find((a) => a.id === 'developer'))}
+            />
+            <OfficeChair position={positions.developer.chair} rotation={positions.developer.chairRot} color="#1e293b" />
+            <Office3DAvatar
+              position={positions.developer.avatar}
+              rotation={positions.developer.avatarRot}
+              conferencePosition={conferencePositions.developer.pos}
+              conferenceRotation={conferencePositions.developer.rot}
+              avatar={AGENT_AVATAR_PROFILES.developer}
+              operationalState={getAgentOperationalState('developer')}
+              speechBubble={getSpeechForEntity('developer')}
+              isSelected={selectedAgent?.id === 'developer'}
+              currentProject={getAgentData('developer')?.currentProject}
+              currentShiftTask={getAgentData('developer')?.currentShiftTask}
+              onClick={() => selectAgent(getAgentData('developer') || agents.find((a) => a.id === 'developer'))}
+            />
 
-        {/* 5. MESA E AVATAR DA CODE REVIEWER (Beatriz Mendes) */}
-        <WorkstationTable
-          position={positions.reviewer.table}
-          rotation={positions.reviewer.tableRot}
-          glowColor="#10b981"
-          accessoryType="NONE"
-          onClick={() => selectAgent(agents.find((a) => a.id === 'reviewer'))}
-        />
-        <OfficeChair
-          position={positions.reviewer.chair}
-          rotation={positions.reviewer.chairRot}
-          color="#1e293b"
-        />
-        <Office3DAvatar
-          position={positions.reviewer.avatar}
-          rotation={positions.reviewer.avatarRot}
-          conferencePosition={conferencePositions.reviewer.pos}
-          conferenceRotation={conferencePositions.reviewer.rot}
-          avatar={AGENT_AVATAR_PROFILES.reviewer}
-          operationalState={getAgentOperationalState('reviewer')}
-          speechBubble={getSpeechForEntity('reviewer')}
-          isSelected={selectedAgent?.id === 'reviewer'}
-          onClick={() => selectAgent(agents.find((a) => a.id === 'reviewer'))}
-        />
+            {/* 5. MESA E AVATAR DA CODE REVIEWER (Beatriz Mendes) */}
+            <WorkstationTable
+              position={positions.reviewer.table}
+              rotation={positions.reviewer.tableRot}
+              glowColor="#10b981"
+              agentId="reviewer"
+              deskProps={AGENT_AVATAR_PROFILES.reviewer.deskProps}
+              accessoryType="NONE"
+              activeProject={getAgentData('reviewer')?.currentProject}
+              activeTask={getAgentData('reviewer')?.currentShiftTask}
+              operationalState={getAgentOperationalState('reviewer')}
+              onClick={() => selectAgent(getAgentData('reviewer') || agents.find((a) => a.id === 'reviewer'))}
+            />
+            <OfficeChair position={positions.reviewer.chair} rotation={positions.reviewer.chairRot} color="#1e293b" />
+            <Office3DAvatar
+              position={positions.reviewer.avatar}
+              rotation={positions.reviewer.avatarRot}
+              conferencePosition={conferencePositions.reviewer.pos}
+              conferenceRotation={conferencePositions.reviewer.rot}
+              avatar={AGENT_AVATAR_PROFILES.reviewer}
+              operationalState={getAgentOperationalState('reviewer')}
+              speechBubble={getSpeechForEntity('reviewer')}
+              isSelected={selectedAgent?.id === 'reviewer'}
+              currentProject={getAgentData('reviewer')?.currentProject}
+              currentShiftTask={getAgentData('reviewer')?.currentShiftTask}
+              onClick={() => selectAgent(getAgentData('reviewer') || agents.find((a) => a.id === 'reviewer'))}
+            />
 
-        {/* 6. MESA E AVATAR DO QA ENGINEER (Tiago Rocha) */}
-        <WorkstationTable
-          position={positions['qa-engineer'].table}
-          rotation={positions['qa-engineer'].tableRot}
-          glowColor="#059669"
-          accessoryType="RUBBER_DUCKS"
-          onClick={() => selectAgent(agents.find((a) => a.id === 'qa-engineer'))}
-        />
-        <OfficeChair
-          position={positions['qa-engineer'].chair}
-          rotation={positions['qa-engineer'].chairRot}
-          color="#1e293b"
-        />
-        <Office3DAvatar
-          position={positions['qa-engineer'].avatar}
-          rotation={positions['qa-engineer'].avatarRot}
-          conferencePosition={conferencePositions['qa-engineer'].pos}
-          conferenceRotation={conferencePositions['qa-engineer'].rot}
-          avatar={AGENT_AVATAR_PROFILES['qa-engineer']}
-          operationalState={getAgentOperationalState('qa-engineer')}
-          speechBubble={getSpeechForEntity('qa-engineer')}
-          isSelected={selectedAgent?.id === 'qa-engineer'}
-          onClick={() => selectAgent(agents.find((a) => a.id === 'qa-engineer'))}
-        />
+            {/* 6. MESA E AVATAR DO QA ENGINEER (Tiago Rocha) */}
+            <WorkstationTable
+              position={positions['qa-engineer'].table}
+              rotation={positions['qa-engineer'].tableRot}
+              glowColor="#059669"
+              agentId="qa-engineer"
+              deskProps={AGENT_AVATAR_PROFILES['qa-engineer'].deskProps}
+              accessoryType="RUBBER_DUCKS"
+              activeProject={getAgentData('qa-engineer')?.currentProject}
+              activeTask={getAgentData('qa-engineer')?.currentShiftTask}
+              operationalState={getAgentOperationalState('qa-engineer')}
+              onClick={() => selectAgent(getAgentData('qa-engineer') || agents.find((a) => a.id === 'qa-engineer'))}
+            />
+            <OfficeChair position={positions['qa-engineer'].chair} rotation={positions['qa-engineer'].chairRot} color="#1e293b" />
+            <Office3DAvatar
+              position={positions['qa-engineer'].avatar}
+              rotation={positions['qa-engineer'].avatarRot}
+              conferencePosition={conferencePositions['qa-engineer'].pos}
+              conferenceRotation={conferencePositions['qa-engineer'].rot}
+              avatar={AGENT_AVATAR_PROFILES['qa-engineer']}
+              operationalState={getAgentOperationalState('qa-engineer')}
+              speechBubble={getSpeechForEntity('qa-engineer')}
+              isSelected={selectedAgent?.id === 'qa-engineer'}
+              currentProject={getAgentData('qa-engineer')?.currentProject}
+              currentShiftTask={getAgentData('qa-engineer')?.currentShiftTask}
+              onClick={() => selectAgent(getAgentData('qa-engineer') || agents.find((a) => a.id === 'qa-engineer'))}
+            />
+
+            {/* 7. MESA E AVATAR DO AUDIOVISUAL DIRECTOR (Cauã Martins) */}
+            <WorkstationTable
+              position={positions['video-editor'].table}
+              rotation={positions['video-editor'].tableRot}
+              glowColor="#e11d48"
+              agentId="video-editor"
+              deskProps={AGENT_AVATAR_PROFILES['video-editor'].deskProps}
+              accessoryType="NONE"
+              activeProject={getAgentData('video-editor')?.currentProject || 'buzios-de-cima'}
+              activeTask={getAgentData('video-editor')?.currentShiftTask}
+              operationalState={getAgentOperationalState('video-editor')}
+              onClick={() => selectAgent(getAgentData('video-editor') || agents.find((a) => a.id === 'video-editor'))}
+            />
+            <OfficeChair position={positions['video-editor'].chair} rotation={positions['video-editor'].chairRot} color="#4c0519" />
+            <Office3DAvatar
+              position={positions['video-editor'].avatar}
+              rotation={positions['video-editor'].avatarRot}
+              conferencePosition={conferencePositions['video-editor'].pos}
+              conferenceRotation={conferencePositions['video-editor'].rot}
+              avatar={AGENT_AVATAR_PROFILES['video-editor']}
+              operationalState={getAgentOperationalState('video-editor')}
+              speechBubble={getSpeechForEntity('video-editor')}
+              isSelected={selectedAgent?.id === 'video-editor'}
+              currentProject={getAgentData('video-editor')?.currentProject || 'buzios-de-cima'}
+              currentShiftTask={getAgentData('video-editor')?.currentShiftTask}
+              onClick={() => selectAgent(getAgentData('video-editor') || agents.find((a) => a.id === 'video-editor'))}
+            />
+
+            {/* 8. MESA E AVATAR DA 3D ARTIST (Maya Lin) */}
+            <WorkstationTable
+              position={positions['image-designer'].table}
+              rotation={positions['image-designer'].tableRot}
+              glowColor="#a855f7"
+              agentId="image-designer"
+              deskProps={AGENT_AVATAR_PROFILES['image-designer'].deskProps}
+              accessoryType="NONE"
+              activeProject={getAgentData('image-designer')?.currentProject || 'eternize-seu-pinscher'}
+              activeTask={getAgentData('image-designer')?.currentShiftTask}
+              operationalState={getAgentOperationalState('image-designer')}
+              onClick={() => selectAgent(getAgentData('image-designer') || agents.find((a) => a.id === 'image-designer'))}
+            />
+            <OfficeChair position={positions['image-designer'].chair} rotation={positions['image-designer'].chairRot} color="#3b0764" />
+            <Office3DAvatar
+              position={positions['image-designer'].avatar}
+              rotation={positions['image-designer'].avatarRot}
+              conferencePosition={conferencePositions['image-designer'].pos}
+              conferenceRotation={conferencePositions['image-designer'].rot}
+              avatar={AGENT_AVATAR_PROFILES['image-designer']}
+              operationalState={getAgentOperationalState('image-designer')}
+              speechBubble={getSpeechForEntity('image-designer')}
+              isSelected={selectedAgent?.id === 'image-designer'}
+              currentProject={getAgentData('image-designer')?.currentProject || 'eternize-seu-pinscher'}
+              currentShiftTask={getAgentData('image-designer')?.currentShiftTask}
+              onClick={() => selectAgent(getAgentData('image-designer') || agents.find((a) => a.id === 'image-designer'))}
+            />
+
+            {/* 9. MESA E AVATAR DO SOUND DESIGNER (Gabriel Costa) */}
+            <WorkstationTable
+              position={positions['sound-engineer'].table}
+              rotation={positions['sound-engineer'].tableRot}
+              glowColor="#f59e0b"
+              agentId="sound-engineer"
+              deskProps={AGENT_AVATAR_PROFILES['sound-engineer'].deskProps}
+              accessoryType="HEADPHONES"
+              activeProject={getAgentData('sound-engineer')?.currentProject || 'xp-audio-lab'}
+              activeTask={getAgentData('sound-engineer')?.currentShiftTask}
+              operationalState={getAgentOperationalState('sound-engineer')}
+              onClick={() => selectAgent(getAgentData('sound-engineer') || agents.find((a) => a.id === 'sound-engineer'))}
+            />
+            <OfficeChair position={positions['sound-engineer'].chair} rotation={positions['sound-engineer'].chairRot} color="#78350f" />
+            <Office3DAvatar
+              position={positions['sound-engineer'].avatar}
+              rotation={positions['sound-engineer'].avatarRot}
+              conferencePosition={conferencePositions['sound-engineer'].pos}
+              conferenceRotation={conferencePositions['sound-engineer'].rot}
+              avatar={AGENT_AVATAR_PROFILES['sound-engineer']}
+              operationalState={getAgentOperationalState('sound-engineer')}
+              speechBubble={getSpeechForEntity('sound-engineer')}
+              isSelected={selectedAgent?.id === 'sound-engineer'}
+              currentProject={getAgentData('sound-engineer')?.currentProject || 'xp-audio-lab'}
+              currentShiftTask={getAgentData('sound-engineer')?.currentShiftTask}
+              onClick={() => selectAgent(getAgentData('sound-engineer') || agents.find((a) => a.id === 'sound-engineer'))}
+            />
+
+            {/* 10. MESA E AVATAR DA HEAD OF GROWTH (Renata Prado) */}
+            <WorkstationTable
+              position={positions['growth-ops'].table}
+              rotation={positions['growth-ops'].tableRot}
+              glowColor="#06b6d4"
+              agentId="growth-ops"
+              deskProps={AGENT_AVATAR_PROFILES['growth-ops'].deskProps}
+              accessoryType="CLIPBOARD"
+              activeProject={getAgentData('growth-ops')?.currentProject || 'pub-leads'}
+              activeTask={getAgentData('growth-ops')?.currentShiftTask}
+              operationalState={getAgentOperationalState('growth-ops')}
+              onClick={() => selectAgent(getAgentData('growth-ops') || agents.find((a) => a.id === 'growth-ops'))}
+            />
+            <OfficeChair position={positions['growth-ops'].chair} rotation={positions['growth-ops'].chairRot} color="#083344" />
+            <Office3DAvatar
+              position={positions['growth-ops'].avatar}
+              rotation={positions['growth-ops'].avatarRot}
+              conferencePosition={conferencePositions['growth-ops'].pos}
+              conferenceRotation={conferencePositions['growth-ops'].rot}
+              avatar={AGENT_AVATAR_PROFILES['growth-ops']}
+              operationalState={getAgentOperationalState('growth-ops')}
+              speechBubble={getSpeechForEntity('growth-ops')}
+              isSelected={selectedAgent?.id === 'growth-ops'}
+              currentProject={getAgentData('growth-ops')?.currentProject || 'pub-leads'}
+              currentShiftTask={getAgentData('growth-ops')?.currentShiftTask}
+              onClick={() => selectAgent(getAgentData('growth-ops') || agents.find((a) => a.id === 'growth-ops'))}
+            />
+          </>
+        ) : (
+          <>
+            {/* SQUAD DEDICADA DO SETOR SELECIONADO: 5 ESPECIALISTAS ATIVOS NA BANCADA */}
+            {techLead && (
+              <>
+                <WorkstationTable
+                  position={positions.architect.table}
+                  rotation={positions.architect.tableRot}
+                  glowColor={techLead.accentColor || '#38bdf8'}
+                  agentId={techLead.id}
+                  deskProps={AGENT_AVATAR_PROFILES[techLead.id]?.deskProps}
+                  accessoryType="CLIPBOARD"
+                  activeProject={techLead.sectorName}
+                  activeTask={`Tech Lead • ${techLead.specialty}`}
+                  operationalState={getAgentOperationalState(techLead.id)}
+                  onClick={() => selectAgent(getAgentData(techLead.id) || techLead)}
+                />
+                <OfficeChair position={positions.architect.chair} rotation={positions.architect.chairRot} color="#1e293b" />
+                <Office3DAvatar
+                  position={positions.architect.avatar}
+                  rotation={positions.architect.avatarRot}
+                  avatar={AGENT_AVATAR_PROFILES[techLead.id] || techLead.avatar}
+                  operationalState={getAgentOperationalState(techLead.id)}
+                  speechBubble={getSpeechForEntity(techLead.id)}
+                  isSelected={selectedAgent?.id === techLead.id}
+                  currentProject={techLead.sectorName}
+                  currentShiftTask={`Benchmarking: ${techLead.preferredModel}`}
+                  onClick={() => selectAgent(getAgentData(techLead.id) || techLead)}
+                />
+              </>
+            )}
+
+            {fullstackDev && (
+              <>
+                <WorkstationTable
+                  position={positions.developer.table}
+                  rotation={positions.developer.tableRot}
+                  glowColor={fullstackDev.accentColor || '#0ea5e9'}
+                  agentId={fullstackDev.id}
+                  deskProps={AGENT_AVATAR_PROFILES[fullstackDev.id]?.deskProps}
+                  accessoryType="HEADPHONES"
+                  activeProject={fullstackDev.sectorName}
+                  activeTask={`Full-Stack Dev • ${fullstackDev.specialty}`}
+                  operationalState={getAgentOperationalState(fullstackDev.id)}
+                  onClick={() => selectAgent(getAgentData(fullstackDev.id) || fullstackDev)}
+                />
+                <OfficeChair position={positions.developer.chair} rotation={positions.developer.chairRot} color="#1e293b" />
+                <Office3DAvatar
+                  position={positions.developer.avatar}
+                  rotation={positions.developer.avatarRot}
+                  avatar={AGENT_AVATAR_PROFILES[fullstackDev.id] || fullstackDev.avatar}
+                  operationalState={getAgentOperationalState(fullstackDev.id)}
+                  speechBubble={getSpeechForEntity(fullstackDev.id)}
+                  isSelected={selectedAgent?.id === fullstackDev.id}
+                  currentProject={fullstackDev.sectorName}
+                  currentShiftTask={`Benchmarking: ${fullstackDev.preferredModel}`}
+                  onClick={() => selectAgent(getAgentData(fullstackDev.id) || fullstackDev)}
+                />
+              </>
+            )}
+
+            {qaSec && (
+              <>
+                <WorkstationTable
+                  position={positions.reviewer.table}
+                  rotation={positions.reviewer.tableRot}
+                  glowColor={qaSec.accentColor || '#10b981'}
+                  agentId={qaSec.id}
+                  deskProps={AGENT_AVATAR_PROFILES[qaSec.id]?.deskProps}
+                  accessoryType="RUBBER_DUCKS"
+                  activeProject={qaSec.sectorName}
+                  activeTask={`QA & Security • ${qaSec.specialty}`}
+                  operationalState={getAgentOperationalState(qaSec.id)}
+                  onClick={() => selectAgent(getAgentData(qaSec.id) || qaSec)}
+                />
+                <OfficeChair position={positions.reviewer.chair} rotation={positions.reviewer.chairRot} color="#1e293b" />
+                <Office3DAvatar
+                  position={positions.reviewer.avatar}
+                  rotation={positions.reviewer.avatarRot}
+                  avatar={AGENT_AVATAR_PROFILES[qaSec.id] || qaSec.avatar}
+                  operationalState={getAgentOperationalState(qaSec.id)}
+                  speechBubble={getSpeechForEntity(qaSec.id)}
+                  isSelected={selectedAgent?.id === qaSec.id}
+                  currentProject={qaSec.sectorName}
+                  currentShiftTask={`Benchmarking: ${qaSec.preferredModel}`}
+                  onClick={() => selectAgent(getAgentData(qaSec.id) || qaSec)}
+                />
+              </>
+            )}
+
+            {productDesigner && (
+              <>
+                <WorkstationTable
+                  position={positions['image-designer'].table}
+                  rotation={positions['image-designer'].tableRot}
+                  glowColor={productDesigner.accentColor || '#a855f7'}
+                  agentId={productDesigner.id}
+                  deskProps={AGENT_AVATAR_PROFILES[productDesigner.id]?.deskProps}
+                  accessoryType="NONE"
+                  activeProject={productDesigner.sectorName}
+                  activeTask={`Product & 3D Designer • ${productDesigner.specialty}`}
+                  operationalState={getAgentOperationalState(productDesigner.id)}
+                  onClick={() => selectAgent(getAgentData(productDesigner.id) || productDesigner)}
+                />
+                <OfficeChair position={positions['image-designer'].chair} rotation={positions['image-designer'].chairRot} color="#3b0764" />
+                <Office3DAvatar
+                  position={positions['image-designer'].avatar}
+                  rotation={positions['image-designer'].avatarRot}
+                  avatar={AGENT_AVATAR_PROFILES[productDesigner.id] || productDesigner.avatar}
+                  operationalState={getAgentOperationalState(productDesigner.id)}
+                  speechBubble={getSpeechForEntity(productDesigner.id)}
+                  isSelected={selectedAgent?.id === productDesigner.id}
+                  currentProject={productDesigner.sectorName}
+                  currentShiftTask={`Benchmarking: ${productDesigner.preferredModel}`}
+                  onClick={() => selectAgent(getAgentData(productDesigner.id) || productDesigner)}
+                />
+              </>
+            )}
+
+            {growthSales && (
+              <>
+                <WorkstationTable
+                  position={positions['growth-ops'].table}
+                  rotation={positions['growth-ops'].tableRot}
+                  glowColor={growthSales.accentColor || '#06b6d4'}
+                  agentId={growthSales.id}
+                  deskProps={AGENT_AVATAR_PROFILES[growthSales.id]?.deskProps}
+                  accessoryType="CLIPBOARD"
+                  activeProject={growthSales.sectorName}
+                  activeTask={`Growth & Sales • ${growthSales.specialty}`}
+                  operationalState={getAgentOperationalState(growthSales.id)}
+                  onClick={() => selectAgent(getAgentData(growthSales.id) || growthSales)}
+                />
+                <OfficeChair position={positions['growth-ops'].chair} rotation={positions['growth-ops'].chairRot} color="#083344" />
+                <Office3DAvatar
+                  position={positions['growth-ops'].avatar}
+                  rotation={positions['growth-ops'].avatarRot}
+                  avatar={AGENT_AVATAR_PROFILES[growthSales.id] || growthSales.avatar}
+                  operationalState={getAgentOperationalState(growthSales.id)}
+                  speechBubble={getSpeechForEntity(growthSales.id)}
+                  isSelected={selectedAgent?.id === growthSales.id}
+                  currentProject={growthSales.sectorName}
+                  currentShiftTask={`Benchmarking: ${growthSales.preferredModel}`}
+                  onClick={() => selectAgent(getAgentData(growthSales.id) || growthSales)}
+                />
+              </>
+            )}
+          </>
+        )}
       </Canvas>
 
       {/* Modal Jukebox de Vinis Conectado ao Store */}

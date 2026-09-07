@@ -1,4 +1,5 @@
 import type {
+  AgentDefinition,
   AvatarProfile,
   CeoIdentity,
   EmployeeOperationalState,
@@ -6,6 +7,7 @@ import type {
   MeetingRoomState,
   OfficePosition,
 } from '../types/office';
+import { FIFTY_SPECIALIZED_AGENTS, FIFTY_AVATAR_PROFILES } from './squadsData';
 
 export const CEO_IDENTITY: CeoIdentity = {
   id: 'ceo',
@@ -56,7 +58,132 @@ export const INITIAL_MEETING_ROOM: MeetingRoomState = {
   participants: [],
 };
 
-export const AGENT_AVATAR_PROFILES: Record<string, AvatarProfile> = {
+export const EXECUTIVE_OFFICE_STAFF: AgentDefinition[] = [
+  {
+    id: 'chief-of-staff',
+    name: 'Dr. Arthur Vance',
+    title: 'Chief of Staff & Operational Orchestrator',
+    department: 'EXECUTIVE',
+    role: 'CHIEF_OF_STAFF',
+    specialty: 'Strategic planning, task decomposition, and delegation',
+    personalitySummary: 'Decisive, structured, strategic, and high-clarity orchestrator',
+    responsibilities: ['Decompose high-level CEO goals into actionable tasks', 'Delegate tasks to specialist agents', 'Monitor operational health'],
+    capabilities: ['strategic_planning', 'task_decomposition', 'delegation'],
+    routingProfile: 'reasoning',
+    status: 'ACTIVE',
+  },
+  {
+    id: 'architect',
+    name: 'Helena Rostova',
+    title: 'Principal Software Architect',
+    department: 'ENGINEERING',
+    role: 'ARCHITECT',
+    specialty: 'System architecture, API contracts, domain modeling, and technical design',
+    personalitySummary: 'Analytical, forward-thinking, methodical, and principles-driven',
+    responsibilities: ['Define component boundaries and system architecture', 'Design clean API contracts and database domain models'],
+    capabilities: ['system_design', 'api_design', 'domain_modeling'],
+    routingProfile: 'reasoning',
+    status: 'ACTIVE',
+  },
+  {
+    id: 'developer',
+    name: 'Lucas Silveira',
+    title: 'Senior Full-Stack Developer',
+    department: 'ENGINEERING',
+    role: 'DEVELOPER',
+    specialty: 'Feature implementation, refactoring, tool execution, and bug fixing',
+    personalitySummary: 'Pragmatic, detail-oriented, productive, and code-centric',
+    responsibilities: ['Implement code changes according to architectural specifications', 'Maintain code hygiene and strict typing'],
+    capabilities: ['code_implementation', 'refactoring', 'workspace_tools'],
+    routingProfile: 'coding',
+    status: 'ACTIVE',
+  },
+  {
+    id: 'reviewer',
+    name: 'Beatriz Mendes',
+    title: 'Code & Security Reviewer',
+    department: 'QA',
+    role: 'REVIEWER',
+    specialty: 'Code review, security vulnerability assessment, and design compliance',
+    personalitySummary: 'Vigilant, constructive, meticulous, and security-conscious',
+    responsibilities: ['Review code changes against requirements and architecture', 'Identify potential regression bugs and security flaws'],
+    capabilities: ['code_review', 'security_audit', 'compliance_check'],
+    routingProfile: 'review',
+    status: 'ACTIVE',
+  },
+  {
+    id: 'qa-engineer',
+    name: 'Tiago Rocha',
+    title: 'Quality Assurance & Test Automation Engineer',
+    department: 'QA',
+    role: 'QA_ENGINEER',
+    specialty: 'Test suite design, automated testing, edge-case coverage, and validation',
+    personalitySummary: 'Thorough, skeptical, systematic, and quality-driven',
+    responsibilities: ['Design and write automated unit, integration, and E2E tests', 'Validate system behavior against acceptance criteria'],
+    capabilities: ['test_automation', 'edge_case_analysis', 'regression_testing'],
+    routingProfile: 'review',
+    status: 'ACTIVE',
+  },
+  {
+    id: 'video-editor',
+    name: 'Cauã Martins',
+    title: 'Audiovisual Producer & Drone Director',
+    department: 'MULTIMEDIA',
+    role: 'VIDEO_EDITOR',
+    specialty: 'Edição de cinema, tomadas aéreas 4K, reels e pós-produção audiovisual',
+    personalitySummary: 'Cinematográfico, perfeccionista com ritmo e cor, apaixonado por drones e estética visual de ponta',
+    responsibilities: ['Dirigir e editar filmes publicitários e showreels', 'Processar tomadas 4K de drones (buzios-de-cima)', 'Gerar cortes verticais de alta conversão'],
+    capabilities: ['video_editing', 'drone_cinematography', 'color_grading'],
+    routingProfile: 'multimedia',
+    status: 'ACTIVE',
+  },
+  {
+    id: 'image-designer',
+    name: 'Maya Lin',
+    title: '3D Artist & Generative Visual Specialist',
+    department: 'MULTIMEDIA',
+    role: 'IMAGE_DESIGNER',
+    specialty: 'Renderização 3D, texturização, pipelines generativos (Flux/Midjourney) e modelagem CAD/STL',
+    personalitySummary: 'Visualmente hiper-criativa, atenta a proporções, iluminação volumétrica e detalhes táteis',
+    responsibilities: ['Modelar malhas 3D para impressão física (eternize-seu-pinscher)', 'Criar key visuals e shaders para WebGL (pub-3d)'],
+    capabilities: ['3d_modeling', 'mesh_optimization', 'generative_image_design'],
+    routingProfile: 'multimedia',
+    status: 'ACTIVE',
+  },
+  {
+    id: 'sound-engineer',
+    name: 'Gabriel Costa',
+    title: 'Sound Designer & Music Producer',
+    department: 'MULTIMEDIA',
+    role: 'SOUND_ENGINEER',
+    specialty: 'Produção musical, sintetizadores modulares, mixagem, masterização e sound design',
+    personalitySummary: 'Ouvido absoluto, fissurado por harmonia analógica, grooves percussivos e masterização cristalina',
+    responsibilities: ['Compor trilhas sonoras originais e vinhetas (xp-audio-lab)', 'Curar catálogo de beats e masterização (pub-records)'],
+    capabilities: ['music_production', 'sound_design', 'audio_mixing_mastering'],
+    routingProfile: 'multimedia',
+    status: 'ACTIVE',
+  },
+  {
+    id: 'growth-ops',
+    name: 'Renata Prado',
+    title: 'Head of Growth & Lead Operations',
+    department: 'GROWTH',
+    role: 'GROWTH_OPS',
+    specialty: 'Enriquecimento de dados B2B, prospecção outbound, raspagem de dados e funis de conversão',
+    personalitySummary: 'Orientada a métricas de CAC/LTV, incansável na busca de eficiência de conversão e automações de escala',
+    responsibilities: ['Alimentar pipeline autônomo de captura de leads (pub-leads)', 'Enriquecer bases de decisores com automações (leadcore)'],
+    capabilities: ['lead_enrichment', 'b2b_scraping', 'funnel_optimization'],
+    routingProfile: 'growth',
+    status: 'ACTIVE',
+  },
+];
+
+export const DEFAULT_OFFICE_STAFF: AgentDefinition[] = [
+  ...EXECUTIVE_OFFICE_STAFF,
+  ...FIFTY_SPECIALIZED_AGENTS,
+];
+
+export const EXECUTIVE_AVATAR_PROFILES: Record<string, AvatarProfile> = {
   'chief-of-staff': {
     avatarId: 'avatar-chief-of-staff',
     displayName: 'Dr. Arthur Vance',
@@ -64,9 +191,14 @@ export const AGENT_AVATAR_PROFILES: Record<string, AvatarProfile> = {
     badgeIcon: '👔',
     accentColor: '#f59e0b',
     initials: 'AV',
+    gender: 'M',
     hairColor: '#451a03',
+    hairStyle: 'SLICK',
     suitColor: '#291e17',
     tieColor: '#d97706',
+    shirtColor: '#fef3c7',
+    clothingStyle: 'SUIT',
+    hasGlasses: true,
     accessory: '👓',
     avatarStyle: 'STRATEGY',
     age: 52,
@@ -77,6 +209,14 @@ export const AGENT_AVATAR_PROFILES: Record<string, AvatarProfile> = {
     knownQuirks: ['Organiza a bancada por ordem alfabética', 'Anota tudo com caneta-tinteiro virtual'],
     rivalries: 'Acha que o Lucas (Dev) é impulsivo demais e vive cobrando cronogramas que nunca são seguidos à risca.',
     backgroundLore: 'Veterano de consultorias multinacionais, Dr. Arthur é a ponte perfeita entre a visão do CEO e o caos criativo da equipe de engenharia.',
+    deskProps: {
+      matColor: '#451a03',
+      beverageType: 'COFFEE_MUG',
+      items: ['prancheta-executiva', 'caneta-tinteiro-dourada', 'carimbo-aprovado'],
+      plantType: 'BONSAI',
+      monitorLayout: 'DUAL',
+      lampColor: '#f59e0b',
+    },
   },
   architect: {
     avatarId: 'avatar-architect',
@@ -85,9 +225,14 @@ export const AGENT_AVATAR_PROFILES: Record<string, AvatarProfile> = {
     badgeIcon: '📐',
     accentColor: '#3b82f6',
     initials: 'HR',
-    hairColor: '#1e293b',
+    gender: 'F',
+    hairColor: '#0f172a',
+    hairStyle: 'BOB',
     suitColor: '#172554',
     tieColor: '#2563eb',
+    shirtColor: '#f0f9ff',
+    clothingStyle: 'CASUAL_CHIC',
+    hasGlasses: true,
     accessory: '📐',
     avatarStyle: 'ARCHITECT',
     age: 39,
@@ -98,6 +243,14 @@ export const AGENT_AVATAR_PROFILES: Record<string, AvatarProfile> = {
     knownQuirks: ['Desenha diagramas UML no ar enquanto pensa', 'Recusa-se a usar any no TypeScript mesmo sob tortura'],
     rivalries: 'Vive em pé de guerra com o Lucas (Dev), chamando os workarounds rápidos dele de "gambiarras amarradas com barbante".',
     backgroundLore: 'Cientista da computação teórica e ex-hacker de sistemas distribuídos de alta escala. Considera arquitetura limpa uma forma superior de arte.',
+    deskProps: {
+      matColor: '#172554',
+      beverageType: 'TEA_CUP',
+      items: ['esquadro-metalico', 'caderno-grid-isometrico', 'diagrama-microservicos'],
+      plantType: 'SUCCULENT',
+      monitorLayout: 'ULTRAWIDE',
+      lampColor: '#38bdf8',
+    },
   },
   developer: {
     avatarId: 'avatar-developer',
@@ -106,9 +259,14 @@ export const AGENT_AVATAR_PROFILES: Record<string, AvatarProfile> = {
     badgeIcon: '💻',
     accentColor: '#0ea5e9',
     initials: 'LS',
-    hairColor: '#0f172a',
-    suitColor: '#082f49',
-    tieColor: '#0284c7',
+    gender: 'M',
+    hairColor: '#020617',
+    hairStyle: 'MESSY',
+    suitColor: '#0c4a6e',
+    tieColor: '#38bdf8',
+    shirtColor: '#082f49',
+    clothingStyle: 'HOODIE',
+    hasHeadphones: true,
     accessory: '🎧',
     avatarStyle: 'CODER',
     age: 28,
@@ -119,6 +277,14 @@ export const AGENT_AVATAR_PROFILES: Record<string, AvatarProfile> = {
     knownQuirks: ['Digita a 120 palavras por minuto ouvindo riff de guitarra', 'Sempre jura que "esse é o último hotfix"'],
     rivalries: 'Reclama que a Helena cria 15 camadas de abstração antes de escrever um console.log e que a Beatriz é chata com linter.',
     backgroundLore: 'Autodidata brilhante, viciado em maratonas de código e em resolver bugs insolúveis na velocidade da luz.',
+    deskProps: {
+      matColor: '#0369a1',
+      beverageType: 'ENERGY_DRINK',
+      items: ['teclado-mecanico-rgb', 'mouse-gamer-ergonomico', 'mini-action-figure'],
+      plantType: 'CACTUS',
+      monitorLayout: 'VERTICAL_DUAL',
+      lampColor: '#0ea5e9',
+    },
   },
   reviewer: {
     avatarId: 'avatar-reviewer',
@@ -127,9 +293,14 @@ export const AGENT_AVATAR_PROFILES: Record<string, AvatarProfile> = {
     badgeIcon: '🔍',
     accentColor: '#10b981',
     initials: 'BM',
-    hairColor: '#14532d',
-    suitColor: '#052e16',
-    tieColor: '#059669',
+    gender: 'F',
+    hairColor: '#064e3b',
+    hairStyle: 'LONG',
+    suitColor: '#065f46',
+    tieColor: '#34d399',
+    shirtColor: '#ecfdf5',
+    clothingStyle: 'CASUAL_CHIC',
+    hasGlasses: true,
     accessory: '🔍',
     avatarStyle: 'REVIEWER',
     age: 34,
@@ -140,6 +311,14 @@ export const AGENT_AVATAR_PROFILES: Record<string, AvatarProfile> = {
     knownQuirks: ['Encontra memory leaks olhando o código por 3 segundos', 'Seu sarcasmo em code reviews é uma obra-prima'],
     rivalries: 'Tem imenso prazer profissional em bloquear PRs descuidados do Lucas e apontar brechas de segurança sutis.',
     backgroundLore: 'Especialista em computação forense e segurança ofensiva/defensiva. Nenhuma vulnerabilidade passa pelo seu filtro.',
+    deskProps: {
+      matColor: '#064e3b',
+      beverageType: 'MATCHA',
+      items: ['lente-de-aumento-design', 'token-criptografico-hardware', 'post-it-pr-bloqueado'],
+      plantType: 'FERN',
+      monitorLayout: 'DUAL',
+      lampColor: '#10b981',
+    },
   },
   'qa-engineer': {
     avatarId: 'avatar-qa-engineer',
@@ -148,9 +327,13 @@ export const AGENT_AVATAR_PROFILES: Record<string, AvatarProfile> = {
     badgeIcon: '🧪',
     accentColor: '#059669',
     initials: 'TR',
-    hairColor: '#064e3b',
+    gender: 'M',
+    hairColor: '#1e3a8a',
+    hairStyle: 'SHORT',
     suitColor: '#022c22',
     tieColor: '#10b981',
+    shirtColor: '#f0fdf4',
+    clothingStyle: 'STREETWEAR',
     accessory: '🧪',
     avatarStyle: 'QA',
     age: 31,
@@ -161,10 +344,156 @@ export const AGENT_AVATAR_PROFILES: Record<string, AvatarProfile> = {
     knownQuirks: ['Tem 8 patinhos de borracha amarelos na mesa', 'Testa campos de formulário colando a Bíblia inteira em japonês'],
     rivalries: 'Adora mandar prints de tela vermelha com crashes no Slack às 17h55 de uma sexta-feira para provocar o Lucas.',
     backgroundLore: 'Ex-auditor de qualidade aeroespacial, apaixonado por engenharia do caos e por garantir que nenhum edge case fique impune.',
+    deskProps: {
+      matColor: '#047857',
+      beverageType: 'WATER_BOTTLE',
+      items: ['bateria-de-patinhos-de-borracha', 'botao-vermelho-chaos', 'checklist-testes-stress'],
+      plantType: 'CACTUS',
+      monitorLayout: 'VERTICAL_DUAL',
+      lampColor: '#34d399',
+    },
+  },
+  'video-editor': {
+    avatarId: 'avatar-video-editor',
+    displayName: 'Cauã Martins',
+    roleLabel: 'Audiovisual & Drone Director',
+    badgeIcon: '🎬',
+    accentColor: '#e11d48',
+    initials: 'CM',
+    gender: 'M',
+    hairColor: '#1c1917',
+    hairStyle: 'SHORT',
+    suitColor: '#4c0519',
+    tieColor: '#f43f5e',
+    shirtColor: '#ffe4e6',
+    clothingStyle: 'CREATIVE',
+    accessory: '🎬',
+    avatarStyle: 'CREATIVE',
+    age: 29,
+    nickname: 'Director',
+    drinkPreference: 'Cold brew com laranja e gelo',
+    musicTaste: 'Cinematic Soundtracks & Synth Rock',
+    catchphrase: 'Tomada estabilizada em 4K 60fps. O corte final tem que ter alma e dinamismo visual.',
+    knownQuirks: ['Vive de boné virado para trás', 'Gira o mouse como se fosse gimbal de câmera'],
+    rivalries: 'Acha que o Lucas não liga para estética visual e que tudo que ele faz parece dos anos 90.',
+    backgroundLore: 'Piloto credenciado de drone cinematográfico e editor premiado em festivais independentes. Comanda a Pub Films e Búzios de Cima.',
+    deskProps: {
+      matColor: '#881337',
+      beverageType: 'COLD_BREW',
+      items: ['drone-dji-miniatura', 'claquete-cinema-3d', 'controle-remoto-gimbal'],
+      plantType: 'BONSAI',
+      monitorLayout: 'ULTRAWIDE',
+      lampColor: '#fb7185',
+    },
+  },
+  'image-designer': {
+    avatarId: 'avatar-image-designer',
+    displayName: 'Maya Lin',
+    roleLabel: '3D Artist & Visual Designer',
+    badgeIcon: '🎨',
+    accentColor: '#a855f7',
+    initials: 'ML',
+    gender: 'F',
+    hairColor: '#581c87',
+    hairStyle: 'PONYTAIL',
+    suitColor: '#3b0764',
+    tieColor: '#c084fc',
+    shirtColor: '#faf5ff',
+    clothingStyle: 'CREATIVE',
+    accessory: '🎨',
+    avatarStyle: 'CREATIVE',
+    age: 27,
+    nickname: 'Render',
+    drinkPreference: 'Chá de hibisco gelado e kombucha',
+    musicTaste: 'Lo-Fi Chillhop & Ambient Futurista',
+    catchphrase: 'A malha precisa ser manifold perfeita para a impressora 3D não chorar na primeira camada.',
+    knownQuirks: ['Analisa wireframes 3D em tudo que olha na vida real', 'Tem miniaturas de pinscher na bancada'],
+    rivalries: 'Reclama que os desenvolvedores comprimem demais as imagens nos deploys e estragam o color space.',
+    backgroundLore: 'Mestre em computação gráfica e escultura digital. Lidera a modelagem e impressão de pets na Eternize Seu Pinscher e WebGL no Pub 3D.',
+    deskProps: {
+      matColor: '#581c87',
+      beverageType: 'TEA_CUP',
+      items: ['escultura-pinscher-3d-dourada', 'tablet-wacom-caneta-digital', 'amostras-filamento-pla'],
+      plantType: 'SUCCULENT',
+      monitorLayout: 'DUAL',
+      lampColor: '#c084fc',
+    },
+  },
+  'sound-engineer': {
+    avatarId: 'avatar-sound-engineer',
+    displayName: 'Gabriel Costa',
+    roleLabel: 'Sound Designer & Music Producer',
+    badgeIcon: '🎛️',
+    accentColor: '#f59e0b',
+    initials: 'GC',
+    gender: 'M',
+    hairColor: '#292524',
+    hairStyle: 'SHORT',
+    suitColor: '#451a03',
+    tieColor: '#fbbf24',
+    shirtColor: '#fef3c7',
+    clothingStyle: 'STREETWEAR',
+    hasHeadphones: true,
+    accessory: '🎧',
+    avatarStyle: 'AUDIO',
+    age: 33,
+    nickname: 'Beatsmith',
+    drinkPreference: 'Café espresso duplo tirado na prensa francesa',
+    musicTaste: 'Boombap 90s, Trap Instrumental & Lo-Fi Beats',
+    catchphrase: 'Mixagem limpa, kick batendo no peito e subgrave sem embolar. A música é a identidade da Pub.',
+    knownQuirks: ['Fica batucando na mesa no ritmo de 90 BPM', 'Ouve frequências de 40Hz a 20kHz sem esforço'],
+    rivalries: 'Vive disputando o volume do som do estúdio com os outros setores e pedindo isolamento acústico extra.',
+    backgroundLore: 'Produtor musical experiente, arranjador e beatmaker. Cuida de todos os lançamentos da Pub Records e das trilhas do XP Audio Lab.',
+    deskProps: {
+      matColor: '#78350f',
+      beverageType: 'COFFEE_MUG',
+      items: ['controlador-midi-akai-mini', 'monitores-referencia-yamaha', 'disco-vinil-7-polegadas'],
+      plantType: 'FERN',
+      monitorLayout: 'STUDIO_TRIPLE',
+      lampColor: '#fbbf24',
+    },
+  },
+  'growth-ops': {
+    avatarId: 'avatar-growth-ops',
+    displayName: 'Renata Prado',
+    roleLabel: 'Head of Growth & Lead Ops',
+    badgeIcon: '🚀',
+    accentColor: '#06b6d4',
+    initials: 'RP',
+    gender: 'F',
+    hairColor: '#164e63',
+    hairStyle: 'BOB',
+    suitColor: '#0e7490',
+    tieColor: '#22d3ee',
+    shirtColor: '#ecfeff',
+    clothingStyle: 'CASUAL_CHIC',
+    accessory: '📈',
+    avatarStyle: 'GROWTH',
+    age: 30,
+    nickname: 'Scaler',
+    drinkPreference: 'Matcha latte com leite de aveia',
+    musicTaste: 'Upbeat Indie Pop & Deep House',
+    catchphrase: 'Se não gera pipeline qualificado e ROI positivo no final da semana, a estratégia precisa de pivot.',
+    knownQuirks: ['Fica atualizando dashboards de conversão a cada 40 segundos', 'Fala termos em inglês a cada 3 palavras'],
+    rivalries: 'Acha que o time de engenharia foca muito em perfeccionismo de código em vez de colocar landings de teste no ar rápido.',
+    backgroundLore: 'Especialista em automação de prospecção B2B, scraping de grandes volumes e otimização de conversão. Lidera o Pub Leads e o LeadCore.',
+    deskProps: {
+      matColor: '#155e75',
+      beverageType: 'MATCHA',
+      items: ['dashboard-kpi-tablet', 'foguete-falcon-miniatura', 'grafico-hockey-stick'],
+      plantType: 'SUCCULENT',
+      monitorLayout: 'DUAL',
+      lampColor: '#22d3ee',
+    },
   },
 };
 
-export const AGENT_OFFICE_POSITIONS: Record<string, OfficePosition> = {
+export const AGENT_AVATAR_PROFILES: Record<string, AvatarProfile> = {
+  ...EXECUTIVE_AVATAR_PROFILES,
+  ...FIFTY_AVATAR_PROFILES,
+};
+
+export const EXECUTIVE_OFFICE_POSITIONS: Record<string, OfficePosition> = {
   'chief-of-staff': {
     zoneId: 'LEADERSHIP',
     zoneName: 'Suíte de Liderança & Orquestração',
@@ -210,6 +539,88 @@ export const AGENT_OFFICE_POSITIONS: Record<string, OfficePosition> = {
     facingDirection: 'WEST',
     coordinates: { x: 70, y: 85 },
   },
+  'video-editor': {
+    zoneId: 'MULTIMEDIA',
+    zoneName: 'Estúdio de Audiovisual & 3D',
+    deskId: 'mesa-video-editor',
+    deskLabel: 'Bancada de Edição & Drones',
+    floor: 3,
+    facingDirection: 'EAST',
+    coordinates: { x: 20, y: 45 },
+  },
+  'image-designer': {
+    zoneId: 'MULTIMEDIA',
+    zoneName: 'Estúdio de Audiovisual & 3D',
+    deskId: 'mesa-image-designer',
+    deskLabel: 'Bancada de Modelagem 3D & Design',
+    floor: 3,
+    facingDirection: 'WEST',
+    coordinates: { x: 80, y: 45 },
+  },
+  'sound-engineer': {
+    zoneId: 'MULTIMEDIA',
+    zoneName: 'Estúdio Musical PUB RECORDS',
+    deskId: 'mesa-sound-engineer',
+    deskLabel: 'Console de Áudio & Acústica',
+    floor: 3,
+    facingDirection: 'SOUTH',
+    coordinates: { x: 50, y: 95 },
+  },
+  'growth-ops': {
+    zoneId: 'GROWTH',
+    zoneName: 'Hub de Growth & Operações de Leads',
+    deskId: 'mesa-growth-ops',
+    deskLabel: 'Bancada de Growth & B2B Leads',
+    floor: 3,
+    facingDirection: 'SOUTH',
+    coordinates: { x: 50, y: 55 },
+  },
+};
+
+const SQUAD_OFFICE_POSITIONS: Record<string, OfficePosition> = {};
+for (const agent of FIFTY_SPECIALIZED_AGENTS) {
+  const role = (agent as any).role;
+  const sectorName = (agent as any).sectorName || 'Setor Especializado';
+  let zoneId: OfficePosition['zoneId'] = 'ENGINEERING';
+  let deskLabel = `Bancada ${agent.name}`;
+  let coords = { x: 50, y: 65 };
+
+  if (role === 'TECH_LEAD') {
+    zoneId = 'LEADERSHIP';
+    deskLabel = `Estação Tech Lead • ${sectorName}`;
+    coords = { x: 45, y: 40 };
+  } else if (role === 'FULLSTACK_DEV') {
+    zoneId = 'ENGINEERING';
+    deskLabel = `Bancada Dev • ${sectorName}`;
+    coords = { x: 70, y: 65 };
+  } else if (role === 'PRODUCT_DESIGNER') {
+    zoneId = 'MULTIMEDIA';
+    deskLabel = `Bancada Design • ${sectorName}`;
+    coords = { x: 30, y: 65 };
+  } else if (role === 'QA_SECURITY') {
+    zoneId = 'QA';
+    deskLabel = `Bancada QA & Sec • ${sectorName}`;
+    coords = { x: 30, y: 85 };
+  } else if (role === 'GROWTH_SALES') {
+    zoneId = 'GROWTH';
+    deskLabel = `Bancada Growth • ${sectorName}`;
+    coords = { x: 70, y: 85 };
+  }
+
+  SQUAD_OFFICE_POSITIONS[agent.id] = {
+    zoneId,
+    zoneName: sectorName,
+    deskId: `mesa-${agent.id}`,
+    deskLabel,
+    floor: 3,
+    facingDirection: 'SOUTH',
+    coordinates: coords,
+  };
+}
+
+export const AGENT_OFFICE_POSITIONS: Record<string, OfficePosition> = {
+  ...EXECUTIVE_OFFICE_POSITIONS,
+  ...SQUAD_OFFICE_POSITIONS,
 };
 
 export const OPERATIONAL_STATE_LABELS_PT: Record<EmployeeOperationalState, { label: string; tagCls: string }> = {

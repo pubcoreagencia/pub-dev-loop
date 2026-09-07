@@ -1,17 +1,23 @@
-﻿export type AgentDepartment = 'EXECUTIVE' | 'ENGINEERING' | 'QA';
+export type AgentDepartment = 'EXECUTIVE' | 'ENGINEERING' | 'QA' | 'MULTIMEDIA' | 'GROWTH';
 
 export type AgentRole =
   | 'CHIEF_OF_STAFF'
   | 'ARCHITECT'
   | 'DEVELOPER'
   | 'REVIEWER'
-  | 'QA_ENGINEER';
+  | 'QA_ENGINEER'
+  | 'VIDEO_EDITOR'
+  | 'IMAGE_DESIGNER'
+  | 'SOUND_ENGINEER'
+  | 'GROWTH_OPS';
 
 export type AgentRoutingProfile =
   | 'reasoning'
   | 'coding'
   | 'review'
   | 'fast_prototype'
+  | 'multimedia'
+  | 'growth'
   | 'general';
 
 export type AgentStatus = 'ACTIVE' | 'IDLE' | 'PAUSED' | 'DEPRECATED';

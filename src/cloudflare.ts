@@ -22,11 +22,11 @@ export default {
     return apiWorker.fetch(request, env, ctx);
   },
   async scheduled(controller: any, env: Env, ctx: any): Promise<void> {
-    console.log('[Cloudflare Cron Trigger] 24/7 Autonomous Holding tick executed.');
+    console.log('[Cloudflare Cron Trigger] 24/7 Autonomous Holding tick executed via 10-Sector Parallel Bus.');
     if (ctx && typeof ctx.waitUntil === 'function') {
-      ctx.waitUntil(defaultAutonomousOrchestrator.runScheduledTick(env));
+      ctx.waitUntil(defaultAutonomousOrchestrator.runMultiSectorParallelTick(env));
     } else {
-      await defaultAutonomousOrchestrator.runScheduledTick(env);
+      await defaultAutonomousOrchestrator.runMultiSectorParallelTick(env);
     }
   },
 };

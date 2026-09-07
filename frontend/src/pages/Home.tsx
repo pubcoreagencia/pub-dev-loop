@@ -7,6 +7,7 @@ import { GlobalOfficeChat } from '../components/GlobalOfficeChat';
 import { ActivityTimeline } from '../components/ActivityTimeline';
 import { AgentInspector } from '../components/AgentInspector';
 import { AwarenessPanel } from '../components/AwarenessPanel';
+import { FiftyAgentsModal } from '../components/FiftyAgentsModal';
 
 export const Home: React.FC = () => {
   const { loadData, initStream, closeStream, streamStatus } = useStore();
@@ -202,8 +203,30 @@ export const Home: React.FC = () => {
         </button>
 
         <button
+          onClick={() => useStore.getState().setFiftyAgentsModalOpen(true)}
+          title="Ver o Elenco Completo dos 50 Funcionários das 10 Equipes"
+          style={{
+            background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(14, 165, 233, 0.3))',
+            border: '1px solid #38bdf8',
+            borderRadius: '20px',
+            padding: '6px 14px',
+            color: '#38bdf8',
+            fontSize: '12px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            boxShadow: '0 0 12px rgba(56, 189, 248, 0.3)',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          <span>👥</span> 50 Agentes (10 Squads)
+        </button>
+
+        <button
           onClick={() => useStore.getState().setActiveStudioModal('daw')}
-          title="Abrir Logic Pro DAW Multitrack"
+          title="Abrir PUB DAW Multitrack"
           style={{
             background: 'linear-gradient(135deg, #0284c7, #0369a1)',
             border: '1px solid #38bdf8',
@@ -220,13 +243,14 @@ export const Home: React.FC = () => {
             transition: 'all 0.2s ease',
           }}
         >
-          <span>🎛️</span> Logic Pro DAW
+          <span>🎛️</span> PUB DAW
         </button>
       </div>
 
       {/* 7. MODAIS E PAINÉIS DE INSPEÇÃO */}
       <AgentInspector />
       <AwarenessPanel />
+      <FiftyAgentsModal />
     </div>
   );
 };

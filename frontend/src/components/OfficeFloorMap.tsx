@@ -3,9 +3,11 @@ import { useStore } from '../store/useStore';
 import type { AgentDefinition, CeoIdentity } from '../types/office';
 import { OPERATIONAL_STATE_LABELS_PT, SPATIAL_STATE_LABELS_PT } from '../config/officeLayout';
 import { EmployeeAvatar } from './EmployeeAvatar';
+import { getCurrentShift } from '../services/autonomousScheduleData';
 
 export const OfficeFloorMap: React.FC = () => {
   const { agents, ceo, meetingRoom, selectedAgent, selectAgent, speechBubbles } = useStore();
+  const currentShift = getCurrentShift();
 
   const getAgentOrFallback = (id: string, defaultName: string, defaultTitle: string): AgentDefinition => {
     const existing = agents.find((a) => a.id === id);
@@ -33,6 +35,10 @@ export const OfficeFloorMap: React.FC = () => {
   const developer = getAgentOrFallback('developer', 'Developer', 'Desenvolvedor Sênior');
   const reviewer = getAgentOrFallback('reviewer', 'Reviewer', 'Revisor de Código & Segurança');
   const qa = getAgentOrFallback('qa-engineer', 'QA Engineer', 'Engenheiro de QA & Testes');
+  const videoEditor = getAgentOrFallback('video-editor', 'Cauã Martins', 'Audiovisual & Drone Director');
+  const imageDesigner = getAgentOrFallback('image-designer', 'Maya Lin', '3D Artist & Visual Designer');
+  const soundEngineer = getAgentOrFallback('sound-engineer', 'Gabriel Costa', 'Sound Designer & Music Producer');
+  const growthOps = getAgentOrFallback('growth-ops', 'Renata Prado', 'Head of Growth & Lead Ops');
 
   const renderSpeechBubble = (entityId: string) => {
     const bubble = speechBubbles.find((b) => b.senderId === entityId);
@@ -111,6 +117,35 @@ export const OfficeFloorMap: React.FC = () => {
               </div>
             )}
 
+            {/* PROJETO ATIVO DA ESTEIRA AUTÔNOMA */}
+            {agentDef.currentProject && (
+              <div
+                style={{
+                  background: 'rgba(56, 189, 248, 0.12)',
+                  border: '1px solid #0284c7',
+                  borderRadius: '4px',
+                  padding: '2px 5px',
+                  marginTop: '3px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1px',
+                }}
+                title={`Projeto ativo na esteira 24h: ${agentDef.currentProject}`}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ fontSize: '9px' }}>📦</span>
+                  <span style={{ fontSize: '9.5px', fontWeight: 800, color: '#38bdf8' }}>
+                    {agentDef.currentProject}
+                  </span>
+                </div>
+                {agentDef.currentShiftTask && (
+                  <span style={{ fontSize: '8px', color: '#94a3b8', lineHeight: 1.2 }}>
+                    {agentDef.currentShiftTask.slice(0, 48)}...
+                  </span>
+                )}
+              </div>
+            )}
+
             <div className="status-indicator-row">
               <span className="status-pulse-dot"></span>
               <span className="status-label-text">{stateInfo.label}</span>
@@ -126,10 +161,41 @@ export const OfficeFloorMap: React.FC = () => {
       <div className="floor-blueprint-header">
         <div className="blueprint-title-row">
           <span className="blueprint-icon">🏢</span>
-          <span className="blueprint-title">PLANTA DO ESCRITÓRIO • 3º ANDAR</span>
+          <span className="blueprint-title">PLANTA DO ESCRITÓRIO • 50 FUNCIONÁRIOS (10 SQUADS)</span>
+          <button
+            onClick={() => useStore.getState().setFiftyAgentsModalOpen(true)}
+            style={{
+              marginLeft: 'auto',
+              marginRight: '8px',
+              background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(14, 165, 233, 0.3))',
+              border: '1px solid #38bdf8',
+              borderRadius: '12px',
+              padding: '2px 8px',
+              fontSize: '10px',
+              color: '#38bdf8',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+            title="Ver Elenco Completo dos 50 Funcionários"
+          >
+            👥 50 Agentes
+          </button>
+          <span
+            style={{
+              background: 'rgba(56, 189, 248, 0.15)',
+              border: '1px solid #38bdf8',
+              borderRadius: '12px',
+              padding: '2px 8px',
+              fontSize: '10px',
+              color: '#38bdf8',
+              fontWeight: 700,
+            }}
+          >
+            ⏰ {currentShift.name} ({currentShift.timeRange})
+          </span>
         </div>
         <span className="blueprint-legend">
-          BANCADAS EM MOGNO &amp; AÇO • MONITORES CRT • SALAS CORPORATIVAS
+          ESTEIRA 24H: {currentShift.focus}
         </span>
       </div>
 
@@ -208,6 +274,30 @@ export const OfficeFloorMap: React.FC = () => {
           <div className="zone-desks">
             {renderWorkstation(reviewer)}
             {renderWorkstation(qa)}
+          </div>
+        </div>
+
+        {/* ESTÚDIO MULTIMÍDIA, VÍDEO & 3D */}
+        <div className="office-department-zone multimedia-zone" style={{ borderTop: '2px solid #e11d48' }}>
+          <div className="zone-header">
+            <span className="zone-tag" style={{ color: '#fb7185' }}>ESTÚDIO MULTIMÍDIA &amp; PRODUÇÃO 3D</span>
+            <span className="zone-badge" style={{ background: '#881337', color: '#fecdd3' }}>MULTIMÍDIA</span>
+          </div>
+          <div className="zone-desks">
+            {renderWorkstation(videoEditor)}
+            {renderWorkstation(imageDesigner)}
+          </div>
+        </div>
+
+        {/* ESTÚDIO MUSICAL PUB RECORDS & GROWTH HUB */}
+        <div className="office-department-zone growth-zone" style={{ borderTop: '2px solid #06b6d4' }}>
+          <div className="zone-header">
+            <span className="zone-tag" style={{ color: '#22d3ee' }}>PUB RECORDS &amp; HUB DE GROWTH OPS</span>
+            <span className="zone-badge" style={{ background: '#164e63', color: '#cffafe' }}>GROWTH &amp; AUDIO</span>
+          </div>
+          <div className="zone-desks">
+            {renderWorkstation(soundEngineer)}
+            {renderWorkstation(growthOps)}
           </div>
         </div>
       </div>
