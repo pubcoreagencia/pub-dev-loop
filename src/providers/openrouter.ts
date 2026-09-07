@@ -92,7 +92,7 @@ export class OpenRouterProvider implements AgentProvider {
     this.timeoutMs = timeoutMs;
     this.maxToolRounds = Number(process.env.OPENROUTER_MAX_TOOL_ROUNDS ?? 20);
     this.maxToolCalls = Number(process.env.OPENROUTER_MAX_TOOL_CALLS ?? 50);
-    this.model = modelOverride ?? process.env.OPENROUTER_MODEL ?? 'openrouter/free';
+    this.model = modelOverride ?? process.env.OPENROUTER_MODEL ?? (this.apiKey ? 'anthropic/claude-3.5-haiku' : 'openrouter/free');
     this.enableStream = enableStream;
     this.consumer = consumer;
   }
@@ -162,10 +162,13 @@ export class OpenRouterProvider implements AgentProvider {
           const isPaid = !entry.free;
 
           // Cost Guard: verify if paid fallback is permitted before calling
+          const isFallbackPaid = isPaid && entry.model !== cfg.primaryModel;
           if (isPaid && cfg.policy) {
-            const allowed = canUsePaidFallback(cfg.policy, paidAttemptsUsed, accumulatedCostUsd ?? 0);
-            if (!allowed) {
-              continue; // Skip paid model if blocked by budget / max attempts guard
+            if (cfg.policy.limits.maxCostPerTaskUsd !== undefined && (accumulatedCostUsd ?? 0) >= cfg.policy.limits.maxCostPerTaskUsd) {
+              continue; // Skip paid model if task budget is exhausted
+            }
+            if (isFallbackPaid && !canUsePaidFallback(cfg.policy, paidAttemptsUsed, accumulatedCostUsd ?? 0)) {
+              continue; // Skip paid fallback if fallback policy prohibits it
             }
           }
 
@@ -287,8 +290,18 @@ export class OpenRouterProvider implements AgentProvider {
                 if (isLastModel) {
                   clearTimeout(timer);
                   const hasFallbacks = cfg.fallbackModels && cfg.fallbackModels.length > 0;
+                  const isAuth = response.status === 401 || response.status === 403;
+                  const isRateLimit = response.status === 429;
+                  const isServerError = response.status >= 500;
+                  const determinedErrorCode = isAuth
+                    ? 'AUTHENTICATION_FAILURE'
+                    : isRateLimit
+                      ? 'RATE_LIMITED'
+                      : isServerError
+                        ? 'PROVIDER_UNAVAILABLE'
+                        : (hasFallbacks ? 'ALL_PROVIDERS_FAILED' : 'ROUTER_HTTP_ERROR');
                   return {
-                    status: 'ROUTER_HTTP_ERROR',
+                    status: isAuth ? 'FAILED' : 'ROUTER_HTTP_ERROR',
                     provider: this.kind,
                     model: modelUsed ?? model,
                     exitCode: response.status,
@@ -297,10 +310,12 @@ export class OpenRouterProvider implements AgentProvider {
                     stderr: errPayload.message || text,
                     changedFiles: runtime.getChangedFiles(),
                     commit: null,
-                    errorCode: hasFallbacks ? 'ALL_PROVIDERS_FAILED' : 'ROUTER_HTTP_ERROR',
-                    errorMessage: hasFallbacks
-                      ? `All configured OpenRouter models failed: HTTP ${response.status}: ${errPayload.message || ''}`
-                      : `OpenRouter HTTP ${response.status}: ${errPayload.message || ''}`,
+                    errorCode: determinedErrorCode,
+                    errorMessage: isAuth
+                      ? `OpenRouter authentication failed (HTTP ${response.status}): ${errPayload.message || 'Invalid or missing API key'}`
+                      : (hasFallbacks
+                        ? `All configured OpenRouter models failed: HTTP ${response.status}: ${errPayload.message || ''}`
+                        : `OpenRouter HTTP ${response.status}: ${errPayload.message || ''}`),
                     toolCalls: totalToolCalls,
                     toolRounds: toolRounds,
                     httpStatus: response.status,
@@ -526,28 +541,6 @@ export class OpenRouterProvider implements AgentProvider {
                 messages.push({ role: 'tool', content: tr.success ? tr.content : `Error: ${tr.error}`, tool_call_id: tr.toolCallId });
               }
 
-              if (finishReason === 'stop') {
-                clearTimeout(timer);
-                return {
-                  status: 'COMPLETED',
-                  provider: this.kind,
-                  model: modelUsed,
-                  exitCode: 0,
-                  durationMs: Date.now() - started,
-                  stdout: finalMessage,
-                  stderr: '',
-                  changedFiles: runtime.getChangedFiles(),
-                  commit: null,
-                  errorCode: null,
-                  errorMessage: null,
-                  toolCalls: totalToolCalls,
-                  toolRounds: toolRounds,
-                  promptTokens: accumulatedPromptTokens || undefined,
-                  completionTokens: accumulatedCompletionTokens || undefined,
-                  totalTokens: accumulatedTotalTokens || undefined,
-                  costUsd: accumulatedCostUsd,
-                };
-              }
               modelFound = true;
               toolRounds++;
               break;

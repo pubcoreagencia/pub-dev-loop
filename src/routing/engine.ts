@@ -64,8 +64,9 @@ export function buildRoutingPolicy(
   // Tier 2: OpenRouter Free Pool ('openrouter/free') as safety net
   const tier2OpenRouterFreePool = env.OPENROUTER_FREE_POOL_ENABLED !== 'false';
 
-  // Tier 3: Paid Fallback (Strictly guarded, disabled by default)
-  const paidEnabled = env.OPENROUTER_PAID_FALLBACK_ENABLED === 'true';
+  // Tier 3: Paid Fallback (Strictly guarded, enabled by default when API key is present unless explicitly disabled)
+  const hasKey = Boolean(env.OPENROUTER_API_KEY?.trim());
+  const paidEnabled = env.OPENROUTER_PAID_FALLBACK_ENABLED === 'true' || (hasKey && env.OPENROUTER_PAID_FALLBACK_ENABLED !== 'false');
   const envTier3 = env.OPENROUTER_PAID_MODELS?.trim();
   let tier3PaidFallback: string[] = [];
   if (paidEnabled) {

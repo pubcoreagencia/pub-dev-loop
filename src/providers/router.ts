@@ -178,8 +178,18 @@ export class RouterProvider implements AgentProvider {
               if (isLastModel) {
                 clearTimeout(timer);
                 const hasFallbacks = cfg.fallbackModels && cfg.fallbackModels.length > 0;
+                const isAuth = response.status === 401 || response.status === 403;
+                const isRateLimit = response.status === 429;
+                const isServerError = response.status >= 500;
+                const determinedErrorCode = isAuth
+                  ? 'AUTHENTICATION_FAILURE'
+                  : isRateLimit
+                    ? 'RATE_LIMITED'
+                    : isServerError
+                      ? 'PROVIDER_UNAVAILABLE'
+                      : (hasFallbacks ? 'ALL_PROVIDERS_FAILED' : 'ROUTER_HTTP_ERROR');
                 return {
-                  status: hasFallbacks ? 'FAILED' : 'ROUTER_HTTP_ERROR',
+                  status: isAuth ? 'FAILED' : 'ROUTER_HTTP_ERROR',
                   provider: this.kind,
                   model: modelUsed ?? model,
                   exitCode: response.status,
@@ -188,10 +198,12 @@ export class RouterProvider implements AgentProvider {
                   stderr: errPayload.message || text,
                   changedFiles: runtime.getChangedFiles(),
                   commit: null,
-                  errorCode: hasFallbacks ? 'ALL_PROVIDERS_FAILED' : 'ROUTER_HTTP_ERROR',
-                  errorMessage: hasFallbacks
-                    ? `All configured models failed: HTTP ${response.status}: ${errPayload.message || ''}`
-                    : `HTTP ${response.status}: ${errPayload.message || ''}`,
+                  errorCode: determinedErrorCode,
+                  errorMessage: isAuth
+                    ? `9router authentication failed (HTTP ${response.status}): ${errPayload.message || 'Invalid or missing API key'}`
+                    : (hasFallbacks
+                      ? `All configured models failed: HTTP ${response.status}: ${errPayload.message || ''}`
+                      : `HTTP ${response.status}: ${errPayload.message || ''}`),
                   toolCalls: totalToolCalls,
                   toolRounds: toolRounds,
                   httpStatus: response.status,
@@ -302,24 +314,6 @@ export class RouterProvider implements AgentProvider {
               messages.push({ role: 'tool', content: tr.success ? tr.content : `Error: ${tr.error}`, tool_call_id: tr.toolCallId });
             }
 
-            if (finishReason === 'stop') {
-              clearTimeout(timer);
-              return {
-                status: 'COMPLETED',
-                provider: this.kind,
-                model: modelUsed,
-                exitCode: 0,
-                durationMs: Date.now() - started,
-                stdout: finalMessage,
-                stderr: '',
-                changedFiles: runtime.getChangedFiles(),
-                commit: null,
-                errorCode: null,
-                errorMessage: null,
-                toolCalls: totalToolCalls,
-                toolRounds: toolRounds,
-              };
-            }
             modelFound = true;
             toolRounds++;
             break;
