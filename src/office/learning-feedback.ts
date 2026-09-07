@@ -110,11 +110,31 @@ export interface LearningFeedbackResult {
 }
 
 export class LearningFeedbackEngine {
+  private memoryPipeline?: MemoryIngestPipeline;
+  private patternEngine?: PatternDetectionEngine;
+  private candidateEngine?: LessonCandidateEngine;
+
   constructor(
-    private memoryPipeline: MemoryIngestPipeline = defaultMemoryIngestPipeline,
-    private patternEngine: PatternDetectionEngine = defaultPatternDetectionEngine,
-    private candidateEngine: LessonCandidateEngine = defaultLessonCandidateEngine
-  ) {}
+    memoryPipeline?: MemoryIngestPipeline,
+    patternEngine?: PatternDetectionEngine,
+    candidateEngine?: LessonCandidateEngine
+  ) {
+    this.memoryPipeline = memoryPipeline;
+    this.patternEngine = patternEngine;
+    this.candidateEngine = candidateEngine;
+  }
+
+  private getMemoryPipeline(): MemoryIngestPipeline {
+    return this.memoryPipeline ?? defaultMemoryIngestPipeline;
+  }
+
+  private getPatternEngine(): PatternDetectionEngine {
+    return this.patternEngine ?? defaultPatternDetectionEngine;
+  }
+
+  private getCandidateEngine(): LessonCandidateEngine {
+    return this.candidateEngine ?? defaultLessonCandidateEngine;
+  }
 
   public async processFeedback(input: LearningFeedbackInput): Promise<LearningFeedbackResult> {
     const { action, execution, review, qa, isRemediationOfPriorFailure, priorFindingRuleId } = input;
@@ -193,7 +213,7 @@ export class LearningFeedbackEngine {
     // 2. DISPATCH OBSERVATION TO EXISTING MEMORY & PATTERN PIPELINE (Failure Isolated)
     try {
       if (signal === 'REVIEW_BLOCKED') {
-        const evt = await this.memoryPipeline.ingestEvent({
+        const evt = await this.getMemoryPipeline().ingestEvent({
           id: `evt-fb-rev-blk-${taskId}`,
           type: 'REVIEW_BLOCKED',
           actorId: agentId,
@@ -213,7 +233,7 @@ export class LearningFeedbackEngine {
           memoryId = evt.id;
         }
       } else if (signal === 'FAILED_EXECUTION' || signal === 'QA_FAILED' || signal === 'REGRESSION_DETECTED') {
-        const evt = await this.memoryPipeline.ingestEvent({
+        const evt = await this.getMemoryPipeline().ingestEvent({
           id: `evt-fb-fail-${taskId}`,
           type: 'REVIEW_FINDING',
           actorId: agentId,
@@ -235,7 +255,7 @@ export class LearningFeedbackEngine {
           memoryId = evt.id;
         }
       } else if (signal === 'REMEDIATION_VERIFIED' || signal === 'SUCCESSFUL_EXECUTION') {
-        const evt = await this.memoryPipeline.ingestEvent({
+        const evt = await this.getMemoryPipeline().ingestEvent({
           id: `evt-fb-succ-${taskId}`,
           type: 'AGENT_FINISHED_WORK',
           actorId: agentId,

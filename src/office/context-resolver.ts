@@ -314,13 +314,28 @@ export function resolveContext(
   // 6. Look up official repository from Holding Catalog if project is known
   let targetRepoUrl = 'https://github.com/pubcoreagencia/' + (task.project || 'pub-dev-loop') + '.git';
   if (task.project) {
-    for (const sector of PUB_HOLDING_SECTORS) {
-      if (sector.repos.includes(task.project)) {
-        provenances.push({
-          source: 'OFFICE_CATALOG',
-          detail: 'Matched project to Holding Sector: ' + sector.id,
-        });
-        break;
+    if (
+      existsSync(task.project) ||
+      task.project.startsWith('http://') ||
+      task.project.startsWith('https://') ||
+      task.project.startsWith('git@') ||
+      task.project.endsWith('.git')
+    ) {
+      targetRepoUrl = task.project;
+      provenances.push({
+        source: 'REPOSITORY_FILE',
+        path: task.project,
+        detail: 'Direct repository workspace path matched',
+      });
+    } else {
+      for (const sector of PUB_HOLDING_SECTORS) {
+        if (sector.repos.includes(task.project)) {
+          provenances.push({
+            source: 'OFFICE_CATALOG',
+            detail: 'Matched project to Holding Sector: ' + sector.id,
+          });
+          break;
+        }
       }
     }
   }
