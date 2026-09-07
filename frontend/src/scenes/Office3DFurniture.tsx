@@ -301,34 +301,21 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
   isCeo = false,
   agentId,
   deskProps,
-  activeProject,
-  activeTask,
-  operationalState = 'idle',
+  activeProject: _activeProject,
+  activeTask: _activeTask,
+  operationalState: _operationalState = 'idle',
   onClick,
 }) => {
   const tableWidth = isCeo ? 3.4 : 2.4;
   const tableDepth = isCeo ? 1.6 : 1.1;
   const tableHeight = 0.76;
 
-  const scanlineRef = useRef<THREE.Mesh>(null);
-  const lightRef = useRef<THREE.PointLight>(null);
-
-  useFrame(({ clock }) => {
-    const t = clock.getElapsedTime();
-    if (scanlineRef.current) {
-      scanlineRef.current.position.y = Math.sin(t * 3.5) * 0.18;
-    }
-    if (lightRef.current) {
-      lightRef.current.intensity = 1.0 + Math.sin(t * 7) * 0.08;
-    }
-  });
-
   const displayGlow = isCeo ? '#38bdf8' : glowColor;
 
   return (
     <group position={position} rotation={rotation} onClick={onClick}>
       {/* Tampo da Mesa */}
-      <mesh position={[0, tableHeight, 0]} castShadow receiveShadow>
+      <mesh position={[0, tableHeight, 0]} receiveShadow>
         <boxGeometry args={[tableWidth, 0.06, tableDepth]} />
         <meshStandardMaterial
           color={isCeo ? '#2a1810' : '#3b2518'}
@@ -338,109 +325,124 @@ export const WorkstationTable: React.FC<WorkstationProps> = ({
       </mesh>
 
       {/* Pés de Aço Escovado */}
-      <mesh position={[-tableWidth / 2 + 0.12, tableHeight / 2, -tableDepth / 2 + 0.12]} castShadow>
-        <cylinderGeometry args={[0.04, 0.04, tableHeight, 16]} />
+      <mesh position={[-tableWidth / 2 + 0.12, tableHeight / 2, -tableDepth / 2 + 0.12]}>
+        <cylinderGeometry args={[0.04, 0.04, tableHeight, 12]} />
         <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.2} />
       </mesh>
-      <mesh position={[tableWidth / 2 - 0.12, tableHeight / 2, -tableDepth / 2 + 0.12]} castShadow>
-        <cylinderGeometry args={[0.04, 0.04, tableHeight, 16]} />
+      <mesh position={[tableWidth / 2 - 0.12, tableHeight / 2, -tableDepth / 2 + 0.12]}>
+        <cylinderGeometry args={[0.04, 0.04, tableHeight, 12]} />
         <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.2} />
       </mesh>
-      <mesh position={[-tableWidth / 2 + 0.12, tableHeight / 2, tableDepth / 2 - 0.12]} castShadow>
-        <cylinderGeometry args={[0.04, 0.04, tableHeight, 16]} />
+      <mesh position={[-tableWidth / 2 + 0.12, tableHeight / 2, tableDepth / 2 - 0.12]}>
+        <cylinderGeometry args={[0.04, 0.04, tableHeight, 12]} />
         <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.2} />
       </mesh>
-      <mesh position={[tableWidth / 2 - 0.12, tableHeight / 2, tableDepth / 2 - 0.12]} castShadow>
-        <cylinderGeometry args={[0.04, 0.04, tableHeight, 16]} />
+      <mesh position={[tableWidth / 2 - 0.12, tableHeight / 2, tableDepth / 2 - 0.12]}>
+        <cylinderGeometry args={[0.04, 0.04, tableHeight, 12]} />
         <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.2} />
       </mesh>
 
       {/* Monitor com Carcaça e Display Fosforescente Realista */}
       <group position={[0, tableHeight + 0.45, -tableDepth / 3]}>
         <mesh position={[0, -0.22, 0]}>
-          <cylinderGeometry args={[0.03, 0.08, 0.4, 16]} />
+          <cylinderGeometry args={[0.03, 0.08, 0.4, 12]} />
           <meshStandardMaterial color="#1e293b" metalness={0.8} />
         </mesh>
-        <mesh castShadow>
+        <mesh>
           <boxGeometry args={[isCeo ? 1.7 : 1.2, 0.72, 0.1]} />
           <meshStandardMaterial color="#090d16" metalness={0.7} />
         </mesh>
+        {/* Tela Fosforescente Emissiva de Alta Performance */}
         <mesh position={[0, 0, 0.055]}>
           <planeGeometry args={[isCeo ? 1.58 : 1.1, 0.62]} />
           <meshStandardMaterial
-            color={isCeo ? '#042f2e' : '#022c22'}
+            color="#04121a"
             emissive={displayGlow}
-            emissiveIntensity={0.65}
-            roughness={0.15}
+            emissiveIntensity={0.55}
+            roughness={0.2}
           />
         </mesh>
-        <mesh ref={scanlineRef} position={[0, 0, 0.06]}>
-          <planeGeometry args={[isCeo ? 1.54 : 1.05, 0.04]} />
-          <meshBasicMaterial color="#ffffff" transparent opacity={0.28} />
-        </mesh>
 
-        {/* PROJEÇÃO DA TELA DO PC EM TEMPO REAL NO MONITOR */}
-        <Html
-          position={[0, 0, 0.065]}
-          transform
-          distanceFactor={1.2}
-          style={{
-            width: isCeo ? '360px' : '280px',
-            height: isCeo ? '160px' : '140px',
-            pointerEvents: 'none',
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              width: '100%',
-              height: '100%',
-              background: 'rgba(2, 44, 34, 0.88)',
-              border: `1px solid ${displayGlow}`,
-              borderRadius: '4px',
-              padding: '6px 8px',
-              fontFamily: 'Consolas, monospace',
-              fontSize: '8.5px',
-              color: '#34d399',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              boxShadow: `inset 0 0 15px ${displayGlow}44`,
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(52, 211, 153, 0.3)', paddingBottom: '2px' }}>
-              <span style={{ fontWeight: 800, color: '#f8fafc' }}>
-                {isCeo ? '👑 CEO TERMINAL' : `💻 ${activeProject || 'CORE ENGINE'}`}
-              </span>
-              <span style={{ color: displayGlow, fontWeight: 700 }}>
-                {operationalState.toUpperCase()}
-              </span>
-            </div>
-            <div style={{ flex: 1, margin: '4px 0', overflow: 'hidden', fontSize: '7.5px', lineHeight: 1.3 }}>
-              {isCeo ? (
-                <>
-                  <div style={{ color: '#38bdf8' }}>$ pubdevloop status --all-52</div>
-                  <div style={{ color: '#cbd5e1' }}>52/52 Repositórios Monitorados</div>
-                  <div style={{ color: '#facc15' }}>Gateway Primário: OpenRouter (9Router Fallback)</div>
+        {/* Linhas de Código Holográficas WebGL Nativas (Zero custo de DOM) */}
+        {!isCeo && (
+          <group position={[0, 0, 0.058]}>
+            <mesh position={[-0.2, 0.18, 0]}>
+              <planeGeometry args={[0.6, 0.04]} />
+              <meshBasicMaterial color={displayGlow} transparent opacity={0.85} />
+            </mesh>
+            <mesh position={[-0.1, 0.08, 0]}>
+              <planeGeometry args={[0.8, 0.03]} />
+              <meshBasicMaterial color="#34d399" transparent opacity={0.75} />
+            </mesh>
+            <mesh position={[-0.15, -0.02, 0]}>
+              <planeGeometry args={[0.7, 0.03]} />
+              <meshBasicMaterial color="#38bdf8" transparent opacity={0.7} />
+            </mesh>
+            <mesh position={[-0.05, -0.12, 0]}>
+              <planeGeometry args={[0.9, 0.03]} />
+              <meshBasicMaterial color="#a7f3d0" transparent opacity={0.65} />
+            </mesh>
+            <mesh position={[-0.25, -0.2, 0]}>
+              <planeGeometry args={[0.5, 0.025]} />
+              <meshBasicMaterial color={displayGlow} transparent opacity={0.8} />
+            </mesh>
+          </group>
+        )}
+
+        {/* Terminal Dinâmico Interativo APENAS no Monitor do CEO Matheus Paes */}
+        {isCeo && (
+          <>
+            <Html
+              position={[0, 0, 0.065]}
+              transform
+              distanceFactor={1.2}
+              style={{
+                width: '360px',
+                height: '160px',
+                pointerEvents: 'none',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  background: 'rgba(2, 44, 34, 0.92)',
+                  border: `1.5px solid ${displayGlow}`,
+                  borderRadius: '6px',
+                  padding: '8px 10px',
+                  fontFamily: 'Consolas, monospace',
+                  fontSize: '9px',
+                  color: '#34d399',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  boxShadow: `inset 0 0 20px ${displayGlow}55`,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(52, 211, 153, 0.4)', paddingBottom: '3px' }}>
+                  <span style={{ fontWeight: 900, color: '#f8fafc' }}>
+                    👑 CEO TERMINAL • PUB CORE
+                  </span>
+                  <span style={{ color: displayGlow, fontWeight: 700 }}>
+                    50 AGENTES ATIVOS
+                  </span>
+                </div>
+                <div style={{ flex: 1, margin: '4px 0', fontSize: '8px', lineHeight: 1.4 }}>
+                  <div style={{ color: '#38bdf8' }}>$ pubdevloop status --all-52 --60fps</div>
+                  <div style={{ color: '#cbd5e1' }}>52 Repositórios Monitorados • 10 Salas Periféricas</div>
+                  <div style={{ color: '#facc15' }}>Gateway: OpenRouter + 9Router Fallback</div>
                   <div style={{ color: '#34d399' }}>Comandante Matheus Paes Online</div>
-                </>
-              ) : (
-                <>
-                  <div style={{ color: '#38bdf8' }}>$ git pull origin main</div>
-                  <div style={{ color: '#cbd5e1' }}>{activeTask ? `> ${activeTask.slice(0, 42)}...` : '> Autonomia 24h em execução'}</div>
-                  <div style={{ color: '#a7f3d0' }}>[build] Worker bundle compiled 100%</div>
-                  <div style={{ color: '#facc15' }}>[telemetry] Latência Edge: 38ms OK</div>
-                </>
-              )}
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '7px', color: '#6ee7b7' }}>
-              <span>PUB CORE OS</span>
-              <span>LIVE 24H</span>
-            </div>
-          </div>
-        </Html>
-
-        <pointLight ref={lightRef} color={displayGlow} intensity={1.1} distance={2.5} position={[0, 0, 0.3]} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '7.5px', color: '#6ee7b7' }}>
+                  <span>PUB DEV LOOP 24H</span>
+                  <span>SOLID 60 FPS</span>
+                </div>
+              </div>
+            </Html>
+            <pointLight color={displayGlow} intensity={0.8} distance={3} position={[0, 0, 0.3]} />
+          </>
+        )}
       </group>
 
       {/* Teclado e Mouse */}

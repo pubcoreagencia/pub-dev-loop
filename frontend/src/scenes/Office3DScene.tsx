@@ -564,7 +564,11 @@ export const Office3DScene: React.FC = () => {
         </div>
       )}
 
-      <Canvas shadows>
+      <Canvas
+        shadows
+        gl={{ powerPreference: 'high-performance', antialias: true, stencil: false }}
+        dpr={[1, 1.5]}
+      >
         <PerspectiveCamera makeDefault position={[0, 18, 22]} fov={40} />
         <OrbitControls
           ref={controlsRef}
@@ -576,14 +580,15 @@ export const Office3DScene: React.FC = () => {
           target={[0, 1.0, 2]}
         />
 
-        {/* Iluminação Quente de Design de Interiores */}
+        {/* Iluminação Quente de Design de Interiores (Otimizada para 60 FPS) */}
         <ambientLight intensity={0.75} color="#fef3c7" />
         <directionalLight
           position={[12, 24, 16]}
-          intensity={1.4}
+          intensity={1.3}
           castShadow
-          shadow-mapSize-width={2048}
-          shadow-mapSize-height={2048}
+          shadow-mapSize-width={1024}
+          shadow-mapSize-height={1024}
+          shadow-bias={-0.0004}
         />
         <directionalLight position={[-12, 16, -10]} intensity={0.5} color="#38bdf8" />
         <directionalLight position={[14, 14, 4]} intensity={0.6} color="#f59e0b" />

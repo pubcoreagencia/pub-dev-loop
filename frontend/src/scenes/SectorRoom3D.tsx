@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Html } from '@react-three/drei';
 import type { SectorDefinition } from '../config/squadsData';
 import { FIFTY_SPECIALIZED_AGENTS } from '../config/squadsData';
@@ -49,6 +49,7 @@ export const SectorRoom3D: React.FC<SectorRoom3DProps> = ({
   rotation = [0, 0, 0],
   onFocusRoom,
 }) => {
+  const [isRoomHovered, setIsRoomHovered] = useState(false);
   const {
     agents,
     selectedAgent,
@@ -134,7 +135,15 @@ export const SectorRoom3D: React.FC<SectorRoom3DProps> = ({
   };
 
   return (
-    <group position={position} rotation={rotation}>
+    <group
+      position={position}
+      rotation={rotation}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        setIsRoomHovered(true);
+      }}
+      onPointerOut={() => setIsRoomHovered(false)}
+    >
       {/* 1. PISO ELEVADO DA SALA COM BORDA DE LED CHANFRADA */}
       <group position={[0, 0.04, 0]}>
         {/* Base de ardósia escura técnica */}
@@ -184,19 +193,21 @@ export const SectorRoom3D: React.FC<SectorRoom3DProps> = ({
         </mesh>
       </group>
 
-      {/* 2. ILUMINAÇÃO INTERNA DA SALA */}
-      <pointLight
-        position={[0, 3.2, 0]}
-        intensity={isSelected ? 1.4 : 0.65}
-        color={accentColor}
-        distance={9}
-        decay={2}
-      />
+      {/* 2. ILUMINAÇÃO INTERNA DA SALA (Ativa apenas quando a sala está selecionada para zero impacto no frame rate) */}
+      {isSelected && (
+        <pointLight
+          position={[0, 3.2, 0]}
+          intensity={1.4}
+          color={accentColor}
+          distance={9}
+          decay={2}
+        />
+      )}
 
       {/* 3. PAREDE DE FUNDO ACÚSTICA COM PAINEL DE CONTROLE / DASHBOARD DO SETOR */}
       <group position={[0, 1.9, -3.65]}>
         {/* Parede Sólida de Fundo */}
-        <mesh castShadow receiveShadow>
+        <mesh receiveShadow>
           <boxGeometry args={[9.2, 3.8, 0.15]} />
           <meshStandardMaterial color="#090d16" roughness={0.7} metalness={0.3} />
         </mesh>
@@ -207,75 +218,87 @@ export const SectorRoom3D: React.FC<SectorRoom3DProps> = ({
           <meshStandardMaterial color="#020617" roughness={0.3} metalness={0.8} />
         </mesh>
 
-        {/* Dashboard Holográfico do Setor no Fundo */}
-        <Html
-          position={[0, 0.35, 0.12]}
-          transform
-          scale={0.16}
-          center
-          style={{ pointerEvents: 'none' }}
-        >
-          <div
-            style={{
-              width: '540px',
-              background: 'rgba(5, 10, 24, 0.95)',
-              border: `1.5px solid ${accentColor}`,
-              borderRadius: '12px',
-              padding: '12px 18px',
-              color: '#f8fafc',
-              boxShadow: `0 0 25px ${accentColor}44`,
-              fontFamily: 'Inter, sans-serif',
-            }}
+        {/* Dashboard Holográfico do Setor no Fundo (Renderizado apenas quando selecionado para máxima performance WebGL) */}
+        {isSelected ? (
+          <Html
+            position={[0, 0.35, 0.12]}
+            transform
+            scale={0.16}
+            center
+            style={{ pointerEvents: 'none' }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.12)', paddingBottom: '8px', marginBottom: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>{icon}</span>
-                <div>
-                  <div style={{ fontSize: '13px', fontWeight: 800, color: accentColor }}>
-                    SETOR {sectorNumber}: {sector.name.split(':')[1]?.trim() || sector.name}
-                  </div>
-                  <div style={{ fontSize: '10px', color: '#94a3b8' }}>
-                    Squad de 5 Especialistas • Status: Ativo 24h
+            <div
+              style={{
+                width: '540px',
+                background: 'rgba(5, 10, 24, 0.95)',
+                border: `1.5px solid ${accentColor}`,
+                borderRadius: '12px',
+                padding: '12px 18px',
+                color: '#f8fafc',
+                boxShadow: `0 0 25px ${accentColor}44`,
+                fontFamily: 'Inter, sans-serif',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.12)', paddingBottom: '8px', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '20px' }}>{icon}</span>
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: accentColor }}>
+                      SETOR {sectorNumber}: {sector.name.split(':')[1]?.trim() || sector.name}
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#94a3b8' }}>
+                      Squad de 5 Especialistas • Status: Ativo 24h
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: `${accentColor}22`, border: `1px solid ${accentColor}`, borderRadius: '12px', padding: '3px 8px' }}>
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
-                <span style={{ fontSize: '9px', fontWeight: 800, color: '#38bdf8' }}>ONLINE</span>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '10px' }}>
-              <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '6px', padding: '6px' }}>
-                <div style={{ color: '#94a3b8', fontSize: '9px', fontWeight: 700, marginBottom: '3px' }}>
-                  📦 REPOSITÓRIOS DESIGNADOS ({sector.repos.length})
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                  {sector.repos.slice(0, 4).map((r) => (
-                    <span key={r} style={{ background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.4)', borderRadius: '4px', padding: '1px 5px', color: '#e0f2fe', fontSize: '9px' }}>
-                      {r}
-                    </span>
-                  ))}
-                  {sector.repos.length > 4 && (
-                    <span style={{ color: '#94a3b8', fontSize: '9px' }}>+{sector.repos.length - 4} mais</span>
-                  )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: `${accentColor}22`, border: `1px solid ${accentColor}`, borderRadius: '12px', padding: '3px 8px' }}>
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
+                  <span style={{ fontSize: '9px', fontWeight: 800, color: '#38bdf8' }}>ONLINE</span>
                 </div>
               </div>
 
-              <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '6px', padding: '6px' }}>
-                <div style={{ color: '#94a3b8', fontSize: '9px', fontWeight: 700, marginBottom: '3px' }}>
-                  ⚡ BENCHMARKING DE IA ATIVO
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '10px' }}>
+                <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '6px', padding: '6px' }}>
+                  <div style={{ color: '#94a3b8', fontSize: '9px', fontWeight: 700, marginBottom: '3px' }}>
+                    📦 REPOSITÓRIOS DESIGNADOS ({sector.repos.length})
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                    {sector.repos.slice(0, 4).map((r) => (
+                      <span key={r} style={{ background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.4)', borderRadius: '4px', padding: '1px 5px', color: '#e0f2fe', fontSize: '9px' }}>
+                        {r}
+                      </span>
+                    ))}
+                    {sector.repos.length > 4 && (
+                      <span style={{ color: '#94a3b8', fontSize: '9px' }}>+{sector.repos.length - 4} mais</span>
+                    )}
+                  </div>
                 </div>
-                <div style={{ color: '#facc15', fontSize: '10px', fontWeight: 700 }}>
-                  {techLead?.preferredModel || 'minimax/minimax-m3:free'}
-                </div>
-                <div style={{ color: '#94a3b8', fontSize: '9px', marginTop: '2px' }}>
-                  Fallback: 9Router • Latência: 120ms
+
+                <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '6px', padding: '6px' }}>
+                  <div style={{ color: '#94a3b8', fontSize: '9px', fontWeight: 700, marginBottom: '3px' }}>
+                    ⚡ BENCHMARKING DE IA ATIVO
+                  </div>
+                  <div style={{ color: '#facc15', fontSize: '10px', fontWeight: 700 }}>
+                    {techLead?.preferredModel || 'minimax/minimax-m3:free'}
+                  </div>
+                  <div style={{ color: '#94a3b8', fontSize: '9px', marginTop: '2px' }}>
+                    Fallback: 9Router • Latência: 120ms
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </Html>
+          </Html>
+        ) : (
+          <mesh position={[0, 0.35, 0.08]}>
+            <boxGeometry args={[5.0, 1.6, 0.02]} />
+            <meshStandardMaterial
+              color="#030712"
+              emissive={accentColor}
+              emissiveIntensity={0.25}
+              roughness={0.4}
+            />
+          </mesh>
+        )}
       </group>
 
       {/* 4. PAREDES LATERAIS E FRONTAIS DE VIDRO COM ESQUADRIAS ESCURAS */}
@@ -348,24 +371,24 @@ export const SectorRoom3D: React.FC<SectorRoom3DProps> = ({
 
       {/* 5. PÓRTICO NEON DE ENTRADA (VÃO ABERTO DE 3.2M PARA PASSAGEM DO KART E PESSOAS) */}
       {/* Coluna Esquerda do Pórtico */}
-      <mesh position={[-1.6, 1.9, 3.65]} castShadow>
+      <mesh position={[-1.6, 1.9, 3.65]}>
         <boxGeometry args={[0.16, 3.8, 0.2]} />
         <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.2} />
       </mesh>
       {/* Coluna Direita do Pórtico */}
-      <mesh position={[1.6, 1.9, 3.65]} castShadow>
+      <mesh position={[1.6, 1.9, 3.65]}>
         <boxGeometry args={[0.16, 3.8, 0.2]} />
         <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.2} />
       </mesh>
       {/* Viga Superior do Pórtico */}
-      <mesh position={[0, 3.4, 3.65]} castShadow>
+      <mesh position={[0, 3.4, 3.65]}>
         <boxGeometry args={[3.36, 0.45, 0.24]} />
         <meshStandardMaterial color="#090d16" metalness={0.8} roughness={0.3} />
       </mesh>
       {/* Faixa Emissiva de LED no Pórtico */}
       <mesh position={[0, 3.16, 3.78]}>
         <boxGeometry args={[3.2, 0.04, 0.04]} />
-        <meshStandardMaterial color={accentColor} emissive={accentColor} emissiveIntensity={isSelected ? 3.0 : 1.5} />
+        <meshStandardMaterial color={accentColor} emissive={accentColor} emissiveIntensity={isSelected ? 3.0 : isRoomHovered ? 2.4 : 1.5} />
       </mesh>
 
       {/* Placa Letreiro Holográfico da Entrada */}
@@ -379,9 +402,9 @@ export const SectorRoom3D: React.FC<SectorRoom3DProps> = ({
           onClick={handleRoomClick}
           style={{
             cursor: 'pointer',
-            background: isSelected ? 'rgba(15, 23, 42, 0.98)' : 'rgba(15, 23, 42, 0.88)',
+            background: (isSelected || isRoomHovered) ? 'rgba(15, 23, 42, 0.98)' : 'rgba(15, 23, 42, 0.88)',
             border: `2px solid ${accentColor}`,
-            boxShadow: `0 0 20px ${accentColor}${isSelected ? 'bb' : '55'}`,
+            boxShadow: `0 0 20px ${accentColor}${isSelected ? 'bb' : isRoomHovered ? '99' : '55'}`,
             borderRadius: '16px',
             padding: '6px 16px',
             display: 'flex',

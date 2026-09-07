@@ -38,6 +38,7 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
   const isJukeboxOpen = useStore((s) => s.isJukeboxOpen);
   const isConferenceActive = useStore((s) => s.isConferenceActive);
   const isKartActive = useStore((s) => s.isKartActive);
+  const [isHovered, setIsHovered] = useState(false);
 
   const { camera, controls } = useThree();
 
@@ -320,7 +321,17 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
   const skinColor = '#fed7aa';
 
   return (
-    <group ref={groupRef} position={position} rotation={rotation} onClick={onClick}>
+    <group
+      ref={groupRef}
+      position={position}
+      rotation={rotation}
+      onClick={onClick}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        setIsHovered(true);
+      }}
+      onPointerOut={() => setIsHovered(false)}
+    >
       {/* Luz focal e halo de seleção quando clicado */}
       {isSelected && (
         <pointLight color={avatar.accentColor} intensity={2.2} distance={3.2} position={[0, 2.0, 0]} />
@@ -331,18 +342,18 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
       <group ref={leftLegGroupRef} position={[-0.15, 0.46, 0]}>
         {/* Coxa Articulada */}
         <group ref={leftThighRef} position={[0, 0, 0]}>
-          <mesh position={[0, -0.16, 0]} castShadow>
+          <mesh position={[0, -0.16, 0]}>
             <boxGeometry args={[0.16, 0.32, 0.16]} />
             <meshStandardMaterial color={suitColor} roughness={0.7} />
           </mesh>
           {/* Canela / Joelho Articulado */}
           <group ref={leftShinRef} position={[0, -0.32, 0]}>
-            <mesh position={[0, -0.14, 0]} castShadow>
+            <mesh position={[0, -0.14, 0]}>
               <boxGeometry args={[0.14, 0.28, 0.14]} />
               <meshStandardMaterial color={suitColor} roughness={0.7} />
             </mesh>
             {/* Sapato Clássico Oxford */}
-            <mesh position={[0, -0.27, 0.04]} castShadow>
+            <mesh position={[0, -0.27, 0.04]}>
               <boxGeometry args={[0.15, 0.07, 0.22]} />
               <meshStandardMaterial color="#09090b" roughness={0.5} />
             </mesh>
@@ -354,18 +365,18 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
       <group ref={rightLegGroupRef} position={[0.15, 0.46, 0]}>
         {/* Coxa Articulada */}
         <group ref={rightThighRef} position={[0, 0, 0]}>
-          <mesh position={[0, -0.16, 0]} castShadow>
+          <mesh position={[0, -0.16, 0]}>
             <boxGeometry args={[0.16, 0.32, 0.16]} />
             <meshStandardMaterial color={suitColor} roughness={0.7} />
           </mesh>
           {/* Canela / Joelho Articulado */}
           <group ref={rightShinRef} position={[0, -0.32, 0]}>
-            <mesh position={[0, -0.14, 0]} castShadow>
+            <mesh position={[0, -0.14, 0]}>
               <boxGeometry args={[0.14, 0.28, 0.14]} />
               <meshStandardMaterial color={suitColor} roughness={0.7} />
             </mesh>
             {/* Sapato Clássico Oxford */}
-            <mesh position={[0, -0.27, 0.04]} castShadow>
+            <mesh position={[0, -0.27, 0.04]}>
               <boxGeometry args={[0.15, 0.07, 0.22]} />
               <meshStandardMaterial color="#09090b" roughness={0.5} />
             </mesh>
@@ -373,7 +384,7 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
         </group>
       </group>
 
-      {/* 2. TRONCO / CORPO COM TERNO DA PERSONA */}
+      {/* 2. TRONCO / CORPO COM TERNO DA PERSONA (Única malha que projeta sombra para 60 FPS ultra fluidos) */}
       <mesh position={[0, 0.88, 0]} castShadow>
         <boxGeometry args={[0.55, 0.72, 0.35]} />
         <meshStandardMaterial color={suitColor} roughness={0.7} />
@@ -390,13 +401,13 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
       </mesh>
 
       {/* Braço Esquerdo Articulado */}
-      <mesh ref={leftArmRef} position={[-0.34, 1.05, 0]} castShadow>
+      <mesh ref={leftArmRef} position={[-0.34, 1.05, 0]}>
         <boxGeometry args={[0.12, 0.48, 0.12]} />
         <meshStandardMaterial color={suitColor} roughness={0.7} />
       </mesh>
 
       {/* Braço Direito Articulado */}
-      <mesh ref={rightArmRef} position={[0.34, 1.05, 0]} castShadow>
+      <mesh ref={rightArmRef} position={[0.34, 1.05, 0]}>
         <boxGeometry args={[0.12, 0.48, 0.12]} />
         <meshStandardMaterial color={suitColor} roughness={0.7} />
       </mesh>
@@ -413,20 +424,20 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
 
       {/* 3. CABEÇA E CABELO */}
       <group ref={headRef} position={[0, 1.35, 0]}>
-        <mesh castShadow>
+        <mesh>
           <boxGeometry args={[0.34, 0.34, 0.32]} />
           <meshStandardMaterial color={skinColor} />
         </mesh>
 
         {/* Cabelo Fiel à Persona (Estilo e Gênero) */}
         {/* Topo do cabelo */}
-        <mesh position={[0, 0.15, -0.02]} castShadow>
+        <mesh position={[0, 0.15, -0.02]}>
           <boxGeometry args={[0.36, 0.14, 0.34]} />
           <meshStandardMaterial color={hairColor} roughness={0.9} />
         </mesh>
         
         {/* Costas do cabelo padrão */}
-        <mesh position={[0, 0.06, -0.16]} castShadow>
+        <mesh position={[0, 0.06, -0.16]}>
           <boxGeometry args={[0.36, 0.26, 0.06]} />
           <meshStandardMaterial color={hairColor} roughness={0.9} />
         </mesh>
@@ -434,7 +445,7 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
         {/* PONYTAIL (Maya Lin) */}
         {avatar.hairStyle === 'PONYTAIL' && (
           <group position={[0, 0.08, -0.21]}>
-            <mesh rotation={[0.4, 0, 0]} castShadow>
+            <mesh rotation={[0.4, 0, 0]}>
               <cylinderGeometry args={[0.06, 0.09, 0.35, 12]} />
               <meshStandardMaterial color={hairColor} roughness={0.8} />
             </mesh>
@@ -450,11 +461,11 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
         {avatar.hairStyle === 'BOB' && (
           <>
             {/* Laterais retas descendo até a bochecha */}
-            <mesh position={[-0.18, -0.04, 0]} castShadow>
+            <mesh position={[-0.18, -0.04, 0]}>
               <boxGeometry args={[0.05, 0.3, 0.28]} />
               <meshStandardMaterial color={hairColor} roughness={0.85} />
             </mesh>
-            <mesh position={[0.18, -0.04, 0]} castShadow>
+            <mesh position={[0.18, -0.04, 0]}>
               <boxGeometry args={[0.05, 0.3, 0.28]} />
               <meshStandardMaterial color={hairColor} roughness={0.85} />
             </mesh>
@@ -469,15 +480,15 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
         {/* LONG (Beatriz Mendes) */}
         {avatar.hairStyle === 'LONG' && (
           <>
-            <mesh position={[-0.18, -0.12, -0.02]} castShadow>
+            <mesh position={[-0.18, -0.12, -0.02]}>
               <boxGeometry args={[0.05, 0.44, 0.26]} />
               <meshStandardMaterial color={hairColor} roughness={0.85} />
             </mesh>
-            <mesh position={[0.18, -0.12, -0.02]} castShadow>
+            <mesh position={[0.18, -0.12, -0.02]}>
               <boxGeometry args={[0.05, 0.44, 0.26]} />
               <meshStandardMaterial color={hairColor} roughness={0.85} />
             </mesh>
-            <mesh position={[0, -0.15, -0.16]} castShadow>
+            <mesh position={[0, -0.15, -0.16]}>
               <boxGeometry args={[0.34, 0.46, 0.06]} />
               <meshStandardMaterial color={hairColor} roughness={0.85} />
             </mesh>
@@ -488,7 +499,7 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
         {avatar.hairStyle === 'MESSY' && (
           <group position={[0, 0.22, 0]}>
             {[-0.1, 0, 0.1].map((x, i) => (
-              <mesh key={`messy-${i}`} position={[x, 0, 0.02]} rotation={[0, 0, (i - 1) * 0.25]} castShadow>
+              <mesh key={`messy-${i}`} position={[x, 0, 0.02]} rotation={[0, 0, (i - 1) * 0.25]}>
                 <coneGeometry args={[0.06, 0.14, 6]} />
                 <meshStandardMaterial color={hairColor} roughness={0.9} />
               </mesh>
@@ -571,8 +582,8 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
         </Html>
       )}
 
-      {/* Crachá Flutuante Elegante com Nome e Cargo (Ocultado quando pilotando kart para visão limpa) */}
-      {!isJukeboxOpen && !isKartActive && (
+      {/* Crachá Flutuante: Exibido para o CEO, ou quando o avatar está selecionado, ou no hover com o mouse */}
+      {!isJukeboxOpen && !isKartActive && (isCeo || isSelected || isHovered) && (
         <Html position={[0, 2.1, 0]} center distanceFactor={11} style={{ pointerEvents: 'none' }}>
           <div
             style={{
