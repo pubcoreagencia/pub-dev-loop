@@ -38,6 +38,8 @@ import { defaultApprovalManager } from './office/approval.js';
 import { authenticateOfficeRequest } from './office/auth.js';
 import { defaultMemoryStore, defaultMemoryRetrievalEngine, defaultOrganizationalAwarenessEngine, defaultDailySkillEngine, defaultAutonomousPipelineEngine } from './office/memory.js';
 import { PUB_HOLDING_SECTORS, buildProjectSquad, getSectorForRepo } from './office/squads.js';
+import { parseEngineeringTask, validateEngineeringTask, createEngineeringPlan, engineeringTaskToTask } from './office/intent.js';
+import { resolveContext } from './office/context-resolver.js';
 
 export interface HyperdriveBinding {
   connectionString: string;
@@ -4179,17 +4181,14 @@ ${d.commits.slice(0, 3).join('\n') || '- Repositório sincronizado na branch pri
           });
         }
 
-        if (
-          !body ||
-          typeof body !== 'object' ||
-          typeof body.project !== 'string' || !body.project.trim() ||
-          typeof body.repository !== 'string' || !body.repository.trim() ||
-          typeof body.objective !== 'string' || !body.objective.trim() ||
-          typeof body.prompt !== 'string' || !body.prompt.trim()
-        ) {
-          console.log(JSON.stringify({ event: 'TASK_REQUEST_REJECTED', reason: 'Missing required fields', clientIp, path, timestamp: new Date().toISOString() }));
+        const rawIntent = (typeof body?.prompt === 'string' && body.prompt.trim())
+          ? body.prompt.trim()
+          : (typeof body?.objective === 'string' && body.objective.trim() ? body.objective.trim() : '');
+
+        if (!rawIntent) {
+          console.log(JSON.stringify({ event: 'TASK_REQUEST_REJECTED', reason: 'Missing required prompt or objective', clientIp, path, timestamp: new Date().toISOString() }));
           return new Response(
-            JSON.stringify({ error: 'project, repository, objective and prompt are required string fields' }),
+            JSON.stringify({ error: 'prompt or objective is required' }),
             { status: 400, headers: { 'Content-Type': 'application/json' } }
           );
         }
@@ -4214,23 +4213,66 @@ ${d.commits.slice(0, 3).join('\n') || '- Repositório sincronizado na branch pri
           }
         }
 
-        const repo = getRepository(env);
-        const task = await repo.create({
-          project: body.project.trim(),
-          repository: body.repository.trim(),
-          objective: body.objective.trim(),
-          prompt: body.prompt.trim(),
-          priority: typeof body.priority === 'number' ? body.priority : undefined,
-          agentId: typeof body.agentId === 'string' ? body.agentId.trim() : undefined,
+        // PHASE 1: Canonical EngineeringTask Intake Pipeline
+        // 1. Transform raw prompt/intent into structured EngineeringTask
+        const engTask = parseEngineeringTask({
+          prompt: rawIntent,
+          project: typeof body.project === 'string' && body.project.trim() ? body.project.trim() : undefined,
         });
 
-        console.log(JSON.stringify({ event: 'TASK_REQUEST_ACCEPTED', taskId: task.id, project: task.project, clientIp, timestamp: new Date().toISOString() }));
+        // 2. Validate structural integrity
+        const validation = validateEngineeringTask(engTask);
+        if (!validation.valid) {
+          console.log(JSON.stringify({ event: 'TASK_REQUEST_REJECTED', reason: 'Invalid EngineeringTask contract: ' + validation.errors.join('; '), clientIp, path, timestamp: new Date().toISOString() }));
+          return new Response(
+            JSON.stringify({ error: 'EngineeringTask validation failed: ' + validation.errors.join('; ') }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // 3. Resolve context from repository and unknowns
+        const resolvedContext = resolveContext(engTask);
+
+        // 4. Formulate Engineering Plan enriched with discovered evidence
+        const engineeringPlan = createEngineeringPlan(engTask, resolvedContext);
+
+        // 5. Bridge to existing runtime Task contract
+        const runtimeTaskInput = engineeringTaskToTask(
+          engTask,
+          {
+            project: typeof body.project === 'string' && body.project.trim() ? body.project.trim() : engTask.project,
+            repository: typeof body.repository === 'string' && body.repository.trim() ? body.repository.trim() : resolvedContext.repository,
+            priority: typeof body.priority === 'number' ? body.priority : undefined,
+            agentId: typeof body.agentId === 'string' ? body.agentId.trim() : undefined,
+          },
+          resolvedContext,
+          engineeringPlan
+        );
+
+        const repo = getRepository(env);
+        const task = await repo.create(runtimeTaskInput);
+
+        console.log(JSON.stringify({
+          event: 'TASK_REQUEST_ACCEPTED',
+          taskId: task.id,
+          project: task.project,
+          task_type: engTask.task_type,
+          risk_level: engTask.risk_level,
+          human_approval_required: engTask.human_approval_required,
+          clientIp,
+          timestamp: new Date().toISOString(),
+        }));
 
         if (ctx && typeof ctx.waitUntil === 'function') {
           ctx.waitUntil(triggerContainerWorker(env));
         }
 
-        return new Response(JSON.stringify(task), {
+        return new Response(JSON.stringify({
+          ...task,
+          engineeringTask: engTask,
+          resolvedContext,
+          engineeringPlan,
+        }), {
           status: 201,
           headers: { 'Content-Type': 'application/json' },
         });

@@ -21,6 +21,8 @@ import { defaultCodeReviewManager } from './office/review.js';
 import { defaultApprovalManager } from './office/approval.js';
 import { authenticateOfficeRequest } from './office/auth.js';
 import { defaultMemoryStore, defaultMemoryRetrievalEngine, defaultOrganizationalAwarenessEngine, defaultDailySkillEngine, defaultAutonomousPipelineEngine } from './office/memory.js';
+import { parseEngineeringTask, validateEngineeringTask, createEngineeringPlan, engineeringTaskToTask } from './office/intent.js';
+import { resolveContext } from './office/context-resolver.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const prototypeEvents = new PrototypeEventStream();
@@ -57,6 +59,71 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     const agent = defaultAgentRegistry.getAgent(req.params.id);
     if (!agent) return res.status(404).json({ error: 'Agent not found' });
     return res.json({ agent });
+  });
+
+  // POST /tasks — Canonical Phase 1 EngineeringTask Intake
+  app.post('/tasks', async (req, res, next) => {
+    try {
+      const body = req.body ?? {};
+      const rawPrompt = typeof body.prompt === 'string' && body.prompt.trim()
+        ? body.prompt.trim()
+        : (typeof body.objective === 'string' ? body.objective.trim() : '');
+
+      if (!rawPrompt) {
+        return res.status(400).json({ error: 'prompt or objective is required' });
+      }
+
+      // 1. Parse raw prompt/intent into structured EngineeringTask
+      const engTask = parseEngineeringTask({
+        prompt: rawPrompt,
+        project: typeof body.project === 'string' ? body.project.trim() : undefined,
+      });
+
+      // 2. Validate structural integrity
+      const validation = validateEngineeringTask(engTask);
+      if (!validation.valid) {
+        return res.status(400).json({ error: 'EngineeringTask validation failed: ' + validation.errors.join('; ') });
+      }
+
+      // 3. Resolve context from repository and unknowns
+      const resolvedContext = resolveContext(engTask);
+
+      // 4. Formulate Engineering Plan enriched with discovered evidence
+      const engineeringPlan = createEngineeringPlan(engTask, resolvedContext);
+
+      // 5. Bridge to existing runtime Task contract
+      const runtimeTaskInput = engineeringTaskToTask(
+        engTask,
+        {
+          project: body.project?.trim() || engTask.project,
+          repository: body.repository?.trim() || resolvedContext.repository,
+          priority: typeof body.priority === 'number' ? body.priority : undefined,
+          agentId: typeof body.agentId === 'string' ? body.agentId.trim() : undefined,
+        },
+        resolvedContext,
+        engineeringPlan
+      );
+
+      const task = await tasks.create(runtimeTaskInput);
+
+      return res.status(201).json({
+        ...task,
+        engineeringTask: engTask,
+        resolvedContext,
+        engineeringPlan,
+      });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  app.get('/tasks', async (_req, res, next) => {
+    try {
+      const allTasks = await tasks.list();
+      return res.json(allTasks);
+    } catch (err) {
+      return next(err);
+    }
   });
   app.post('/office/plans', (req, res) => {
     try {

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Task } from '../domain.js';
 import { PUB_HOLDING_SECTORS } from './squads.js';
+import type { ResolvedContext } from './context-resolver.js';
 
 export type TaskType =
   | 'QUESTION'
@@ -143,6 +144,9 @@ export function classifyTaskType(prompt: string): TaskType {
     p.includes('corrija o erro') ||
     p.includes('corrija o checkout') ||
     p.includes('falha ao') ||
+    p.includes('falha') ||
+    p.includes('falhando') ||
+    p.includes('erro') ||
     p.includes('fix ') ||
     p.includes('bug')
   ) {
@@ -288,7 +292,7 @@ function extractObservationAndSolution(rawPrompt: string): {
   const clean = rawPrompt.trim();
 
   // Pattern: Observation +  Acho que precisa / Sugiro / Deveria / Criar...
-  const splitRegex = /(?:acho que (?:precisa|deveria|tem que)|sugiro que|deveria ser feito|solução proposta:|minha ideia é)\s*(.*)/i;
+  const splitRegex = /(?:acho que (?:precisa|deveria|tem que)|sugiro (?:que )?|sugeriu (?:que )?|o usuário (?:disse|sugeriu|pediu) para |deveria ser feito|solução proposta:|minha ideia é|recomendo (?:que )?)\s*(.*)/i;
   const match = clean.match(splitRegex);
 
   if (match && match.index !== undefined) {
@@ -328,14 +332,21 @@ export function evaluateRisk(
   if (
     p.includes('produção') ||
     p.includes('production') ||
-    p.includes('deploy') ||
     p.includes('drop table') ||
-    p.includes('truncate') ||
-    p.includes('delete from') ||
-    p.includes('destrutiv') ||
+    p.includes('delete branch') ||
     p.includes('force push')
   ) {
     return { riskLevel: 'CRITICAL', humanApprovalRequired: true };
+  }
+
+  // LOW: Documentation, questions, README updates take precedence before general feature logic
+  if (
+    p.includes('readme') ||
+    p.includes('documentar') ||
+    p.includes('documentação') ||
+    taskType === 'QUESTION'
+  ) {
+    return { riskLevel: 'LOW', humanApprovalRequired: false };
   }
 
   // HIGH: Database migrations, security changes, financial/Pix/payment logic, auth tokens
@@ -346,6 +357,8 @@ export function evaluateRisk(
     p.includes('migration') ||
     p.includes('pix') ||
     p.includes('pagamento') ||
+    p.includes('cartão') ||
+    p.includes('gateway') ||
     p.includes('payment') ||
     p.includes('auth') ||
     p.includes('senha') ||
@@ -546,9 +559,13 @@ export function validateEngineeringTask(task: any): ValidationResult {
 }
 
 /**
- * Creates canonical structured lifecycle phases for executing an EngineeringTask.
+ * Creates canonical structured lifecycle phases for executing an EngineeringTask, enriched with resolved context.
  */
-export function createEngineeringPlan(task: EngineeringTask): EngineeringPlan {
+export function createEngineeringPlan(task: EngineeringTask, resolvedContext?: ResolvedContext): EngineeringPlan {
+  const discoveredFilesList = resolvedContext?.relevant_files && resolvedContext.relevant_files.length > 0
+    ? resolvedContext.relevant_files
+    : ['List of discovered files'];
+
   const phases: EngineeringPlanPhase[] = [
     {
       phase: 'DISCOVERY',
@@ -557,8 +574,12 @@ export function createEngineeringPlan(task: EngineeringTask): EngineeringPlan {
         'Inspect workspace root and package.json',
         'Read files associated with scope: [' + task.scope.join(', ') + ']',
         'Clarify unknowns: [' + task.unknowns.join('; ') + ']',
+        ...(resolvedContext?.resolved_unknowns.map(r => 'Investigate discovered candidate path: ' + r.discoveredPaths.slice(0, 3).join(', ')) || []),
       ],
-      expected_evidence: ['List of discovered files', 'Workspace snapshot verification'],
+      expected_evidence: [
+        'Workspace snapshot verification',
+        ...discoveredFilesList.slice(0, 5),
+      ],
     },
     {
       phase: 'ANALYSIS',
@@ -568,7 +589,11 @@ export function createEngineeringPlan(task: EngineeringTask): EngineeringPlan {
         task.user_proposed_solution ? 'Validate feasibility of proposed idea: ' + task.user_proposed_solution : 'Identify technical options',
         'Evaluate constraints: [' + task.constraints.join('; ') + ']',
       ],
-      expected_evidence: ['Technical rationale', 'Selected implementation approach'],
+      expected_evidence: [
+        'Technical rationale',
+        'Selected implementation approach',
+        ...(resolvedContext?.unresolved_unknowns.map(u => 'Unresolved discovery flag: ' + u) || []),
+      ],
     },
     {
       phase: 'PLANNING',
@@ -596,6 +621,7 @@ export function createEngineeringPlan(task: EngineeringTask): EngineeringPlan {
         'Execute npm run typecheck',
         'Run targeted automated test suite',
         'Verify acceptance criteria',
+        ...(resolvedContext?.existing_tests.map(t => 'Run test: ' + t) || []),
       ],
       expected_evidence: ['Test execution logs with 100% pass', 'Zero compilation errors'],
     },
@@ -623,7 +649,9 @@ export function createEngineeringPlan(task: EngineeringTask): EngineeringPlan {
  */
 export function engineeringTaskToTask(
   engTask: EngineeringTask,
-  overrides?: Partial<Task>
+  overrides?: Partial<Task>,
+  resolvedContext?: ResolvedContext,
+  plan?: EngineeringPlan
 ): Task {
   const structuredPrompt = [
     'OBJETIVO DE ENGENHARIA: ' + engTask.objective,
@@ -631,6 +659,7 @@ export function engineeringTaskToTask(
     engTask.user_proposed_solution ? 'SUGESTÃO DO USUÁRIO: ' + engTask.user_proposed_solution + ' (Validar tecnicamente antes de aplicar)' : '',
     'TIPO DE TAREFA: ' + engTask.task_type + ' | NÍVEL DE RISCO: ' + engTask.risk_level,
     'ESCOPO: ' + engTask.scope.join(', '),
+    resolvedContext && resolvedContext.relevant_files.length > 0 ? 'ARQUIVOS RELEVANTES IDENTIFICADOS:\n' + resolvedContext.relevant_files.slice(0, 8).map(f => '  - ' + f).join('\n') : '',
     'CRITÉRIOS DE ACEITE OBRIGATÓRIOS:',
     ...engTask.acceptance_criteria.map((c, i) => '  ' + (i + 1) + '. ' + c),
     'RESTRIÇÕES:',
@@ -642,7 +671,7 @@ export function engineeringTaskToTask(
   return {
     id: engTask.id,
     project: engTask.project || 'pub-dev-loop',
-    repository: overrides?.repository || 'https://github.com/pubcoreagencia/pub-dev-loop.git',
+    repository: overrides?.repository || resolvedContext?.repository || 'https://github.com/pubcoreagencia/pub-dev-loop.git',
     objective: engTask.objective,
     prompt: structuredPrompt,
     status: 'QUEUED',
@@ -650,6 +679,8 @@ export function engineeringTaskToTask(
     worker: null,
     result: {
       engineeringTask: engTask,
+      resolvedContext: resolvedContext || null,
+      engineeringPlan: plan || null,
     },
     error: null,
     branch: null,
