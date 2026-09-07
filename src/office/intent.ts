@@ -644,6 +644,94 @@ export function createEngineeringPlan(task: EngineeringTask, resolvedContext?: R
 }
 
 /**
+ * Formats the canonical, comprehensive PDL Engineering Context prompt block delivered to the Worker and LLM.
+ */
+export function formatEngineeringWorkerPrompt(
+  engTask: EngineeringTask,
+  resolvedContext?: ResolvedContext,
+  plan?: EngineeringPlan
+): string {
+  const parts: string[] = [];
+
+  parts.push('=== PDL ENGINEERING CONTEXT ===\n');
+
+  parts.push(`OBJETIVO DE ENGENHARIA:\n${engTask.objective}\n`);
+  parts.push(`TASK TYPE:\n${engTask.task_type}\n`);
+  parts.push(`NÍVEL DE RISCO:\n${engTask.risk_level}\n`);
+  parts.push(`ESCOPO:\n${engTask.scope.join(', ')}\n`);
+
+  if (engTask.user_observation) {
+    parts.push(`USER OBSERVATION:\n${engTask.user_observation}\n`);
+  }
+
+  if (engTask.user_proposed_solution) {
+    parts.push(`USER PROPOSED SOLUTION:\n${engTask.user_proposed_solution}\nSTATUS: UNVERIFIED HYPOTHESIS (Requires technical validation before implementation; do not adopt uncritically)\n`);
+  }
+
+  if (engTask.known_context && engTask.known_context.length > 0) {
+    parts.push(`KNOWN CONTEXT:\n${engTask.known_context.map(k => '- ' + k).join('\n')}\n`);
+  }
+
+  if (resolvedContext) {
+    if (resolvedContext.relevant_files.length > 0) {
+      parts.push(`RELEVANT FILES:\n${resolvedContext.relevant_files.slice(0, 10).map(f => '- ' + f).join('\n')}\n`);
+    }
+
+    if (resolvedContext.relevant_directories.length > 0) {
+      parts.push(`RELEVANT DIRECTORIES:\n${resolvedContext.relevant_directories.map(d => '- ' + d).join('\n')}\n`);
+    }
+
+    const depEntries = Object.entries(resolvedContext.dependencies);
+    if (depEntries.length > 0) {
+      parts.push(`DEPENDENCIES:\n${depEntries.slice(0, 8).map(([name, ver]) => `- ${name}: ${ver}`).join('\n')}\n`);
+    }
+
+    if (resolvedContext.existing_tests.length > 0) {
+      parts.push(`EXISTING TESTS:\n${resolvedContext.existing_tests.slice(0, 10).map(t => '- ' + t).join('\n')}\n`);
+    }
+
+    if (resolvedContext.resolved_unknowns.length > 0) {
+      parts.push(`RESOLVED UNKNOWNS:\n${resolvedContext.resolved_unknowns.map(u => {
+        let line = `- [${u.status}] ${u.unknown}`;
+        if (u.evidenceSnippet) line += ` (Evidence: ${u.evidenceSnippet})`;
+        else if (u.discoveredPaths.length > 0) line += ` (Candidates: ${u.discoveredPaths.slice(0, 2).join(', ')})`;
+        return line;
+      }).join('\n')}\n`);
+    }
+
+    if (resolvedContext.unresolved_unknowns.length > 0) {
+      parts.push(`UNRESOLVED UNKNOWNS:\n${resolvedContext.unresolved_unknowns.map(u => '- ' + u).join('\n')}\n`);
+    }
+
+    parts.push(`GIT STATE:\nBranch: ${resolvedContext.git_state.branch} | HEAD: ${resolvedContext.git_state.headSha} | isClean: ${resolvedContext.git_state.isClean} | Changed files: ${resolvedContext.git_state.changedFiles.length}\n`);
+  }
+
+  if (engTask.acceptance_criteria && engTask.acceptance_criteria.length > 0) {
+    parts.push(`CRITÉRIOS DE ACEITE OBRIGATÓRIOS:\n${engTask.acceptance_criteria.map((c, i) => `  ${i + 1}. ${c}`).join('\n')}\n`);
+  }
+
+  if (engTask.constraints && engTask.constraints.length > 0) {
+    parts.push(`RESTRIÇÕES:\n${engTask.constraints.map(c => '- ' + c).join('\n')}\n`);
+  }
+
+  if (engTask.assumptions && engTask.assumptions.length > 0) {
+    parts.push(`ASSUMPTIONS:\n${engTask.assumptions.map(a => '- ' + a).join('\n')}\n`);
+  }
+
+  if (plan && plan.phases && plan.phases.length > 0) {
+    parts.push('ENGINEERING PLAN:\n' + plan.phases.map((p, idx) => {
+      return `Phase ${idx + 1}: ${p.phase} — ${p.objective}\n` +
+        `  Actions:\n${p.actions.map(a => '    - ' + a).join('\n')}\n` +
+        `  Expected Evidence:\n${p.expected_evidence.map(e => '    - ' + e).join('\n')}`;
+    }).join('\n\n') + '\n');
+  }
+
+  parts.push('=== END PDL ENGINEERING CONTEXT ===');
+
+  return parts.join('\n');
+}
+
+/**
  * Bridges an EngineeringTask seamlessly into the existing runtime Task contract.
  * Preserves full compatibility with WorkerService and TaskRepository.
  */
@@ -653,20 +741,7 @@ export function engineeringTaskToTask(
   resolvedContext?: ResolvedContext,
   plan?: EngineeringPlan
 ): Task {
-  const structuredPrompt = [
-    'OBJETIVO DE ENGENHARIA: ' + engTask.objective,
-    engTask.user_observation ? 'OBSERVAÇÃO DO USUÁRIO: ' + engTask.user_observation : '',
-    engTask.user_proposed_solution ? 'SUGESTÃO DO USUÁRIO: ' + engTask.user_proposed_solution + ' (Validar tecnicamente antes de aplicar)' : '',
-    'TIPO DE TAREFA: ' + engTask.task_type + ' | NÍVEL DE RISCO: ' + engTask.risk_level,
-    'ESCOPO: ' + engTask.scope.join(', '),
-    resolvedContext && resolvedContext.relevant_files.length > 0 ? 'ARQUIVOS RELEVANTES IDENTIFICADOS:\n' + resolvedContext.relevant_files.slice(0, 8).map(f => '  - ' + f).join('\n') : '',
-    'CRITÉRIOS DE ACEITE OBRIGATÓRIOS:',
-    ...engTask.acceptance_criteria.map((c, i) => '  ' + (i + 1) + '. ' + c),
-    'RESTRIÇÕES:',
-    ...engTask.constraints.map((c) => '  - ' + c),
-  ]
-    .filter(Boolean)
-    .join('\n');
+  const structuredPrompt = formatEngineeringWorkerPrompt(engTask, resolvedContext, plan);
 
   return {
     id: engTask.id,
