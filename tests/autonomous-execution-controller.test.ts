@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   AutonomousExecutionController,
+  WorkerRuntimeAdapter,
   type WorkerTaskExecutor,
 } from '../src/office/autonomous-execution-controller.js';
 import {
@@ -8,8 +9,12 @@ import {
   createInitialSystemState,
   applyStateUpdate,
 } from '../src/office/autonomy-loop.js';
-import { ApprovalManager } from '../src/office/approval.js';
+import { ApprovalManager, defaultApprovalManager } from '../src/office/approval.js';
 import type { Task, TaskRepository } from '../src/domain.js';
+import { BaseWorker, type AttemptResult } from '../src/worker-service.js';
+import type { FinalizeResult } from '../src/finalizer.js';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 class MockTaskRepository implements TaskRepository {
   private tasks: Map<string, Task> = new Map();
@@ -264,5 +269,124 @@ describe('PDL Autonomous Execution Controller — Continuity Loop', () => {
     expect(result.stopped).toBe(true);
     expect(result.stopReason).toBe('MAX_CYCLES_REACHED');
     expect(baseMission.status).toBe('PAUSED');
+  });
+
+  it('7. Real Worker Runtime Adapter: Integrates BaseWorker lifecycle (claim -> retry -> finalize -> state update)', async () => {
+    class TestBaseWorker extends BaseWorker {
+      constructor(tasks: TaskRepository) {
+        super(tasks, 'test-worker-alpha');
+      }
+
+      protected async executeWithRetry(task: Task, repository: string): Promise<AttemptResult> {
+        const dummyWs = join(tmpdir(), 'test-ws-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+        return {
+          status: 'COMPLETED',
+          workspace: dummyWs,
+          baselineSnapshot: { trackedFiles: [], gitStatus: '', headSha: null },
+          declaredChangedFiles: ['src/office/research.ts'],
+          stdout: 'Executed task via BaseWorker',
+          stderr: '',
+          exitCode: 0,
+          provider: 'openrouter',
+          model: 'anthropic/claude-3.5-sonnet',
+          toolCalls: 3,
+          toolRounds: 1,
+          durationMs: 250,
+          execution: {},
+        };
+      }
+
+      protected async executeTask() {
+        return {
+          stdout: 'done',
+          stderr: '',
+          exitCode: 0,
+          status: 'COMPLETED' as const,
+          provider: 'openrouter',
+          model: 'anthropic/claude-3.5-sonnet',
+          changedFiles: ['src/office/research.ts'],
+          toolCalls: 3,
+          toolRounds: 1,
+          durationMs: 250,
+        };
+      }
+
+      protected override async finalize(): Promise<FinalizeResult> {
+        return {
+          status: 'COMPLETED',
+          commitSha: null,
+          gitStatus: 'clean',
+          validationErrors: [],
+          testOutput: 'All tests passed',
+          declaredChangedFiles: ['src/office/research.ts'],
+        } as any;
+      }
+    }
+
+    const repo = new MockTaskRepository();
+    const worker = new TestBaseWorker(repo);
+    const adapter = new WorkerRuntimeAdapter(worker, repo);
+    const controller = new AutonomousExecutionController(repo, defaultApprovalManager, adapter);
+    const state = createInitialSystemState(baseMission);
+
+    // Run cycle without workerExecutor -> controller must invoke workerRuntime adapter
+    const { result, nextState } = await controller.executeCycle(baseMission, state, 1, undefined);
+
+    expect(result.executionStatus).toBe('COMPLETED');
+    expect(result.validationStatus).toBe('PASSED');
+    expect(result.stateUpdated).toBe(true);
+    expect(result.updatedCapabilityId).toBe('research_engine');
+    expect(nextState.capabilities['research_engine'].status).toBe('VERIFIED');
+    expect(result.evidence.some(e => e.includes('src/office/research.ts'))).toBe(true);
+  });
+
+  it('8. Evidence Integrity: Rejects weak evidence (stdout only) from being marked VERIFIED', async () => {
+    const repo = new MockTaskRepository();
+    const controller = new AutonomousExecutionController(repo);
+    const state = createInitialSystemState(baseMission);
+
+    // Weak executor: claims COMPLETED with stdout, but has NO changed files, NO commit SHA, NO evidence snippet
+    const weakExecutor: WorkerTaskExecutor = async () => {
+      return {
+        status: 'COMPLETED',
+        stdout: 'I fixed everything and all looks great!',
+        changedFiles: [],
+        evidenceSnippet: undefined,
+        finalizeResult: {
+          status: 'COMPLETED',
+          commitSha: null,
+          gitStatus: 'clean',
+          validationErrors: [],
+        } as any,
+      };
+    };
+
+    const { result, nextState } = await controller.executeCycle(baseMission, state, 1, weakExecutor);
+
+    // Weak evidence must NOT verify the capability!
+    expect(result.executionStatus).toBe('COMPLETED');
+    expect(result.validationStatus).toBe('FAILED');
+    expect(result.evidence.some(e => e.includes('Insufficient evidence: only weak evidence'))).toBe(true);
+    expect(result.stateUpdated).toBe(true); // Recorded as PARTIAL
+    expect(nextState.capabilities['research_engine'].status).toBe('PARTIAL');
+  });
+
+  it('9. Worker Claim Failure: Returns BLOCKED when Worker is unable to claim task', async () => {
+    const repo = new MockTaskRepository();
+    const mockWorker = {
+      executeOnce: async () => false,
+      status: () => 'IDLE',
+      cancel: async () => {},
+    };
+    const adapter = new WorkerRuntimeAdapter(mockWorker, repo);
+    const controller = new AutonomousExecutionController(repo, defaultApprovalManager, adapter);
+    const state = createInitialSystemState(baseMission);
+
+    const { result } = await controller.executeCycle(baseMission, state, 1, undefined);
+
+    expect(result.executionStatus).toBe('BLOCKED');
+    expect(result.validationStatus).toBe('BLOCKED');
+    expect(result.stopReason).toBe('ENVIRONMENT_BLOCKED');
+    expect(result.evidence[0]).toContain('Worker was unable to claim task');
   });
 });

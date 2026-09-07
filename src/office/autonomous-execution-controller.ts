@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Task, TaskRepository } from '../domain.js';
 import type { FinalizeResult } from '../finalizer.js';
+import type { Worker } from '../worker-service.js';
 import {
   type Mission,
   type SystemCurrentState,
@@ -54,12 +55,57 @@ export interface TaskExecutionOutcome {
 
 export type WorkerTaskExecutor = (task: Task) => Promise<TaskExecutionOutcome>;
 
+/**
+ * Production runtime adapter connecting AutonomousExecutionController to a real Worker
+ * (e.g. BaseWorker / RouterWorker) and TaskRepository.
+ */
+export class WorkerRuntimeAdapter {
+  constructor(
+    private readonly worker: Worker,
+    private readonly taskRepo: TaskRepository
+  ) {}
+
+  async execute(task: Task): Promise<TaskExecutionOutcome> {
+    const executed = await this.worker.executeOnce();
+    if (!executed) {
+      return {
+        status: 'BLOCKED',
+        failureReason: 'Worker was unable to claim task or task queue was empty',
+      };
+    }
+
+    const updatedTask = (await (this.taskRepo as any).findById?.(task.id)) ?? (await this.taskRepo.get(task.id));
+    if (!updatedTask) {
+      return {
+        status: 'FAILED',
+        failureReason: `Task ${task.id} not found in repository after execution`,
+      };
+    }
+
+    const finalize = (updatedTask.result as any)?.finalize as FinalizeResult | undefined;
+    const isCompleted = updatedTask.status === 'COMPLETED';
+
+    return {
+      status: isCompleted ? 'COMPLETED' : 'FAILED',
+      stdout: typeof (updatedTask.result as any)?.summary === 'string'
+        ? (updatedTask.result as any).summary
+        : (updatedTask.result as any)?.stdout,
+      stderr: (updatedTask.result as any)?.stderr,
+      finalizeResult: finalize,
+      changedFiles: finalize?.changedFiles || (updatedTask.result as any)?.changedFiles,
+      evidenceSnippet: updatedTask.commitSha ? `Commit SHA: ${updatedTask.commitSha}` : undefined,
+      failureReason: updatedTask.error || finalize?.errorMessage || (updatedTask.result as any)?.errorMessage,
+    };
+  }
+}
+
 export class AutonomousExecutionController {
   private activeCycleKeys = new Set<string>();
 
   constructor(
     private readonly taskRepo: TaskRepository,
-    private readonly approvalManager: ApprovalManager = defaultApprovalManager
+    private readonly approvalManager: ApprovalManager = defaultApprovalManager,
+    private readonly workerRuntime?: WorkerRuntimeAdapter
   ) {}
 
   /**
@@ -202,6 +248,8 @@ export class AutonomousExecutionController {
       let outcome: TaskExecutionOutcome;
       if (workerExecutor) {
         outcome = await workerExecutor(storedTask);
+      } else if (this.workerRuntime) {
+        outcome = await this.workerRuntime.execute(storedTask);
       } else {
         // Environment check: if no live runner is provided and no cloud credentials exist
         outcome = {
@@ -212,24 +260,45 @@ export class AutonomousExecutionController {
 
       // 11. Evidence-First Validation
       // Rule: Task completed != Capability verified.
-      // Verification requires: Task status COMPLETED + Finalizer validation passed + code evidence exists.
+      // Verification requires: Task status COMPLETED + Finalizer validation passed + strong code evidence exists.
       const evidenceList: string[] = [];
       let isVerified = false;
       let validationStatus: AutonomousExecutionResult['validationStatus'] = 'NOT_RUN';
 
       if (outcome.status === 'COMPLETED') {
-        const finalizerPassed = !outcome.finalizeResult || outcome.finalizeResult.status === 'COMPLETED';
-        const hasEvidence = !!(outcome.evidenceSnippet || (outcome.changedFiles && outcome.changedFiles.length > 0) || outcome.stdout);
+        const hasFinalizer = !!outcome.finalizeResult;
+        const finalizerPassed = hasFinalizer
+          ? outcome.finalizeResult!.status === 'COMPLETED' &&
+            outcome.finalizeResult!.testsPassed !== false &&
+            !outcome.finalizeResult!.errorMessage &&
+            !((outcome.finalizeResult as any).validationErrors && (outcome.finalizeResult as any).validationErrors.length > 0)
+          : true;
 
-        if (finalizerPassed && hasEvidence) {
+        // Evidence validation: Weak evidence (just stdout or empty claim) is insufficient for verification.
+        // Requires strong/concrete evidence (changed files, commit SHA, or structured evidence snippet).
+        const hasStrongEvidence = !!(
+          (outcome.changedFiles && outcome.changedFiles.length > 0) ||
+          outcome.finalizeResult?.commitSha ||
+          outcome.evidenceSnippet
+        );
+
+        if (finalizerPassed && hasStrongEvidence) {
           isVerified = true;
           validationStatus = 'PASSED';
           evidenceList.push(`Task ${storedTask.id} executed successfully and passed finalizer validation.`);
           if (outcome.evidenceSnippet) evidenceList.push(`Code evidence: ${outcome.evidenceSnippet}`);
-          if (outcome.changedFiles) evidenceList.push(`Modified files: ${outcome.changedFiles.join(', ')}`);
+          if (outcome.changedFiles && outcome.changedFiles.length > 0) {
+            evidenceList.push(`Modified files: ${outcome.changedFiles.join(', ')}`);
+          }
+          if (outcome.finalizeResult?.commitSha) {
+            evidenceList.push(`Commit SHA: ${outcome.finalizeResult.commitSha}`);
+          }
         } else {
           validationStatus = 'FAILED';
-          evidenceList.push(`Task completed execution but failed formal validation criteria: ${outcome.failureReason || 'Insufficient evidence'}`);
+          const failureDetail = !finalizerPassed
+            ? `Finalizer validation failed: ${outcome.finalizeResult?.errorMessage || (outcome.finalizeResult as any)?.validationErrors?.join(', ') || outcome.failureReason || 'unknown validation error'}`
+            : 'Insufficient evidence: only weak evidence (stdout/unverified claim) provided without concrete changed files or commit SHA';
+          evidenceList.push(`Task completed execution but failed formal validation criteria: ${failureDetail}`);
         }
       } else if (outcome.status === 'BLOCKED') {
         validationStatus = 'BLOCKED';
