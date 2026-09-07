@@ -15,6 +15,13 @@ import {
 import { engineeringTaskToTask } from './intent.js';
 import { resolveContext } from './context-resolver.js';
 import { defaultApprovalManager, ApprovalManager } from './approval.js';
+import type { AutonomyStateRepository, DurableCycleRecord } from './autonomy-state-repository.js';
+
+export {
+  type AutonomyStateRepository,
+  type DurableCycleRecord,
+  PostgresAutonomyStateRepository,
+} from './autonomy-state-repository.js';
 
 export interface AutonomousExecutionResult {
   missionId: string;
@@ -92,7 +99,7 @@ export class WorkerRuntimeAdapter {
         : (updatedTask.result as any)?.stdout,
       stderr: (updatedTask.result as any)?.stderr,
       finalizeResult: finalize,
-      changedFiles: finalize?.changedFiles || (updatedTask.result as any)?.changedFiles,
+      changedFiles: finalize?.changedFiles || (finalize as any)?.declaredChangedFiles || (updatedTask.result as any)?.changedFiles,
       evidenceSnippet: updatedTask.commitSha ? `Commit SHA: ${updatedTask.commitSha}` : undefined,
       failureReason: updatedTask.error || finalize?.errorMessage || (updatedTask.result as any)?.errorMessage,
     };
@@ -105,7 +112,8 @@ export class AutonomousExecutionController {
   constructor(
     private readonly taskRepo: TaskRepository,
     private readonly approvalManager: ApprovalManager = defaultApprovalManager,
-    private readonly workerRuntime?: WorkerRuntimeAdapter
+    private readonly workerRuntime?: WorkerRuntimeAdapter,
+    private readonly stateRepo?: AutonomyStateRepository
   ) {}
 
   /**
@@ -126,7 +134,145 @@ export class AutonomousExecutionController {
   }> {
     const cycleKey = `${mission.id}:cycle:${cycleNumber}`;
 
-    // 1. Concurrency / Idempotency Guard
+    // 0. Durable Idempotency & Recovery Check
+    if (this.stateRepo) {
+      const existingCycle = await this.stateRepo.getCycle(mission.id, cycleNumber);
+      if (existingCycle) {
+        if (existingCycle.status === 'COMPLETED') {
+          // Durable Idempotency: already completed cycle cannot be re-executed
+          const latestState = (await this.stateRepo.getCurrentState(mission.id)) || state;
+          return {
+            result: {
+              missionId: mission.id,
+              cycleNumber,
+              taskId: existingCycle.generatedTaskId || undefined,
+              executionStatus: existingCycle.executionStatus || 'COMPLETED',
+              validationStatus: existingCycle.validationStatus || 'PASSED',
+              stateUpdated: false,
+              evidence: existingCycle.evidence,
+              stopped: !!existingCycle.stopReason,
+              stopReason: existingCycle.stopReason || undefined,
+              currentStateSnapshot: existingCycle.stateAfter || existingCycle.stateBefore,
+            },
+            nextState: latestState,
+          };
+        }
+
+        if (existingCycle.status === 'WAITING_APPROVAL') {
+          // Preserves CEO Governance across restarts
+          return {
+            result: {
+              missionId: mission.id,
+              cycleNumber,
+              taskId: existingCycle.generatedTaskId || undefined,
+              executionStatus: 'WAITING_APPROVAL',
+              validationStatus: 'NOT_RUN',
+              stateUpdated: false,
+              evidence: existingCycle.evidence,
+              stopped: true,
+              stopReason: 'WAITING_APPROVAL',
+              currentStateSnapshot: existingCycle.stateBefore,
+            },
+            nextState: state,
+          };
+        }
+
+        if (existingCycle.status === 'RUNNING') {
+          if (this.activeCycleKeys.has(cycleKey)) {
+            // Concurrent execution collision within same process
+            return {
+              result: {
+                missionId: mission.id,
+                cycleNumber,
+                executionStatus: 'BLOCKED',
+                validationStatus: 'NOT_RUN',
+                stateUpdated: false,
+                evidence: ['Cycle is already actively executing or was already triggered'],
+                stopped: true,
+                stopReason: 'DUPLICATE_CYCLE_CALL',
+                currentStateSnapshot: this.captureStateSnapshot(state),
+              },
+              nextState: state,
+            };
+          }
+
+          // Process crashed while this cycle was running (Crash Recovery)
+          if (existingCycle.generatedTaskId) {
+            const task = (await (this.taskRepo as any).findById?.(existingCycle.generatedTaskId)) ??
+              (await this.taskRepo.get(existingCycle.generatedTaskId));
+            if (task && task.status === 'COMPLETED') {
+              const finalize = (task.result as any)?.finalize as FinalizeResult | undefined;
+              const finalizerPassed = !finalize || (finalize.status === 'COMPLETED' && finalize.testsPassed !== false && !finalize.errorMessage);
+              const hasEvidence = !!(finalize?.changedFiles?.length || task.commitSha || (task.result as any)?.changedFiles?.length);
+              if (finalizerPassed && hasEvidence) {
+                const evidenceList = [
+                  `Task ${task.id} executed successfully and passed finalizer validation (recovered from prior process run).`,
+                ];
+                if (finalize?.changedFiles) evidenceList.push(`Modified files: ${finalize.changedFiles.join(', ')}`);
+                if (task.commitSha) evidenceList.push(`Commit SHA: ${task.commitSha}`);
+                const targetCapId = existingCycle.selectedAction?.targetCapabilityId;
+                let nextState = state;
+                let stateUpdated = false;
+                if (targetCapId) {
+                  nextState = applyStateUpdate(state, targetCapId, 'VERIFIED', evidenceList.join(' | '));
+                  stateUpdated = true;
+                  await this.stateRepo.saveCurrentState(nextState);
+                }
+                await this.stateRepo.updateCycle(mission.id, cycleNumber, {
+                  status: 'COMPLETED',
+                  executionStatus: 'COMPLETED',
+                  validationStatus: 'PASSED',
+                  stateAfter: this.captureStateSnapshot(nextState),
+                  evidence: evidenceList,
+                  completedAt: new Date().toISOString(),
+                });
+                return {
+                  result: {
+                    missionId: mission.id,
+                    cycleNumber,
+                    taskId: task.id,
+                    executionStatus: 'COMPLETED',
+                    validationStatus: 'PASSED',
+                    stateUpdated,
+                    updatedCapabilityId: stateUpdated ? targetCapId : undefined,
+                    evidence: evidenceList,
+                    stopped: false,
+                    currentStateSnapshot: this.captureStateSnapshot(nextState),
+                  },
+                  nextState,
+                };
+              }
+            }
+          }
+
+          // Task was not completed or no valid evidence: mark FAILED with explicit crash recovery reason
+          await this.stateRepo.updateCycle(mission.id, cycleNumber, {
+            status: 'FAILED',
+            executionStatus: 'FAILED',
+            validationStatus: 'FAILED',
+            stopReason: 'CRASH_RECOVERY_REQUIRED',
+            error: 'Process crashed while cycle was RUNNING; task not verified',
+          });
+          return {
+            result: {
+              missionId: mission.id,
+              cycleNumber,
+              taskId: existingCycle.generatedTaskId || undefined,
+              executionStatus: 'FAILED',
+              validationStatus: 'FAILED',
+              stateUpdated: false,
+              evidence: ['Process crashed while cycle was RUNNING; task not verified'],
+              stopped: true,
+              stopReason: 'CRASH_RECOVERY_REQUIRED',
+              currentStateSnapshot: this.captureStateSnapshot(state),
+            },
+            nextState: state,
+          };
+        }
+      }
+    }
+
+    // 1. Concurrency / Idempotency Guard (In-Memory)
     if (this.activeCycleKeys.has(cycleKey)) {
       return {
         result: {
@@ -149,6 +295,9 @@ export class AutonomousExecutionController {
       // 2. Stop Condition: Max Cycles Reached
       if (cycleNumber > mission.maxCycles) {
         mission.status = 'PAUSED';
+        if (this.stateRepo) {
+          await this.stateRepo.updateMission(mission.id, { status: 'PAUSED' });
+        }
         return {
           result: {
             missionId: mission.id,
@@ -175,6 +324,12 @@ export class AutonomousExecutionController {
       if (action.actionType === 'COMPLETE_MISSION') {
         mission.status = 'COMPLETED';
         mission.completedAt = new Date().toISOString();
+        if (this.stateRepo) {
+          await this.stateRepo.updateMission(mission.id, {
+            status: 'COMPLETED',
+            completedAt: mission.completedAt,
+          });
+        }
         return {
           result: {
             missionId: mission.id,
@@ -194,6 +349,9 @@ export class AutonomousExecutionController {
       // 6. Stop Condition: Impasse / Deadlock
       if (action.actionType === 'BLOCKED_REVIEW') {
         mission.status = 'BLOCKED';
+        if (this.stateRepo) {
+          await this.stateRepo.updateMission(mission.id, { status: 'BLOCKED' });
+        }
         return {
           result: {
             missionId: mission.id,
@@ -212,6 +370,25 @@ export class AutonomousExecutionController {
 
       // 7. Safety / CEO Sovereignty Check
       if (action.estimatedRisk === 'HIGH' || action.estimatedRisk === 'CRITICAL') {
+        const evidenceStr = `CEO approval required for ${action.estimatedRisk} risk action: ${action.title}`;
+        if (this.stateRepo) {
+          await this.stateRepo.acquireCycle({
+            missionId: mission.id,
+            cycleNumber,
+            projectId: mission.project,
+            stateBefore: this.captureStateSnapshot(state),
+            identifiedGaps: gaps,
+            selectedAction: action,
+          });
+          await this.stateRepo.updateCycle(mission.id, cycleNumber, {
+            status: 'WAITING_APPROVAL',
+            executionStatus: 'WAITING_APPROVAL',
+            validationStatus: 'NOT_RUN',
+            evidence: [evidenceStr],
+            stopReason: 'WAITING_APPROVAL',
+          });
+        }
+
         this.approvalManager.requestApproval({
           project: mission.project,
           type: action.estimatedRisk === 'CRITICAL' ? 'CRITICAL_ARCHITECTURE_CHANGE' : 'SECURITY_OVERRIDE',
@@ -227,13 +404,44 @@ export class AutonomousExecutionController {
             executionStatus: 'WAITING_APPROVAL',
             validationStatus: 'NOT_RUN',
             stateUpdated: false,
-            evidence: [`CEO approval required for ${action.estimatedRisk} risk action: ${action.title}`],
+            evidence: [evidenceStr],
             stopped: true,
             stopReason: 'WAITING_APPROVAL',
             currentStateSnapshot: this.captureStateSnapshot(state),
           },
           nextState: state,
         };
+      }
+
+      // Durable Cycle Acquisition
+      if (this.stateRepo) {
+        await this.stateRepo.createMission(mission);
+        await this.stateRepo.saveCurrentState(state);
+        const acquireRes = await this.stateRepo.acquireCycle({
+          missionId: mission.id,
+          cycleNumber,
+          projectId: mission.project,
+          stateBefore: this.captureStateSnapshot(state),
+          identifiedGaps: gaps,
+          selectedAction: action,
+        });
+        if (!acquireRes.acquired && acquireRes.isExisting && acquireRes.cycle.status === 'RUNNING') {
+          // Concurrency collision between two separate workers/processes
+          return {
+            result: {
+              missionId: mission.id,
+              cycleNumber,
+              executionStatus: 'BLOCKED',
+              validationStatus: 'NOT_RUN',
+              stateUpdated: false,
+              evidence: ['Cycle is already actively executing or was already triggered'],
+              stopped: true,
+              stopReason: 'DUPLICATE_CYCLE_CALL',
+              currentStateSnapshot: this.captureStateSnapshot(state),
+            },
+            nextState: state,
+          };
+        }
       }
 
       // 8. Generate Canonical EngineeringTask
@@ -243,6 +451,11 @@ export class AutonomousExecutionController {
 
       // 9. Enqueue in TaskRepository
       const storedTask = await this.taskRepo.create(runtimeInput);
+      if (this.stateRepo) {
+        await this.stateRepo.updateCycle(mission.id, cycleNumber, {
+          generatedTaskId: storedTask.id,
+        });
+      }
 
       // 10. Execute Task via Worker
       let outcome: TaskExecutionOutcome;
@@ -323,16 +536,32 @@ export class AutonomousExecutionController {
         stateUpdated = true;
       }
 
-      // 13. Derive Next Action Preview for Observability
-      const nextGaps = analyzeGaps(mission, nextState);
-      const nextAction = selectNextBestAction(mission, nextGaps, nextState);
-
       const stopped = outcome.status === 'BLOCKED' || (outcome.status === 'FAILED' && mission.riskPolicy === 'STRICT');
       const stopReason = outcome.status === 'BLOCKED'
         ? 'ENVIRONMENT_BLOCKED'
         : outcome.status === 'FAILED' && mission.riskPolicy === 'STRICT'
         ? 'UNRECOVERABLE_FAILURE'
         : undefined;
+
+      // Persist State & Cycle Updates
+      if (this.stateRepo) {
+        await this.stateRepo.saveCurrentState(nextState);
+        await this.stateRepo.updateCycle(mission.id, cycleNumber, {
+          status: outcome.status === 'COMPLETED'
+            ? (isVerified ? 'COMPLETED' : 'FAILED')
+            : (outcome.status === 'BLOCKED' ? 'BLOCKED' : 'FAILED'),
+          executionStatus: outcome.status,
+          validationStatus,
+          stateAfter: this.captureStateSnapshot(nextState),
+          evidence: evidenceList,
+          stopReason,
+          completedAt: new Date().toISOString(),
+        });
+      }
+
+      // 13. Derive Next Action Preview for Observability
+      const nextGaps = analyzeGaps(mission, nextState);
+      const nextAction = selectNextBestAction(mission, nextGaps, nextState);
 
       return {
         result: {
@@ -355,6 +584,42 @@ export class AutonomousExecutionController {
     } finally {
       this.activeCycleKeys.delete(cycleKey);
     }
+  }
+
+  /**
+   * Recovers a mission and its state from durable storage and recalculates the NextBestAction.
+   * Enables seamless continuation after a process restart.
+   */
+  async recoverMission(missionId: string): Promise<{
+    mission: Mission | null;
+    state: SystemCurrentState | null;
+    latestCycle: DurableCycleRecord | null;
+    nextAction?: NextBestAction;
+  }> {
+    if (!this.stateRepo) {
+      throw new Error('Cannot recover mission without an AutonomyStateRepository');
+    }
+
+    const mission = await this.stateRepo.getMission(missionId);
+    if (!mission) {
+      return { mission: null, state: null, latestCycle: null };
+    }
+
+    const state = await this.stateRepo.getCurrentState(missionId);
+    const latestCycle = await this.stateRepo.getLatestCycle(missionId);
+
+    let nextAction: NextBestAction | undefined;
+    if (state && mission.status !== 'COMPLETED') {
+      const gaps = analyzeGaps(mission, state);
+      nextAction = selectNextBestAction(mission, gaps, state);
+    }
+
+    return {
+      mission,
+      state,
+      latestCycle,
+      nextAction,
+    };
   }
 
   /**

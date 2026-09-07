@@ -318,6 +318,7 @@ describe('PDL Autonomous Execution Controller — Continuity Loop', () => {
           gitStatus: 'clean',
           validationErrors: [],
           testOutput: 'All tests passed',
+          changedFiles: ['src/office/research.ts'],
           declaredChangedFiles: ['src/office/research.ts'],
         } as any;
       }
