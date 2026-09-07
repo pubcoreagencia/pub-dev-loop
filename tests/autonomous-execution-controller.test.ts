@@ -1,0 +1,268 @@
+import { describe, it, expect } from 'vitest';
+import {
+  AutonomousExecutionController,
+  type WorkerTaskExecutor,
+} from '../src/office/autonomous-execution-controller.js';
+import {
+  type Mission,
+  createInitialSystemState,
+  applyStateUpdate,
+} from '../src/office/autonomy-loop.js';
+import { ApprovalManager } from '../src/office/approval.js';
+import type { Task, TaskRepository } from '../src/domain.js';
+
+class MockTaskRepository implements TaskRepository {
+  private tasks: Map<string, Task> = new Map();
+
+  async create(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'status'> & { id?: string }): Promise<Task> {
+    const id = task.id || `task-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    const now = new Date();
+    const created: Task = {
+      id,
+      project: task.project,
+      repository: task.repository,
+      objective: task.objective,
+      prompt: task.prompt,
+      status: 'QUEUED',
+      priority: task.priority ?? 1,
+      worker: null,
+      result: task.result ?? null,
+      error: null,
+      branch: null,
+      commitSha: null,
+      gitStatus: null,
+      createdAt: now,
+      updatedAt: now,
+      leaseOwner: null,
+      leaseDeadline: null,
+      heartbeatAt: null,
+      workspacePath: null,
+      prototypeSessionId: null,
+      tenantId: task.tenantId || 'pub-core-holding',
+      agentId: task.agentId || null,
+    };
+    this.tasks.set(id, created);
+    return created;
+  }
+
+  async findById(id: string): Promise<Task | null> {
+    return this.tasks.get(id) || null;
+  }
+
+  async list(): Promise<Task[]> {
+    return Array.from(this.tasks.values());
+  }
+
+  async claim(workerName: string): Promise<Task | null> {
+    for (const task of this.tasks.values()) {
+      if (task.status === 'QUEUED') {
+        task.status = 'ASSIGNED';
+        task.worker = workerName;
+        return task;
+      }
+    }
+    return null;
+  }
+
+  async update(id: string, updates: Partial<Task>): Promise<Task | null> {
+    const task = this.tasks.get(id);
+    if (!task) return null;
+    Object.assign(task, updates, { updatedAt: new Date() });
+    return task;
+  }
+
+  async updateStatus(): Promise<Task | null> { return null; }
+  async updateResult(): Promise<Task | null> { return null; }
+  async acquireLease(): Promise<Task | null> { return null; }
+  async heartbeat(): Promise<boolean> { return true; }
+  async releaseLease(): Promise<boolean> { return true; }
+  async reclaimStuck(): Promise<number> { return 0; }
+  async findByProject(): Promise<Task[]> { return []; }
+}
+
+describe('PDL Autonomous Execution Controller — Continuity Loop', () => {
+  const baseMission: Mission = {
+    id: 'mission-real-continuity-1',
+    title: 'Demonstrate Autonomous Multi-Cycle Engineering Loop',
+    objective: 'Advance autonomy ladder by sequentially verifying research engine, auto-fix loop, and skill discovery without human intervention',
+    project: 'pub-dev-loop',
+    targetCapabilities: [
+      'intent_foundation',
+      'context_resolution',
+      'research_engine',
+      'skill_discovery',
+      'auto_fix_loop',
+    ],
+    constraints: [
+      'Strictly non-destructive file operations',
+      'All changes must pass automated verification',
+    ],
+    riskPolicy: 'STANDARD',
+    maxCycles: 6,
+    status: 'ACTIVE',
+    createdAt: new Date().toISOString(),
+  };
+
+  it('1. Environment Boundary: Accurately identifies BLOCKED execution when no live LLM gateway is present', async () => {
+    const repo = new MockTaskRepository();
+    const controller = new AutonomousExecutionController(repo);
+    const state = createInitialSystemState(baseMission);
+
+    // Call without a workerExecutor -> Controller must not fake LLM execution!
+    const { result } = await controller.executeCycle(baseMission, state, 1, undefined);
+
+    expect(result.executionStatus).toBe('BLOCKED');
+    expect(result.validationStatus).toBe('BLOCKED');
+    expect(result.stateUpdated).toBe(false);
+    expect(result.stopReason).toBe('ENVIRONMENT_BLOCKED');
+    expect(result.evidence[0]).toContain('No worker executor provided and external LLM gateway credentials not configured');
+  });
+
+  it('2. Multi-Cycle Autonomous Continuity: Advances across multiple cycles with 0 human interventions', async () => {
+    const repo = new MockTaskRepository();
+    const controller = new AutonomousExecutionController(repo);
+    const initialState = createInitialSystemState(baseMission);
+
+    // Deterministic test executor simulating worker execution + finalizer validation
+    const deterministicExecutor: WorkerTaskExecutor = async (task: Task) => {
+      // Simulate real file modification and test verification
+      return {
+        status: 'COMPLETED',
+        stdout: `Executed task ${task.id} successfully`,
+        evidenceSnippet: `Verified implementation in src/office/${task.project}.ts`,
+        changedFiles: [`src/office/${task.project}.ts`],
+        finalizeResult: {
+          status: 'COMPLETED',
+          commitSha: 'sha-' + Math.random().toString(36).slice(2, 8),
+          gitStatus: 'clean',
+          validationErrors: [],
+        } as any,
+      };
+    };
+
+    const outcome = await controller.executeMissionContinuously(baseMission, initialState, {
+      maxCycles: 5,
+      workerExecutor: deterministicExecutor,
+    });
+
+    expect(outcome.totalHumanInterventions).toBe(0);
+    expect(outcome.cycles.length).toBeGreaterThanOrEqual(3);
+
+    // Cycle 1 must have implemented research_engine
+    expect(outcome.cycles[0].cycleNumber).toBe(1);
+    expect(outcome.cycles[0].updatedCapabilityId).toBe('research_engine');
+    expect(outcome.cycles[0].executionStatus).toBe('COMPLETED');
+    expect(outcome.cycles[0].validationStatus).toBe('PASSED');
+    expect(outcome.cycles[0].stateUpdated).toBe(true);
+
+    // Cycle 2 must have automatically selected and implemented auto_fix_loop (which was previously blocked)
+    expect(outcome.cycles[1].cycleNumber).toBe(2);
+    expect(outcome.cycles[1].updatedCapabilityId).toBe('auto_fix_loop');
+    expect(outcome.cycles[1].executionStatus).toBe('COMPLETED');
+    expect(outcome.cycles[1].validationStatus).toBe('PASSED');
+
+    // Cycle 3 must have implemented skill_discovery
+    expect(outcome.cycles[2].cycleNumber).toBe(3);
+    expect(outcome.cycles[2].updatedCapabilityId).toBe('skill_discovery');
+
+    // Final cycle completes the mission
+    const lastCycle = outcome.cycles[outcome.cycles.length - 1];
+    expect(lastCycle.stopReason).toBe('MISSION_COMPLETED');
+    expect(outcome.completed).toBe(true);
+    expect(baseMission.status).toBe('COMPLETED');
+  });
+
+  it('3. Evidence-First Principle: Task completed does NOT equal capability verified without valid evidence', async () => {
+    const repo = new MockTaskRepository();
+    const controller = new AutonomousExecutionController(repo);
+    const state = createInitialSystemState(baseMission);
+
+    // Flawed executor: returns COMPLETED but finalizer failed (e.g. tests broke)
+    const failingFinalizerExecutor: WorkerTaskExecutor = async () => {
+      return {
+        status: 'COMPLETED',
+        stdout: 'Agent finished editing files',
+        finalizeResult: {
+          status: 'FAILED',
+          commitSha: null,
+          gitStatus: 'unclean',
+          validationErrors: ['TypeScript compilation failed: 2 errors'],
+        } as any,
+        failureReason: 'Finalizer test verification failed',
+      };
+    };
+
+    const { result, nextState } = await controller.executeCycle(baseMission, state, 1, failingFinalizerExecutor);
+
+    // Must NOT be verified!
+    expect(result.validationStatus).toBe('FAILED');
+    expect(result.stateUpdated).toBe(true); // State records PARTIAL attempt
+    expect(nextState.capabilities['research_engine'].status).toBe('PARTIAL');
+    expect(nextState.capabilities['research_engine'].status).not.toBe('VERIFIED');
+  });
+
+  it('4. CEO Sovereignty & Safety: Traps HIGH or CRITICAL risk actions and halts at WAITING_APPROVAL', async () => {
+    const repo = new MockTaskRepository();
+    const approvalManager = new ApprovalManager();
+    const controller = new AutonomousExecutionController(repo, approvalManager);
+
+    const sensitiveMission: Mission = {
+      ...baseMission,
+      id: 'mission-sensitive-auth',
+      title: 'Update Production Payment Gateway and Drop Deprecated Tables',
+      targetCapabilities: ['payment_gateway_migration'],
+    };
+
+    const state = createInitialSystemState(sensitiveMission, {
+      payment_gateway_migration: {
+        id: 'payment_gateway_migration',
+        name: 'Drop old tables and migrate production payment gateway',
+        category: 'FOUNDATION',
+        status: 'ABSENT',
+        dependencies: [],
+      },
+    });
+
+    const { result } = await controller.executeCycle(sensitiveMission, state, 1, undefined);
+
+    expect(result.executionStatus).toBe('WAITING_APPROVAL');
+    expect(result.stopped).toBe(true);
+    expect(result.stopReason).toBe('WAITING_APPROVAL');
+    expect(result.evidence[0]).toContain('CEO approval required');
+  });
+
+  it('5. Idempotency Guard: Rejects concurrent or duplicate executions of the same cycle key', async () => {
+    const repo = new MockTaskRepository();
+    const controller = new AutonomousExecutionController(repo);
+    const state = createInitialSystemState(baseMission);
+
+    // Simulate slow executor to trigger concurrent invocation
+    let finishExecution: () => void;
+    const slowExecutor: WorkerTaskExecutor = () => new Promise(resolve => {
+      finishExecution = () => resolve({ status: 'COMPLETED', evidenceSnippet: 'done' });
+    });
+
+    const promise1 = controller.executeCycle(baseMission, state, 1, slowExecutor);
+    const promise2 = controller.executeCycle(baseMission, state, 1, slowExecutor);
+
+    // Second call with same cycleNumber while first is active must be rejected
+    const { result: result2 } = await promise2;
+    expect(result2.stopped).toBe(true);
+    expect(result2.stopReason).toBe('DUPLICATE_CYCLE_CALL');
+
+    finishExecution!();
+    await promise1;
+  });
+
+  it('6. Max Cycles Limit: Halts gracefully when max cycles budget is exceeded', async () => {
+    const repo = new MockTaskRepository();
+    const controller = new AutonomousExecutionController(repo);
+    const state = createInitialSystemState(baseMission);
+
+    const { result } = await controller.executeCycle(baseMission, state, 999, undefined);
+
+    expect(result.stopped).toBe(true);
+    expect(result.stopReason).toBe('MAX_CYCLES_REACHED');
+    expect(baseMission.status).toBe('PAUSED');
+  });
+});

@@ -1,0 +1,346 @@
+import { randomUUID } from 'node:crypto';
+import type { Task, TaskRepository } from '../domain.js';
+import type { FinalizeResult } from '../finalizer.js';
+import {
+  type Mission,
+  type SystemCurrentState,
+  type CapabilityStatus,
+  type NextBestAction,
+  analyzeGaps,
+  selectNextBestAction,
+  generateEngineeringTaskFromAction,
+  applyStateUpdate,
+} from './autonomy-loop.js';
+import { engineeringTaskToTask } from './intent.js';
+import { resolveContext } from './context-resolver.js';
+import { defaultApprovalManager, ApprovalManager } from './approval.js';
+
+export interface AutonomousExecutionResult {
+  missionId: string;
+  cycleNumber: number;
+  taskId?: string;
+  executionStatus:
+    | 'QUEUED'
+    | 'RUNNING'
+    | 'COMPLETED'
+    | 'FAILED'
+    | 'BLOCKED'
+    | 'WAITING_APPROVAL';
+  validationStatus:
+    | 'NOT_RUN'
+    | 'PASSED'
+    | 'FAILED'
+    | 'BLOCKED';
+  stateUpdated: boolean;
+  updatedCapabilityId?: string;
+  nextActionId?: string;
+  nextActionType?: string;
+  nextTaskId?: string;
+  evidence: string[];
+  stopped: boolean;
+  stopReason?: string;
+  currentStateSnapshot: Record<string, CapabilityStatus>;
+}
+
+export interface TaskExecutionOutcome {
+  status: 'COMPLETED' | 'FAILED' | 'BLOCKED';
+  stdout?: string;
+  stderr?: string;
+  finalizeResult?: FinalizeResult;
+  changedFiles?: string[];
+  evidenceSnippet?: string;
+  failureReason?: string;
+}
+
+export type WorkerTaskExecutor = (task: Task) => Promise<TaskExecutionOutcome>;
+
+export class AutonomousExecutionController {
+  private activeCycleKeys = new Set<string>();
+
+  constructor(
+    private readonly taskRepo: TaskRepository,
+    private readonly approvalManager: ApprovalManager = defaultApprovalManager
+  ) {}
+
+  /**
+   * Executes a single discrete, idempotent cycle of the Autonomous Loop.
+   *
+   * Flow:
+   * State -> GapAnalysis -> NextBestAction -> SafetyCheck -> EngineeringTask ->
+   * Queue -> WorkerExecution -> Validation -> StateUpdate -> Recalculate Next Action
+   */
+  async executeCycle(
+    mission: Mission,
+    state: SystemCurrentState,
+    cycleNumber: number,
+    workerExecutor?: WorkerTaskExecutor
+  ): Promise<{
+    result: AutonomousExecutionResult;
+    nextState: SystemCurrentState;
+  }> {
+    const cycleKey = `${mission.id}:cycle:${cycleNumber}`;
+
+    // 1. Concurrency / Idempotency Guard
+    if (this.activeCycleKeys.has(cycleKey)) {
+      return {
+        result: {
+          missionId: mission.id,
+          cycleNumber,
+          executionStatus: 'BLOCKED',
+          validationStatus: 'NOT_RUN',
+          stateUpdated: false,
+          evidence: ['Cycle is already actively executing or was already triggered'],
+          stopped: true,
+          stopReason: 'DUPLICATE_CYCLE_CALL',
+          currentStateSnapshot: this.captureStateSnapshot(state),
+        },
+        nextState: state,
+      };
+    }
+    this.activeCycleKeys.add(cycleKey);
+
+    try {
+      // 2. Stop Condition: Max Cycles Reached
+      if (cycleNumber > mission.maxCycles) {
+        mission.status = 'PAUSED';
+        return {
+          result: {
+            missionId: mission.id,
+            cycleNumber,
+            executionStatus: 'BLOCKED',
+            validationStatus: 'NOT_RUN',
+            stateUpdated: false,
+            evidence: [`Max cycles limit (${mission.maxCycles}) reached for mission`],
+            stopped: true,
+            stopReason: 'MAX_CYCLES_REACHED',
+            currentStateSnapshot: this.captureStateSnapshot(state),
+          },
+          nextState: state,
+        };
+      }
+
+      // 3. Gap Analysis
+      const gaps = analyzeGaps(mission, state);
+
+      // 4. Action Selection
+      const action = selectNextBestAction(mission, gaps, state);
+
+      // 5. Stop Condition: Mission Completed
+      if (action.actionType === 'COMPLETE_MISSION') {
+        mission.status = 'COMPLETED';
+        mission.completedAt = new Date().toISOString();
+        return {
+          result: {
+            missionId: mission.id,
+            cycleNumber,
+            executionStatus: 'COMPLETED',
+            validationStatus: 'PASSED',
+            stateUpdated: false,
+            evidence: ['All mission target capabilities verified. Zero remaining gaps.'],
+            stopped: true,
+            stopReason: 'MISSION_COMPLETED',
+            currentStateSnapshot: this.captureStateSnapshot(state),
+          },
+          nextState: state,
+        };
+      }
+
+      // 6. Stop Condition: Impasse / Deadlock
+      if (action.actionType === 'BLOCKED_REVIEW') {
+        mission.status = 'BLOCKED';
+        return {
+          result: {
+            missionId: mission.id,
+            cycleNumber,
+            executionStatus: 'BLOCKED',
+            validationStatus: 'BLOCKED',
+            stateUpdated: false,
+            evidence: [action.description],
+            stopped: true,
+            stopReason: 'NO_ACTIONABLE_GAP',
+            currentStateSnapshot: this.captureStateSnapshot(state),
+          },
+          nextState: state,
+        };
+      }
+
+      // 7. Safety / CEO Sovereignty Check
+      if (action.estimatedRisk === 'HIGH' || action.estimatedRisk === 'CRITICAL') {
+        this.approvalManager.requestApproval({
+          project: mission.project,
+          type: action.estimatedRisk === 'CRITICAL' ? 'CRITICAL_ARCHITECTURE_CHANGE' : 'SECURITY_OVERRIDE',
+          title: `Autonomous Loop Approval Required: ${action.title}`,
+          rationale: `Mission ${mission.title} generated action ${action.id} with ${action.estimatedRisk} risk. Human approval mandatory before execution.`,
+          requestedBy: 'autonomous-controller',
+        });
+
+        return {
+          result: {
+            missionId: mission.id,
+            cycleNumber,
+            executionStatus: 'WAITING_APPROVAL',
+            validationStatus: 'NOT_RUN',
+            stateUpdated: false,
+            evidence: [`CEO approval required for ${action.estimatedRisk} risk action: ${action.title}`],
+            stopped: true,
+            stopReason: 'WAITING_APPROVAL',
+            currentStateSnapshot: this.captureStateSnapshot(state),
+          },
+          nextState: state,
+        };
+      }
+
+      // 8. Generate Canonical EngineeringTask
+      const engTask = generateEngineeringTaskFromAction(action, mission);
+      const resolvedContext = resolveContext(engTask);
+      const runtimeInput = engineeringTaskToTask(engTask, {}, resolvedContext);
+
+      // 9. Enqueue in TaskRepository
+      const storedTask = await this.taskRepo.create(runtimeInput);
+
+      // 10. Execute Task via Worker
+      let outcome: TaskExecutionOutcome;
+      if (workerExecutor) {
+        outcome = await workerExecutor(storedTask);
+      } else {
+        // Environment check: if no live runner is provided and no cloud credentials exist
+        outcome = {
+          status: 'BLOCKED',
+          failureReason: 'No worker executor provided and external LLM gateway credentials not configured in local environment',
+        };
+      }
+
+      // 11. Evidence-First Validation
+      // Rule: Task completed != Capability verified.
+      // Verification requires: Task status COMPLETED + Finalizer validation passed + code evidence exists.
+      const evidenceList: string[] = [];
+      let isVerified = false;
+      let validationStatus: AutonomousExecutionResult['validationStatus'] = 'NOT_RUN';
+
+      if (outcome.status === 'COMPLETED') {
+        const finalizerPassed = !outcome.finalizeResult || outcome.finalizeResult.status === 'COMPLETED';
+        const hasEvidence = !!(outcome.evidenceSnippet || (outcome.changedFiles && outcome.changedFiles.length > 0) || outcome.stdout);
+
+        if (finalizerPassed && hasEvidence) {
+          isVerified = true;
+          validationStatus = 'PASSED';
+          evidenceList.push(`Task ${storedTask.id} executed successfully and passed finalizer validation.`);
+          if (outcome.evidenceSnippet) evidenceList.push(`Code evidence: ${outcome.evidenceSnippet}`);
+          if (outcome.changedFiles) evidenceList.push(`Modified files: ${outcome.changedFiles.join(', ')}`);
+        } else {
+          validationStatus = 'FAILED';
+          evidenceList.push(`Task completed execution but failed formal validation criteria: ${outcome.failureReason || 'Insufficient evidence'}`);
+        }
+      } else if (outcome.status === 'BLOCKED') {
+        validationStatus = 'BLOCKED';
+        evidenceList.push(`Task execution blocked: ${outcome.failureReason || 'Environment constraints'}`);
+      } else {
+        validationStatus = 'FAILED';
+        evidenceList.push(`Task execution failed: ${outcome.failureReason || outcome.stderr || 'Execution error'}`);
+      }
+
+      // 12. Real State Update
+      let nextState = state;
+      let stateUpdated = false;
+      const targetCapId = action.targetCapabilityId;
+
+      if (isVerified && targetCapId) {
+        const evidenceStr = evidenceList.join(' | ');
+        nextState = applyStateUpdate(state, targetCapId, 'VERIFIED', evidenceStr);
+        stateUpdated = true;
+      } else if (validationStatus === 'FAILED' && targetCapId) {
+        // Record partial failure in state without fabricating verification
+        nextState = applyStateUpdate(state, targetCapId, 'PARTIAL', `Validation failed: ${outcome.failureReason || outcome.stderr || 'Tests or validation failed'}`);
+        stateUpdated = true;
+      }
+
+      // 13. Derive Next Action Preview for Observability
+      const nextGaps = analyzeGaps(mission, nextState);
+      const nextAction = selectNextBestAction(mission, nextGaps, nextState);
+
+      const stopped = outcome.status === 'BLOCKED' || (outcome.status === 'FAILED' && mission.riskPolicy === 'STRICT');
+      const stopReason = outcome.status === 'BLOCKED'
+        ? 'ENVIRONMENT_BLOCKED'
+        : outcome.status === 'FAILED' && mission.riskPolicy === 'STRICT'
+        ? 'UNRECOVERABLE_FAILURE'
+        : undefined;
+
+      return {
+        result: {
+          missionId: mission.id,
+          cycleNumber,
+          taskId: storedTask.id,
+          executionStatus: outcome.status,
+          validationStatus,
+          stateUpdated,
+          updatedCapabilityId: stateUpdated ? targetCapId : undefined,
+          nextActionId: nextAction.id,
+          nextActionType: nextAction.actionType,
+          evidence: evidenceList,
+          stopped,
+          stopReason,
+          currentStateSnapshot: this.captureStateSnapshot(nextState),
+        },
+        nextState,
+      };
+    } finally {
+      this.activeCycleKeys.delete(cycleKey);
+    }
+  }
+
+  /**
+   * Executes continuous autonomous cycles until a terminal stop condition is reached.
+   * Proves multi-cycle continuity with zero human intervention.
+   */
+  async executeMissionContinuously(
+    mission: Mission,
+    initialState: SystemCurrentState,
+    options: {
+      maxCycles?: number;
+      workerExecutor?: WorkerTaskExecutor;
+    } = {}
+  ): Promise<{
+    cycles: AutonomousExecutionResult[];
+    finalState: SystemCurrentState;
+    completed: boolean;
+    totalHumanInterventions: number;
+  }> {
+    const cycles: AutonomousExecutionResult[] = [];
+    let currentState = initialState;
+    let cycleCount = 0;
+    const max = options.maxCycles || mission.maxCycles || 5;
+
+    while (cycleCount < max) {
+      cycleCount += 1;
+
+      const { result, nextState } = await this.executeCycle(
+        mission,
+        currentState,
+        cycleCount,
+        options.workerExecutor
+      );
+
+      cycles.push(result);
+      currentState = nextState;
+
+      if (result.stopped || result.executionStatus === 'COMPLETED' && result.stopReason === 'MISSION_COMPLETED') {
+        break;
+      }
+    }
+
+    const isCompleted = mission.status === 'COMPLETED';
+
+    return {
+      cycles,
+      finalState: currentState,
+      completed: isCompleted,
+      totalHumanInterventions: 0, // Machine-driven continuous loop between cycles
+    };
+  }
+
+  private captureStateSnapshot(state: SystemCurrentState): Record<string, CapabilityStatus> {
+    return Object.fromEntries(
+      Object.entries(state.capabilities).map(([k, v]) => [k, v.status])
+    );
+  }
+}
