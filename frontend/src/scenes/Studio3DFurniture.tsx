@@ -164,7 +164,7 @@ export const StudioMixingConsole: React.FC<StudioMixingConsoleProps> = ({
           }}
         >
           <span>🎛️</span>
-          <span>CLIQUE PARA ABRIR LOGIC PRO DAW</span>
+          <span>CLIQUE PARA ABRIR PUB DAW</span>
         </div>
       </Html>
 

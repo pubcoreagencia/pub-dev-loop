@@ -21,14 +21,19 @@ export class OfficeEventStreamClient {
   constructor(project = 'pub-dev-loop', listener: EventStreamListener, baseUrl = '') {
     this.project = project;
     this.listener = listener;
-    this.baseUrl = baseUrl;
+    this.baseUrl = baseUrl || (
+      typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+        ? ''
+        : 'https://pub-dev-loop-api.contato-pubcore.workers.dev'
+    );
   }
 
   public connect(): void {
     if (this.eventSource || this.isExplicitlyClosed) return;
 
     this.setStatus('connecting');
-    const url = `${this.baseUrl}/office/stream?project=${encodeURIComponent(this.project)}${
+    const cleanBase = this.baseUrl.replace(/\/+$/, '');
+    const url = `${cleanBase}/office/stream?project=${encodeURIComponent(this.project)}${
       this.lastEventSequence > 0 ? `&lastEventId=${this.lastEventSequence}` : ''
     }`;
 

@@ -140,6 +140,13 @@ export interface AgentDefinition {
   lastHandoffFrom?: string;
   currentProject?: string;
   currentShiftTask?: string;
+  sectorId?: string;
+  sectorName?: string;
+  accentColor?: string;
+  gender?: 'M' | 'F' | 'OTHER';
+  age?: number;
+  drinkPreference?: string;
+  tag?: string;
 
   // Telemetria e histórico em tempo real
   executionMetrics?: {

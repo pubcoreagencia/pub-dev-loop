@@ -180,6 +180,162 @@ export const AgentInspector: React.FC = () => {
             </>
           )}
 
+          {/* TELEMETRIA EM TEMPO REAL & PROJETO ATIVO */}
+          {!isCeo && (
+            <div className="inspector-section" style={{ background: 'rgba(15, 23, 42, 0.7)', padding: '12px', borderRadius: '8px', border: '1px solid #0284c7' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <h4 className="section-title" style={{ margin: 0, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#38bdf8', boxShadow: '0 0 8px #38bdf8' }} />
+                  ⚡ EXECUÇÃO EM TEMPO REAL (BACKEND / EDGE)
+                </h4>
+                <span style={{ fontSize: '10px', color: '#10b981', fontWeight: 800, background: 'rgba(16, 185, 129, 0.15)', padding: '2px 8px', borderRadius: '12px', border: '1px solid #10b981' }}>
+                  LIVE TELEMETRY
+                </span>
+              </div>
+
+              {agent.currentProject && (
+                <div style={{ background: '#1e293b', padding: '8px 10px', borderRadius: '6px', border: '1px solid #334155', marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '11px', color: '#94a3b8' }}>Repositório Ativo no GitHub:</span>
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#facc15' }}>pubcoreagencia/{agent.currentProject}</span>
+                  </div>
+                  {agent.currentShiftTask && (
+                    <div style={{ fontSize: '11px', color: '#f8fafc', marginTop: '4px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span>🚀</span> <span>{agent.currentShiftTask}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* MÉTRICAS DE EXECUÇÃO */}
+              {agent.executionMetrics && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginBottom: '10px', textAlign: 'center' }}>
+                  <div style={{ background: '#0f172a', padding: '6px 4px', borderRadius: '4px', border: '1px solid #1e293b' }}>
+                    <div style={{ fontSize: '9px', color: '#94a3b8' }}>ENTREGAS HOJE</div>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#38bdf8' }}>{agent.executionMetrics.tasksCompletedToday}</div>
+                  </div>
+                  <div style={{ background: '#0f172a', padding: '6px 4px', borderRadius: '4px', border: '1px solid #1e293b' }}>
+                    <div style={{ fontSize: '9px', color: '#94a3b8' }}>LINHAS/ASSETS</div>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#a855f7' }}>{agent.executionMetrics.linesOfCodeOrAssets}</div>
+                  </div>
+                  <div style={{ background: '#0f172a', padding: '6px 4px', borderRadius: '4px', border: '1px solid #1e293b' }}>
+                    <div style={{ fontSize: '9px', color: '#94a3b8' }}>UPTIME 24H</div>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#10b981' }}>{agent.executionMetrics.uptimePercent}%</div>
+                  </div>
+                  <div style={{ background: '#0f172a', padding: '6px 4px', borderRadius: '4px', border: '1px solid #1e293b' }}>
+                    <div style={{ fontSize: '9px', color: '#94a3b8' }}>LATÊNCIA EDGE</div>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#f59e0b' }}>{agent.executionMetrics.activeLatencyMs}ms</div>
+                  </div>
+                </div>
+              )}
+
+              {/* TERMINAL DO CÓDIGO PROCESSADO PELO AGENTE */}
+              {agent.currentCodeSnippet && (
+                <div style={{ marginBottom: '10px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', marginBottom: '4px' }}>
+                    💻 CÓDIGO / ARQUIVO EM PROCESSO:
+                  </div>
+                  <pre style={{
+                    background: '#0a0e17',
+                    border: '1px solid #1e293b',
+                    borderRadius: '6px',
+                    padding: '8px 10px',
+                    color: '#34d399',
+                    fontFamily: 'Consolas, monospace',
+                    fontSize: '10.5px',
+                    lineHeight: 1.4,
+                    overflowX: 'auto',
+                    margin: 0
+                  }}>
+                    {agent.currentCodeSnippet}
+                  </pre>
+                </div>
+              )}
+
+              {/* LOGS HISTÓRICOS EM TEMPO REAL */}
+              {agent.realtimeLogs && agent.realtimeLogs.length > 0 && (
+                <div>
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', marginBottom: '4px' }}>
+                    📜 HISTÓRICO DE LOGS DE EXECUÇÃO:
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '140px', overflowY: 'auto' }}>
+                    {agent.realtimeLogs.map((lg) => (
+                      <div key={lg.id} style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        background: '#090d16',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        fontSize: '10px',
+                        borderLeft: `2px solid ${lg.level === 'exec' ? '#38bdf8' : lg.level === 'success' ? '#10b981' : '#eab308'}`
+                      }}>
+                        <span style={{ color: '#64748b', fontFamily: 'monospace' }}>{lg.timestamp}</span>
+                        <span style={{ color: lg.level === 'exec' ? '#7dd3fc' : lg.level === 'success' ? '#86efac' : '#fef08a', fontFamily: 'monospace' }}>
+                          {lg.message}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* AÇÃO DIRETA DO CEO PARA A BANCADA DESTE AGENTE */}
+              <div style={{ marginTop: '12px', padding: '12px', background: 'rgba(2, 132, 199, 0.1)', border: '1px solid #0284c7', borderRadius: '6px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 800, color: '#38bdf8', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>🎯</span> ENVIAR ORDEM DIRETA PARA A BANCADA ({selectedAgent.name})
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    id="direct-agent-task-input"
+                    placeholder={`Ex: ${selectedAgent.id === 'image-designer' ? 'Gerar render 3D de pinscher...' : selectedAgent.id === 'video-editor' ? 'Cortar teaser de drone 4K...' : 'Executar demanda técnica...'}`}
+                    style={{
+                      flex: 1,
+                      background: '#090d16',
+                      border: '1px solid #334155',
+                      borderRadius: '4px',
+                      padding: '6px 10px',
+                      color: '#f8fafc',
+                      fontSize: '12px',
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const val = (e.target as HTMLInputElement).value;
+                        if (val.trim()) {
+                          useStore.getState().submitObjective(`[Direcionado para ${selectedAgent.name}]: ${val.trim()}`);
+                          (e.target as HTMLInputElement).value = '';
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    style={{
+                      background: '#0284c7',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '4px',
+                      padding: '6px 14px',
+                      fontWeight: 700,
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                    onClick={() => {
+                      const inp = document.getElementById('direct-agent-task-input') as HTMLInputElement;
+                      if (inp && inp.value.trim()) {
+                        useStore.getState().submitObjective(`[Direcionado para ${selectedAgent.name}]: ${inp.value.trim()}`);
+                        inp.value = '';
+                      }
+                    }}
+                  >
+                    🚀 Despachar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* TAREFA ATIVA */}
           {activeTask && (
             <div className="inspector-section active-task-section">

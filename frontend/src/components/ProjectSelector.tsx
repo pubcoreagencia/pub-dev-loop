@@ -215,6 +215,35 @@ export const ProjectSelector: React.FC = () => {
             ) : (
               filteredProjects.map((p) => {
                 const isSelected = p.name === activeProject;
+
+                // Mapeamento de Maturidade e Prioridade Canônica 24h
+                let maturity: 'ONLINE' | 'DEV' | 'IDEIA' = 'DEV';
+                let priority: 'P0' | 'P1' | 'P2' | 'P3' = 'P1';
+
+                const onlineProjects = [
+                  'pub-dev-loop', 'pub-9router-cloud', 'pub-github-mcp', 'pubecomhub',
+                  'pub-ecom-catalog-worker', 'pub-shopee-scraper', 'pub-leads',
+                  'PUB-BEATS', 'pub-core-holding-portal', 'pubcoreagencia.github.io',
+                  'pub-agencia-landing', 'pub-films-landing', 'pub3d-landing'
+                ];
+                const ideaProjects = [
+                  'pub-ops-hub', 'pubgrowth-ai-evolution', 'pubfood-control-growth', 'PUB-CORE'
+                ];
+
+                if (onlineProjects.includes(p.name)) {
+                  maturity = 'ONLINE';
+                  priority = ['pub-dev-loop', 'pub-9router-cloud', 'pubecomhub', 'pub-ecom-catalog-worker'].includes(p.name) ? 'P0' : 'P1';
+                } else if (ideaProjects.includes(p.name)) {
+                  maturity = 'IDEIA';
+                  priority = p.name === 'PUB-CORE' ? 'P3' : 'P2';
+                } else {
+                  maturity = 'DEV';
+                  priority = p.name === 'neural-os' ? 'P0' : 'P1';
+                }
+
+                const maturityBadgeColor = maturity === 'ONLINE' ? '#10b981' : maturity === 'DEV' ? '#f59e0b' : '#a855f7';
+                const maturityBg = maturity === 'ONLINE' ? 'rgba(16, 185, 129, 0.15)' : maturity === 'DEV' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(168, 85, 247, 0.15)';
+
                 return (
                   <div
                     key={p.name}
@@ -238,7 +267,7 @@ export const ProjectSelector: React.FC = () => {
                       if (!isSelected) e.currentTarget.style.background = 'transparent';
                     }}
                   >
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', maxWidth: '240px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', maxWidth: '230px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ fontSize: '12px' }}>{p.isPrivate ? '🔒' : '🌐'}</span>
                         <span style={{ color: isSelected ? '#38bdf8' : '#e2e8f0', fontWeight: isSelected ? 700 : 500, fontSize: '11px' }}>
@@ -251,9 +280,34 @@ export const ProjectSelector: React.FC = () => {
                         </span>
                       )}
                     </div>
-                    {isSelected && (
-                      <span style={{ color: '#38bdf8', fontSize: '12px', fontWeight: 'bold' }}>✓</span>
-                    )}
+                    
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{
+                        fontSize: '8px',
+                        fontWeight: 800,
+                        padding: '1px 5px',
+                        borderRadius: '3px',
+                        border: `1px solid ${maturityBadgeColor}50`,
+                        backgroundColor: maturityBg,
+                        color: maturityBadgeColor
+                      }}>
+                        {maturity}
+                      </span>
+                      <span style={{
+                        fontSize: '8px',
+                        fontWeight: 800,
+                        padding: '1px 4px',
+                        borderRadius: '3px',
+                        backgroundColor: priority === 'P0' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                        color: priority === 'P0' ? '#f87171' : '#93c5fd',
+                        border: priority === 'P0' ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid rgba(59, 130, 246, 0.4)'
+                      }}>
+                        {priority}
+                      </span>
+                      {isSelected && (
+                        <span style={{ color: '#38bdf8', fontSize: '12px', fontWeight: 'bold', marginLeft: '4px' }}>✓</span>
+                      )}
+                    </div>
                   </div>
                 );
               })

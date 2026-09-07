@@ -1,12 +1,29 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useStore } from '../store/useStore';
 import type { AgentDefinition, CeoIdentity } from '../types/office';
 import { OPERATIONAL_STATE_LABELS_PT, SPATIAL_STATE_LABELS_PT } from '../config/officeLayout';
 import { EmployeeAvatar } from './EmployeeAvatar';
 import { getCurrentShift } from '../services/autonomousScheduleData';
+import { PUB_HOLDING_SECTORS, FIFTY_SPECIALIZED_AGENTS } from '../config/squadsData';
+import { SECTOR_ROOM_CONFIGS } from '../scenes/Office3DScene';
+import { SECTOR_COLORS, SECTOR_ICONS } from '../scenes/SectorRoom3D';
+
+type WingFilter = 'ALL' | 'CORE' | 'OESTE' | 'LESTE' | 'NORTE' | 'SUL';
 
 export const OfficeFloorMap: React.FC = () => {
-  const { agents, ceo, meetingRoom, selectedAgent, selectAgent, speechBubbles } = useStore();
+  const {
+    agents,
+    ceo,
+    meetingRoom,
+    selectedAgent,
+    selectAgent,
+    speechBubbles,
+    selectedSectorId,
+    setSelectedSectorId,
+    setFiftyAgentsModalOpen,
+  } = useStore();
+
+  const [activeWing, setActiveWing] = useState<WingFilter>('ALL');
   const currentShift = getCurrentShift();
 
   const getAgentOrFallback = (id: string, defaultName: string, defaultTitle: string): AgentDefinition => {
@@ -61,7 +78,7 @@ export const OfficeFloorMap: React.FC = () => {
     const agentDef = employee as AgentDefinition;
     const stateInfo = isCeo
       ? { label: 'Comandante Ativo', tagCls: 'state-idle' }
-      : OPERATIONAL_STATE_LABELS_PT[agentDef.operationalState || 'idle'];
+      : OPERATIONAL_STATE_LABELS_PT[agentDef.operationalState || 'idle'] || { label: 'Operando', tagCls: 'state-idle' };
 
     const spatialState = employee.spatialState || 'idle';
     const spatialInfo = SPATIAL_STATE_LABELS_PT[spatialState] || { label: 'Na Estação', tagCls: 'spatial-idle' };
@@ -81,9 +98,8 @@ export const OfficeFloorMap: React.FC = () => {
         <div
           className={`agent-workstation ${isSelected ? 'selected' : ''} ${stateInfo.tagCls} ${spatialInfo.tagCls} ${isCeo ? 'ceo-workstation' : ''}`}
           onClick={() => selectAgent(employee)}
-          title={`Clique para inspecionar a estação de ${employee.name}`}
+          title={`Clique para inspecionar ${employee.name} (${avatar.roleLabel})`}
         >
-          {/* PERSONAGEM RETRO VETORIAL + MONITOR CRT */}
           <EmployeeAvatar
             avatar={avatar}
             operationalState={agentDef.operationalState || 'idle'}
@@ -96,28 +112,30 @@ export const OfficeFloorMap: React.FC = () => {
             <div className="workstation-header-line">
               <span className="agent-card-name">{avatar.displayName}</span>
               <span className="workstation-desk-tag">
-                {employee.position?.deskLabel || 'Bancada'}
+                {employee.position?.deskLabel || agentDef.role || 'Baia'}
               </span>
             </div>
             <span className="agent-card-title">{avatar.roleLabel}</span>
 
-            {/* HANDOFF OPERACIONAL REAL */}
-            {agentDef.lastHandoffFrom && (
-              <div className="handoff-indicator-badge" title={`Recebeu dependência de ${agentDef.lastHandoffFrom.toUpperCase()}`}>
-                <span className="handoff-arrow">➔</span>
-                <span className="handoff-text">Handoff de <strong>{agentDef.lastHandoffFrom.toUpperCase()}</strong></span>
+            {/* MODELO DE IA ASSOCIADO */}
+            {agentDef.preferredModel && (
+              <div
+                style={{
+                  fontSize: '8.5px',
+                  color: '#facc15',
+                  fontWeight: 700,
+                  marginTop: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                }}
+              >
+                <span>⚡</span>
+                <span>{agentDef.preferredModel.split('/')[1] || agentDef.preferredModel}</span>
               </div>
             )}
 
-            {/* ESTADO ESPACIAL REAL (QUANDO EM DESLOCAMENTO OU INTERAÇÃO) */}
-            {spatialState !== 'idle' && (
-              <div className={`spatial-movement-tag ${spatialInfo.tagCls}`}>
-                <span className="spatial-dot"></span>
-                <span>{spatialInfo.label}</span>
-              </div>
-            )}
-
-            {/* PROJETO ATIVO DA ESTEIRA AUTÔNOMA */}
+            {/* PROJETO ATIVO / TAREFA ATUAL */}
             {agentDef.currentProject && (
               <div
                 style={{
@@ -138,11 +156,6 @@ export const OfficeFloorMap: React.FC = () => {
                     {agentDef.currentProject}
                   </span>
                 </div>
-                {agentDef.currentShiftTask && (
-                  <span style={{ fontSize: '8px', color: '#94a3b8', lineHeight: 1.2 }}>
-                    {agentDef.currentShiftTask.slice(0, 48)}...
-                  </span>
-                )}
               </div>
             )}
 
@@ -156,14 +169,23 @@ export const OfficeFloorMap: React.FC = () => {
     );
   };
 
+  // Filtrar setores por Ala
+  const filteredSectors = PUB_HOLDING_SECTORS.filter((sec) => {
+    const cfg = SECTOR_ROOM_CONFIGS[sec.id];
+    if (activeWing === 'ALL') return true;
+    if (!cfg) return false;
+    return cfg.wing === activeWing;
+  });
+
   return (
     <div className="office-floor-container">
+      {/* CABEÇALHO DA PLANTA BAIXA */}
       <div className="floor-blueprint-header">
         <div className="blueprint-title-row">
           <span className="blueprint-icon">🏢</span>
-          <span className="blueprint-title">PLANTA DO ESCRITÓRIO • 50 FUNCIONÁRIOS (10 SQUADS)</span>
+          <span className="blueprint-title">CAMPUS PUB CORE • 10 SALAS SETORIAIS (50 AGENTES)</span>
           <button
-            onClick={() => useStore.getState().setFiftyAgentsModalOpen(true)}
+            onClick={() => setFiftyAgentsModalOpen(true)}
             style={{
               marginLeft: 'auto',
               marginRight: '8px',
@@ -195,111 +217,262 @@ export const OfficeFloorMap: React.FC = () => {
           </span>
         </div>
         <span className="blueprint-legend">
-          ESTEIRA 24H: {currentShift.focus}
+          ESTEIRA 24H: 10 Squads Alocadas nas Alas Periféricas • Núcleo Central Ativo
         </span>
+
+        {/* NAVEGAÇÃO ENTRE ALAS E NÚCLEO */}
+        <div
+          style={{
+            display: 'flex',
+            gap: '4px',
+            marginTop: '8px',
+            overflowX: 'auto',
+            paddingBottom: '2px',
+          }}
+        >
+          {[
+            { key: 'ALL', label: '🌐 Todas as Salas' },
+            { key: 'CORE', label: '🏛️ Núcleo Central' },
+            { key: 'OESTE', label: '⬅️ Ala Oeste (Set. 1, 2, 8)' },
+            { key: 'LESTE', label: '➡️ Ala Leste (Set. 3, 6, 7)' },
+            { key: 'NORTE', label: '⬆️ Ala Norte (Set. 4, 10)' },
+            { key: 'SUL', label: '⬇️ Ala Sul (Set. 5, 9)' },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveWing(tab.key as WingFilter)}
+              style={{
+                background: activeWing === tab.key ? '#0284c7' : 'rgba(15, 23, 42, 0.6)',
+                border: activeWing === tab.key ? '1px solid #38bdf8' : '1px solid #334155',
+                color: activeWing === tab.key ? '#ffffff' : '#94a3b8',
+                borderRadius: '8px',
+                padding: '3px 8px',
+                fontSize: '10px',
+                fontWeight: activeWing === tab.key ? 700 : 500,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                transition: 'all 0.15s',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="floor-grid">
-        {/* GABINETE EXECUTIVO DO CEO */}
-        <div className="office-department-zone ceo-zone">
-          <div className="zone-header">
-            <span className="zone-tag">GABINETE EXECUTIVO</span>
-            <span className="zone-badge">DIRETORIA</span>
-          </div>
-          <div className="zone-desks">
-            {renderWorkstation(ceo, true)}
-          </div>
-        </div>
+        {/* ========================================================================= */}
+        {/* NÚCLEO CENTRAL (DIRETORIA, ORQUESTRAÇÃO & ENGENHARIA PRINCIPAL) */}
+        {/* ========================================================================= */}
+        {(activeWing === 'ALL' || activeWing === 'CORE') && (
+          <>
+            {/* GABINETE EXECUTIVO DO CEO */}
+            <div className="office-department-zone ceo-zone">
+              <div className="zone-header">
+                <span className="zone-tag">GABINETE EXECUTIVO &amp; PUB RECORDS</span>
+                <span className="zone-badge">DIRETORIA</span>
+              </div>
+              <div className="zone-desks">
+                {renderWorkstation(ceo, true)}
+              </div>
+            </div>
 
-        {/* SUÍTE DE LIDERANÇA & ORQUESTRAÇÃO */}
-        <div className="office-department-zone leadership-zone">
-          <div className="zone-header">
-            <span className="zone-tag">SUÍTE DE LIDERANÇA &amp; ESTRATÉGIA</span>
-            <span className="zone-badge">ORQUESTRAÇÃO</span>
-          </div>
-          <div className="zone-desks">
-            {renderWorkstation(chief)}
-          </div>
-        </div>
+            {/* SUÍTE DE LIDERANÇA & ORQUESTRAÇÃO */}
+            <div className="office-department-zone leadership-zone">
+              <div className="zone-header">
+                <span className="zone-tag">SUÍTE DE LIDERANÇA &amp; ESTRATÉGIA</span>
+                <span className="zone-badge">ORQUESTRAÇÃO</span>
+              </div>
+              <div className="zone-desks">
+                {renderWorkstation(chief)}
+              </div>
+            </div>
 
-        {/* SALA DE ALINHAMENTO & ESTRATÉGIA */}
-        <div className="office-department-zone meeting-room-zone">
-          <div className="zone-header">
-            <span className="zone-tag">SALA DE ALINHAMENTO &amp; REUNIÕES</span>
-            <span className={`zone-badge ${meetingRoom.status === 'EM_REUNIAO' ? 'in-meeting' : 'available'}`}>
-              {meetingRoom.status === 'EM_REUNIAO' ? '🔴 EM REUNIÃO' : '🟢 DISPONÍVEL'}
-            </span>
-          </div>
-          <div className="meeting-table-container">
-            <div className="meeting-conference-table">
-              <span className="table-label">MESA DE CONFERÊNCIA</span>
-              {meetingRoom.status === 'EM_REUNIAO' ? (
-                <div className="meeting-active-block">
-                  <span className="meeting-topic-text">
-                    📋 {meetingRoom.topic || 'Alinhamento Estratégico'}
-                  </span>
-                  <div className="meeting-attendees-row">
-                    <span className="attendee-pill">👑 CEO</span>
-                    <span className="attendee-separator">⚡</span>
-                    <span className="attendee-pill">👔 CHIEF OF STAFF</span>
+            {/* SALA DE ALINHAMENTO & ESTRATÉGIA */}
+            <div className="office-department-zone meeting-room-zone">
+              <div className="zone-header">
+                <span className="zone-tag">SALA DE ALINHAMENTO &amp; REUNIÕES</span>
+                <span className={`zone-badge ${meetingRoom.status === 'EM_REUNIAO' ? 'in-meeting' : 'available'}`}>
+                  {meetingRoom.status === 'EM_REUNIAO' ? '🔴 EM REUNIÃO' : '🟢 DISPONÍVEL'}
+                </span>
+              </div>
+              <div className="meeting-table-container">
+                <div className="meeting-conference-table">
+                  <span className="table-label">MESA DE CONFERÊNCIA</span>
+                  {meetingRoom.status === 'EM_REUNIAO' ? (
+                    <div className="meeting-active-block">
+                      <span className="meeting-topic-text">
+                        📋 {meetingRoom.topic || 'Alinhamento Estratégico'}
+                      </span>
+                      <div className="meeting-attendees-row">
+                        <span className="attendee-pill">👑 CEO</span>
+                        <span className="attendee-separator">⚡</span>
+                        <span className="attendee-pill">👔 CHIEF OF STAFF</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="meeting-idle-text">
+                      Aguardando convocação de alinhamento pelo Chief of Staff
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* LABORATÓRIO DE ENGENHARIA DE SOFTWARE */}
+            <div className="office-department-zone engineering-zone">
+              <div className="zone-header">
+                <span className="zone-tag">LABORATÓRIO DE ENGENHARIA DE SOFTWARE</span>
+                <span className="zone-badge">DEV LAB</span>
+              </div>
+              <div className="zone-desks">
+                {renderWorkstation(architect)}
+                {renderWorkstation(developer)}
+              </div>
+            </div>
+
+            {/* LABORATÓRIO DE REVISÃO & QUALIDADE */}
+            <div className="office-department-zone qa-zone">
+              <div className="zone-header">
+                <span className="zone-tag">LABORATÓRIO DE CODE REVIEW &amp; QA</span>
+                <span className="zone-badge">QUALIDADE</span>
+              </div>
+              <div className="zone-desks">
+                {renderWorkstation(reviewer)}
+                {renderWorkstation(qa)}
+              </div>
+            </div>
+
+            {/* ESTÚDIO MULTIMÍDIA, VÍDEO & 3D */}
+            <div className="office-department-zone multimedia-zone" style={{ borderTop: '2px solid #e11d48' }}>
+              <div className="zone-header">
+                <span className="zone-tag" style={{ color: '#fb7185' }}>ESTÚDIO MULTIMÍDIA &amp; PRODUÇÃO 3D</span>
+                <span className="zone-badge" style={{ background: '#881337', color: '#fecdd3' }}>MULTIMÍDIA</span>
+              </div>
+              <div className="zone-desks">
+                {renderWorkstation(videoEditor)}
+                {renderWorkstation(imageDesigner)}
+              </div>
+            </div>
+
+            {/* ESTÚDIO MUSICAL PUB RECORDS & GROWTH HUB */}
+            <div className="office-department-zone growth-zone" style={{ borderTop: '2px solid #06b6d4' }}>
+              <div className="zone-header">
+                <span className="zone-tag" style={{ color: '#22d3ee' }}>PUB RECORDS &amp; HUB DE GROWTH OPS</span>
+                <span className="zone-badge" style={{ background: '#164e63', color: '#cffafe' }}>GROWTH &amp; AUDIO</span>
+              </div>
+              <div className="zone-desks">
+                {renderWorkstation(soundEngineer)}
+                {renderWorkstation(growthOps)}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ========================================================================= */}
+        {/* AS 10 SALAS DOS SETORES ESPALHADAS NO ENTORNO (ALAS OESTE, LESTE, NORTE, SUL) */}
+        {/* ========================================================================= */}
+        {activeWing !== 'CORE' &&
+          filteredSectors.map((sec) => {
+            const cfg = SECTOR_ROOM_CONFIGS[sec.id];
+            const accentColor = SECTOR_COLORS[sec.id] || '#38bdf8';
+            const icon = SECTOR_ICONS[sec.id] || '🏢';
+            const isSelected = selectedSectorId === sec.id;
+            const squadAgents = FIFTY_SPECIALIZED_AGENTS.filter((a) => a.sectorId === sec.id);
+
+            return (
+              <div
+                key={sec.id}
+                className={`office-department-zone sector-room-zone ${isSelected ? 'selected-sector' : ''}`}
+                style={{
+                  borderTop: `3px solid ${accentColor}`,
+                  borderLeft: isSelected ? `4px solid ${accentColor}` : undefined,
+                  background: isSelected
+                    ? 'linear-gradient(180deg, rgba(20, 30, 55, 0.95) 0%, rgba(10, 15, 29, 0.98) 100%)'
+                    : 'linear-gradient(180deg, rgba(15, 23, 42, 0.9) 0%, rgba(8, 12, 24, 0.95) 100%)',
+                  boxShadow: isSelected ? `0 0 25px ${accentColor}44` : undefined,
+                  transition: 'all 0.2s',
+                }}
+              >
+                {/* CABEÇALHO DA SALA DO SETOR */}
+                <div
+                  className="zone-header"
+                  onClick={() => setSelectedSectorId(sec.id)}
+                  style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                  title="Clique para selecionar este setor"
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '18px' }}>{icon}</span>
+                    <div>
+                      <span className="zone-tag" style={{ color: accentColor, fontWeight: 900, fontSize: '11px' }}>
+                        SETOR {cfg ? cfg.sectorNumber : ''}: {sec.name.split(':')[1]?.trim() || sec.name}
+                      </span>
+                      <div style={{ fontSize: '9px', color: '#94a3b8' }}>
+                        Sala Dedicada 3D • {cfg ? `Ala ${cfg.wing}` : 'Perímetro'} • 5 Especialistas
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span
+                      style={{
+                        fontSize: '9px',
+                        background: 'rgba(255,255,255,0.06)',
+                        padding: '2px 6px',
+                        borderRadius: '6px',
+                        color: '#cbd5e1',
+                        fontWeight: 700,
+                      }}
+                    >
+                      ALA {cfg?.wing}
+                    </span>
+                    <span
+                      className="zone-badge"
+                      style={{
+                        background: `${accentColor}22`,
+                        color: accentColor,
+                        border: `1px solid ${accentColor}55`,
+                        fontWeight: 800,
+                      }}
+                    >
+                      5/5 ONLINE
+                    </span>
                   </div>
                 </div>
-              ) : (
-                <span className="meeting-idle-text">
-                  Aguardando convocação de alinhamento pelo Chief of Staff
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
 
-        {/* LABORATÓRIO DE ENGENHARIA DE SOFTWARE */}
-        <div className="office-department-zone engineering-zone">
-          <div className="zone-header">
-            <span className="zone-tag">LABORATÓRIO DE ENGENHARIA DE SOFTWARE</span>
-            <span className="zone-badge">DEV LAB</span>
-          </div>
-          <div className="zone-desks">
-            {renderWorkstation(architect)}
-            {renderWorkstation(developer)}
-          </div>
-        </div>
+                {/* REPOSITÓRIOS DESIGNADOS */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', padding: '4px 0' }}>
+                  {sec.repos.map((repo) => (
+                    <span
+                      key={repo}
+                      style={{
+                        fontSize: '8.5px',
+                        background: 'rgba(56, 189, 248, 0.08)',
+                        border: '1px solid rgba(56, 189, 248, 0.25)',
+                        borderRadius: '4px',
+                        padding: '1px 5px',
+                        color: '#7dd3fc',
+                        fontWeight: 600,
+                      }}
+                    >
+                      📦 {repo}
+                    </span>
+                  ))}
+                </div>
 
-        {/* LABORATÓRIO DE REVISÃO & QUALIDADE */}
-        <div className="office-department-zone qa-zone">
-          <div className="zone-header">
-            <span className="zone-tag">LABORATÓRIO DE CODE REVIEW &amp; QA</span>
-            <span className="zone-badge">QUALIDADE</span>
-          </div>
-          <div className="zone-desks">
-            {renderWorkstation(reviewer)}
-            {renderWorkstation(qa)}
-          </div>
-        </div>
-
-        {/* ESTÚDIO MULTIMÍDIA, VÍDEO & 3D */}
-        <div className="office-department-zone multimedia-zone" style={{ borderTop: '2px solid #e11d48' }}>
-          <div className="zone-header">
-            <span className="zone-tag" style={{ color: '#fb7185' }}>ESTÚDIO MULTIMÍDIA &amp; PRODUÇÃO 3D</span>
-            <span className="zone-badge" style={{ background: '#881337', color: '#fecdd3' }}>MULTIMÍDIA</span>
-          </div>
-          <div className="zone-desks">
-            {renderWorkstation(videoEditor)}
-            {renderWorkstation(imageDesigner)}
-          </div>
-        </div>
-
-        {/* ESTÚDIO MUSICAL PUB RECORDS & GROWTH HUB */}
-        <div className="office-department-zone growth-zone" style={{ borderTop: '2px solid #06b6d4' }}>
-          <div className="zone-header">
-            <span className="zone-tag" style={{ color: '#22d3ee' }}>PUB RECORDS &amp; HUB DE GROWTH OPS</span>
-            <span className="zone-badge" style={{ background: '#164e63', color: '#cffafe' }}>GROWTH &amp; AUDIO</span>
-          </div>
-          <div className="zone-desks">
-            {renderWorkstation(soundEngineer)}
-            {renderWorkstation(growthOps)}
-          </div>
-        </div>
+                {/* OS 5 ESPECIALISTAS DA SALA */}
+                <div
+                  className="zone-desks"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))',
+                    gap: '6px',
+                  }}
+                >
+                  {squadAgents.map((agent) => renderWorkstation(agent))}
+                </div>
+              </div>
+            );
+          })}
       </div>
     </div>
   );

@@ -468,7 +468,7 @@ class AgentAutonomousEngine {
       '',
       '## 🚀 Próximos Passos & Planejamento Contínuo',
       '1. Acompanhe os logs em tempo real na interface 3D do escritório PUB DEV LOOP.',
-      '2. Comandos subsequentes podem solicitar edições e expansões pontuais em qualquer um dos 21 repositórios da Pub Core.',
+      '2. Comandos subsequentes podem solicitar edições e expansões pontuais em qualquer um dos 52 repositórios da Pub Core.',
       '3. Esteira de testes e deploys Cloudflare permanece sincronizada e pronta.',
     ].join('\n');
 
@@ -503,7 +503,7 @@ class AgentAutonomousEngine {
     if (res.ok) {
       return await res.json() as any;
     }
-    return { totalProjects: 21, kernel: 'pubcoreagencia/neural-os', logs: [] };
+    return { totalProjects: 52, kernel: 'pubcoreagencia/neural-os', logs: [] };
   }
 
   public async listBackups(repo?: string): Promise<any[]> {

@@ -507,7 +507,7 @@ export const LogicProDawModal: React.FC<Props> = ({ onClose }) => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '18px' }}>🎛️</span>
             <span style={{ fontWeight: 800, fontSize: '14px', letterSpacing: '0.02em', color: '#f8fafc' }}>
-              Logic Pro PUB REC
+              PUB DAW
             </span>
             <span
               style={{
@@ -662,7 +662,7 @@ export const LogicProDawModal: React.FC<Props> = ({ onClose }) => {
         >
           <div>
             <h1 style={{ fontSize: '28px', fontWeight: 800, color: '#f8fafc', margin: '0 0 6px 0' }}>
-              Logic Pro • Hub de Criação Musical
+              PUB DAW • Hub de Criação Musical
             </h1>
             <p style={{ color: '#94a3b8', fontSize: '14px', margin: 0 }}>
               Crie um novo projeto multitrack puro com latência zero ou continue uma produção recente da Pub Core Holding.

@@ -340,3 +340,59 @@ export async function createProject(name: string, description?: string, isPrivat
   return data.project as GitProject;
 }
 
+export interface RealGitHubEvent {
+  id: string;
+  type: string;
+  repo: string;
+  createdAt: string;
+  actionMessage: string;
+  commitSha?: string;
+  author?: string;
+}
+
+export async function fetchRealGitHubEvents(): Promise<RealGitHubEvent[]> {
+  try {
+    const res = await fetch('https://api.github.com/users/pubcoreagencia/events?per_page=20', {
+      headers: {
+        Accept: 'application/vnd.github.v3+json',
+        'User-Agent': 'PUB-DEV-LOOP-Stream',
+      },
+    });
+    if (!res.ok) return [];
+    const events = (await res.json()) as any[];
+    if (!Array.isArray(events)) return [];
+
+    return events
+      .filter((e) => e.type === 'PushEvent' || e.type === 'CreateEvent' || e.type === 'WatchEvent')
+      .map((e) => {
+        const repoClean = (e.repo?.name || 'pubcoreagencia/unknown').replace('pubcoreagencia/', '');
+        let actionMessage = 'Evento operacional registrado no GitHub';
+        let commitSha: string | undefined;
+
+        if (e.type === 'PushEvent') {
+          const firstCommit = e.payload?.commits?.[0];
+          commitSha = firstCommit?.sha ? firstCommit.sha.slice(0, 7) : (e.payload?.head ? e.payload.head.slice(0, 7) : undefined);
+          actionMessage = firstCommit?.message
+            ? firstCommit.message.split('\n')[0]
+            : `Push na branch ${e.payload?.ref ? e.payload.ref.replace('refs/heads/', '') : 'main'}`;
+        } else if (e.type === 'CreateEvent') {
+          actionMessage = `Novo recurso criado: ${e.payload?.ref_type || 'repositório'} (${e.payload?.ref || 'main'})`;
+        }
+
+        return {
+          id: `gh-evt-${e.id}`,
+          type: e.type,
+          repo: repoClean,
+          createdAt: e.created_at,
+          actionMessage,
+          commitSha,
+          author: e.actor?.login || 'pubcoreagencia',
+        };
+      });
+  } catch (err) {
+    console.warn('[API] Failed to fetch real GitHub events:', err);
+    return [];
+  }
+}
+
+

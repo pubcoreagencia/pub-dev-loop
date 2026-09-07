@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import type { AvatarProfile, EmployeeOperationalState } from '../types/office';
@@ -16,6 +16,8 @@ interface Office3DAvatarProps {
   isCeo?: boolean;
   speechBubble?: string;
   isSelected?: boolean;
+  currentProject?: string;
+  currentShiftTask?: string;
   onClick?: () => void;
 }
 
@@ -29,11 +31,15 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
   isCeo = false,
   speechBubble,
   isSelected = false,
+  currentProject,
+  currentShiftTask,
   onClick,
 }) => {
   const isJukeboxOpen = useStore((s) => s.isJukeboxOpen);
   const isConferenceActive = useStore((s) => s.isConferenceActive);
   const isKartActive = useStore((s) => s.isKartActive);
+
+  const { camera, controls } = useThree();
 
   const groupRef = useRef<THREE.Group>(null);
   const headRef = useRef<THREE.Group>(null);
@@ -48,8 +54,8 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
   const leftShinRef = useRef<THREE.Group>(null);
   const rightShinRef = useRef<THREE.Group>(null);
 
-  // Estado de controle WASD para o CEO Matheus Paes
-  const [ceoKeys, setCeoKeys] = useState({ forward: false, backward: false, left: false, right: false });
+  // Estado de controle WASD + Shift (Correr) para o CEO Matheus Paes
+  const [ceoKeys, setCeoKeys] = useState({ forward: false, backward: false, left: false, right: false, run: false });
   const ceoPosRef = useRef<THREE.Vector3>(new THREE.Vector3(position[0], position[1], position[2]));
   const ceoRotYRef = useRef<number>(rotation[1]);
   const [nearbyInstrument, setNearbyInstrument] = useState<string | null>(null);
@@ -66,6 +72,7 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
       if (e.code === 'KeyS' || e.code === 'ArrowDown') setCeoKeys((k) => ({ ...k, backward: true }));
       if (e.code === 'KeyA' || e.code === 'ArrowLeft') setCeoKeys((k) => ({ ...k, left: true }));
       if (e.code === 'KeyD' || e.code === 'ArrowRight') setCeoKeys((k) => ({ ...k, right: true }));
+      if (e.shiftKey || e.code === 'ShiftLeft' || e.code === 'ShiftRight') setCeoKeys((k) => ({ ...k, run: true }));
 
       // Interação musical com tecla E (Abre instrumentos operacionais ou DAW)
       if (e.code === 'KeyE') {
@@ -74,7 +81,7 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
         if (Math.hypot(p.x - (-11.5), p.z - (-8.0)) < 4.5) {
           useStore.getState().setActiveStudioModal('drums');
         }
-        // Mesa de Som SSL (Abre Logic Pro DAW)
+        // Mesa de Som SSL (Abre PUB DAW)
         else if (Math.hypot(p.x - 0, p.z - (-7.5)) < 5.0) {
           useStore.getState().setActiveStudioModal('daw');
         }
@@ -90,6 +97,7 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
       if (e.code === 'KeyS' || e.code === 'ArrowDown') setCeoKeys((k) => ({ ...k, backward: false }));
       if (e.code === 'KeyA' || e.code === 'ArrowLeft') setCeoKeys((k) => ({ ...k, left: false }));
       if (e.code === 'KeyD' || e.code === 'ArrowRight') setCeoKeys((k) => ({ ...k, right: false }));
+      if (!e.shiftKey && (e.code === 'ShiftLeft' || e.code === 'ShiftRight')) setCeoKeys((k) => ({ ...k, run: false }));
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -113,8 +121,9 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
       (ceoKeys.forward || ceoKeys.backward || ceoKeys.left || ceoKeys.right);
 
     if (isCeo && !isKartActive && !isConferenceActive) {
-      // Movimento WASD do CEO
-      const moveSpeed = 3.6;
+      // Movimento WASD do CEO com Shift para Correr
+      const isRunning = ceoKeys.run;
+      const moveSpeed = isRunning ? 7.2 : 3.6;
       let mx = (ceoKeys.right ? 1 : 0) - (ceoKeys.left ? 1 : 0);
       let mz = (ceoKeys.backward ? 1 : 0) - (ceoKeys.forward ? 1 : 0);
 
@@ -122,6 +131,8 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
         const len = Math.hypot(mx, mz);
         mx /= len;
         mz /= len;
+
+        const prevPos = ceoPosRef.current.clone();
 
         ceoPosRef.current.x += mx * moveSpeed * dt;
         ceoPosRef.current.z += mz * moveSpeed * dt;
@@ -133,6 +144,16 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
         // Ângulo de caminhada
         const walkAngle = Math.atan2(mx, mz);
         ceoRotYRef.current = THREE.MathUtils.lerp(ceoRotYRef.current, walkAngle, dt * 10);
+
+        // A CÂMERA SE MOVIMENTA JUNTO COM O PERSONAGEM
+        const deltaX = ceoPosRef.current.x - prevPos.x;
+        const deltaZ = ceoPosRef.current.z - prevPos.z;
+        camera.position.x += deltaX;
+        camera.position.z += deltaZ;
+        if (controls && (controls as any).target) {
+          (controls as any).target.x += deltaX;
+          (controls as any).target.z += deltaZ;
+        }
       }
 
       cur.x = ceoPosRef.current.x;
@@ -149,17 +170,18 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
       else if (dSynth < 4.5) setNearbyInstrument('synth');
       else setNearbyInstrument(null);
 
-      // Animação de caminhada do CEO
+      // Animação de caminhada / corrida do CEO
       if (isCeoManualWalking) {
-        cur.y = Math.abs(Math.sin(clock.getElapsedTime() * 11)) * 0.08;
+        const animSpeed = isRunning ? 18 : 11;
+        cur.y = Math.abs(Math.sin(clock.getElapsedTime() * animSpeed)) * (isRunning ? 0.14 : 0.08);
 
         // Balanço alternado dos braços
-        if (leftArmRef.current) leftArmRef.current.rotation.x = Math.sin(clock.getElapsedTime() * 11) * 0.6;
-        if (rightArmRef.current) rightArmRef.current.rotation.x = -Math.sin(clock.getElapsedTime() * 11) * 0.6;
+        if (leftArmRef.current) leftArmRef.current.rotation.x = Math.sin(clock.getElapsedTime() * animSpeed) * (isRunning ? 0.9 : 0.6);
+        if (rightArmRef.current) rightArmRef.current.rotation.x = -Math.sin(clock.getElapsedTime() * animSpeed) * (isRunning ? 0.9 : 0.6);
 
         // Pernas verticais com passada alternada
-        if (leftLegGroupRef.current) leftLegGroupRef.current.rotation.x = Math.sin(clock.getElapsedTime() * 11) * 0.65;
-        if (rightLegGroupRef.current) rightLegGroupRef.current.rotation.x = -Math.sin(clock.getElapsedTime() * 11) * 0.65;
+        if (leftLegGroupRef.current) leftLegGroupRef.current.rotation.x = Math.sin(clock.getElapsedTime() * animSpeed) * (isRunning ? 0.95 : 0.65);
+        if (rightLegGroupRef.current) rightLegGroupRef.current.rotation.x = -Math.sin(clock.getElapsedTime() * animSpeed) * (isRunning ? 0.95 : 0.65);
 
         // Pernas esticadas (coxas e canelas verticais alinhadas)
         if (leftThighRef.current) leftThighRef.current.rotation.x = 0;
@@ -396,15 +418,91 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
           <meshStandardMaterial color={skinColor} />
         </mesh>
 
-        {/* Cabelo Fiel à Persona */}
-        <mesh position={[0, 0.14, -0.02]} castShadow>
+        {/* Cabelo Fiel à Persona (Estilo e Gênero) */}
+        {/* Topo do cabelo */}
+        <mesh position={[0, 0.15, -0.02]} castShadow>
           <boxGeometry args={[0.36, 0.14, 0.34]} />
           <meshStandardMaterial color={hairColor} roughness={0.9} />
         </mesh>
+        
+        {/* Costas do cabelo padrão */}
         <mesh position={[0, 0.06, -0.16]} castShadow>
           <boxGeometry args={[0.36, 0.26, 0.06]} />
           <meshStandardMaterial color={hairColor} roughness={0.9} />
         </mesh>
+
+        {/* PONYTAIL (Maya Lin) */}
+        {avatar.hairStyle === 'PONYTAIL' && (
+          <group position={[0, 0.08, -0.21]}>
+            <mesh rotation={[0.4, 0, 0]} castShadow>
+              <cylinderGeometry args={[0.06, 0.09, 0.35, 12]} />
+              <meshStandardMaterial color={hairColor} roughness={0.8} />
+            </mesh>
+            {/* Elástico de cabelo colorido */}
+            <mesh position={[0, 0.12, 0]}>
+              <torusGeometry args={[0.07, 0.02, 8, 16]} />
+              <meshStandardMaterial color={avatar.accentColor} />
+            </mesh>
+          </group>
+        )}
+
+        {/* BOB / CHANEL (Helena Rostova & Renata Prado) */}
+        {avatar.hairStyle === 'BOB' && (
+          <>
+            {/* Laterais retas descendo até a bochecha */}
+            <mesh position={[-0.18, -0.04, 0]} castShadow>
+              <boxGeometry args={[0.05, 0.3, 0.28]} />
+              <meshStandardMaterial color={hairColor} roughness={0.85} />
+            </mesh>
+            <mesh position={[0.18, -0.04, 0]} castShadow>
+              <boxGeometry args={[0.05, 0.3, 0.28]} />
+              <meshStandardMaterial color={hairColor} roughness={0.85} />
+            </mesh>
+            {/* Franja frontal precisa */}
+            <mesh position={[0, 0.12, 0.15]}>
+              <boxGeometry args={[0.32, 0.08, 0.05]} />
+              <meshStandardMaterial color={hairColor} roughness={0.85} />
+            </mesh>
+          </>
+        )}
+
+        {/* LONG (Beatriz Mendes) */}
+        {avatar.hairStyle === 'LONG' && (
+          <>
+            <mesh position={[-0.18, -0.12, -0.02]} castShadow>
+              <boxGeometry args={[0.05, 0.44, 0.26]} />
+              <meshStandardMaterial color={hairColor} roughness={0.85} />
+            </mesh>
+            <mesh position={[0.18, -0.12, -0.02]} castShadow>
+              <boxGeometry args={[0.05, 0.44, 0.26]} />
+              <meshStandardMaterial color={hairColor} roughness={0.85} />
+            </mesh>
+            <mesh position={[0, -0.15, -0.16]} castShadow>
+              <boxGeometry args={[0.34, 0.46, 0.06]} />
+              <meshStandardMaterial color={hairColor} roughness={0.85} />
+            </mesh>
+          </>
+        )}
+
+        {/* MESSY / CODER (Lucas Silveira) */}
+        {avatar.hairStyle === 'MESSY' && (
+          <group position={[0, 0.22, 0]}>
+            {[-0.1, 0, 0.1].map((x, i) => (
+              <mesh key={`messy-${i}`} position={[x, 0, 0.02]} rotation={[0, 0, (i - 1) * 0.25]} castShadow>
+                <coneGeometry args={[0.06, 0.14, 6]} />
+                <meshStandardMaterial color={hairColor} roughness={0.9} />
+              </mesh>
+            ))}
+          </group>
+        )}
+
+        {/* SLICK (Dr. Arthur Vance / Executivo) */}
+        {avatar.hairStyle === 'SLICK' && (
+          <mesh position={[0, 0.16, -0.06]} rotation={[-0.2, 0, 0]}>
+            <boxGeometry args={[0.35, 0.1, 0.32]} />
+            <meshStandardMaterial color={hairColor} roughness={0.4} metalness={0.1} />
+          </mesh>
+        )}
 
         {/* Óculos Intelectuais */}
         {(avatar.hasGlasses || isCeo) && (
@@ -467,7 +565,7 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
             }}
           >
             {nearbyInstrument === 'drums' && '🥁 [E] ABRIR BATERIA COMPLETA'}
-            {nearbyInstrument === 'console' && '🎛️ [E] ABRIR LOGIC PRO DAW'}
+            {nearbyInstrument === 'console' && '🎛️ [E] ABRIR PUB DAW'}
             {nearbyInstrument === 'synth' && '🎹 [E] TOCAR TECLADO (DÓ A DÓ)'}
           </div>
         </Html>
@@ -539,6 +637,32 @@ export const Office3DAvatar: React.FC<Office3DAvatarProps> = ({
                 {OPERATIONAL_STATE_LABELS_PT[operationalState]?.label || operationalState}
               </span>
             </div>
+            {/* Tag do Projeto Ativo no Cronograma 24h */}
+            {currentProject && (
+              <div
+                title={currentShiftTask ? `${currentProject}: ${currentShiftTask}` : currentProject}
+                style={{
+                  marginTop: '1px',
+                  padding: '1px 4px',
+                  borderRadius: '3px',
+                  background: 'rgba(56, 189, 248, 0.2)',
+                  border: '0.5px solid rgba(56, 189, 248, 0.6)',
+                  color: '#38bdf8',
+                  fontSize: '8px',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  maxWidth: '130px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <span>📦</span>
+                <span>{currentProject}</span>
+              </div>
+            )}
           </div>
         </Html>
       )}
