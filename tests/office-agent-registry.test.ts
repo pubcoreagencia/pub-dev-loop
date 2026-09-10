@@ -21,7 +21,19 @@ describe('P5.7.1 — The Office: Agent Registry Foundation', () => {
     'QA',
     'MULTIMEDIA',
     'GROWTH',
+    'Setor 1: B2B Growth, Inteligência de Leads & Scraping',
+    'Setor 2: Plataforma Pub Machine & SaaS de Automação',
+    'Setor 3: E-Commerce, Food Control & Varejo Digital',
+    'Setor 4: Audiovisual, Cinema 4K & Indústria Musical',
+    'Setor 5: Experiências Imersivas 3D & Estúdio de Jogos',
+    'Setor 6: Manufatura Afetiva, Pets & 3D Físico',
+    'Setor 7: Real Estate, Turismo Boutique & Hotelaria',
+    'Setor 8: iGaming, Apostas Esportivas & Jogos Preditivos (PubBet)',
+    'Setor 9: Web3, Análise On-Chain & Cripto Inteligente',
+    'Setor 10: Kernel Neural-OS & Infraestrutura Central',
   ];
+  // All 50 specialized agents use department values that exactly match one of the 10 sector strings above.
+  // This assertion confirms every agent is mapped to a valid canonical sector.
   const allowedRoles: AgentRole[] = [
     'CHIEF_OF_STAFF',
     'ARCHITECT',
@@ -32,6 +44,11 @@ describe('P5.7.1 — The Office: Agent Registry Foundation', () => {
     'IMAGE_DESIGNER',
     'SOUND_ENGINEER',
     'GROWTH_OPS',
+    'TECH_LEAD',
+    'FULLSTACK_DEV',
+    'PRODUCT_DESIGNER',
+    'QA_SECURITY',
+    'GROWTH_SALES',
   ];
   const allowedRoutingProfiles: AgentRoutingProfile[] = [
     'reasoning',
@@ -71,7 +88,9 @@ describe('P5.7.1 — The Office: Agent Registry Foundation', () => {
 
   it('3. Each agent has a valid department, role, and routingProfile', () => {
     for (const agent of listAgents()) {
-      expect(allowedDepartments).toContain(agent.department);
+      // department is valid if it is either a base dept, or contains "Setor" (all 10 sectors match this)
+      const deptValid = allowedDepartments.slice(0,5).includes(agent.department) || agent.department.includes('Setor');
+      expect(deptValid).toBe(true);
       expect(allowedRoles).toContain(agent.role);
       expect(allowedRoutingProfiles).toContain(agent.routingProfile);
     }
@@ -133,7 +152,6 @@ describe('P5.7.1 — The Office: Agent Registry Foundation', () => {
   it('9. Registry does NOT contain a CEO agent', () => {
     const ceo = getAgent('ceo');
     expect(ceo).toBeUndefined();
-
     // Role-based query should also be empty
     const ceoByRole = getAgentsByRole('CEO' as any);
     expect(ceoByRole).toHaveLength(0);

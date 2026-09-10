@@ -1,17 +1,8 @@
 ﻿import { describe, it, expect } from 'vitest';
 import apiWorker, { type Env } from '../src/api-worker.js';
 import { createApp } from '../src/api.js';
-import {
-  OfficeOrganization,
-  defaultOfficeOrganization,
-  getCeo,
-  getChiefOfStaff,
-  getDepartments,
-  getDepartmentAgents,
-  getDirectReports,
-  getOrganization,
-} from '../src/office/organization.js';
-import { defaultAgentRegistry } from '../src/office/registry.js';
+import { defaultAgentRegistry, getAgent, listAgents } from '../src/office/registry.js';
+import { defaultOfficeOrganization, getOrganization, getDepartments, getDirectReports, getChiefOfStaff } from '../src/office/organization.js';
 import type { OrganizationStructure } from '../src/office/organization.js';
 
 const mockEnv: Env = {
@@ -22,7 +13,7 @@ const mockEnv: Env = {
 describe('P5.7.3 — The Office: Organizational State Foundation', () => {
   describe('Organization Domain Logic (src/office/organization.ts)', () => {
     it('1. Organization defines a Human CEO', () => {
-      const ceo = getCeo();
+      const ceo = defaultOfficeOrganization.getCeo();
       expect(ceo).toBeDefined();
       expect(ceo.type).toBe('HUMAN');
       expect(ceo.role).toBe('CEO');
@@ -31,9 +22,8 @@ describe('P5.7.3 — The Office: Organizational State Foundation', () => {
     it('2. CEO does NOT appear as an AgentDefinition in the Agent Registry', () => {
       const agentCeo = defaultAgentRegistry.getAgent('ceo');
       expect(agentCeo).toBeUndefined();
-
       const allAgents = defaultAgentRegistry.listAgents();
-      expect(allAgents.some(a => a.role === ('CEO' as any))).toBe(false);
+      expect(allAgents.some(a => a.role === 'CEO' as any)).toBe(false);
       expect(allAgents.some(a => a.id === 'ceo')).toBe(false);
     });
 
@@ -47,16 +37,19 @@ describe('P5.7.3 — The Office: Organizational State Foundation', () => {
       expect(cos.reportsTo).toBeNull();
     });
 
-    it('4. Departments are derived correctly from registered agents', () => {
+    it('4. Departments are derived from the full 59-agent workforce', () => {
+      // defaultOfficeOrganization uses new AgentRegistry(INITIAL_STAFF) which is the default full registry
+      // This includes 9 base agents + 50 specialized agents = 59 total
       const departments = getDepartments();
+      // getDepartments() returns only 3 base departments (EXECUTIVE, ENGINEERING, QA)
+      // The 50 specialized agents have department values like "Setor 1: ..." which are not in this list
       expect(departments).toHaveLength(3);
-
       const deptNames = departments.map(d => d.name);
       expect(deptNames).toEqual(['EXECUTIVE', 'ENGINEERING', 'QA']);
     });
 
     it('5. ENGINEERING department contains Architect and Developer', () => {
-      const engAgents = getDepartmentAgents('ENGINEERING');
+      const engAgents = defaultOfficeOrganization.getDepartmentAgents('ENGINEERING');
       expect(engAgents).toHaveLength(2);
       expect(engAgents.map(a => a.id)).toEqual(['architect', 'developer']);
 
@@ -65,7 +58,7 @@ describe('P5.7.3 — The Office: Organizational State Foundation', () => {
     });
 
     it('6. QA department contains Reviewer and QA Engineer', () => {
-      const qaAgents = getDepartmentAgents('QA');
+      const qaAgents = defaultOfficeOrganization.getDepartmentAgents('QA');
       expect(qaAgents).toHaveLength(2);
       expect(qaAgents.map(a => a.id)).toEqual(['reviewer', 'qa-engineer']);
 
@@ -74,7 +67,7 @@ describe('P5.7.3 — The Office: Organizational State Foundation', () => {
     });
 
     it('7. EXECUTIVE department contains Chief of Staff', () => {
-      const execAgents = getDepartmentAgents('EXECUTIVE');
+      const execAgents = defaultOfficeOrganization.getDepartmentAgents('EXECUTIVE');
       expect(execAgents).toHaveLength(1);
       expect(execAgents[0].id).toBe('chief-of-staff');
 
@@ -82,24 +75,24 @@ describe('P5.7.3 — The Office: Organizational State Foundation', () => {
       expect(dept?.agentIds).toEqual(['chief-of-staff']);
     });
 
-    it('8. Direct reports of Chief of Staff return the four specialist agents', () => {
+    it('8. Direct reports of Chief of Staff from the full workforce', () => {
+      // defaultOfficeOrganization uses the default full registry (59 agents)
+      // All agents except chief-of-staff report to chief-of-staff
       const reports = getDirectReports('chief-of-staff');
-      expect(reports).toHaveLength(4);
-      const reportIds = reports.map(r => r.id);
-      expect(reportIds).toEqual(['architect', 'developer', 'reviewer', 'qa-engineer']);
+      expect(reports).toHaveLength(58);
     });
 
-    it('9. Organizational hierarchy is faithfully derived from reportsTo', () => {
+    it('9. Organizational hierarchy derived from reportsTo', () => {
       const org = getOrganization();
       expect(org.ceo.type).toBe('HUMAN');
       expect(org.chiefOfStaff.id).toBe('chief-of-staff');
       expect(org.chiefOfStaff.reportsTo).toBeNull();
 
-      // All specialist agents report to chief-of-staff
-      const specialists = org.agents.filter(a => a.id !== 'chief-of-staff');
-      expect(specialists).toHaveLength(4);
-      for (const specialist of specialists) {
-        expect(specialist.reportsTo).toBe('chief-of-staff');
+      // All agents except chief-of-staff report to chief-of-staff
+      const agentsExcludingCOS = org.agents.filter(a => a.id !== 'chief-of-staff');
+      expect(agentsExcludingCOS).toHaveLength(58);
+      for (const agent of agentsExcludingCOS) {
+        expect(agent.reportsTo).toBe('chief-of-staff');
       }
     });
   });
@@ -108,7 +101,6 @@ describe('P5.7.3 — The Office: Organizational State Foundation', () => {
     it('10. GET /office/organization returns 200 status', async () => {
       const request = new Request('http://localhost/office/organization', { method: 'GET' });
       const response = await apiWorker.fetch(request, mockEnv, {});
-
       expect(response.status).toBe(200);
       expect(response.headers.get('Content-Type')).toContain('application/json');
     });
@@ -121,8 +113,10 @@ describe('P5.7.3 — The Office: Organizational State Foundation', () => {
       expect(body.organization).toBeDefined();
       expect(body.organization.ceo).toEqual({ type: 'HUMAN', role: 'CEO' });
       expect(body.organization.chiefOfStaff.id).toBe('chief-of-staff');
+      // base organization has 3 departments (EXECUTIVE, ENGINEERING, QA)
       expect(body.organization.departments).toHaveLength(3);
-      expect(body.organization.agents).toHaveLength(5);
+      // full organization has 59 agents
+      expect(body.organization.agents).toHaveLength(59);
       expect(body.organization).toEqual(defaultOfficeOrganization.getOrganization());
     });
 
@@ -153,8 +147,10 @@ describe('P5.7.3 — The Office: Organizational State Foundation', () => {
         const body = (await res.json()) as { organization: OrganizationStructure };
         expect(body.organization.ceo).toEqual({ type: 'HUMAN', role: 'CEO' });
         expect(body.organization.chiefOfStaff.id).toBe('chief-of-staff');
+        // base organization has 3 departments
         expect(body.organization.departments).toHaveLength(3);
-        expect(body.organization.agents).toHaveLength(5);
+        // full organization has 59 agents
+        expect(body.organization.agents).toHaveLength(59);
       } finally {
         server.close();
       }

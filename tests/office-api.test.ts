@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import apiWorker, { type Env } from '../src/api-worker.js';
 import { createApp } from '../src/api.js';
 import { defaultAgentRegistry } from '../src/office/registry.js';
+import { FIFTY_SPECIALIZED_AGENTS } from '../src/office/squads.js';
 import type { AgentDefinition } from '../src/office/types.js';
 
 const mockEnv: Env = {
@@ -14,7 +15,6 @@ describe('P5.7.2 — The Office: API & State Endpoints', () => {
     it('1. GET /office/agents returns 200 status', async () => {
       const request = new Request('http://localhost/office/agents', { method: 'GET' });
       const response = await apiWorker.fetch(request, mockEnv, {});
-
       expect(response.status).toBe(200);
       expect(response.headers.get('Content-Type')).toContain('application/json');
     });
@@ -33,8 +33,10 @@ describe('P5.7.2 — The Office: API & State Endpoints', () => {
       const multimediaIds = ['video-editor', 'image-designer', 'sound-engineer', 'growth-ops'];
       expect(body.agents.map((a) => a.id)).toEqual(expect.arrayContaining(multimediaIds));
 
-      // At least one specialized agent should be present
-      expect(body.agents.some((a) => a.id.startsWith('special-'))).toBeTruthy();
+      // At least one specialized agent from squads should be present
+      const specializedIds = FIFTY_SPECIALIZED_AGENTS.map(a => a.id);
+      const presentSpecialized = body.agents.some(a => specializedIds.includes(a.id));
+      expect(presentSpecialized).toBeTruthy();
     });
 
     it('3. GET /office/agents returns unique agent IDs', async () => {
@@ -51,14 +53,12 @@ describe('P5.7.2 — The Office: API & State Endpoints', () => {
       const request = new Request('http://localhost/office/agents', { method: 'GET' });
       const response = await apiWorker.fetch(request, mockEnv, {});
       const body = (await response.json()) as { agents: AgentDefinition[] };
-
       expect(body.agents).toEqual(defaultAgentRegistry.listAgents());
     });
 
     it('5. GET /office/agents/chief-of-staff returns 200', async () => {
       const request = new Request('http://localhost/office/agents/chief-of-staff', { method: 'GET' });
       const response = await apiWorker.fetch(request, mockEnv, {});
-
       expect(response.status).toBe(200);
     });
 
@@ -66,7 +66,6 @@ describe('P5.7.2 — The Office: API & State Endpoints', () => {
       const request = new Request('http://localhost/office/agents/developer', { method: 'GET' });
       const response = await apiWorker.fetch(request, mockEnv, {});
       const body = (await response.json()) as { agent: AgentDefinition };
-
       expect(body.agent).toBeDefined();
       expect(body.agent.id).toBe('developer');
       expect(body.agent.role).toBe('DEVELOPER');
@@ -78,7 +77,6 @@ describe('P5.7.2 — The Office: API & State Endpoints', () => {
     it('7. GET /office/agents/does-not-exist returns 404', async () => {
       const request = new Request('http://localhost/office/agents/does-not-exist', { method: 'GET' });
       const response = await apiWorker.fetch(request, mockEnv, {});
-
       expect(response.status).toBe(404);
     });
 
@@ -86,7 +84,6 @@ describe('P5.7.2 — The Office: API & State Endpoints', () => {
       const request = new Request('http://localhost/office/agents/non-existent-agent-id', { method: 'GET' });
       const response = await apiWorker.fetch(request, mockEnv, {});
       const body = (await response.json()) as { error: string };
-
       expect(body).toEqual({ error: 'Agent not found' });
     });
 
@@ -94,7 +91,6 @@ describe('P5.7.2 — The Office: API & State Endpoints', () => {
       const listReq = new Request('http://localhost/office/agents', { method: 'GET' });
       const listRes = await apiWorker.fetch(listReq, mockEnv, {});
       const listText = await listRes.text();
-
       expect(listText).not.toContain('apiKey');
       expect(listText).not.toContain('API_KEY');
       expect(listText).not.toContain('token');
@@ -104,7 +100,6 @@ describe('P5.7.2 — The Office: API & State Endpoints', () => {
       const itemReq = new Request('http://localhost/office/agents/chief-of-staff', { method: 'GET' });
       const itemRes = await apiWorker.fetch(itemReq, mockEnv, {});
       const itemText = await itemRes.text();
-
       expect(itemText).not.toContain('apiKey');
       expect(itemText).not.toContain('API_KEY');
       expect(itemText).not.toContain('DATABASE_URL');
@@ -113,7 +108,6 @@ describe('P5.7.2 — The Office: API & State Endpoints', () => {
     it('10. CORS headers are attached on /office/agents endpoints', async () => {
       const request = new Request('http://localhost/office/agents', { method: 'GET' });
       const response = await apiWorker.fetch(request, mockEnv, {});
-
       expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
       expect(response.headers.get('Access-Control-Allow-Methods')).toContain('GET');
     });
