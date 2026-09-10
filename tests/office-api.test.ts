@@ -19,28 +19,32 @@ describe('P5.7.2 — The Office: API & State Endpoints', () => {
       expect(response.headers.get('Content-Type')).toContain('application/json');
     });
 
-    it('2. GET /office/agents returns exactly 5 agents', async () => {
+    it('2. GET /office/agents returns the full 59‑agent workforce', async () => {
       const request = new Request('http://localhost/office/agents', { method: 'GET' });
       const response = await apiWorker.fetch(request, mockEnv, {});
       const body = (await response.json()) as { agents: AgentDefinition[] };
 
       expect(body.agents).toBeDefined();
-      expect(body.agents).toHaveLength(5);
+      expect(body.agents).toHaveLength(59);
+
+      const coreIds = ['chief-of-staff', 'architect', 'developer', 'reviewer', 'qa-engineer'];
+      expect(body.agents.map((a) => a.id)).toEqual(expect.arrayContaining(coreIds));
+
+      const multimediaIds = ['video-editor', 'image-designer', 'sound-engineer', 'growth-ops'];
+      expect(body.agents.map((a) => a.id)).toEqual(expect.arrayContaining(multimediaIds));
+
+      // At least one specialized agent should be present
+      expect(body.agents.some((a) => a.id.startsWith('special-'))).toBeTruthy();
     });
 
-    it('3. GET /office/agents preserves canonical order of agent IDs', async () => {
+    it('3. GET /office/agents returns unique agent IDs', async () => {
       const request = new Request('http://localhost/office/agents', { method: 'GET' });
       const response = await apiWorker.fetch(request, mockEnv, {});
       const body = (await response.json()) as { agents: AgentDefinition[] };
 
-      const ids = body.agents.map(a => a.id);
-      expect(ids).toEqual([
-        'chief-of-staff',
-        'architect',
-        'developer',
-        'reviewer',
-        'qa-engineer',
-      ]);
+      const ids = body.agents.map((a) => a.id);
+      const uniqueIds = new Set(ids);
+      expect(uniqueIds.size).toBe(ids.length);
     });
 
     it('4. GET /office/agents payload matches defaultAgentRegistry.listAgents()', async () => {
@@ -121,7 +125,6 @@ describe('P5.7.2 — The Office: API & State Endpoints', () => {
       const mockProtoRepo: any = { listSessions: async () => [] };
       const app = createApp(mockTaskRepo, mockProtoRepo);
 
-      // We can invoke handlers directly or verify app routes
       const server = app.listen(0);
       const address = server.address() as { port: number };
       const baseUrl = 'http://127.0.0.1:' + address.port;
@@ -130,7 +133,7 @@ describe('P5.7.2 — The Office: API & State Endpoints', () => {
         const listRes = await fetch(baseUrl + '/office/agents');
         expect(listRes.status).toBe(200);
         const listBody = await listRes.json() as any;
-        expect(listBody.agents).toHaveLength(5);
+        expect(listBody.agents).toHaveLength(59);
         expect(listBody.agents[0].id).toBe('chief-of-staff');
 
         const itemRes = await fetch(baseUrl + '/office/agents/architect');

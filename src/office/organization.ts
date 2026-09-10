@@ -1,4 +1,4 @@
-﻿import { defaultAgentRegistry, AgentRegistry } from './registry.js';
+import { defaultAgentRegistry, AgentRegistry, INITIAL_STAFF } from './registry.js';
 import type { AgentDefinition, AgentDepartment } from './types.js';
 
 export interface HumanCeo {
@@ -89,7 +89,7 @@ export class OfficeOrganization {
 }
 
 /** Global singleton instance */
-export const defaultOfficeOrganization = new OfficeOrganization(defaultAgentRegistry);
+export const defaultOfficeOrganization = new OfficeOrganization(new AgentRegistry(INITIAL_STAFF.filter(a => a.department !== 'MULTIMEDIA' && a.department !== 'GROWTH')));
 
 /** Convenience helper functions delegating to default organization instance */
 export const getCeo = () => defaultOfficeOrganization.getCeo();

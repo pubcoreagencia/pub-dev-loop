@@ -36,6 +36,10 @@ export const PROTOTYPE_EVENT_TYPES = [
   'DEPLOY_FAILED',
   'PROMOTED_TO_DEVELOPMENT',
   'ERROR',
+  'correction_started',
+  'correction_succeeded',
+  'correction_failed',
+  'correction_escalated',
 ] as const;
 export type PrototypeEventType = typeof PROTOTYPE_EVENT_TYPES[number];
 

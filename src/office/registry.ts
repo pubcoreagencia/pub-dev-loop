@@ -256,34 +256,42 @@ export class AgentRegistry {
   private readonly agents: Map<string, AgentDefinition>;
 
   constructor(initialAgents: AgentDefinition[] = INITIAL_STAFF) {
+    // Determine if building the default full registry.
+    const isDefault =
+      initialAgents === INITIAL_STAFF ||
+      (initialAgents.length === INITIAL_STAFF.length &&
+        initialAgents.every((a) => INITIAL_STAFF.some((i) => i.id === a.id)));
+
     this.agents = new Map();
-    // 1. Registra os 9 agentes centrais da diretoria executiva
+    // Register the supplied agents (core/multimedia when default, or custom set).
     for (const a of initialAgents) {
       this.agents.set(a.id, a);
     }
-    // 2. Registra os 50 agentes especializados dos 10 setores da holding
-    for (const sa of FIFTY_SPECIALIZED_AGENTS) {
-      if (!this.agents.has(sa.id)) {
-        this.agents.set(sa.id, {
-          id: sa.id,
-          name: sa.name,
-          title: sa.title,
-          department: sa.department as any,
-          role: sa.role as any,
-          specialty: sa.specialty,
-          personalitySummary: sa.personalitySummary,
-          responsibilities: [
-            `Atuar como ${sa.title} nas operações autônomas do setor ${sa.sectorName}`,
-            `Garantir máxima excelência técnica e conversão de produto na holding`,
-          ],
-          capabilities: sa.capabilities,
-          routingProfile: sa.routingProfile as any,
-          preferredModel: sa.preferredModel,
-          systemPromptBase: `Você é ${sa.name}, ${sa.title} do ${sa.sectorName} na holding PUB CORE. Sua missão é ${sa.specialty}.`,
-          isManager: sa.role === 'TECH_LEAD',
-          reportsTo: 'chief-of-staff',
-          status: 'ACTIVE',
-        });
+    // Populate specialized agents only for the default full workforce.
+    if (isDefault) {
+      for (const sa of FIFTY_SPECIALIZED_AGENTS) {
+        if (!this.agents.has(sa.id)) {
+          this.agents.set(sa.id, {
+            id: sa.id,
+            name: sa.name,
+            title: sa.title,
+            department: sa.department as any,
+            role: sa.role as any,
+            specialty: sa.specialty,
+            personalitySummary: sa.personalitySummary,
+            responsibilities: [
+              `Atuar como ${sa.title} nas operações autônomas do setor ${sa.sectorName}`,
+              `Garantir máxima excelência técnica e conversão de produto na holding`,
+            ],
+            capabilities: sa.capabilities,
+            routingProfile: sa.routingProfile as any,
+            preferredModel: sa.preferredModel,
+            systemPromptBase: `Você é ${sa.name}, ${sa.title} do ${sa.sectorName} na holding PUB CORE. Sua missão é ${sa.specialty}.`,
+            isManager: sa.role === 'TECH_LEAD',
+            reportsTo: 'chief-of-staff',
+            status: 'ACTIVE',
+          });
+        }
       }
     }
   }

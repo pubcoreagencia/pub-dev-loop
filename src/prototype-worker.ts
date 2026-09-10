@@ -14,6 +14,7 @@ import type { PreviewRuntime, PreviewRuntimeInfo } from './prototype/preview-run
 import { StreamEventSink } from './providers/streaming/index.js';
 import { OperationalEventBridge } from './prototype/bridge.js';
 import { loadOpenRouterConfig } from './providers/openrouterConfig.js';
+import { CorrectionController } from './correction-controller.js';
 
 
 const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
@@ -306,14 +307,46 @@ export class PrototypeWorker {
         declaredChangedFiles: result.changedFiles ?? [],
       });
 
+      // If finalization failed, attempt in-process correction before marking the task as failed
       if (finalize.status !== 'COMPLETED') {
-        await this.tasks.update(task.id, { status: 'FAILED', branch, workspacePath: workspace, gitStatus: finalize.gitStatus,
-          error: finalize.errorMessage ?? 'Prototype finalization failed', result: { finalize, provider: result.provider, model: result.model, durationMs },
-          leaseOwner: null, leaseDeadline: null });
-        await this.prototypes.updateSession(sessionId, { status: 'FAILED', workspacePath: workspace });
-        await this.events.emit({ sessionId, type: 'BUILD_FAILED', payload: { message: finalize.errorMessage ?? 'Finalization failed' } });
-        return true;
+        const controller = new CorrectionController(this.provider, this.events);
+        const decision = await controller.runCorrectionLoop(
+          task,
+          workspace,
+          baseline,
+          result,
+          {
+            status: finalize.status,
+            errorCode: finalize.errorCode,
+            errorMessage: finalize.errorMessage,
+            testOutput: finalize.testOutput ?? '',
+            gitStatus: finalize.gitStatus,
+            changedFiles: finalize.changedFiles ?? [],
+          },
+        );
+        if (decision !== 'SUCCESS') {
+          // Escalation – treat as a regular failure
+          await this.tasks.update(task.id, {
+            status: 'FAILED',
+            branch,
+            workspacePath: workspace,
+            gitStatus: finalize.gitStatus,
+            error: finalize.errorMessage ?? 'Prototype finalization failed',
+            result: { finalize, provider: result.provider, model: result.model, durationMs },
+            leaseOwner: null,
+            leaseDeadline: null,
+          });
+          await this.prototypes.updateSession(sessionId, { status: 'FAILED', workspacePath: workspace });
+          await this.events.emit({
+            sessionId,
+            type: 'BUILD_FAILED',
+            payload: { message: finalize.errorMessage ?? 'Finalization failed' },
+          });
+          return true;
+        }
+        // decision === 'SUCCESS': fall through to the success path below
       }
+
 
       console.log(JSON.stringify({
         event: 'TASK_FINALIZED',
