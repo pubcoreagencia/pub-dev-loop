@@ -89,7 +89,7 @@ export class OfficeOrganization {
 }
 
 /** Global singleton instance */
-export const defaultOfficeOrganization = new OfficeOrganization(new AgentRegistry(INITIAL_STAFF.filter(a => a.department !== 'MULTIMEDIA' && a.department !== 'GROWTH')));
+export const defaultOfficeOrganization = new OfficeOrganization(new AgentRegistry(INITIAL_STAFF));
 
 /** Convenience helper functions delegating to default organization instance */
 export const getCeo = () => defaultOfficeOrganization.getCeo();
