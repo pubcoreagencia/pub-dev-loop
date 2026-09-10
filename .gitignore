@@ -24,7 +24,6 @@ temp_clone_publeads/
 template_repo/
 pub-dev-loop/
 .wrangler/
-.agent/
 
 # Audit/screenshot artifacts
 audit-*.png
