@@ -204,7 +204,7 @@ export function buildProjectSquad(repoName: string): ProjectSquad {
     objective: `Desenvolvimento contínuo e escala comercial autônoma de ${clean}`,
     lifecycleStage: 'DEVELOPMENT',
     members: sectorAgents.map(a => ({
-      role: a.role as any,
+      role: a.role,
       title: a.title,
       agentId: a.id,
       focus: a.specialty,
