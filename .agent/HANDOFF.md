@@ -4,18 +4,17 @@
 Este documento fornece ao próximo executor (Agent B / Hermes) todo o contexto necessário para continuar o trabalho sem depender de histórico de conversa anterior.
 
 ## Estado Git Atual
-| Campo | Valor |
-|-------|-------|
-| **Branch** | `main` |
-| **LOCAL HEAD** | `43ff6fa5c3755588c9260a453939bf4719a5839f` |
-| **REMOTE HEAD** | `43ff6fa5c3755588c9260a453939bf4719a5839f` |
-| **HEAD == origin/main** | **SIM** |
-| **Working Tree** | Clean |
-| **CURRENT_TASK** | `TASK-000006` |
-| **NEXT_TASK** | `TASK-000007` |
+|| Campo | Valor |
+||-------|-------|
+|| **Branch** | `main` |
+|| **LOCAL HEAD** | `8b0589d0ee00733612282a5d4f5ffb593410663e` |
+|| **REMOTE HEAD** | `8b0589d0ee00733612282a5d4f5ffb593410663e` |
+|| **HEAD == origin/main** | **SIM** |
+|| **Working Tree** | Clean (only `.agent/` files added) |
+|| **CURRENT_TASK** | `TASK-000006` |
+|| **NEXT_TASK** | `TASK-000008` |
 
 ## Operações Concluídas (último executor)
-
 ### 12.1 — Self-Correcting Prototype Worker ✅
 - Commit: `f6ee11a`
 
@@ -31,11 +30,20 @@ Este documento fornece ao próximo executor (Agent B / Hermes) todo o contexto n
 ### 12.2C — Test Schema Reconciliation ✅
 - Commit: `43ff6fa`
 
+### 12.2D — `.agent/` Context + Handoff + Governance Foundation ✅
+- **Status**: COMPLETE ✅
+- **Commit**: `8b0589d0ee00733612282a5d4f5ffb593410663e`
+- **Baseline**: `43ff6fa`
+- **Typecheck**: EXIT_CODE=0 ✅
+- **Testes Office**: 41/41 PASS ✅
+- **Context/handoff tests**: 23/23 PASS ✅
+- **DO_NOT_REPEAT**: não re-run 12.1, não reescrever histórico, não usar --force
+
 ## Operação Atual (a ser continuada)
 
-### 12.2D — `.agent/` Context + Handoff + Governance Foundation
-- **Iniciada**: 2026-09-17
+### 12.2D — `.agent/` Context + Handoff + Governance Foundation ✅
 - **Status**: COMPLETE ✅
+- **Commit**: `8b0589d0ee00733612282a5d4f5ffb593410663e`
 - **Baseline**: `43ff6fa`
 - **Typecheck**: EXIT_CODE=0 ✅
 

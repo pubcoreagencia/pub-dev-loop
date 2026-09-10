@@ -5,12 +5,12 @@
 | Field | Value |
 |-------|-------|
 | **Branch** | `main` |
-| **LOCAL HEAD** | `43ff6fa5c3755588c9260a453939bf4719a5839f` |
-| **REMOTE HEAD** | `43ff6fa5c3755588c9260a453939bf4719a5839f` |
+| **LOCAL HEAD** | `8b0589d0ee00733612282a5d4f5ffb593410663e` |
+| **REMOTE HEAD** | `8b0589d0ee00733612282a5d4f5ffb593410663e` |
 | **HEAD == origin/main** | **SIM** |
 | **Working Tree** | Clean (only `.agent/` files added) |
 | **CURRENT_TASK** | `TASK-000006` |
-| **NEXT_TASK** | `TASK-000007` |
+| **NEXT_TASK** | `TASK-000008` |
 | **KNOWN_LIMITATIONS** | `CODEX_CLI_UNAVAILABLE` <br>`HERMES_DESKTOP_ONLY` <br>`WINDOWS_SCHEDULER_DEPENDENCY` <br>`FULL_SUITE_29_PREEXISTING_FAILURES` <br>`DO_NOT_REPEAT` |
 
 ## Operations Completed (DONE)
@@ -23,22 +23,23 @@
 | 12.2B-FIX | SpecializedAgent source typing | `fbc9e42` | ✅ COMPLETE |
 | 12.2C | Test Schema Reconciliation | `43ff6fa` | ✅ COMPLETE |
 | 12.2C-REVIEW | Rigorous revalidation | (revalidated) | ✅ COMPLETE |
+| 12.2D | `.agent/` Context + Handoff + Governance | `8b0589d` | ✅ COMPLETE |
 
 ## Current Operation (IN PROGRESS)
 
 ### 12.2D — `.agent/` Context + Handoff + Governance Foundation
-- **Commit**: *not yet committed*
-- **Status**: CREATING `.agent/` — 5 of 5 files done (MASTER_CONTEXT.md, CURRENT_STATE.md, TASKS.md, DECISIONS.md, HANDOFF.md)
+
+- **Status**: COMPLETE ✅
 - **Baseline**: `43ff6fa`
 - **Typecheck**: EXIT_CODE=0 ✅
-- **Context/handoff tests**: pending execution
 
 ## Next Operations (NEXT)
 
 | ID | Operation | Status |
 |----|----------|--------|
-| 12.2D | `.agent/` Context + Handoff + Governance | IN PROGRESS |
 | 12.2E | *Not started* | DEFERRED |
+| 12.2F | *Not started* | DEFERRED |
+| 12.2G | *Not started* | DEFERRED |
 
 ## Tests
 
@@ -48,7 +49,7 @@
 - `office-organization.test.ts`: 13/13 PASS ✅
 - `correction-controller.test.ts`: 7/7 PASS ✅
 - **Total authorized**: **41/41 PASS** ✅
-- Full suite: 1121 pass, 29 fail (all preexisting — not related to 12.2C/12.2D)
+- Full suite: 1121 pass, 29 fail (all preexisting — not related to 12.2D)
 
 ## Known Limitations
 
@@ -58,13 +59,12 @@
 4. FULL_SUITE_29_PREEXISTING_FAILURES — 29 preexisting failures (out of scope)
 5. DO_NOT_REPEAT — Never repeat completed operation; never rewrite Git history
 
-## Next Steps (AFTER 12.2D)
+## Next Steps (APÓS 12.2D)
 
-1. Run `npx vitest run tests/context/handoff.test.ts --reporter=verbose`
-2. Run `npx vitest run tests/office-agent-registry.test.ts tests/office-api.test.ts tests/office-organization.test.ts tests/correction-controller.test.ts --reporter=verbose`
-3. Run `npx vitest run --reporter=verbose` (full suite)
-4. Commit and push
+1. Validar que todos os .agent/ arquivos correspondem ao estado atual do HEAD
+2. Atualizar .agent/CURRENT_STATE.md, .agent/TASKS.md, .agent/HANDOFF.md
+3. Executar os testes de contexto/handoff:
 
 ---
 
-*Update this file on any operational state change. Never include secrets.*
+*Atualize este arquivo em qualquer mudança de estado operacional. Nunca inclua secrets.*
