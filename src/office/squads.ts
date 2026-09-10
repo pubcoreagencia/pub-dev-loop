@@ -7,6 +7,8 @@
  * Design/Visual, Qualidade/Segurança e Escala de Vendas/Growth.
  */
 
+import { type AgentDepartment, type AgentRole, type AgentRoutingProfile, type AgentStatus } from './types.js';
+
 export interface SectorDefinition {
   id: string;
   name: string;
@@ -204,7 +206,7 @@ export function buildProjectSquad(repoName: string): ProjectSquad {
     objective: `Desenvolvimento contínuo e escala comercial autônoma de ${clean}`,
     lifecycleStage: 'DEVELOPMENT',
     members: sectorAgents.map(a => ({
-      role: a.role,
+      role: a.role as SquadMemberRole['role'],
       title: a.title,
       agentId: a.id,
       focus: a.specialty,
@@ -221,7 +223,28 @@ export function getSectorForRepo(repoName: string): SectorDefinition {
   );
 }
 
-export const FIFTY_SPECIALIZED_AGENTS = [
+export interface SpecializedAgent {
+  id: string;
+  name: string;
+  title: string;
+  department: AgentDepartment;
+  role: AgentRole;
+  sectorId: string;
+  sectorName: string;
+  specialty: string;
+  personalitySummary: string;
+  capabilities: string[];
+  routingProfile: AgentRoutingProfile;
+  preferredModel?: string;
+  gender?: string;
+  age?: number;
+  drinkPreference?: string;
+  tag?: string;
+  accentColor?: string;
+  status: AgentStatus;
+}
+
+export const FIFTY_SPECIALIZED_AGENTS: SpecializedAgent[] = [
   {
     "id": "b2b-growth-leads-tech-lead",
     "name": "Dr. Rodrigo Mendes",
