@@ -12,13 +12,18 @@ import { authenticateOfficeRequest } from '../../office/auth.js';
 import { defaultMemoryRetrievalEngine, defaultOrganizationalAwarenessEngine, defaultDailySkillEngine, defaultAutonomousPipelineEngine } from '../../office/memory.js';
 import { parseEngineeringTask, validateEngineeringTask, createEngineeringPlan, engineeringTaskToTask } from '../../office/intent.js';
 import { resolveContext } from '../../office/context-resolver.js';
+import { TaskIntakeService } from '../service/task-intake-service.js';
+import { TaskIntakeError } from '../../task/intake.js';
+import { ExecutionSpecValidationError } from '../../task/spec-validator.js';
 
 export const createPdlApp = (
   pool?: Pool,
   tasks?: PostgresTaskRepository,
+  intake?: TaskIntakeService,
 ) => {
   const activePool = pool ?? new Pool({ connectionString: process.env.DATABASE_URL });
   const taskRepo = tasks ?? new PostgresTaskRepository(activePool);
+  const intakeService = intake ?? new TaskIntakeService(activePool);
 
   const app = express();
   app.use(express.json());
@@ -35,7 +40,7 @@ export const createPdlApp = (
     return res.json({ agent });
   });
 
-  // POST /tasks — Canonical Phase 1 EngineeringTask Intake
+  // POST /tasks — Canonical Phase 3B Atomic Task & ExecutionSpec Intake
   app.post('/tasks', async (req, res, next) => {
     try {
       const body = req.body ?? {};
@@ -47,47 +52,48 @@ export const createPdlApp = (
         return res.status(400).json({ error: 'prompt or objective is required' });
       }
 
-      // 1. Parse raw prompt/intent into structured EngineeringTask
-      const engTask = parseEngineeringTask({
-        prompt: rawPrompt,
+      const result = await intakeService.processIntake({
+        rawRequest: rawPrompt,
+        source: typeof body.source === 'string' && body.source.trim() ? body.source.trim() : 'pdl-api',
         project: typeof body.project === 'string' ? body.project.trim() : undefined,
+        repository: typeof body.repository === 'string' ? body.repository.trim() : undefined,
+        priority: typeof body.priority === 'number' ? body.priority : undefined,
+        agentId: typeof body.agentId === 'string' ? body.agentId.trim() : undefined,
       });
-
-      // 2. Validate structural integrity
-      const validation = validateEngineeringTask(engTask);
-      if (!validation.valid) {
-        return res.status(400).json({ error: 'EngineeringTask validation failed: ' + validation.errors.join('; ') });
-      }
-
-      // 3. Resolve context from repository and unknowns
-      const resolvedContext = resolveContext(engTask);
-
-      // 4. Formulate Engineering Plan enriched with discovered evidence
-      const engineeringPlan = createEngineeringPlan(engTask, resolvedContext);
-
-      // 5. Bridge to existing runtime Task contract
-      const runtimeTaskInput = engineeringTaskToTask(
-        engTask,
-        {
-          project: body.project?.trim() || engTask.project,
-          repository: body.repository?.trim() || resolvedContext.repository,
-          priority: typeof body.priority === 'number' ? body.priority : undefined,
-          agentId: typeof body.agentId === 'string' ? body.agentId.trim() : undefined,
-        },
-        resolvedContext,
-        engineeringPlan
-      );
-
-      const task = await taskRepo.create(runtimeTaskInput);
 
       return res.status(201).json({
-        ...task,
-        engineeringTask: engTask,
-        resolvedContext,
-        engineeringPlan,
+        ...result.task,
+        task: {
+          id: result.task.id,
+          status: result.task.status,
+        },
+        executionSpec: {
+          id: result.executionSpec.id,
+          specVersion: result.executionSpec.spec_version,
+          specHash: result.executionSpec.spec_hash,
+          status: result.executionSpec.status,
+          sealedAt: result.executionSpec.sealed_at,
+          lineage: result.executionSpec.lineage,
+        },
       });
-    } catch (err) {
-      return next(err);
+    } catch (err: any) {
+      if (err instanceof TaskIntakeError || err?.code === 'INVALID_TASK' || err?.name === 'TaskIntakeError') {
+        return res.status(400).json({ error: err.message });
+      }
+      if (
+        err instanceof ExecutionSpecValidationError ||
+        err?.code === 'VALIDATION_FAILED' ||
+        err?.name === 'ExecutionSpecValidationError' ||
+        err?.message?.includes('validation failed')
+      ) {
+        return res.status(422).json({
+          error: err.message,
+          details: err.issues ?? [],
+        });
+      }
+      return res.status(500).json({
+        error: 'Failed to process task intake due to database transaction error',
+      });
     }
   });
 

@@ -1,0 +1,350 @@
+import type { Pool } from 'pg';
+import type { Task, TaskStatus } from '../../domain.js';
+import {
+  EXECUTION_SPEC_VERSION,
+  type ExecutionSpec,
+  type ExecutionStep,
+} from '../../task/execution-spec.js';
+import type { ContextBundle } from '../../task/context-discovery.js';
+import {
+  normalizeTaskIntake,
+  type TaskIntake,
+  type TaskIntakeInput,
+  TaskIntakeError,
+} from '../../task/intake.js';
+import {
+  validateExecutionSpec,
+  ExecutionSpecValidationError,
+} from '../../task/spec-validator.js';
+import {
+  createExecutionSpec,
+  sealExecutionSpec,
+  type ExecutionSpecRecord,
+  type QueryableDb,
+} from '../../execution/execution-spec-persistence.js';
+import {
+  createRepositoryTarget,
+  type RepositoryTarget,
+} from '../../task/trust-contracts.js';
+
+export interface PoolClientLike extends QueryableDb {
+  release(): void;
+}
+
+export interface PoolLike {
+  connect(): Promise<PoolClientLike>;
+  query?(sql: string, params?: unknown[]): Promise<{ rows: any[] }>;
+}
+
+export interface TaskIntakeOptions {
+  project?: string;
+  repository?: string;
+  priority?: number;
+  agentId?: string;
+  source?: string;
+  executionInstructions?: string[];
+  acceptanceCriteria?: string[];
+  validationPlan?: string[];
+  executionSteps?: ExecutionStep[];
+  constraints?: string[];
+}
+
+export interface TaskIntakePayload {
+  rawRequest: string;
+  source?: string;
+  createdAt?: string;
+  project?: string;
+  repository?: string;
+  priority?: number;
+  agentId?: string;
+  executionInstructions?: string[];
+  acceptanceCriteria?: string[];
+  validationPlan?: string[];
+  executionSteps?: ExecutionStep[];
+  constraints?: string[];
+}
+
+export interface AtomicIntakeResult {
+  task: Task;
+  executionSpec: ExecutionSpecRecord;
+}
+
+export function isTaskIntake(value: unknown): value is TaskIntake {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'intakeVersion' in value &&
+    'rawRequest' in value &&
+    'normalizedRequest' in value &&
+    'objective' in value &&
+    'lineage' in value
+  );
+}
+
+export function buildCanonicalExecutionSpec(
+  intake: TaskIntake,
+  options?: TaskIntakeOptions,
+): ExecutionSpec {
+  const project = options?.project?.trim() || 'pub-dev-loop';
+  const repository =
+    options?.repository?.trim() ||
+    'https://github.com/pubcoreagencia/pub-dev-loop.git';
+
+  const constraints =
+    options?.constraints && options.constraints.length > 0
+      ? options.constraints
+      : intake.constraints;
+
+  const acceptanceCriteria =
+    options?.acceptanceCriteria && options.acceptanceCriteria.length > 0
+      ? options.acceptanceCriteria
+      : intake.requestedOutcome
+        ? [intake.requestedOutcome]
+        : ['Fulfill objective: ' + intake.objective];
+
+  const validationPlan =
+    options?.validationPlan && options.validationPlan.length > 0
+      ? options.validationPlan
+      : ['Verify implementation against objective: ' + intake.objective];
+
+  const executionInstructions =
+    options?.executionInstructions && options.executionInstructions.length > 0
+      ? options.executionInstructions
+      : [intake.normalizedRequest];
+
+  const executionSteps: ExecutionStep[] =
+    options?.executionSteps && options.executionSteps.length > 0
+      ? options.executionSteps
+      : [
+          {
+            id: 'step-1',
+            description: 'Execute task: ' + intake.objective,
+            critical: true,
+          },
+        ];
+
+  const context: ContextBundle = {
+    version: '1.0.0',
+    authoritativeContext: [
+      { key: 'source', value: intake.source, source: 'intake' },
+      { key: 'project', value: project, source: 'intake' },
+    ],
+    repositoryContext: [
+      { key: 'repository', value: repository, source: 'intake' },
+    ],
+    operationalContext: [],
+    relevantDocumentation: [],
+    knownConstraints: constraints,
+    limitations: [],
+    evidence: [],
+  };
+
+  const owner = repository.includes('/')
+    ? repository.split('/').slice(-2, -1)[0] || 'pubcoreagencia'
+    : 'pubcoreagencia';
+  const repoName = project || 'pub-dev-loop';
+
+  const repositoryTarget: RepositoryTarget = createRepositoryTarget(
+    { owner, name: repoName, fullName: `${owner}/${repoName}` },
+    'git',
+    repository,
+    'main',
+    `projects/${repoName}`,
+    'HEAD',
+    'pdl:internal:token',
+    'pdl:internal:intake',
+    intake.lineage,
+    true,
+  );
+
+  const spec: ExecutionSpec = {
+    specVersion: EXECUTION_SPEC_VERSION,
+    objective: intake.objective,
+    context,
+    constraints,
+    acceptanceCriteria,
+    validationPlan,
+    executionInstructions,
+    executionSteps,
+    risks: intake.ambiguityFlags.length > 0 ? [...intake.ambiguityFlags] : [],
+    escalationConditions: [
+      'Unrecoverable execution error or failure',
+      'Safety or constraint violation',
+    ],
+    lineage: intake.lineage,
+    metadata: {
+      generatedAt: new Date().toISOString(),
+      specHash: '',
+    },
+    repositoryTarget,
+  };
+
+  return spec;
+}
+
+export function mapTaskRow(r: Record<string, unknown>): Task {
+  return {
+    id: String(r.id),
+    project: String(r.project),
+    repository: String(r.repository),
+    objective: String(r.objective),
+    prompt: String(r.prompt),
+    status: (r.status as TaskStatus) ?? 'QUEUED',
+    priority: Number(r.priority ?? 0),
+    worker: (r.worker as string | null) ?? null,
+    result: (r.result as Record<string, unknown> | null) ?? null,
+    error: (r.error as string | null) ?? null,
+    branch: (r.branch as string | null) ?? null,
+    commitSha: (r.commit_sha as string | null) ?? null,
+    gitStatus: (r.git_status as string | null) ?? null,
+    createdAt:
+      r.created_at instanceof Date
+        ? r.created_at
+        : new Date(String(r.created_at)),
+    updatedAt:
+      r.updated_at instanceof Date
+        ? r.updated_at
+        : new Date(String(r.updated_at)),
+    leaseOwner: (r.lease_owner as string | null) ?? null,
+    leaseDeadline: r.lease_deadline
+      ? r.lease_deadline instanceof Date
+        ? r.lease_deadline
+        : new Date(String(r.lease_deadline))
+      : null,
+    heartbeatAt: r.heartbeat_at
+      ? r.heartbeat_at instanceof Date
+        ? r.heartbeat_at
+        : new Date(String(r.heartbeat_at))
+      : null,
+    workspacePath: (r.workspace_path as string | null) ?? null,
+    prototypeSessionId: (r.prototype_session_id as string | null) ?? null,
+    agentId: (r.agent_id as string | null) ?? null,
+    tenantId: (r.tenant_id as string | null) ?? undefined,
+  };
+}
+
+export class TaskIntakeService {
+  constructor(private readonly pool: PoolLike | Pool) {}
+
+  async processIntake(
+    input: TaskIntakePayload | TaskIntake,
+    options?: TaskIntakeOptions,
+  ): Promise<AtomicIntakeResult> {
+    const intake: TaskIntake = isTaskIntake(input)
+      ? input
+      : normalizeTaskIntake({
+          rawRequest: (input as TaskIntakePayload).rawRequest,
+          source: (input as TaskIntakePayload).source || 'pdl-api',
+          createdAt:
+            (input as TaskIntakePayload).createdAt || new Date().toISOString(),
+        });
+
+    const combinedOptions: TaskIntakeOptions = {
+      ...options,
+      project:
+        options?.project ??
+        (isTaskIntake(input)
+          ? undefined
+          : (input as TaskIntakePayload).project),
+      repository:
+        options?.repository ??
+        (isTaskIntake(input)
+          ? undefined
+          : (input as TaskIntakePayload).repository),
+      priority:
+        options?.priority ??
+        (isTaskIntake(input)
+          ? undefined
+          : (input as TaskIntakePayload).priority),
+      agentId:
+        options?.agentId ??
+        (isTaskIntake(input)
+          ? undefined
+          : (input as TaskIntakePayload).agentId),
+      executionInstructions:
+        options?.executionInstructions ??
+        (isTaskIntake(input)
+          ? undefined
+          : (input as TaskIntakePayload).executionInstructions),
+      acceptanceCriteria:
+        options?.acceptanceCriteria ??
+        (isTaskIntake(input)
+          ? undefined
+          : (input as TaskIntakePayload).acceptanceCriteria),
+      validationPlan:
+        options?.validationPlan ??
+        (isTaskIntake(input)
+          ? undefined
+          : (input as TaskIntakePayload).validationPlan),
+      executionSteps:
+        options?.executionSteps ??
+        (isTaskIntake(input)
+          ? undefined
+          : (input as TaskIntakePayload).executionSteps),
+      constraints:
+        options?.constraints ??
+        (isTaskIntake(input)
+          ? undefined
+          : (input as TaskIntakePayload).constraints),
+    };
+
+    const spec = buildCanonicalExecutionSpec(intake, combinedOptions);
+
+    const validation = validateExecutionSpec(spec);
+    if (!validation.valid) {
+      throw new ExecutionSpecValidationError(validation.errors);
+    }
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const taskProject = combinedOptions.project?.trim() || 'pub-dev-loop';
+      const taskRepoUrl =
+        combinedOptions.repository?.trim() ||
+        'https://github.com/pubcoreagencia/pub-dev-loop.git';
+      const taskPriority =
+        typeof combinedOptions.priority === 'number'
+          ? combinedOptions.priority
+          : 0;
+
+      const taskRes = await client.query(
+        `INSERT INTO tasks (project, repository, objective, prompt, priority, status)
+         VALUES ($1, $2, $3, $4, $5, 'QUEUED')
+         RETURNING *`,
+        [
+          taskProject,
+          taskRepoUrl,
+          intake.objective,
+          intake.rawRequest,
+          taskPriority,
+        ],
+      );
+
+      if (!taskRes.rows || taskRes.rows.length === 0) {
+        throw new Error('Failed to create task: no row returned from database');
+      }
+
+      const task = mapTaskRow(taskRes.rows[0]);
+
+      await createExecutionSpec(client, task.id, spec);
+
+      const sealedRecord = await sealExecutionSpec(client, task.id, spec);
+
+      await client.query('COMMIT');
+
+      return {
+        task,
+        executionSpec: sealedRecord,
+      };
+    } catch (error) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+}
