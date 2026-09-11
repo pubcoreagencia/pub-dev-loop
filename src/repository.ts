@@ -114,7 +114,7 @@ export class PostgresTaskRepository implements TaskRepository {
       const r = await this.pool.query(`
         WITH candidate AS (
           SELECT id FROM tasks
-          WHERE status = 'QUEUED' AND prototype_session_id IS NULL
+          WHERE status = 'QUEUED'
           ORDER BY priority DESC, created_at ASC
           FOR UPDATE SKIP LOCKED LIMIT 1
         )
@@ -127,7 +127,7 @@ export class PostgresTaskRepository implements TaskRepository {
     }
 
     for (const task of sovereignFallbackTasks.values()) {
-      if (task.status === 'QUEUED' && !task.prototypeSessionId) {
+      if (task.status === 'QUEUED') {
         task.status = 'ASSIGNED';
         task.worker = worker;
         task.leaseOwner = worker;

@@ -3,8 +3,8 @@
  * src/api.ts acoplava as rotas e inicializações de ambos os runtimes no mesmo Express.
  * 
  * Utilize os entrypoints dedicados:
- * - PUB Prototype API: `src/pp/api/entry.ts` (npm run pp:api, porta 3001)
  * - PUB Development Loop API: `src/pdl/api/entry.ts` (npm run pdl:api, porta 3000)
+ * - PUB Prototype API: repositório independente (PUB PROTOTYPE)
  */
 import 'dotenv/config';
 import express from 'express';

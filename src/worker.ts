@@ -76,7 +76,7 @@ function createPgPool(connectionString: string): Pool {
  *
  * Para ambientes dedicados:
  * - PUB Development Loop: execute `npm run pdl:worker` (src/pdl/worker/entry.ts)
- * - PUB Prototype: execute `npm run pp:worker` (src/pp/worker/entry.ts)
+ * - PUB Prototype: repositório independente (PUB PROTOTYPE)
  *
  * Suporta modo dedicado via WORKER_MODE=pdl ou forceMode='pdl'.
  */

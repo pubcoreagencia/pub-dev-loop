@@ -54,20 +54,11 @@ For the first cloud proof, a manual GitHub Actions Ubuntu worker runs the real i
 
 The real test is isolated from `npm test`: provision a disposable cloned repository and authenticated Linux container, then run `RUN_CODEX_INTEGRATION=1 CODEX_INTEGRATION_REPOSITORY=/workspace/sandbox npm test -- tests/integration/codex-hello.integration.ts`. It asks Codex to create only `hello.txt` with `PUB DEV LOOP TEST`; no push or merge occurs. The worker itself creates `worker/codex/TASK-ID`, records its diff summary, and commits successful file changes locally with the worker identity.
 
-## PP Production Safety Gate
+## System Architecture & PP Integration
 
-Para garantir que deploys do PUB Prototype nunca sejam publicados com JavaScript quebrado, template strings corrompidas ou erros de parsing V8, todo deploy de produção do worker exige a execução prévia obrigatória do gate:
+PUB DEV LOOP (PDL) and PUB PROTOTYPE (PP) operate as two completely independent repositories with physical and logical database sovereignty:
 
-```sh
-npm run pp:safety-gate
-```
-
-### O que o Gate valida:
-1. **Typecheck & Build**: Compilação TypeScript integral sem erros.
-2. **Geração do HTML Real**: Avalia `prototypeUiHtml()` e extrai todos os blocos `<script>`.
-3. **Compilação Estrita no V8 (`node:vm`)**: Garante ZERO `SyntaxError`, ausência de variáveis duplicadas (`let/const`) e validação de todas as regex.
-4. **Teste Negativo de Controle**: Prova que o validador falha imediatamente caso JavaScript inválido seja inserido.
-5. **Execução no DOM Simulado (JSDOM)**: Simula o carregamento no browser, chamada a `/prototype/sessions` e renderização de `#projectsList`.
-6. **Contrato da API**: Valida o payload de sessões.
-
-Qualquer deploy via `npm run deploy:cf` invoca o `pp:safety-gate` antes de prosseguir com o Wrangler. Deploys sem PASS são proibidos.
+- **PUB PROTOTYPE (`PP`)**: Independent repository focused on rapid, interactive MVP prototyping, user feedback, and prompt iteration.
+- **PUB DEV LOOP (`PDL`)**: Independent repository focused on autonomous software engineering, queue management, execution specifications, and deterministic code synthesis.
+- **Integration Seam**: Explicit HTTP boundary. When a prototype is approved and promoted in PP, PP invokes PDL's `POST /tasks/ingest` endpoint over HTTP. PDL persists the task and a sealed `ExecutionSpec` in its own PostgreSQL database.
+- **Database Sovereignty**: No shared database, no cross-database foreign keys, and zero internal code imports across repository boundaries.
