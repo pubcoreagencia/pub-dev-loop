@@ -1,8 +1,7 @@
-﻿import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Pool } from 'pg';
 import { createPdlWorkerDaemon } from '../../src/pdl/worker/entry.js';
 import { createProductionWorker } from '../../src/worker.js';
-import { ModeAwareWorker } from '../../src/mode-aware-worker.js';
 import { RouterWorker } from '../../src/router-worker.js';
 import { CodexWorker, BaseWorker } from '../../src/worker-service.js';
 import { DefaultExecutionEngine } from '../../src/execution/default-execution-engine.js';
@@ -46,16 +45,14 @@ describe('Phase 3A.5 — Hardening Verification Suite', () => {
       expect((worker as any).executionSpecDb).toBe(fakePool);
     });
 
-    it('1.3 createProductionWorker() injects pool into ModeAwareWorker development RouterWorker', () => {
+    it('1.3 createProductionWorker() injects pool into RouterWorker when AGENT_PROVIDER is set', () => {
       process.env.DATABASE_URL = 'postgres://user:pass@localhost:5432/testdb';
       process.env.AGENT_PROVIDER = 'mock';
 
       const worker = createProductionWorker();
 
-      expect(worker).toBeInstanceOf(ModeAwareWorker);
-      const modeAware = worker as ModeAwareWorker;
-      expect(modeAware.development).toBeInstanceOf(RouterWorker);
-      expect((modeAware.development as any).executionSpecDb).toBeDefined();
+      expect(worker).toBeInstanceOf(RouterWorker);
+      expect((worker as any).executionSpecDb).toBeDefined();
     });
 
     it('1.4 createProductionWorker() injects pool into CodexWorker when AGENT_PROVIDER is empty', () => {
@@ -68,10 +65,9 @@ describe('Phase 3A.5 — Hardening Verification Suite', () => {
       expect((worker as any).executionSpecDb).toBeDefined();
     });
 
-    it('1.5 ModeAwareWorker constructor wires executionSpecDb to RouterWorker', () => {
+    it('1.5 RouterWorker constructor wires executionSpecDb correctly', () => {
       const fakePool = { query: vi.fn() } as unknown as Pool;
       const fakeTasks = { pool: fakePool } as any;
-      const fakePrototypes = {} as any;
       const fakeProvider: AgentProvider = {
         kind: 'mock',
         model: 'test',
@@ -80,18 +76,16 @@ describe('Phase 3A.5 — Hardening Verification Suite', () => {
         capabilities: vi.fn().mockReturnValue([]),
         metadata: vi.fn().mockReturnValue({}),
       };
-      const fakeEvents = {} as any;
 
-      const modeAware = new ModeAwareWorker(
+      const routerWorker = new RouterWorker(
         fakeTasks,
-        fakePrototypes,
         fakeProvider,
-        fakeEvents,
+        'router',
         undefined,
         fakePool as any,
       );
 
-      expect((modeAware.development as any).executionSpecDb).toBe(fakePool);
+      expect((routerWorker as any).executionSpecDb).toBe(fakePool);
     });
   });
 

@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 describe('FASE 3 — Prova Arquitetural de Falha Cruzada (Cross-Failure Immunity)', () => {
   const rootDir = resolve(process.cwd(), 'src');
 
-  it('1. Cenário: Simulação de queda total de The Office não quebra a árvore de módulos do PP API', () => {
-    // Inspeciona estaticamente toda a árvore de imports de pp-api-entry.ts
-    const ppEntry = readFileSync(resolve(rootDir, 'pp', 'api', 'entry.ts'), 'utf8');
+  it('1. Cenário: PP API foi extraído e não reside mais no monorepo PDL', () => {
+    const ppEntry = resolve(rootDir, 'pp', 'api', 'entry.ts');
+    expect(existsSync(ppEntry)).toBe(false);
     
     // Todos os módulos essenciais do PDL que poderiam falhar
     const pdlModules = [

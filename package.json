@@ -5,13 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/pdl/api/entry.ts",
-    "pp:api": "tsx src/pp/api/entry.ts",
     "pdl:api": "tsx src/pdl/api/entry.ts",
     "office:dev": "npm --prefix frontend run dev",
     "office:build": "npm --prefix frontend run build",
     "start": "node dist/api.js",
     "worker": "node dist/worker.js",
-    "pp:worker": "tsx src/pp/worker/entry.ts",
     "pdl:worker": "tsx src/pdl/worker/entry.ts",
     "worker:health": "node dist/worker-health.js",
     "router:start": "powershell -ExecutionPolicy Bypass -File start-9router.ps1",
@@ -20,14 +18,12 @@
     "build:cf": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:prototype": "vitest run tests/p1-ui.test.ts tests/prototype.test.ts",
-    "pp:safety-gate": "npm run typecheck && npm run build && vitest run tests/p1-ui.test.ts tests/prototype.test.ts",
     "test:integration": "vitest run tests/integration/codex-hello.integration.test.ts",
     "devloop:resume": "tsx src/context/cli.ts --summary",
     "devloop:validate": "tsx src/context/cli.ts --validate",
     "devloop:checkpoint": "tsx src/context/cli.ts --checkpoint",
     "db:migrate": "tsx src/db/migrate.ts",
-    "deploy:cf": "npm run pp:safety-gate && npx wrangler deploy --name pub-dev-loop-api --containers-rollout=none"
+    "deploy:cf": "npm run typecheck && npm run build && npx wrangler deploy --name pub-dev-loop-api --containers-rollout=none"
   },
   "dependencies": {
     "@cloudflare/containers": "^0.3.7",

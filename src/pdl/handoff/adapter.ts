@@ -4,7 +4,7 @@ import type {
   PdlTaskIngestionPort,
   PdlTaskIngestionRequest,
   PdlTaskIngestionResult,
-} from '../../pp/handoff/handoff.js';
+} from './types.js';
 import { TaskIntakeService } from '../service/task-intake-service.js';
 
 /**

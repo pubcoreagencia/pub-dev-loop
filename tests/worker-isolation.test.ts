@@ -1,20 +1,15 @@
-﻿import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 describe('FASE 2 — Testes de Isolamento Arquitetural entre Workers', () => {
   const rootDir = resolve(process.cwd(), 'src');
 
-  it('1. PrototypeWorker não importa AgentRegistry nem The Office', () => {
+  it('1. PrototypeWorker e ModeAwareWorker foram completamente removidos do PDL', () => {
     const protoWorkerPath = resolve(rootDir, 'pp', 'worker', 'prototype-worker.ts');
-    expect(existsSync(protoWorkerPath)).toBe(true);
-    const content = readFileSync(protoWorkerPath, 'utf8');
-
-    expect(content).not.toMatch(/office\/registry/);
-    expect(content).not.toMatch(/AgentRegistry/);
-    expect(content).not.toMatch(/squads/);
-    expect(content).not.toMatch(/RouterWorker/);
-    expect(content).not.toMatch(/ModeAwareWorker/);
+    expect(existsSync(protoWorkerPath)).toBe(false);
+    expect(existsSync(resolve(rootDir, 'mode-aware-worker.ts'))).toBe(false);
+    expect(existsSync(resolve(rootDir, 'pp'))).toBe(false);
   });
 
   it('2. RouterWorker (PDL) não importa PrototypeWorker nem runtimes do PP', () => {

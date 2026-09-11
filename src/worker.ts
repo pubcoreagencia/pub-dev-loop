@@ -6,10 +6,9 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createProvider, createAgent } from './agent.js';
 import { PostgresTaskRepository } from './repository.js';
-import { PostgresPrototypeRepository } from './pp/persistence/repository.js';
-import { PostgresPrototypeEventPublisher } from './pp/events/events.js';
 import { CodexWorker, BaseWorker } from './worker-service.js';
-import { ModeAwareWorker } from './mode-aware-worker.js';
+import { RouterWorker } from './router-worker.js';
+import { createPdlWorkerDaemon } from './pdl/worker/entry.js';
 import { cleanupOrphanWorkspaces } from './workspace-cleanup.js';
 
 const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
@@ -71,7 +70,17 @@ function createPgPool(connectionString: string): Pool {
   });
 }
 
-export function createProductionWorker(): BaseWorker | ModeAwareWorker {
+/**
+ * @deprecated [DEPRECATED na Fase 3/4 do Desacoplamento PDL × PP]
+ * src/worker.ts é o entrypoint legado do monorepo.
+ *
+ * Para ambientes dedicados:
+ * - PUB Development Loop: execute `npm run pdl:worker` (src/pdl/worker/entry.ts)
+ * - PUB Prototype: execute `npm run pp:worker` (src/pp/worker/entry.ts)
+ *
+ * Suporta modo dedicado via WORKER_MODE=pdl ou forceMode='pdl'.
+ */
+export function createProductionWorker(forceMode?: 'pdl' | 'legacy'): BaseWorker {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error('DATABASE_URL is not configured in worker environment');
@@ -81,11 +90,14 @@ export function createProductionWorker(): BaseWorker | ModeAwareWorker {
   const tasks = new PostgresTaskRepository(pool);
   const providerName = process.env.AGENT_PROVIDER;
 
+  // Modo dedicado PDL: retorna o PdlCorrectionWorker puro sem instanciar PP
+  if (forceMode === 'pdl' || process.env.WORKER_MODE === 'pdl' || process.env.PDL_WORKER === 'true') {
+    return createPdlWorkerDaemon(pool);
+  }
+
   if (providerName) {
     const provider = createProvider(providerName);
-    const prototypes = new PostgresPrototypeRepository(pool);
-    const events = new PostgresPrototypeEventPublisher(pool);
-    return new ModeAwareWorker(tasks, prototypes, provider, events, undefined, pool);
+    return new RouterWorker(tasks, provider, 'router', undefined, pool);
   }
 
   return new CodexWorker(tasks, createAgent(), 'codex', pool);
@@ -115,71 +127,7 @@ async function startupRecovery(tasks: PostgresTaskRepository): Promise<void> {
 }
 
 function startHealthServer(port = Number(process.env.PORT ?? 3000)): http.Server {
-  const server = http.createServer(async (req, res) => {
-    // Internal endpoint for preview recovery (called by API Worker)
-    if (req.method === 'POST' && req.url === '/internal/prototype/preview/refresh') {
-      let body = '';
-      req.on('data', (chunk) => { body += chunk; });
-      req.on('end', async () => {
-        try {
-          const { sessionId } = JSON.parse(body);
-          if (!sessionId) {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: false, error: 'sessionId is required', code: 'MISSING_SESSION_ID' }));
-            return;
-          }
-
-          const { PreviewRecoveryService } = await import('./pp/preview/preview-recovery.js');
-          const { PostgresPrototypeRepository } = await import('./pp/persistence/repository.js');
-          const pg = await import('pg');
-
-          // Get database connection from env
-          const databaseUrl = process.env.DATABASE_URL || '';
-          if (!databaseUrl) {
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: false, error: 'DATABASE_URL not configured', code: 'NO_DATABASE' }));
-            return;
-          }
-
-          const pool = new pg.default.Pool({ connectionString: databaseUrl });
-          const prototypes = new PostgresPrototypeRepository(pool);
-
-          const recovery = new PreviewRecoveryService(prototypes);
-          const result = await recovery.refresh(sessionId);
-
-          // Update session with new preview URL
-          await pool.query(
-            `UPDATE prototype_sessions SET preview_url = $1, preview_runtime = $2, updated_at = NOW() WHERE id = $3`,
-            [result.previewUrl, result.previewRuntime, sessionId]
-          );
-          await pool.end();
-
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            ok: true,
-            sessionId: result.sessionId,
-            previewUrl: result.previewUrl,
-            previewRuntime: result.previewRuntime,
-          }));
-        } catch (error: any) {
-          console.error('[Internal] Recovery error:', error.message);
-          const code = error?.code || 'RECOVERY_FAILED';
-          const status =
-            code === 'SESSION_NOT_FOUND' ? 404
-            : code === 'NOT_READY' ? 409
-            : code === 'NO_CHECKPOINT' ? 409
-            : code === 'WORKSPACE_MISSING' ? 422
-            : code === 'GIT_CLONE_FAILED' || code === 'GIT_CHECKOUT_FAILED' ? 502
-            : code === 'NPM_INSTALL_FAILED' ? 502
-            : code === 'PREVIEW_START_FAILED' ? 502
-            : 500;
-          res.writeHead(status, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: false, error: error?.message || 'Recovery failed', code }));
-        }
-      });
-      return;
-    }
-
+  const server = http.createServer((_req, res) => {
     // Default health check
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
@@ -190,7 +138,6 @@ function startHealthServer(port = Number(process.env.PORT ?? 3000)): http.Server
       env: {
         DATABASE_URL: process.env.DATABASE_URL ? 'SET (len=' + process.env.DATABASE_URL.length + ')' : 'EMPTY',
         GITHUB_TOKEN: process.env.GITHUB_TOKEN ? 'SET' : 'EMPTY',
-        PROTOTYPE_BOT_TOKEN: process.env.PROTOTYPE_BOT_TOKEN ? 'SET' : 'EMPTY',
         OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ? 'SET' : 'EMPTY',
       },
     }));

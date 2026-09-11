@@ -5,20 +5,10 @@ import { resolve } from 'node:path';
 describe('FASE 3 — Testes de Isolamento Arquitetural entre APIs', () => {
   const rootDir = resolve(process.cwd(), 'src');
 
-  it('1. src/pp-api-entry.ts não importa The Office, AgentRegistry, nem Task Pipeline do PDL', () => {
+  it('1. src/pp-api-entry.ts foi completamente removido do PDL', () => {
     const ppApiPath = resolve(rootDir, 'pp', 'api', 'entry.ts');
-    expect(existsSync(ppApiPath)).toBe(true);
-    const content = readFileSync(ppApiPath, 'utf8');
-
-    expect(content).not.toMatch(/office\/registry/);
-    expect(content).not.toMatch(/AgentRegistry/);
-    expect(content).not.toMatch(/office\/organization/);
-    expect(content).not.toMatch(/office\/intent/);
-    expect(content).not.toMatch(/office\/planning/);
-    expect(content).not.toMatch(/office\/memory/);
-    expect(content).not.toMatch(/RouterWorker/);
-    expect(content).not.toMatch(/ModeAwareWorker/);
-    expect(content).not.toMatch(/src\/task\//);
+    expect(existsSync(ppApiPath)).toBe(false);
+    expect(existsSync(resolve(rootDir, 'pp'))).toBe(false);
   });
 
   it('2. src/pdl-api-entry.ts não importa Prototype UI, Preview Runtimes, nem SSE do PP', () => {
