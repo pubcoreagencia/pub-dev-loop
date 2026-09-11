@@ -7,6 +7,7 @@ import {
   type RiskLevel,
 } from './intent.js';
 import { resolveContext, type ResolvedContext } from './context-resolver.js';
+import { TaskIntakeService } from '../pdl/service/task-intake-service.js';
 
 export type CapabilityStatus = 'ABSENT' | 'PARTIAL' | 'VERIFIED' | 'BLOCKED';
 
@@ -400,7 +401,8 @@ export async function stepAutonomyLoop(
   mission: Mission,
   state: SystemCurrentState,
   taskRepo?: TaskRepository,
-  cycleNumber = 1
+  cycleNumber = 1,
+  intakeService?: TaskIntakeService,
 ): Promise<AutonomyStepResult> {
   // 1. Analyze Gaps
   const gaps = analyzeGaps(mission, state);
@@ -435,12 +437,26 @@ export async function stepAutonomyLoop(
   // 3. Generate EngineeringTask
   const engTask = generateEngineeringTaskFromAction(action, mission);
 
-  // 4. Optionally register task in TaskRepository
+  // 4. Optionally register task in TaskRepository / TaskIntakeService
   let runtimeTask: Task | undefined;
   if (taskRepo) {
     const resolvedContext: ResolvedContext = resolveContext(engTask);
     const runtimeInput = engineeringTaskToTask(engTask, {}, resolvedContext);
-    runtimeTask = await taskRepo.create(runtimeInput);
+    const intake = intakeService ?? (taskRepo as any)?.intakeService ?? ((taskRepo as any)?.pool ? new TaskIntakeService((taskRepo as any).pool) : undefined);
+    if (!intake) {
+      throw new Error('TaskIntakeService dependency missing; direct PDL task creation is prohibited');
+    }
+    const intakeRes = await intake.processIntake({
+      rawRequest: runtimeInput.prompt || runtimeInput.objective,
+      objective: runtimeInput.objective,
+      prompt: runtimeInput.prompt,
+      source: 'autonomy-loop',
+      project: runtimeInput.project,
+      repository: runtimeInput.repository,
+      priority: runtimeInput.priority,
+      agentId: runtimeInput.agentId ?? undefined,
+    });
+    runtimeTask = intakeRes.task;
   }
 
   // 5. Record Cycle

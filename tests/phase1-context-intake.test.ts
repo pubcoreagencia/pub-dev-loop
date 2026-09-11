@@ -13,6 +13,35 @@ import apiWorkerDefault from '../src/api-worker.js';
 // In-memory mock TaskRepository for testing
 class MockTaskRepository implements TaskRepository {
   private tasks: Map<string, Task> = new Map();
+  public readonly intakeService = {
+    processIntake: async (input: any) => {
+      const task = await this.create({
+        project: input.project,
+        repository: input.repository,
+        objective: input.objective || input.rawRequest,
+        prompt: input.prompt || input.rawRequest,
+        priority: input.priority ?? 1,
+        agentId: input.agentId,
+        result: input.result,
+      });
+      return {
+        task,
+        spec: {} as any,
+        executionSpec: {
+          id: `spec-${task.id}`,
+          task_id: task.id,
+          spec_version: '1.0.0',
+          spec_hash: 'mockspec',
+          objective: task.objective,
+          lineage: { intakeHash: 'mockintake', source: 'phase1-test' },
+          status: 'SEALED',
+          created_at: new Date().toISOString(),
+          sealed_at: new Date().toISOString(),
+          spec_content_json: '{}',
+        },
+      };
+    },
+  } as any;
 
   async create(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'status'> & { id?: string }): Promise<Task> {
     const id = task.id || `task-${Date.now()}-${Math.random().toString(36).substring(7)}`;

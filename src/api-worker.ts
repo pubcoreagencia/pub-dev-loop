@@ -23,6 +23,7 @@ import { Container, getContainer } from '@cloudflare/containers';
 import pkg from 'pg';
 const { Pool } = pkg;
 import { PostgresTaskRepository } from './repository.js';
+import { TaskIntakeService } from './pdl/service/task-intake-service.js';
 import { PostgresPrototypeRepository } from './pp/persistence/repository.js';
 import { PrototypeHandoffService, type PrototypeHandoffInput } from './pp/handoff/handoff.js';
 import { PdlTaskIngestionAdapter } from './pdl-handoff-adapter.js';
@@ -335,7 +336,18 @@ const SCHEMA_MIGRATIONS = [
     details JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   );`,
-  `CREATE INDEX IF NOT EXISTS autonomous_audit_logs_repo_created_idx ON autonomous_audit_logs (repo, created_at DESC);`
+  `CREATE INDEX IF NOT EXISTS autonomous_audit_logs_repo_created_idx ON autonomous_audit_logs (repo, created_at DESC);`,
+  `CREATE TABLE IF NOT EXISTS execution_specs (
+    spec_id VARCHAR(64) PRIMARY KEY,
+    task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    status VARCHAR(32) NOT NULL,
+    canonical_payload JSONB NOT NULL,
+    spec_hash VARCHAR(64) NOT NULL,
+    sealed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_execution_specs_task_id ON execution_specs(task_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_execution_specs_task_status ON execution_specs(task_id, status);`
 ];
 
 let migrationsChecked = false;
@@ -366,6 +378,12 @@ function getRepository(env: Env): PostgresTaskRepository {
   const pool = getPool(env);
   void ensureMigrations(pool);
   return new PostgresTaskRepository(pool);
+}
+
+function getIntakeService(env: Env): TaskIntakeService {
+  const pool = getPool(env);
+  void ensureMigrations(pool);
+  return new TaskIntakeService(pool);
 }
 
 function getPrototypesRepository(env: Env): PostgresPrototypeRepository {
@@ -1939,8 +1957,8 @@ export function runAutonomousOptimization(): AutonomousExecutionMeta {
 
     // Injetar tarefa real na fila do PUB DEV LOOP para que os agentes operem de fato e acordem o container
     try {
-      const taskRepo = getRepository(env);
-      await taskRepo.create({
+      const intakeService = getIntakeService(env);
+      await intakeService.processIntake({
         project: cleanRepo,
         repository: `https://github.com/pubcoreagencia/${cleanRepo}.git`,
         objective: `[Autônomo 24/7] ${synthesizedCommitMsg}`,
@@ -2447,8 +2465,9 @@ export default {
             return jsonResponse({ error: `Step '${stepId}' not found in plan` }, 404);
           }
           const taskPayload = planStepToTask(step, plan, overrides);
-          const tasksRepo = getRepository(env);
-          const createdTask = await tasksRepo.create(taskPayload);
+          const intakeService = getIntakeService(env);
+          const intakeResult = await intakeService.processIntake(taskPayload);
+          const createdTask = intakeResult.task;
 
           if (step.agentId) {
             defaultOfficeEventBus.publish({
@@ -2489,7 +2508,7 @@ export default {
             ctx.waitUntil(triggerContainerWorker(env));
           }
 
-          return jsonResponse({ task: createdTask }, 201);
+          return jsonResponse({ task: createdTask, executionSpec: intakeResult.executionSpec }, 201);
         } catch (err: any) {
           return jsonResponse({ error: err.message }, 500);
         }
@@ -4250,8 +4269,9 @@ ${d.commits.slice(0, 3).join('\n') || '- Repositório sincronizado na branch pri
           engineeringPlan
         );
 
-        const repo = getRepository(env);
-        const task = await repo.create(runtimeTaskInput);
+        const intakeService = getIntakeService(env);
+        const intakeResult = await intakeService.processIntake(runtimeTaskInput);
+        const task = intakeResult.task;
 
         console.log(JSON.stringify({
           event: 'TASK_REQUEST_ACCEPTED',
@@ -4270,6 +4290,7 @@ ${d.commits.slice(0, 3).join('\n') || '- Repositório sincronizado na branch pri
 
         return new Response(JSON.stringify({
           ...task,
+          executionSpec: intakeResult.executionSpec,
           engineeringTask: engTask,
           resolvedContext,
           engineeringPlan,

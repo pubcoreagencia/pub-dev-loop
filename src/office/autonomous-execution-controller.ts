@@ -16,6 +16,7 @@ import { engineeringTaskToTask } from './intent.js';
 import { resolveContext } from './context-resolver.js';
 import { defaultApprovalManager, ApprovalManager } from './approval.js';
 import type { AutonomyStateRepository, DurableCycleRecord } from './autonomy-state-repository.js';
+import { TaskIntakeService } from '../pdl/service/task-intake-service.js';
 
 export {
   type AutonomyStateRepository,
@@ -113,7 +114,8 @@ export class AutonomousExecutionController {
     private readonly taskRepo: TaskRepository,
     private readonly approvalManager: ApprovalManager = defaultApprovalManager,
     private readonly workerRuntime?: WorkerRuntimeAdapter,
-    private readonly stateRepo?: AutonomyStateRepository
+    private readonly stateRepo?: AutonomyStateRepository,
+    private readonly intakeService?: TaskIntakeService,
   ) {}
 
   /**
@@ -449,8 +451,23 @@ export class AutonomousExecutionController {
       const resolvedContext = resolveContext(engTask);
       const runtimeInput = engineeringTaskToTask(engTask, {}, resolvedContext);
 
-      // 9. Enqueue in TaskRepository
-      const storedTask = await this.taskRepo.create(runtimeInput);
+      // 9. Enqueue in TaskRepository / TaskIntakeService
+      let storedTask: Task;
+      const intake = this.intakeService ?? (this.taskRepo as any)?.intakeService ?? ((this.taskRepo as any)?.pool ? new TaskIntakeService((this.taskRepo as any).pool) : undefined);
+      if (!intake) {
+        throw new Error('TaskIntakeService dependency missing; direct PDL task creation is prohibited');
+      }
+      const intakeRes = await intake.processIntake({
+        rawRequest: runtimeInput.prompt || runtimeInput.objective,
+        objective: runtimeInput.objective,
+        prompt: runtimeInput.prompt,
+        source: 'autonomous-execution-controller',
+        project: runtimeInput.project,
+        repository: runtimeInput.repository,
+        priority: runtimeInput.priority,
+        agentId: runtimeInput.agentId ?? undefined,
+      });
+      storedTask = intakeRes.task;
       if (this.stateRepo) {
         await this.stateRepo.updateCycle(mission.id, cycleNumber, {
           generatedTaskId: storedTask.id,

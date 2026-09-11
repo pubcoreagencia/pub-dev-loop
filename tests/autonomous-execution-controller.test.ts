@@ -1,9 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   AutonomousExecutionController,
   WorkerRuntimeAdapter,
   type WorkerTaskExecutor,
 } from '../src/office/autonomous-execution-controller.js';
+import { DefaultFinalizationBridge } from '../src/execution/finalization-bridge.js';
 import {
   type Mission,
   createInitialSystemState,
@@ -15,9 +16,72 @@ import { BaseWorker, type AttemptResult } from '../src/worker-service.js';
 import type { FinalizeResult } from '../src/finalizer.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { computeSpecHash, type ExecutionSpecRecord, type ExecutionSpecStore } from '../src/execution/execution-spec-persistence.js';
+import { normalizeTaskIntake } from '../src/task/intake.js';
+import { buildCanonicalExecutionSpec } from '../src/pdl/service/task-intake-service.js';
+import type { TaskIntakeService } from '../src/pdl/service/task-intake-service.js';
+
+function createMockExecutionSpecRecord(taskId: string): ExecutionSpecRecord {
+  const intake = normalizeTaskIntake({
+    rawRequest: 'Autonomous task ' + taskId,
+    source: 'autonomous-execution-controller',
+    createdAt: new Date().toISOString(),
+  });
+  const spec = buildCanonicalExecutionSpec(intake);
+  const hash = computeSpecHash(spec);
+  const specWithHash = {
+    ...spec,
+    metadata: {
+      ...spec.metadata,
+      specHash: hash,
+    },
+  };
+  return {
+    id: `spec-${taskId}`,
+    task_id: taskId,
+    spec_version: '1.0.0',
+    spec_hash: hash,
+    objective: spec.objective,
+    lineage: spec.lineage,
+    status: 'SEALED',
+    created_at: new Date().toISOString(),
+    sealed_at: new Date().toISOString(),
+    spec_content_json: JSON.stringify(specWithHash),
+  };
+}
+
+function createMockExecutionSpecDb(): ExecutionSpecStore {
+  return {
+    create: async (r) => r,
+    loadByTaskId: async (taskId: string) => createMockExecutionSpecRecord(taskId),
+    updateStatus: async (_id, status) => ({ status }) as any,
+  };
+}
+
+function createMockIntakeService(repo: TaskRepository): TaskIntakeService {
+  return {
+    processIntake: async (input: any) => {
+      const task = await repo.create({
+        project: input.project,
+        repository: input.repository,
+        objective: input.objective || input.rawRequest,
+        prompt: input.prompt || input.rawRequest,
+        priority: input.priority ?? 1,
+        agentId: input.agentId,
+      });
+      const record = createMockExecutionSpecRecord(task.id);
+      return {
+        task,
+        spec: {} as any,
+        executionSpec: record,
+      };
+    },
+  } as unknown as TaskIntakeService;
+}
 
 class MockTaskRepository implements TaskRepository {
   private tasks: Map<string, Task> = new Map();
+  public readonly intakeService = createMockIntakeService(this);
 
   async create(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'status'> & { id?: string }): Promise<Task> {
     const id = task.id || `task-${Date.now()}-${Math.random().toString(36).substring(7)}`;
@@ -242,7 +306,7 @@ describe('PDL Autonomous Execution Controller — Continuity Loop', () => {
     const state = createInitialSystemState(baseMission);
 
     // Simulate slow executor to trigger concurrent invocation
-    let finishExecution: () => void;
+    let finishExecution: (() => void) | undefined;
     const slowExecutor: WorkerTaskExecutor = () => new Promise(resolve => {
       finishExecution = () => resolve({ status: 'COMPLETED', evidenceSnippet: 'done' });
     });
@@ -255,7 +319,10 @@ describe('PDL Autonomous Execution Controller — Continuity Loop', () => {
     expect(result2.stopped).toBe(true);
     expect(result2.stopReason).toBe('DUPLICATE_CYCLE_CALL');
 
-    finishExecution!();
+    while (!finishExecution) {
+      await new Promise(r => setTimeout(r, 10));
+    }
+    finishExecution();
     await promise1;
   });
 
@@ -273,8 +340,8 @@ describe('PDL Autonomous Execution Controller — Continuity Loop', () => {
 
   it('7. Real Worker Runtime Adapter: Integrates BaseWorker lifecycle (claim -> retry -> finalize -> state update)', async () => {
     class TestBaseWorker extends BaseWorker {
-      constructor(tasks: TaskRepository) {
-        super(tasks, 'test-worker-alpha');
+      constructor(tasks: TaskRepository, specDb?: any) {
+        super(tasks, 'test-worker-alpha', specDb);
       }
 
       protected async executeWithRetry(task: Task, repository: string): Promise<AttemptResult> {
@@ -293,6 +360,28 @@ describe('PDL Autonomous Execution Controller — Continuity Loop', () => {
           toolRounds: 1,
           durationMs: 250,
           execution: {},
+          executionResult: {
+            execution: {
+              status: 'COMPLETED',
+              provider: 'openrouter',
+              model: 'anthropic/claude-3.5-sonnet',
+              workspace: dummyWs,
+              changedFiles: ['src/office/research.ts'],
+              durationMs: 250,
+              errorCode: null,
+              errorMessage: null,
+            },
+            specIdentity: {
+              specVersion: '1.0.0',
+              taskId: task.id,
+              lineage: {
+                intakeVersion: '1.0.0',
+                intakeHash: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+                source: 'autonomous-execution-controller',
+                createdAt: new Date().toISOString(),
+              },
+            },
+          },
         };
       }
 
@@ -325,10 +414,26 @@ describe('PDL Autonomous Execution Controller — Continuity Loop', () => {
     }
 
     const repo = new MockTaskRepository();
-    const worker = new TestBaseWorker(repo);
+    const mockSpecDb = createMockExecutionSpecDb();
+    const worker = new TestBaseWorker(repo, mockSpecDb as any);
     const adapter = new WorkerRuntimeAdapter(worker, repo);
-    const controller = new AutonomousExecutionController(repo, defaultApprovalManager, adapter);
+    const mockIntake = createMockIntakeService(repo);
+    const controller = new AutonomousExecutionController(repo, defaultApprovalManager, adapter, undefined, mockIntake);
     const state = createInitialSystemState(baseMission);
+
+    vi.spyOn(DefaultFinalizationBridge.prototype, 'finalize').mockImplementation(async (execResult: any) => ({
+      execution: execResult.execution,
+      finalization: {
+        status: 'COMPLETED',
+        commitSha: null,
+        gitStatus: 'clean',
+        validationErrors: [],
+        testOutput: 'All tests passed',
+        changedFiles: ['src/office/research.ts'],
+        declaredChangedFiles: ['src/office/research.ts'],
+      } as any,
+      specIdentity: execResult.specIdentity,
+    }));
 
     // Run cycle without workerExecutor -> controller must invoke workerRuntime adapter
     const { result, nextState } = await controller.executeCycle(baseMission, state, 1, undefined);

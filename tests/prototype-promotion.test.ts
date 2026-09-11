@@ -11,6 +11,72 @@ import { PostgresTaskRepository } from '../src/repository.js';
 import { PostgresPrototypeRepository } from '../src/pp/persistence/repository.js';
 import { RouterWorker } from '../src/router-worker.js';
 import { createApp } from '../src/api.js';
+import { computeSpecHash, type ExecutionSpecRecord, type ExecutionSpecStore } from '../src/execution/execution-spec-persistence.js';
+import { normalizeTaskIntake } from '../src/task/intake.js';
+import { buildCanonicalExecutionSpec } from '../src/pdl/service/task-intake-service.js';
+
+function createMockExecutionSpecRecord(taskId: string): ExecutionSpecRecord {
+  const intake = normalizeTaskIntake({
+    rawRequest: 'Development task for ' + taskId,
+    source: 'prototype-promotion',
+    createdAt: new Date().toISOString(),
+  });
+  const spec = buildCanonicalExecutionSpec(intake);
+  const hash = computeSpecHash(spec);
+  const specWithHash = {
+    ...spec,
+    metadata: {
+      ...spec.metadata,
+      specHash: hash,
+    },
+  };
+  return {
+    id: `spec-${taskId}`,
+    task_id: taskId,
+    spec_version: '1.0.0',
+    spec_hash: hash,
+    objective: spec.objective,
+    lineage: spec.lineage,
+    status: 'SEALED',
+    created_at: new Date().toISOString(),
+    sealed_at: new Date().toISOString(),
+    spec_content_json: JSON.stringify(specWithHash),
+  };
+}
+
+function createMockExecutionSpecDb(): ExecutionSpecStore {
+  return {
+    create: async (r) => r,
+    loadByTaskId: async (taskId: string) => createMockExecutionSpecRecord(taskId),
+    updateStatus: async (_id, status) => ({ status }) as any,
+  };
+}
+
+function createMockIntakeService(tasks: any): any {
+  return {
+    processIntake: async (input: any) => {
+      const created = await tasks.create({
+        project: input.project,
+        repository: input.repository,
+        objective: input.objective || input.executionInstructions?.[0] || 'Promoted task',
+        prompt: input.rawRequest || input.prompt || 'Promoted task',
+        priority: input.priority ?? 0,
+      });
+      return {
+        task: created,
+        spec: {} as any,
+        executionSpec: {
+          id: `spec-${created.id}`,
+          spec_version: '1.0.0',
+          spec_hash: 'mockhash',
+          status: 'SEALED',
+          sealed_at: new Date().toISOString(),
+          lineage: { intakeHash: 'mock', source: 'prototype-promotion' },
+        },
+      };
+    },
+  };
+}
 
 function git(args: string[], cwd: string): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
@@ -115,7 +181,7 @@ describe('PUB Prototype — Formal Promotion PP → PDL Development', () => {
       },
     } as unknown as PostgresPrototypeRepository;
 
-    const app = createApp(mockTasks, mockPrototypes);
+    const app = createApp(mockTasks, mockPrototypes, createMockIntakeService(mockTasks));
 
     // Setup approved prototype session
     const sessionId = 'session-barber-001';
@@ -276,7 +342,7 @@ describe('PUB Prototype — Formal Promotion PP → PDL Development', () => {
       },
     } as unknown as PostgresPrototypeRepository;
 
-    const app = createApp(mockTasks, mockPrototypes);
+    const app = createApp(mockTasks, mockPrototypes, createMockIntakeService(mockTasks));
 
     await withServer(app, async baseUrl => {
       const [res1, res2] = await Promise.all([
@@ -376,7 +442,8 @@ describe('PUB Prototype — Formal Promotion PP → PDL Development', () => {
       metadata() { return {}; },
     };
 
-    const devWorker = new RouterWorker(mockTasks, mockProvider, 'router-dev-worker');
+    const mockSpecDb = createMockExecutionSpecDb();
+    const devWorker = new RouterWorker(mockTasks, mockProvider, 'router-dev-worker', undefined, mockSpecDb);
     const worked = await devWorker.executeOnce();
 
     expect(worked).toBe(true);
@@ -437,7 +504,8 @@ describe('PUB Prototype — Formal Promotion PP → PDL Development', () => {
       metadata() { return {}; },
     };
 
-    const devWorker = new RouterWorker(mockTasks, mockProvider, 'router-dev-worker');
+    const mockSpecDb = createMockExecutionSpecDb();
+    const devWorker = new RouterWorker(mockTasks, mockProvider, 'router-dev-worker', undefined, mockSpecDb);
     const worked = await devWorker.executeOnce();
 
     expect(worked).toBe(true);

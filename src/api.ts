@@ -12,6 +12,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Pool } from 'pg';
 import { PostgresTaskRepository } from './repository.js';
+import type { Task } from './domain.js';
 import { PostgresPrototypeRepository } from './pp/persistence/repository.js';
 import { PrototypeEventStream, PostgresPrototypeEventBridge } from './pp/events/events.js';
 import { PrototypeSseBroker } from './pp/events/sse.js';
@@ -22,6 +23,7 @@ import { LocalPreviewRuntime } from './pp/preview/local-preview-runtime.js';
 import { PublicPreviewRuntime } from './pp/preview/public-preview-runtime.js';
 import { PrototypeHandoffService, type PrototypeHandoffInput } from './pp/handoff/handoff.js';
 import { PdlTaskIngestionAdapter } from './pdl-handoff-adapter.js';
+import { TaskIntakeService } from './pdl/service/task-intake-service.js';
 import { defaultAgentRegistry, isValidAgentId } from './office/registry.js';
 import { defaultOfficeOrganization } from './office/organization.js';
 import { createOrganizationalPlan, planStepToTask } from './office/planning.js';
@@ -57,9 +59,16 @@ function gitDiff(cwd: string, base: string, head: string): string {
   return execFileSync('git', ['diff', '--no-ext-diff', '--unified=3', base, head], { cwd, encoding: 'utf8', maxBuffer: 250_000 }).slice(0, 200_000);
 }
 
-export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes = new PostgresPrototypeRepository(pool)) => {
+export const createApp = (
+  tasks = new PostgresTaskRepository(pool),
+  prototypes = new PostgresPrototypeRepository(pool),
+  intake?: TaskIntakeService,
+  events?: PrototypeEventStream,
+) => {
+  const activeEvents = events ?? ((prototypes as any)?.pool ? prototypeEvents : new PrototypeEventStream());
+  const intakeService = intake ?? (tasks as any)?.intakeService ?? ((tasks as any)?.pool ? new TaskIntakeService((tasks as any).pool) : undefined);
   const app = express(); app.use(express.json());
-  const handoff = new PrototypeHandoffService(new PdlTaskIngestionAdapter(tasks), prototypes, prototypeEvents);
+  const handoff = new PrototypeHandoffService(new PdlTaskIngestionAdapter(tasks, intakeService), prototypes, activeEvents);
 
   app.get('/health', (_q,res)=>res.json({status:'ok'}));
   app.get('/office/organization', (_req, res) => res.json({ organization: defaultOfficeOrganization.getOrganization() }));
@@ -100,12 +109,18 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
       // 4. Formulate Engineering Plan enriched with discovered evidence
       const engineeringPlan = createEngineeringPlan(engTask, resolvedContext);
 
-      // 5. Bridge to existing runtime Task contract
+      let task: Task;
+      let executionSpecPayload: any = undefined;
+
+      if (!intakeService) {
+        throw new Error('TaskIntakeService dependency missing; direct PDL task creation is prohibited');
+      }
+
       const runtimeTaskInput = engineeringTaskToTask(
         engTask,
         {
-          project: body.project?.trim() || engTask.project,
-          repository: body.repository?.trim() || resolvedContext.repository,
+          project: typeof body.project === 'string' && body.project.trim() ? body.project.trim() : engTask.project,
+          repository: typeof body.repository === 'string' && body.repository.trim() ? body.repository.trim() : resolvedContext.repository,
           priority: typeof body.priority === 'number' ? body.priority : undefined,
           agentId: typeof body.agentId === 'string' ? body.agentId.trim() : undefined,
         },
@@ -113,13 +128,27 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
         engineeringPlan
       );
 
-      const task = await tasks.create(runtimeTaskInput);
+      const intakeResult = await intakeService.processIntake({
+        ...runtimeTaskInput,
+        rawRequest: rawPrompt,
+        source: typeof body.source === 'string' && body.source.trim() ? body.source.trim() : 'legacy-api',
+      });
+      task = intakeResult.task;
+      executionSpecPayload = {
+        id: intakeResult.executionSpec.id,
+        specVersion: intakeResult.executionSpec.spec_version,
+        specHash: intakeResult.executionSpec.spec_hash,
+        status: intakeResult.executionSpec.status,
+        sealedAt: intakeResult.executionSpec.sealed_at,
+        lineage: intakeResult.executionSpec.lineage,
+      };
 
       return res.status(201).json({
         ...task,
         engineeringTask: engTask,
         resolvedContext,
         engineeringPlan,
+        ...(executionSpecPayload ? { executionSpec: executionSpecPayload } : {}),
       });
     } catch (err) {
       return next(err);
@@ -199,8 +228,33 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
       if (!step) {
         return res.status(404).json({ error: `Step '${stepId}' not found in plan` });
       }
-      const taskPayload = planStepToTask(step, plan, overrides);
-      const createdTask = await tasks.create(taskPayload);
+      let createdTask: Task;
+      let executionSpecPayload: any = undefined;
+
+      if (!intakeService) {
+        throw new Error('TaskIntakeService dependency missing; direct PDL task creation is prohibited');
+      }
+
+      const intakeResult = await intakeService.processIntake({
+        rawRequest: step.prompt || step.description,
+        source: 'office-plan-step',
+        project: plan.project,
+        repository: plan.repository,
+        priority: typeof overrides?.priority === 'number' ? overrides.priority : 1,
+        agentId: typeof overrides?.agentId === 'string' ? overrides.agentId.trim() : (step.agentId || undefined),
+        executionInstructions: [step.description],
+        acceptanceCriteria: plan.context?.acceptance_criteria?.length ? plan.context.acceptance_criteria : [`Fulfill step: ${step.description}`],
+        validationPlan: [`Verify implementation against step: ${step.description}`],
+      });
+      createdTask = intakeResult.task;
+      executionSpecPayload = {
+        id: intakeResult.executionSpec.id,
+        specVersion: intakeResult.executionSpec.spec_version,
+        specHash: intakeResult.executionSpec.spec_hash,
+        status: intakeResult.executionSpec.status,
+        sealedAt: intakeResult.executionSpec.sealed_at,
+        lineage: intakeResult.executionSpec.lineage,
+      };
 
       if (step.agentId) {
         defaultOfficeEventBus.publish({
@@ -237,7 +291,10 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
         }
       }
 
-      return res.status(201).json({ task: createdTask });
+      return res.status(201).json({
+        task: createdTask,
+        ...(executionSpecPayload ? { executionSpec: executionSpecPayload } : {}),
+      });
     } catch (err) {
       return next(err);
     }
@@ -613,25 +670,6 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
   });
   app.get(['/prototype', '/prototype/sessions/:id/view'], (_req,res)=>res.status(200).type('html').send(prototypeUiHtml()+prototypeHistoryUiScript()));
 
-  app.post('/tasks', async(req,res,next)=>{
-    try {
-      const {project,repository,objective,prompt,priority,agentId}=req.body??{};
-      if(!project||!repository||!objective||!prompt) return res.status(400).json({error:'project, repository, objective and prompt are required'});
-      if(agentId !== undefined && agentId !== null) {
-        if(!isValidAgentId(agentId)) {
-          return res.status(400).json({error:`Invalid agentId: '${agentId}'. Must be a registered agent in The Office.`});
-        }
-      }
-      return res.status(201).json(await tasks.create({
-        project,
-        repository,
-        objective,
-        prompt,
-        priority,
-        agentId: typeof agentId === 'string' ? agentId.trim() : undefined,
-      }));
-    } catch(e){return next(e);}
-  });
   app.get('/tasks',async(_q,res,next)=>{try{return res.json(await tasks.list())}catch(e){return next(e)}});
   app.get('/tasks/:id',async(req,res,next)=>{try{const t=await tasks.get(req.params.id);return t?res.json(t):res.sendStatus(404)}catch(e){return next(e)}});
   app.post('/tasks/:id/cancel',async(req,res,next)=>{try{const t=await tasks.cancel(req.params.id);return t?res.json(t):res.status(409).json({error:'Task cannot be cancelled'})}catch(e){return next(e)}});

@@ -46,7 +46,9 @@ export const createPdlApp = (
       const body = req.body ?? {};
       const rawPrompt = typeof body.prompt === 'string' && body.prompt.trim()
         ? body.prompt.trim()
-        : (typeof body.objective === 'string' ? body.objective.trim() : '');
+        : (typeof body.objective === 'string' && body.objective.trim()
+          ? body.objective.trim()
+          : (typeof body.rawRequest === 'string' ? body.rawRequest.trim() : ''));
 
       if (!rawPrompt) {
         return res.status(400).json({ error: 'prompt or objective is required' });
@@ -204,8 +206,18 @@ export const createPdlApp = (
       if (!step) {
         return res.status(404).json({ error: `Step '${stepId}' not found in plan` });
       }
-      const taskPayload = planStepToTask(step, plan, overrides);
-      const createdTask = await taskRepo.create(taskPayload);
+      const intakeResult = await intakeService.processIntake({
+        rawRequest: step.prompt || step.description,
+        source: 'office-plan-step',
+        project: plan.project,
+        repository: plan.repository,
+        priority: typeof overrides?.priority === 'number' ? overrides.priority : 1,
+        agentId: typeof overrides?.agentId === 'string' ? overrides.agentId.trim() : (step.agentId || undefined),
+        executionInstructions: [step.description],
+        acceptanceCriteria: plan.context?.acceptance_criteria?.length ? plan.context.acceptance_criteria : [`Fulfill step: ${step.description}`],
+        validationPlan: [`Verify implementation against step: ${step.description}`],
+      });
+      const createdTask = intakeResult.task;
 
       if (step.agentId) {
         defaultOfficeEventBus.publish({
@@ -242,7 +254,17 @@ export const createPdlApp = (
         }
       }
 
-      return res.status(201).json({ task: createdTask });
+      return res.status(201).json({
+        task: createdTask,
+        executionSpec: {
+          id: intakeResult.executionSpec.id,
+          specVersion: intakeResult.executionSpec.spec_version,
+          specHash: intakeResult.executionSpec.spec_hash,
+          status: intakeResult.executionSpec.status,
+          sealedAt: intakeResult.executionSpec.sealed_at,
+          lineage: intakeResult.executionSpec.lineage,
+        },
+      });
     } catch (err) {
       return next(err);
     }

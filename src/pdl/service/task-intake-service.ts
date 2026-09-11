@@ -50,13 +50,17 @@ export interface TaskIntakeOptions {
 }
 
 export interface TaskIntakePayload {
-  rawRequest: string;
+  rawRequest?: string;
+  prompt?: string;
+  objective?: string;
   source?: string;
-  createdAt?: string;
+  createdAt?: string | Date;
   project?: string;
   repository?: string;
   priority?: number;
-  agentId?: string;
+  agentId?: string | null;
+  branch?: string | null;
+  workspacePath?: string | null;
   executionInstructions?: string[];
   acceptanceCriteria?: string[];
   validationPlan?: string[];
@@ -227,16 +231,32 @@ export class TaskIntakeService {
   constructor(private readonly pool: PoolLike | Pool) {}
 
   async processIntake(
-    input: TaskIntakePayload | TaskIntake,
+    input: TaskIntakePayload | TaskIntake | Task,
     options?: TaskIntakeOptions,
   ): Promise<AtomicIntakeResult> {
+    const rawReq = isTaskIntake(input)
+      ? input.rawRequest
+      : (input as TaskIntakePayload).rawRequest ||
+        (input as TaskIntakePayload).prompt ||
+        (input as TaskIntakePayload).objective ||
+        'Execute task';
+    const intakeSource = isTaskIntake(input)
+      ? input.source
+      : (input as TaskIntakePayload).source || options?.source || 'pdl-api';
+    const intakeCreatedAt = isTaskIntake(input)
+      ? input.createdAt
+      : typeof (input as TaskIntakePayload).createdAt === 'string'
+        ? ((input as TaskIntakePayload).createdAt as string)
+        : (input as TaskIntakePayload).createdAt instanceof Date
+          ? ((input as TaskIntakePayload).createdAt as Date).toISOString()
+          : new Date().toISOString();
+
     const intake: TaskIntake = isTaskIntake(input)
       ? input
       : normalizeTaskIntake({
-          rawRequest: (input as TaskIntakePayload).rawRequest,
-          source: (input as TaskIntakePayload).source || 'pdl-api',
-          createdAt:
-            (input as TaskIntakePayload).createdAt || new Date().toISOString(),
+          rawRequest: rawReq,
+          source: intakeSource,
+          createdAt: intakeCreatedAt,
         });
 
     const combinedOptions: TaskIntakeOptions = {
@@ -260,7 +280,7 @@ export class TaskIntakeService {
         options?.agentId ??
         (isTaskIntake(input)
           ? undefined
-          : (input as TaskIntakePayload).agentId),
+          : ((input as TaskIntakePayload).agentId ?? undefined)),
       executionInstructions:
         options?.executionInstructions ??
         (isTaskIntake(input)
@@ -290,6 +310,10 @@ export class TaskIntakeService {
 
     const spec = buildCanonicalExecutionSpec(intake, combinedOptions);
 
+    if (!isTaskIntake(input) && (input as TaskIntakePayload).objective) {
+      spec.objective = (input as TaskIntakePayload).objective!;
+    }
+
     const validation = validateExecutionSpec(spec);
     if (!validation.valid) {
       throw new ExecutionSpecValidationError(validation.errors);
@@ -308,6 +332,15 @@ export class TaskIntakeService {
           ? combinedOptions.priority
           : 0;
 
+      const finalObjective =
+        !isTaskIntake(input) && (input as TaskIntakePayload).objective
+          ? (input as TaskIntakePayload).objective!
+          : intake.objective;
+      const finalPrompt =
+        !isTaskIntake(input) && (input as TaskIntakePayload).prompt
+          ? (input as TaskIntakePayload).prompt!
+          : intake.rawRequest;
+
       const taskRes = await client.query(
         `INSERT INTO tasks (project, repository, objective, prompt, priority, status)
          VALUES ($1, $2, $3, $4, $5, 'QUEUED')
@@ -315,8 +348,8 @@ export class TaskIntakeService {
         [
           taskProject,
           taskRepoUrl,
-          intake.objective,
-          intake.rawRequest,
+          finalObjective,
+          finalPrompt,
           taskPriority,
         ],
       );

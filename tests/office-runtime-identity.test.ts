@@ -3,6 +3,46 @@ import { RouterWorker } from '../src/router-worker.js';
 import type { AgentProvider, ProviderTaskResult } from '../src/providers/types.js';
 import type { Task, TaskRepository } from '../src/domain.js';
 import { defaultAgentRegistry, getAgent, isValidAgentId } from '../src/office/registry.js';
+import { computeSpecHash, type ExecutionSpecRecord, type ExecutionSpecStore } from '../src/execution/execution-spec-persistence.js';
+import { normalizeTaskIntake } from '../src/task/intake.js';
+import { buildCanonicalExecutionSpec } from '../src/pdl/service/task-intake-service.js';
+
+function createMockExecutionSpecRecord(taskId: string): ExecutionSpecRecord {
+  const intake = normalizeTaskIntake({
+    rawRequest: 'Implement test feature',
+    source: 'test',
+    createdAt: new Date().toISOString(),
+  });
+  const spec = buildCanonicalExecutionSpec(intake);
+  const hash = computeSpecHash(spec);
+  const specWithHash = {
+    ...spec,
+    metadata: {
+      ...spec.metadata,
+      specHash: hash,
+    },
+  };
+  return {
+    id: `spec-${taskId}`,
+    task_id: taskId,
+    spec_version: '1.0.0',
+    spec_hash: hash,
+    objective: spec.objective,
+    lineage: spec.lineage,
+    status: 'SEALED',
+    created_at: new Date().toISOString(),
+    sealed_at: new Date().toISOString(),
+    spec_content_json: JSON.stringify(specWithHash),
+  };
+}
+
+function createMockExecutionSpecDb(): ExecutionSpecStore {
+  return {
+    create: vi.fn(),
+    loadByTaskId: vi.fn().mockImplementation(async (taskId: string) => createMockExecutionSpecRecord(taskId)),
+    updateStatus: vi.fn(),
+  };
+}
 
 function createMockTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -71,7 +111,8 @@ describe('P5.7.5 — The Office: Runtime Identity Propagation', () => {
       heartbeat: vi.fn().mockResolvedValue(true),
     };
 
-    const worker = new RouterWorker(mockRepo, mockProvider, 'router-daemon-01');
+    const mockSpecDb = createMockExecutionSpecDb();
+    const worker = new RouterWorker(mockRepo, mockProvider, 'router-daemon-01', undefined, mockSpecDb);
 
     // Spy on executeTask directly to avoid real git clone
     vi.spyOn(worker as any, 'executeWithRetry').mockResolvedValue({
@@ -123,6 +164,28 @@ describe('P5.7.5 — The Office: Runtime Identity Propagation', () => {
         finalizeStatus: null,
         commitSha: 'abc1234',
         agentId: task.agentId,
+      },
+      executionResult: {
+        execution: {
+          status: 'COMPLETED',
+          provider: 'openrouter',
+          model: 'minimax/minimax-m2.7:free',
+          workspace: '/tmp/workspace',
+          changedFiles: ['src/index.ts'],
+          durationMs: 120,
+          errorCode: null,
+          errorMessage: null,
+        },
+        specIdentity: {
+          specVersion: '1.0.0',
+          taskId: task.id,
+          lineage: {
+            intakeVersion: '1.0.0',
+            intakeHash: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+            source: 'test',
+            createdAt: new Date().toISOString(),
+          },
+        },
       },
     });
 
@@ -202,7 +265,8 @@ describe('P5.7.5 — The Office: Runtime Identity Propagation', () => {
       capabilities: () => ['tools'],
     };
 
-    const worker = new RouterWorker(mockRepo, mockProvider, 'router-daemon-01');
+    const mockSpecDb = createMockExecutionSpecDb();
+    const worker = new RouterWorker(mockRepo, mockProvider, 'router-daemon-01', undefined, mockSpecDb);
 
     vi.spyOn(worker as any, 'executeWithRetry').mockResolvedValue({
       status: 'COMPLETED',
@@ -253,6 +317,28 @@ describe('P5.7.5 — The Office: Runtime Identity Propagation', () => {
         finalizeStatus: null,
         commitSha: null,
         agentId: null,
+      },
+      executionResult: {
+        execution: {
+          status: 'COMPLETED',
+          provider: 'openrouter',
+          model: 'minimax/minimax-m2.7:free',
+          workspace: '/tmp/workspace',
+          changedFiles: [],
+          durationMs: 80,
+          errorCode: null,
+          errorMessage: null,
+        },
+        specIdentity: {
+          specVersion: '1.0.0',
+          taskId: legacyTask.id,
+          lineage: {
+            intakeVersion: '1.0.0',
+            intakeHash: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+            source: 'test',
+            createdAt: new Date().toISOString(),
+          },
+        },
       },
     });
 

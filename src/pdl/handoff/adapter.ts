@@ -5,6 +5,7 @@ import type {
   PdlTaskIngestionRequest,
   PdlTaskIngestionResult,
 } from '../../pp/handoff/handoff.js';
+import { TaskIntakeService } from '../service/task-intake-service.js';
 
 /**
  * FASE 4.3: Adaptador concreto do PDL para o contrato neutro de ingestão de tarefas.
@@ -12,10 +13,23 @@ import type {
  * Traduz a solicitação de promoção do PP em uma Task canônica na tabela `tasks`.
  */
 export class PdlTaskIngestionAdapter implements PdlTaskIngestionPort {
-  constructor(private readonly tasks: TaskRepository | PostgresTaskRepository) {}
+  private readonly intakeService?: TaskIntakeService;
+
+  constructor(
+    private readonly tasks: TaskRepository | PostgresTaskRepository,
+    intakeService?: TaskIntakeService,
+  ) {
+    if (intakeService) {
+      this.intakeService = intakeService;
+    } else if ((tasks as any)?.intakeService) {
+      this.intakeService = (tasks as any).intakeService;
+    } else if ((tasks as any)?.pool) {
+      this.intakeService = new TaskIntakeService((tasks as any).pool);
+    }
+  }
 
   async ingest(request: PdlTaskIngestionRequest): Promise<PdlTaskIngestionResult> {
-    const existingList = await this.tasks.list();
+    const existingList = typeof this.tasks.list === 'function' ? await this.tasks.list() : [];
     const existing = existingList.find(t =>
       t.branch === request.branch &&
       ((((t.result as Record<string, unknown> | null))?.promotionId === request.promotionId) ||
@@ -36,13 +50,21 @@ export class PdlTaskIngestionAdapter implements PdlTaskIngestionPort {
       };
     }
 
-    const created = await this.tasks.create({
+    if (!this.intakeService) {
+      throw new Error('TaskIntakeService dependency missing; direct PDL task creation is prohibited');
+    }
+
+    const intakeRes = await this.intakeService.processIntake({
+      rawRequest: request.prompt,
+      source: 'prototype-promotion',
       project: request.project,
       repository: request.repository,
-      objective: request.objective,
-      prompt: request.prompt,
       priority: request.priority ?? 0,
+      executionInstructions: [request.objective],
+      acceptanceCriteria: [`Complete prototype promotion for branch ${request.branch}`],
+      validationPlan: [`Verify integration of prototype checkpoint ${request.checkpointSha}`],
     });
+    const created = intakeRes.task;
 
     const resultPayload = {
       ...(created.result ?? {}),
