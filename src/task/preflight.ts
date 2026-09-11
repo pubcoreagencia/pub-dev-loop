@@ -134,19 +134,23 @@ export class StructuredPreflight implements Preflight {
       categoryResults.push(await this.runCategory(category, intake, context, queries, options.timeoutMs));
     }
 
-    for (const result of categoryResults) {
+  for (const result of categoryResults) {
       if (result.failure) failures.push(result.failure);
       if (result.status === 'EMPTY') {
         warnings.push(`Preflight category ${result.category} returned no findings`);
       }
     }
 
+    const hasCapabilityFailure = failures.some(
+      (f) => f.category === 'CAPABILITY_UNAVAILABLE' || f.category === 'RESEARCH_UNAVAILABLE' || f.category === 'CAPABILITY_TIMEOUT' || f.category === 'RESEARCH_TIMEOUT' || f.category === 'CONFLICTING_INFORMATION',
+    );
+
     const findings = categoryResults.flatMap((result) => result.findings);
-    const status: PreflightStatus = failures.length === 0
-      ? 'COMPLETED'
-      : failures.some((failure) => failure.category === 'EMPTY_RESULT')
-        ? 'PARTIAL'
-        : 'FAILED';
+    const status: PreflightStatus = hasCapabilityFailure
+      ? 'FAILED'
+      : failures.length === 0
+        ? 'COMPLETED'
+        : 'PARTIAL';
 
     return {
       version: PREFLIGHT_VERSION,
@@ -186,14 +190,16 @@ export class StructuredPreflight implements Preflight {
         const allFindings: PreflightFinding[] = [];
         const conflicts: string[] = [];
         for (const query of queries) {
+          const ac = new AbortController();
           const result = await withTimeout(
             () => this.dependencies.externalResearcher!.research(
               query,
               context,
-              { signal: new AbortController().signal },
+              { signal: ac.signal },
             ),
             effectiveTimeout,
             'RESEARCH_TIMEOUT',
+            () => ac.abort(),
           );
           allFindings.push(...result.findings);
           if (result.conflicts) conflicts.push(...result.conflicts);
@@ -320,6 +326,7 @@ async function withTimeout<T>(
   operation: () => Promise<T>,
   timeoutMs: number | undefined,
   timeoutCategory: PreflightFailureCategory,
+  onTimeout?: () => void,
 ): Promise<T> {
   if (!timeoutMs || timeoutMs <= 0) return operation();
   return new Promise<T>((resolve, reject) => {
@@ -327,6 +334,7 @@ async function withTimeout<T>(
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
+      if (onTimeout) onTimeout();
       reject(new CapabilityTimeoutError(timeoutCategory));
     }, timeoutMs);
     operation()

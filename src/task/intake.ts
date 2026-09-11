@@ -1,4 +1,8 @@
 export const TASK_INTAKE_VERSION = '1.0.0' as const;
+export const MAX_RAW_REQUEST_LENGTH = 50000;
+export const MAX_OBJECTIVE_LENGTH = 2000;
+export const MAX_CONSTRAINTS_COUNT = 50;
+export const MAX_FINDINGS_COUNT = 50;
 
 export type AmbiguityFlag =
   | 'MISSING_REQUESTED_OUTCOME'
@@ -19,6 +23,13 @@ export interface TaskIntake {
   constraints: string[];
   requestedOutcome: string | null;
   ambiguityFlags: AmbiguityFlag[];
+  source: string;
+  createdAt: string;
+  lineage: TaskLineage;
+}
+
+export interface TaskLineage {
+  intakeHash: string;
   source: string;
   createdAt: string;
 }
@@ -53,6 +64,10 @@ export function normalizeTaskIntake(input: TaskIntakeInput): TaskIntake {
 
   const rawRequest = input.rawRequest;
   const normalizedRequest = normalizeRequest(rawRequest);
+  if (rawRequest.length > MAX_RAW_REQUEST_LENGTH) {
+    throw new TaskIntakeError('INVALID_TASK', `rawRequest exceeds max length of ${MAX_RAW_REQUEST_LENGTH}`);
+  }
+
   if (normalizedRequest.length === 0) {
     throw new TaskIntakeError('INVALID_TASK', 'rawRequest must not be empty or whitespace');
   }
@@ -66,10 +81,17 @@ export function normalizeTaskIntake(input: TaskIntakeInput): TaskIntake {
   if (objective.length === 0) {
     throw new TaskIntakeError('INVALID_TASK', 'objective could not be derived from rawRequest');
   }
+  if (objective.length > MAX_OBJECTIVE_LENGTH) {
+    throw new TaskIntakeError('INVALID_TASK', `objective exceeds max length of ${MAX_OBJECTIVE_LENGTH}`);
+  }
 
   const constraints = parseConstraints(normalizedRequest);
+  if (constraints.length > MAX_CONSTRAINTS_COUNT) {
+    throw new TaskIntakeError('INVALID_TASK', `constraints exceeds max count of ${MAX_CONSTRAINTS_COUNT}`);
+  }
   const requestedOutcome = extractRequestedOutcome(normalizedRequest);
   const ambiguityFlags = detectAmbiguityFlags(objective, requestedOutcome, constraints);
+  const lineage: TaskLineage = generateLineage(input);
 
   return {
     intakeVersion: TASK_INTAKE_VERSION,
@@ -81,7 +103,26 @@ export function normalizeTaskIntake(input: TaskIntakeInput): TaskIntake {
     ambiguityFlags,
     source: input.source.trim(),
     createdAt,
+    lineage,
   };
+}
+
+function generateLineage(input: TaskIntakeInput): TaskLineage {
+  return {
+    intakeHash: hashString(`${input.rawRequest}|${input.source}|${input.createdAt}`),
+    source: input.source.trim(),
+    createdAt: input.createdAt,
+  };
+}
+
+function hashString(input: string): string {
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    const char = input.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0;
+  }
+  return `sha256:${Math.abs(hash).toString(16).padStart(8, '0')}`;
 }
 
 export function normalizeRequest(rawRequest: string): string {

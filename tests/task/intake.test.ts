@@ -99,5 +99,25 @@ describe('TaskIntake', () => {
         createdAt: expect.stringMatching(/\d{4}-\d{2}-\d{2}T/),
       });
     });
+
+    it('should enforce max rawRequest length', () => {
+      const longRequest = 'x'.repeat(50001);
+      expect(() => normalizeTaskIntake({ ...baseInput, rawRequest: longRequest }))
+        .toThrowError(TaskIntakeError);
+    });
+
+    it('should enforce max objective length', () => {
+      const longObjective = 'x'.repeat(2001);
+      const input = { ...baseInput, rawRequest: `# ${longObjective}\n\nBody` };
+      expect(() => normalizeTaskIntake(input))
+        .toThrowError(TaskIntakeError);
+    });
+
+    it('should enforce max constraints count', () => {
+      const manyConstraints = Array.from({ length: 51 }, (_, i) => `- Constraint ${i}`).join('\n');
+      const input = { ...baseInput, rawRequest: manyConstraints };
+      expect(() => normalizeTaskIntake(input))
+        .toThrowError(TaskIntakeError);
+    });
   });
 });
