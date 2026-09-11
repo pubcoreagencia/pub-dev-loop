@@ -10,6 +10,19 @@ import { TaskFinalizer, type FinalizeResult, type WorkspaceSnapshot, WorkspaceVa
 import { captureWorkspaceSnapshot } from './finalizer.js';
 import { createAgentExecutionContext, type AgentExecutionContext } from './office/execution-context.js';
 import { resolveAgentAssignment, type AgentAssignmentDecision } from './office/assignment.js';
+import {
+  type ExecutionSpecDatabase,
+  assertSealedExecutable,
+  deserializeRecordSpec,
+} from './execution/execution-spec-persistence.js';
+import { prepareExecution, type PreparedExecution } from './execution/execution-seam.js';
+import type { ExecutionResult } from './execution/execution-engine.js';
+import {
+  DefaultFinalizationBridge,
+  type FinalizationContext,
+} from './execution/finalization-bridge.js';
+import { DefaultExecutionEngine } from './execution/default-execution-engine.js';
+import type { AgentProvider, ProviderTaskInput } from './providers/types.js';
 
 const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
 const HEARTBEAT_INTERVAL_MS = Number(process.env.WORKER_HEARTBEAT_MS ?? 10000);
@@ -59,6 +72,8 @@ export interface AttemptResult {
   errorMessage?: string | null;
   /** Full execution trace for diagnostics (populated by retry-capable workers) */
   trace?: WorkerExecutionTrace;
+  /** Phase 3A.4: Authoritative ExecutionResult produced by ExecutionEngine */
+  executionResult?: ExecutionResult;
 }
 
 /**
@@ -266,6 +281,7 @@ export abstract class BaseWorker implements Worker {
   constructor(
     protected readonly tasks: TaskRepository,
     protected readonly name: string,
+    protected readonly executionSpecDb?: ExecutionSpecDatabase,
   ) {}
 
   status(): string {
@@ -346,8 +362,41 @@ export abstract class BaseWorker implements Worker {
     startHeartbeat(task.id);
 
     try {
-      // Delegate ALL attempt/workspace lifecycle to subclass.
-      winningAttempt = await this.executeWithRetry(task, task.repository);
+      // Step 2, 3, 4: Single authoritative read & assertion of SEALED ExecutionSpec
+      let prepared: PreparedExecution;
+      try {
+        if (!this.executionSpecDb) {
+          throw new Error('ExecutionSpecDatabase dependency missing on worker; fail closed');
+        }
+        const sealedRecord = await assertSealedExecutable(this.executionSpecDb, task.id);
+        const executionSpec = deserializeRecordSpec(sealedRecord);
+        prepared = prepareExecution(task, executionSpec);
+      } catch (specError: any) {
+        const errorMsg = specError instanceof Error ? specError.message : String(specError);
+        await this.tasks.update(task.id, {
+          status: 'FAILED',
+          gitStatus: 'skipped — ExecutionSpec validation failed',
+          error: errorMsg,
+          result: {
+            stdout: '',
+            stderr: errorMsg,
+            exitCode: null,
+            provider: null,
+            model: null,
+            toolCalls: 0,
+            toolRounds: 0,
+            durationMs: 0,
+            finalize: null,
+          },
+          leaseOwner: null,
+          leaseDeadline: null,
+          workspacePath: null,
+        });
+        return true;
+      }
+
+      // Delegate ALL attempt/workspace lifecycle to subclass with prepared execution spec
+      winningAttempt = await this.executeWithRetry(task, task.repository, prepared);
 
       if (!this.active) {
         throw new Error('Worker cancelled');
@@ -374,6 +423,7 @@ export abstract class BaseWorker implements Worker {
             durationMs: winningAttempt.durationMs,
             finalize: null,
             trace: winningAttempt.trace,
+            executionResult: winningAttempt.executionResult,
           },
           // Clear lease — task is terminal
           leaseOwner: null,
@@ -393,15 +443,37 @@ export abstract class BaseWorker implements Worker {
         workspacePath: winningAttempt.workspace,
       });
 
-      // Finalize: validate + auto-commit (only when agent COMPLETED)
-      // Uses EXACTLY the winning attempt's workspace + baseline + declaredChangedFiles
-      const finalizeResult = await this.finalize(
-        task,
-        winningAttempt.workspace,           // ← winning attempt workspace
-        winningAttempt,
-        winningAttempt.baselineSnapshot,     // ← winning attempt baseline
-        winningAttempt.declaredChangedFiles,  // ← winning attempt declared files
+      // Finalize: validate + auto-commit via DefaultFinalizationBridge (only when agent COMPLETED)
+      if (!winningAttempt.executionResult) {
+        throw new Error('Winning attempt missing authoritative ExecutionResult');
+      }
+
+      const bridge = new DefaultFinalizationBridge();
+      const finalizationContext: FinalizationContext = {
+        objective: prepared.executionSpec.objective || task.objective,
+        prompt: task.prompt,
+        testCommand: process.env.TASK_TEST_COMMAND || null,
+        commitMessage: process.env.TASK_COMMIT_MESSAGE || null,
+        baselineSnapshot: winningAttempt.baselineSnapshot,
+        allowUnexpectedFiles: false,
+        commandTimeoutMs: this.ctx.commandTimeoutMs,
+      };
+
+      const bridgeResult = await bridge.finalize(
+        winningAttempt.executionResult,
+        finalizationContext,
       );
+      const finalizeResult = bridgeResult.finalization ?? {
+        status: 'FAILED',
+        commitSha: null,
+        commitMessage: null,
+        changedFiles: [],
+        gitStatus: '',
+        testsPassed: null,
+        testOutput: '',
+        errorCode: 'FINALIZATION_MISSING',
+        errorMessage: 'Bridge did not return finalization result',
+      };
       this.lastFinalizeStatus = finalizeResult.status;
 
       if (finalizeResult.status === 'COMPLETED' && !task.prototypeSessionId && finalizeResult.commitSha) {
@@ -442,6 +514,7 @@ export abstract class BaseWorker implements Worker {
           toolCalls: winningAttempt.toolCalls,
           toolRounds: winningAttempt.toolRounds,
           durationMs: winningAttempt.durationMs,
+          executionResult: bridgeResult,
         },
         // Clear lease — task is terminal
         leaseOwner: null,
@@ -491,6 +564,7 @@ export abstract class BaseWorker implements Worker {
   protected async executeWithRetry(
     task: Task,
     repository: string,
+    prepared?: PreparedExecution,
   ): Promise<AttemptResult> {
     // Default: single attempt, single workspace — current behavior
     const ws = await mkdtemp(join(tmpdir(), 'pub-dev-loop-'));
@@ -507,7 +581,59 @@ export abstract class BaseWorker implements Worker {
 
     const baseline = captureWorkspaceSnapshot(repo);
 
-    const result = await this.executeTask(task, repo);
+    let executionResult: ExecutionResult | undefined;
+    let result: {
+      stdout: string;
+      stderr: string;
+      exitCode: number | null;
+      status: 'COMPLETED' | 'FAILED';
+      provider: string | null;
+      model: string | null;
+      changedFiles: string[];
+      toolCalls: number;
+      toolRounds: number;
+      durationMs: number;
+      execution?: Record<string, unknown>;
+      errorCode?: string | null;
+    };
+
+    if (prepared) {
+      const self = this;
+      let executedResult: typeof result | undefined;
+      const adapterProvider: AgentProvider = {
+        kind: 'mock',
+        model: null,
+        health: async () => ({ available: true, details: 'ok' }),
+        capabilities: () => [],
+        metadata: () => ({}),
+        execute: async (_input: ProviderTaskInput, workspacePath: string): Promise<ProviderTaskResult> => {
+          const res = await self.executeTask(task, workspacePath);
+          executedResult = res;
+          return {
+            status: res.status,
+            provider: (res.provider as any) || 'mock',
+            model: res.model,
+            exitCode: res.exitCode,
+            durationMs: res.durationMs,
+            stdout: res.stdout,
+            stderr: res.stderr,
+            changedFiles: res.changedFiles,
+            commit: null,
+            errorCode: res.errorCode ?? null,
+            errorMessage: null,
+            toolCalls: res.toolCalls,
+            toolRounds: res.toolRounds,
+            execution: res.execution as any,
+          };
+        },
+      };
+      const engine = new DefaultExecutionEngine(adapterProvider);
+      const attemptTask: Task = { ...task, workspacePath: repo };
+      executionResult = await engine.execute(attemptTask, prepared.executionSpec);
+      result = executedResult!;
+    } else {
+      result = await this.executeTask(task, repo);
+    }
     const globalStart = Date.now();
     return {
       status: result.status,
@@ -524,6 +650,7 @@ export abstract class BaseWorker implements Worker {
       durationMs: result.durationMs,
       execution: result.execution,
       errorCode: 'errorCode' in result ? result.errorCode : undefined,
+      executionResult,
       trace: {
         totalDurationMs: Date.now() - globalStart,
         totalAttempts: 1,
@@ -620,14 +747,20 @@ export abstract class BaseWorker implements Worker {
 export class CodexWorker extends BaseWorker {
   protected readonly agent: CodingAgent;
 
-  constructor(tasks: TaskRepository, agent: CodingAgent, name = 'codex') {
-    super(tasks, name);
+  constructor(
+    tasks: TaskRepository,
+    agent: CodingAgent,
+    name = 'codex',
+    executionSpecDb?: ExecutionSpecDatabase,
+  ) {
+    super(tasks, name, executionSpecDb);
     this.agent = agent;
   }
 
   protected async executeWithRetry(
     task: Task,
     repository: string,
+    prepared?: PreparedExecution,
   ): Promise<AttemptResult> {
     // CodexWorker: NO retry — single attempt, single workspace
     const ws = await mkdtemp(join(tmpdir(), 'pub-dev-loop-'));
@@ -639,7 +772,42 @@ export class CodexWorker extends BaseWorker {
 
     const baseline = captureWorkspaceSnapshot(repo);
 
-    const outcome = await this.agent.execute(task, repo);
+    let executionResult: ExecutionResult | undefined;
+    let outcome: { summary: string; execution?: any };
+
+    if (prepared) {
+      let executedOutcome: typeof outcome | undefined;
+      const agentProvider: AgentProvider = {
+        kind: 'codex-api',
+        model: null,
+        health: async () => ({ available: true, details: 'ok' }),
+        capabilities: () => [],
+        metadata: () => ({}),
+        execute: async (_input: ProviderTaskInput, wsPath: string): Promise<ProviderTaskResult> => {
+          executedOutcome = await this.agent.execute(task, wsPath);
+          return {
+            status: 'COMPLETED',
+            provider: 'codex-api',
+            model: null,
+            exitCode: 0,
+            durationMs: 0,
+            stdout: executedOutcome.summary,
+            stderr: '',
+            changedFiles: [],
+            commit: null,
+            errorCode: null,
+            errorMessage: null,
+            execution: executedOutcome.execution,
+          };
+        },
+      };
+      const engine = new DefaultExecutionEngine(agentProvider);
+      const attemptTask: Task = { ...task, workspacePath: repo };
+      executionResult = await engine.execute(attemptTask, prepared.executionSpec);
+      outcome = executedOutcome!;
+    } else {
+      outcome = await this.agent.execute(task, repo);
+    }
     const started = Date.now();
     return {
       status: 'COMPLETED',
@@ -655,6 +823,7 @@ export class CodexWorker extends BaseWorker {
       toolRounds: 0,
       durationMs: 0,
       execution: outcome as unknown as Record<string, unknown>,
+      executionResult,
       trace: {
         totalDurationMs: Date.now() - started,
         totalAttempts: 1,

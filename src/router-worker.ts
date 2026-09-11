@@ -2,6 +2,10 @@ import type { AgentProvider, ProviderTaskResult, ProviderResultStatus, ProviderT
 import type { Task, TaskRepository } from './domain.js';
 import { PDL_SYSTEM_INSTRUCTIONS } from './pdl/constants.js';
 import { BaseWorker, type AttemptResult, type AttemptTrace, type WorkerExecutionTrace } from './worker-service.js';
+import { DefaultExecutionEngine } from './execution/default-execution-engine.js';
+import type { ExecutionResult } from './execution/execution-engine.js';
+import type { PreparedExecution } from './execution/execution-seam.js';
+import type { ExecutionSpecDatabase } from './execution/execution-spec-persistence.js';
 import type { WorkspaceSnapshot } from './finalizer.js';
 import { captureWorkspaceSnapshot } from './finalizer.js';
 import { RouterProvider } from './providers/router.js';
@@ -128,13 +132,14 @@ export class RouterWorker extends BaseWorker {
   private currentAttemptSink?: StreamEventSink;
 
   constructor(
-    tasks: TaskRepository,
-    provider: AgentProvider,
+    tasks?: TaskRepository,
+    provider?: AgentProvider,
     name = 'router',
-    onStreamEvent?: TaskStreamEventCallback
+    onStreamEvent?: TaskStreamEventCallback,
+    executionSpecDb?: ExecutionSpecDatabase,
   ) {
-    super(tasks, name);
-    this.provider = provider;
+    super(tasks ?? ({} as any), name, executionSpecDb);
+    this.provider = provider ?? ({} as any);
     this.onStreamEvent = onStreamEvent;
   }
 
@@ -250,6 +255,7 @@ export class RouterWorker extends BaseWorker {
   protected async executeWithRetry(
     task: Task,
     repository: string,
+    prepared?: PreparedExecution,
   ): Promise<AttemptResult> {
     this.active = true;
     let effectiveTask = await enrichDeveloperTaskWithMemory(task);
@@ -379,6 +385,8 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
         );
 
         let subResult: ProviderTaskResult;
+        let attemptExecutionResult: ExecutionResult | undefined;
+
         if (effectiveTimeout <= 0) {
           subResult = {
             status: 'ROUTER_TIMEOUT',
@@ -396,47 +404,145 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
             toolRounds: 0,
             httpStatus: undefined,
           };
+          if (prepared) {
+            attemptExecutionResult = {
+              execution: {
+                status: 'FAILED',
+                provider: provider.kind,
+                model: provider.model,
+                workspace: repo,
+                changedFiles: [],
+                durationMs: Date.now() - globalStart,
+                errorCode: 'ROUTER_TIMEOUT',
+                errorMessage: 'Remaining budget exhausted before provider execution',
+              },
+              finalization: undefined,
+              specIdentity: {
+                specVersion: prepared.executionSpec.specVersion,
+                taskId: task.id,
+                lineage: prepared.executionSpec.lineage,
+              },
+            };
+          }
         } else {
           let timeoutTimer: NodeJS.Timeout | undefined;
-          try {
-            const taskWithInstructions: ProviderTaskInput = {
-              ...effectiveTask,
-              systemInstructions: [...PDL_SYSTEM_INSTRUCTIONS],
-            };
-            subResult = await Promise.race([
-              provider.execute(taskWithInstructions, repo, {
-                signal: attemptController.signal,
-                consumer: attemptSink,
-              }),
-              new Promise<ProviderTaskResult>((_, reject) => {
-                timeoutTimer = setTimeout(() => {
-                  attemptController.abort();
-                  reject(new Error('Provider timeout after ' + effectiveTimeout + 'ms'));
-                }, effectiveTimeout);
-              }),
-            ]);
-          } catch (error: any) {
-            // Promise.race rejected or aborted → provider timed out / cancelled
-            subResult = {
-              status: 'ROUTER_TIMEOUT',
+          let capturedSubResult: ProviderTaskResult | undefined;
+
+          const attemptProvider: AgentProvider = {
+            kind: provider.kind,
+            model: provider.model,
+            health: () => provider.health(),
+            capabilities: () => provider.capabilities(),
+            metadata: () => provider.metadata(),
+            execute: async (input: ProviderTaskInput, ws: string): Promise<ProviderTaskResult> => {
+              try {
+                const taskWithInstructions: ProviderTaskInput = {
+                  ...input,
+                  systemInstructions: input.systemInstructions && input.systemInstructions.length > 0
+                    ? input.systemInstructions
+                    : [...PDL_SYSTEM_INSTRUCTIONS],
+                };
+                const res = await Promise.race([
+                  provider.execute(taskWithInstructions, ws, {
+                    signal: attemptController.signal,
+                    consumer: attemptSink,
+                  }),
+                  new Promise<ProviderTaskResult>((_, reject) => {
+                    timeoutTimer = setTimeout(() => {
+                      attemptController.abort();
+                      reject(new Error('Provider timeout after ' + effectiveTimeout + 'ms'));
+                    }, effectiveTimeout);
+                  }),
+                ]);
+                capturedSubResult = res;
+                return res;
+              } catch (error: any) {
+                const timeoutRes: ProviderTaskResult = {
+                  status: 'ROUTER_TIMEOUT',
+                  provider: provider.kind,
+                  model: provider.model,
+                  exitCode: null,
+                  durationMs: Date.now() - globalStart,
+                  stdout: '',
+                  stderr: error?.message || 'Provider timeout or cancelled',
+                  changedFiles: [],
+                  commit: null,
+                  errorCode: 'ROUTER_TIMEOUT',
+                  errorMessage: error?.message || 'Provider timeout or cancelled',
+                  toolCalls: 0,
+                  toolRounds: 0,
+                  httpStatus: undefined,
+                };
+                capturedSubResult = timeoutRes;
+                return timeoutRes;
+              } finally {
+                if (timeoutTimer) clearTimeout(timeoutTimer);
+                if (this.currentAttemptController === attemptController) {
+                  this.currentAttemptController = undefined;
+                }
+              }
+            },
+          };
+
+          if (prepared) {
+            const engine = new DefaultExecutionEngine(attemptProvider);
+            const attemptTask: Task = { ...effectiveTask, workspacePath: repo };
+            attemptExecutionResult = await engine.execute(attemptTask, prepared.executionSpec);
+            subResult = capturedSubResult ?? {
+              status: attemptExecutionResult.execution.status === 'COMPLETED' ? 'COMPLETED' : 'FAILED',
               provider: provider.kind,
               model: provider.model,
-              exitCode: null,
-              durationMs: Date.now() - globalStart,
+              exitCode: attemptExecutionResult.execution.status === 'COMPLETED' ? 0 : 1,
+              durationMs: attemptExecutionResult.execution.durationMs,
               stdout: '',
-              stderr: error?.message || 'Provider timeout or cancelled',
-              changedFiles: [],
+              stderr: attemptExecutionResult.execution.errorMessage || '',
+              changedFiles: attemptExecutionResult.execution.changedFiles,
               commit: null,
-              errorCode: 'ROUTER_TIMEOUT',
-              errorMessage: error?.message || 'Provider timeout or cancelled',
+              errorCode: attemptExecutionResult.execution.errorCode,
+              errorMessage: attemptExecutionResult.execution.errorMessage,
               toolCalls: 0,
               toolRounds: 0,
-              httpStatus: undefined,
             };
-          } finally {
-            if (timeoutTimer) clearTimeout(timeoutTimer);
-            if (this.currentAttemptController === attemptController) {
-              this.currentAttemptController = undefined;
+          } else {
+            try {
+              const taskWithInstructions: ProviderTaskInput = {
+                ...effectiveTask,
+                systemInstructions: [...PDL_SYSTEM_INSTRUCTIONS],
+              };
+              subResult = await Promise.race([
+                provider.execute(taskWithInstructions, repo, {
+                  signal: attemptController.signal,
+                  consumer: attemptSink,
+                }),
+                new Promise<ProviderTaskResult>((_, reject) => {
+                  timeoutTimer = setTimeout(() => {
+                    attemptController.abort();
+                    reject(new Error('Provider timeout after ' + effectiveTimeout + 'ms'));
+                  }, effectiveTimeout);
+                }),
+              ]);
+            } catch (error: any) {
+              subResult = {
+                status: 'ROUTER_TIMEOUT',
+                provider: provider.kind,
+                model: provider.model,
+                exitCode: null,
+                durationMs: Date.now() - globalStart,
+                stdout: '',
+                stderr: error?.message || 'Provider timeout or cancelled',
+                changedFiles: [],
+                commit: null,
+                errorCode: 'ROUTER_TIMEOUT',
+                errorMessage: error?.message || 'Provider timeout or cancelled',
+                toolCalls: 0,
+                toolRounds: 0,
+                httpStatus: undefined,
+              };
+            } finally {
+              if (timeoutTimer) clearTimeout(timeoutTimer);
+              if (this.currentAttemptController === attemptController) {
+                this.currentAttemptController = undefined;
+              }
             }
           }
         }
@@ -592,6 +698,7 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
             execution: subResult.execution as Record<string, unknown> | undefined,
             errorCode: subResult.errorCode,
             errorMessage: subResult.errorMessage,
+            executionResult: attemptExecutionResult,
             trace: {
               totalDurationMs: Date.now() - globalStart,
               totalAttempts: attempt + 1,
@@ -647,6 +754,7 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
             execution: subResult.execution as Record<string, unknown> | undefined,
             errorCode: subResult.errorCode,
             errorMessage: subResult.errorMessage,
+            executionResult: attemptExecutionResult,
             trace: {
               totalDurationMs: Date.now() - globalStart,
               totalAttempts: attempt + 1,
