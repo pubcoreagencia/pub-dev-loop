@@ -1,72 +1,35 @@
 import { describe, expect, it } from 'vitest';
-import { SHARED_SYSTEM_INSTRUCTIONS, PREVIEW_SYSTEM_INSTRUCTIONS, isPrototypeTask } from '../src/providers/shared.js';
+import { PREVIEW_SYSTEM_INSTRUCTIONS } from '../src/pp/worker/prompts.js';
+import { PDL_SYSTEM_INSTRUCTIONS } from '../src/pdl/constants.js';
+import { NEUTRAL_TOOL_INSTRUCTIONS } from '../src/providers/shared.js';
+import type { ProviderTaskInput } from '../src/providers/types.js';
 
 /**
- * These tests verify the conditional previewability instructions that are
- * added to the system prompt when a task objective indicates a Prototype
- * session (web app, site, dashboard, SaaS, etc.).
+ * These tests verify the previewability instructions and system prompt injection
+ * under Phase 5J domain separation.
  *
- * They do NOT test the providers' execute() path directly — they test the
- * shared helpers that both providers use to build their system prompt.
+ * Workers (PDL RouterWorker, PP PrototypeWorker) inject their domain-specific
+ * system instructions via `ProviderTaskInput.systemInstructions`.
+ * The shared providers (9Router, OpenRouter) remain strictly neutral and simply
+ * append `task.systemInstructions` to the neutral prompt base.
  */
 
-// ── Helper: minimal Task-like object ─────────────────────────────────────
+// ── Helper: minimal ProviderTaskInput object ─────────────────────────────
 
-function makeTask(objective: string) {
-  return { id: 'TASK-TEST', project: 'p', repository: 'r', objective, prompt: 'do it', status: 'RUNNING' as const, priority: 0, worker: null, result: null, error: null, branch: null, commitSha: null, gitStatus: null, createdAt: new Date(), updatedAt: new Date() } as any;
+function makeTask(objective: string, systemInstructions?: string[]): ProviderTaskInput {
+  return {
+    id: 'TASK-TEST',
+    project: 'p',
+    repository: 'r',
+    objective,
+    prompt: 'do it',
+    systemInstructions,
+  };
 }
 
-// ── isPrototypeTask: prototype / web / SaaS detection ───────────────────
+// ── PREVIEW_SYSTEM_INSTRUCTIONS content (PP Domain) ─────────────────────
 
-describe('isPrototypeTask', () => {
-  it('returns true for objectives containing "prototype"', () => {
-    expect(isPrototypeTask(makeTask('Prototype MVP iteration'))).toBe(true);
-    expect(isPrototypeTask(makeTask('Prototype dashboard for analytics'))).toBe(true);
-  });
-
-  it('returns true for objectives containing "preview"', () => {
-    expect(isPrototypeTask(makeTask('Preview app for client'))).toBe(true);
-  });
-
-  it('returns true for objectives containing "web"', () => {
-    expect(isPrototypeTask(makeTask('Create a web application'))).toBe(true);
-  });
-
-  it('returns true for objectives containing "site"', () => {
-    expect(isPrototypeTask(makeTask('Build a landing site'))).toBe(true);
-  });
-
-  it('returns true for objectives containing "SaaS"', () => {
-    expect(isPrototypeTask(makeTask('Create a SaaS dashboard'))).toBe(true);
-  });
-
-  it('returns true for objectives containing "dashboard"', () => {
-    expect(isPrototypeTask(makeTask('Build a dashboard'))).toBe(true);
-  });
-
-  it('returns true for objectives containing Portuguese "prototipo"/"protótipo"', () => {
-    expect(isPrototypeTask(makeTask('prototipo web'))).toBe(true);
-    expect(isPrototypeTask(makeTask('protótipo SaaS'))).toBe(true);
-  });
-
-  it('returns false for non-web objectives (Python CLI, API, etc.)', () => {
-    expect(isPrototypeTask(makeTask('Crie uma API Python'))).toBe(false);
-    expect(isPrototypeTask(makeTask('Crie uma ferramenta CLI em Python'))).toBe(false);
-    expect(isPrototypeTask(makeTask('Implement feature'))).toBe(false);
-    expect(isPrototypeTask(makeTask('Test openrouter provider'))).toBe(false);
-    expect(isPrototypeTask(makeTask('Refactor backend services'))).toBe(false);
-  });
-
-  it('returns false for empty/null objective', () => {
-    expect(isPrototypeTask(makeTask(''))).toBe(false);
-    expect(isPrototypeTask({...makeTask('test'), objective: null})).toBe(false);
-    expect(isPrototypeTask({...makeTask('test'), objective: undefined})).toBe(false);
-  });
-});
-
-// ── PREVIEW_SYSTEM_INSTRUCTIONS content ──────────────────────────────────
-
-describe('PREVIEW_SYSTEM_INSTRUCTIONS', () => {
+describe('PREVIEW_SYSTEM_INSTRUCTIONS (PP domain)', () => {
   it('contains STATIC guidance (index.html)', () => {
     const text = PREVIEW_SYSTEM_INSTRUCTIONS.join('\n');
     expect(text).toContain('STATIC');
@@ -140,78 +103,85 @@ describe('PREVIEW_SYSTEM_INSTRUCTIONS', () => {
   });
 });
 
-// ── SHARED_SYSTEM_INSTRUCTIONS regression ──────────────────────────────────
+// ── PDL_SYSTEM_INSTRUCTIONS content (PDL Domain) ─────────────────────────
 
-describe('SHARED_SYSTEM_INSTRUCTIONS regression', () => {
+describe('PDL_SYSTEM_INSTRUCTIONS (PDL domain)', () => {
+  it('identifies agent for PUB DEV LOOP', () => {
+    const text = PDL_SYSTEM_INSTRUCTIONS.join('\n');
+    expect(text).toContain('PUB DEV LOOP');
+  });
+
   it('does NOT contain preview/web-specific instructions', () => {
-    const text = SHARED_SYSTEM_INSTRUCTIONS.join('\n');
+    const text = PDL_SYSTEM_INSTRUCTIONS.join('\n');
+    expect(text).not.toContain('STATIC');
+    expect(text).not.toContain('package.json');
+    expect(text).not.toContain('index.html');
+  });
+});
+
+// ── NEUTRAL_TOOL_INSTRUCTIONS regression (Shared Provider) ───────────────
+
+describe('NEUTRAL_TOOL_INSTRUCTIONS regression', () => {
+  it('does NOT contain preview/web-specific instructions', () => {
+    const text = NEUTRAL_TOOL_INSTRUCTIONS.join('\n');
     expect(text).not.toContain('STATIC');
     expect(text).not.toContain('package.json');
     expect(text).not.toContain('index.html');
     expect(text).not.toContain('npm run dev');
   });
 
-  it('still contains all original generic instructions', () => {
-    const text = SHARED_SYSTEM_INSTRUCTIONS.join('\n');
-    expect(text).toContain('PUB DEV LOOP');
+  it('does NOT contain domain-specific branding or identities', () => {
+    const text = NEUTRAL_TOOL_INSTRUCTIONS.join('\n');
+    expect(text).not.toContain('PUB DEV LOOP');
+    expect(text).not.toContain('PUB Prototype');
+  });
+
+  it('contains neutral tool guidance', () => {
+    const text = NEUTRAL_TOOL_INSTRUCTIONS.join('\n');
     expect(text).toContain('workspace');
     expect(text).toContain('git_commit');
     expect(text).toContain('git operations');
   });
 });
 
-// ── Integration: system prompt should include/exclude preview instructions ─
+// ── Integration: system prompt includes/excludes injected instructions ──
 
-describe('System prompt previewability integration', () => {
-  // We test the logic by simulating what buildSystemPrompt does.
-  // Both router.ts and openrouter.ts use the same pattern:
-  //   instructions = [provider-specific first line, ...SHARED_SYSTEM_INSTRUCTIONS.slice(1)]
-  //   if (isPrototypeTask(task)) instructions.push(...PREVIEW_SYSTEM_INSTRUCTIONS)
-
-  function buildSystemPromptContent(task: Task) {
-    const instructions = [
-      `You are a coding agent for PUB DEV LOOP.`,
-      ...SHARED_SYSTEM_INSTRUCTIONS.slice(1),
-    ];
-    if (isPrototypeTask(task)) {
-      instructions.push(...PREVIEW_SYSTEM_INSTRUCTIONS);
-    }
-    return instructions.join('\n');
+describe('System prompt instruction injection integration', () => {
+  function buildSystemPromptContent(workspace: string, task: ProviderTaskInput) {
+    return [
+      `Workspace: ${workspace}`,
+      `Task ID: ${task.id}`,
+      `Objective: ${task.objective}`,
+      ...NEUTRAL_TOOL_INSTRUCTIONS,
+      ...(task.systemInstructions ?? []),
+    ].join('\n');
   }
 
-  it('includes previewability instructions when objective is "Prototype MVP iteration"', () => {
-    const prompt = buildSystemPromptContent(makeTask('Prototype MVP iteration'));
+  it('includes previewability instructions when PP worker injects them', () => {
+    const task = makeTask('Prototype MVP iteration', [...PREVIEW_SYSTEM_INSTRUCTIONS]);
+    const prompt = buildSystemPromptContent('/tmp/test-workspace', task);
     expect(prompt).toContain('STATIC');
     expect(prompt).toContain('package.json');
     expect(prompt).toContain('index.html');
+    expect(prompt).toContain('Workspace: /tmp/test-workspace');
+    expect(prompt).toContain('Task ID: TASK-TEST');
   });
 
-  it('includes previewability instructions for web site requests', () => {
-    const prompt = buildSystemPromptContent(makeTask('Crie um site de lista de tarefas'));
-    expect(prompt).toContain('previewável');
-    expect(prompt).toContain('package.json');
-  });
-
-  it('includes previewability instructions for SaaS dashboard requests', () => {
-    const prompt = buildSystemPromptContent(makeTask('Crie um dashboard SaaS para uma oficina'));
-    expect(prompt).toContain('STATIC');
-    expect(prompt).toContain('NODE');
-    expect(prompt).toContain('package.json');
-  });
-
-  it('does NOT include previewability instructions for non-web tasks (Python CLI)', () => {
-    const prompt = buildSystemPromptContent(makeTask('Crie uma ferramenta CLI em Python para organizar arquivos'));
+  it('includes PDL instructions when PDL worker injects them', () => {
+    const task = makeTask('Fix bug in API', [...PDL_SYSTEM_INSTRUCTIONS]);
+    const prompt = buildSystemPromptContent('/tmp/test-workspace', task);
+    expect(prompt).toContain('PUB DEV LOOP');
     expect(prompt).not.toContain('STATIC');
     expect(prompt).not.toContain('package.json');
-    expect(prompt).not.toContain('index.html');
   });
 
-  it('does NOT include previewability instructions for generic tasks', () => {
-    const prompt = buildSystemPromptContent(makeTask('Test openrouter provider'));
+  it('contains only neutral instructions when no domain instructions are provided', () => {
+    const task = makeTask('Generic task without domain instructions');
+    const prompt = buildSystemPromptContent('/tmp/test-workspace', task);
     expect(prompt).not.toContain('STATIC');
     expect(prompt).not.toContain('package.json');
+    expect(prompt).not.toContain('PUB DEV LOOP');
+    expect(prompt).toContain('workspace');
+    expect(prompt).toContain('git operations');
   });
 });
-
-// ── Type import for the helper ─────────────────────────────────────────────
-type Task = { id: string; objective: string; prompt: string };

@@ -1,7 +1,7 @@
 import { classifyApiError, type ClassificationResult } from '../api-error-classifier.js';
 import type { Task } from '../domain.js';
-import type { AgentProvider, ProviderTaskResult } from './types.js';
-import { DEFAULT_OPENROUTER_BASE_URL, normalizeBaseUrl, resolveOpenRouterApiKey, SHARED_SYSTEM_INSTRUCTIONS, PREVIEW_SYSTEM_INSTRUCTIONS, isPrototypeTask } from './shared.js';
+import type { AgentProvider, ProviderTaskInput, ProviderTaskResult } from './types.js';
+import { DEFAULT_OPENROUTER_BASE_URL, normalizeBaseUrl, resolveOpenRouterApiKey, NEUTRAL_TOOL_INSTRUCTIONS } from './shared.js';
 import { ToolRuntime } from '../tools/runtime.js';
 import { AgentExecutor } from '../executor.js';
 import type { ToolCall, ToolResult, ToolExecutionContext, ToolDefinition } from '../tools/types.js';
@@ -32,30 +32,32 @@ interface OpenAIChatResponse {
   error?: { message?: string; type?: string; code?: string | number };
 }
 
-function buildSystemPrompt(workspace: string, task: Task): OpenAIChatMessage {
-  const instructions = [
-    `You are an OpenRouter-backed coding agent for PUB DEV LOOP.`,
-    ...SHARED_SYSTEM_INSTRUCTIONS.slice(1),
-  ];
-  if (isPrototypeTask(task)) {
-    instructions.push(...PREVIEW_SYSTEM_INSTRUCTIONS);
-  }
+function buildSystemPrompt(workspace: string, task: Task | ProviderTaskInput): OpenAIChatMessage {
+  const instructions = 'systemInstructions' in task && Array.isArray(task.systemInstructions)
+    ? task.systemInstructions
+    : [];
+
+  const content = [
+    `Workspace: ${workspace}`,
+    `Task ID: ${task.id}`,
+    `Objective: ${task.objective}`,
+    ...NEUTRAL_TOOL_INSTRUCTIONS,
+    ...instructions,
+  ].join('\n');
+
   return {
     role: 'system',
-    content: [...instructions,
-      `Workspace: ${workspace}`,
-      `Task ID: ${task.id}`,
-      `Objective: ${task.objective}`,
-    ].join('\n'),
+    content,
   };
 }
 
-function buildUserPrompt(task: Task): OpenAIChatMessage {
+function buildUserPrompt(task: Task | ProviderTaskInput): OpenAIChatMessage {
   return {
     role: 'user',
     content: task.prompt,
   };
 }
+
 
 function toOpenAITools(defs: ToolDefinition[]) {
   return defs.map(def => ({
@@ -98,7 +100,7 @@ export class OpenRouterProvider implements AgentProvider {
   }
 
   async execute(
-    task: Task,
+    task: Task | ProviderTaskInput,
     workspace: string,
     options?: { signal?: AbortSignal; consumer?: StreamConsumer }
   ): Promise<ProviderTaskResult> {

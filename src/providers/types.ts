@@ -48,11 +48,23 @@ export interface ProviderTaskResult {
   errorClass?: string | null;
 }
 
+export interface ProviderTaskInput {
+  id: string;
+  objective: string;
+  prompt: string;
+  project?: string;
+  repository?: string;
+  branch?: string | null;
+  /** Domain/agent-specific system instructions injected by workers */
+  systemInstructions?: string[];
+  [key: string]: unknown;
+}
+
 export interface AgentProvider {
   readonly kind: ProviderKind;
   readonly model: string | null;
   execute(
-    task: Task,
+    task: Task | ProviderTaskInput,
     workspace: string,
     options?: { signal?: AbortSignal; consumer?: any }
   ): Promise<ProviderTaskResult>;
@@ -60,3 +72,4 @@ export interface AgentProvider {
   capabilities(): string[];
   metadata(): Record<string, string | null>;
 }
+

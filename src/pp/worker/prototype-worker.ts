@@ -4,7 +4,8 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { PrototypeTask, PpTaskRepository } from '../domain/domain.js';
 import { TaskFinalizer, captureWorkspaceSnapshot } from '../../finalizer.js';
-import type { AgentProvider } from '../../providers/types.js';
+import type { AgentProvider, ProviderTaskInput } from '../../providers/types.js';
+import { PREVIEW_SYSTEM_INSTRUCTIONS } from './prompts.js';
 import type { PrototypeEventPublisher } from '../events/events.js';
 import { PostgresPrototypeRepository } from '../persistence/repository.js';
 import { LocalPreviewRuntime } from '../preview/local-preview-runtime.js';
@@ -220,7 +221,12 @@ export class PrototypeWorker {
         model: initialModel || (this.provider as any).model || 'default',
       });
 
-      const result = await this.provider.execute(task, workspace, {
+      const taskWithInstructions: ProviderTaskInput = {
+        ...task,
+        systemInstructions: [...PREVIEW_SYSTEM_INSTRUCTIONS],
+      };
+
+      const result = await this.provider.execute(taskWithInstructions, workspace, {
         consumer: sink,
       });
 

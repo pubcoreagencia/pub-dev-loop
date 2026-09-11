@@ -1,5 +1,6 @@
-import type { AgentProvider, ProviderTaskResult, ProviderResultStatus } from './providers/types.js';
+import type { AgentProvider, ProviderTaskResult, ProviderResultStatus, ProviderTaskInput } from './providers/types.js';
 import type { Task, TaskRepository } from './domain.js';
+import { PDL_SYSTEM_INSTRUCTIONS } from './pdl/constants.js';
 import { BaseWorker, type AttemptResult, type AttemptTrace, type WorkerExecutionTrace } from './worker-service.js';
 import type { WorkspaceSnapshot } from './finalizer.js';
 import { captureWorkspaceSnapshot } from './finalizer.js';
@@ -398,8 +399,12 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
         } else {
           let timeoutTimer: NodeJS.Timeout | undefined;
           try {
+            const taskWithInstructions: ProviderTaskInput = {
+              ...effectiveTask,
+              systemInstructions: [...PDL_SYSTEM_INSTRUCTIONS],
+            };
             subResult = await Promise.race([
-              provider.execute(effectiveTask, repo, {
+              provider.execute(taskWithInstructions, repo, {
                 signal: attemptController.signal,
                 consumer: attemptSink,
               }),
