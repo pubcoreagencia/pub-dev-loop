@@ -239,7 +239,7 @@ export class PdlCorrectionWorker extends RouterWorker {
       this.lastFinalizeStatus = finalizeResult.status;
 
       // 7. Remote Git Push if COMPLETED
-      if (finalizeResult.status === 'COMPLETED' && !task.prototypeSessionId && finalizeResult.commitSha) {
+      if (finalizeResult.status === 'COMPLETED' && finalizeResult.commitSha) {
         try {
           console.log(`[PDL Worker] Pushing branch ${branch} to remote...`);
           await run('git', ['push', 'origin', `HEAD:${branch}`], winningAttempt.workspace);
