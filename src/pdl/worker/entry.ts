@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createProvider, createAgent } from '../../agent.js';
 import { PostgresTaskRepository } from '../../repository.js';
-import { RouterWorker } from '../../router-worker.js';
+import { PdlCorrectionWorker } from './correction-worker.js';
 import { CodexWorker, BaseWorker } from '../../worker-service.js';
 import { configureGitCredentials } from '../../worker.js';
 
@@ -18,7 +18,7 @@ export function createPdlWorkerDaemon(pool: Pool): BaseWorker {
 
   if (providerName) {
     const provider = createProvider(providerName);
-    return new RouterWorker(tasks, provider, 'pdl-router', undefined, pool);
+    return new PdlCorrectionWorker(tasks, provider, 'pdl-router', undefined, pool);
   }
 
   return new CodexWorker(tasks, createAgent(), 'codex', pool);

@@ -26,6 +26,9 @@ import {
   createRepositoryTarget,
   type RepositoryTarget,
 } from '../../task/trust-contracts.js';
+import { PdlPreflightEngine } from '../research/index.js';
+import { PdlRefinementEngine } from '../refinement/index.js';
+
 
 export interface PoolClientLike extends QueryableDb {
   release(): void;
@@ -47,6 +50,9 @@ export interface TaskIntakeOptions {
   validationPlan?: string[];
   executionSteps?: ExecutionStep[];
   constraints?: string[];
+  context?: ContextBundle;
+  risks?: string[];
+  escalationConditions?: string[];
 }
 
 export interface TaskIntakePayload {
@@ -66,6 +72,9 @@ export interface TaskIntakePayload {
   validationPlan?: string[];
   executionSteps?: ExecutionStep[];
   constraints?: string[];
+  context?: ContextBundle;
+  risks?: string[];
+  escalationConditions?: string[];
 }
 
 export interface AtomicIntakeResult {
@@ -127,7 +136,7 @@ export function buildCanonicalExecutionSpec(
           },
         ];
 
-  const context: ContextBundle = {
+  const context: ContextBundle = options?.context ?? {
     version: '1.0.0',
     authoritativeContext: [
       { key: 'source', value: intake.source, source: 'intake' },
@@ -161,6 +170,19 @@ export function buildCanonicalExecutionSpec(
     true,
   );
 
+  const risks =
+    options?.risks && options.risks.length > 0
+      ? options.risks
+      : intake.ambiguityFlags.length > 0 ? [...intake.ambiguityFlags] : [];
+
+  const escalationConditions =
+    options?.escalationConditions && options.escalationConditions.length > 0
+      ? options.escalationConditions
+      : [
+          'Unrecoverable execution error or failure',
+          'Safety or constraint violation',
+        ];
+
   const spec: ExecutionSpec = {
     specVersion: EXECUTION_SPEC_VERSION,
     objective: intake.objective,
@@ -170,11 +192,8 @@ export function buildCanonicalExecutionSpec(
     validationPlan,
     executionInstructions,
     executionSteps,
-    risks: intake.ambiguityFlags.length > 0 ? [...intake.ambiguityFlags] : [],
-    escalationConditions: [
-      'Unrecoverable execution error or failure',
-      'Safety or constraint violation',
-    ],
+    risks,
+    escalationConditions,
     lineage: intake.lineage,
     metadata: {
       generatedAt: new Date().toISOString(),
@@ -306,12 +325,98 @@ export class TaskIntakeService {
         (isTaskIntake(input)
           ? undefined
           : (input as TaskIntakePayload).constraints),
+      context:
+        options?.context ??
+        (isTaskIntake(input)
+          ? undefined
+          : (input as TaskIntakePayload).context),
+      risks:
+        options?.risks ??
+        (isTaskIntake(input)
+          ? undefined
+          : (input as TaskIntakePayload).risks),
+      escalationConditions:
+        options?.escalationConditions ??
+        (isTaskIntake(input)
+          ? undefined
+          : (input as TaskIntakePayload).escalationConditions),
     };
 
-    const spec = buildCanonicalExecutionSpec(intake, combinedOptions);
+    let preflightResult: any;
+    let enrichedContext: ContextBundle | undefined = combinedOptions.context;
 
-    if (!isTaskIntake(input) && (input as TaskIntakePayload).objective) {
-      spec.objective = (input as TaskIntakePayload).objective!;
+    try {
+      const preflightEngine = new PdlPreflightEngine({
+        project: combinedOptions.project,
+        repository: combinedOptions.repository,
+        agentRole: combinedOptions.agentId as any,
+      });
+      const research = await preflightEngine.run(intake);
+      enrichedContext = research.context;
+      preflightResult = research.preflight;
+    } catch {
+      // Safe fallback to canonical static context
+    }
+
+    let refinedAcceptanceCriteria = combinedOptions.acceptanceCriteria;
+    let refinedValidationPlan = combinedOptions.validationPlan;
+    let refinedExecutionSteps = combinedOptions.executionSteps;
+    let refinedConstraints = combinedOptions.constraints;
+    let refinedInstructions = combinedOptions.executionInstructions;
+    let refinedRisks = combinedOptions.risks;
+    let refinedEscalations = combinedOptions.escalationConditions;
+    let refinedObjective = (!isTaskIntake(input) && (input as TaskIntakePayload).objective)
+      ? (input as TaskIntakePayload).objective!
+      : undefined;
+
+    if (enrichedContext && preflightResult && (!refinedAcceptanceCriteria || !refinedValidationPlan || !refinedExecutionSteps)) {
+      try {
+        const refinementEngine = new PdlRefinementEngine();
+        const refinedSpec = await refinementEngine.refine(intake, enrichedContext, preflightResult);
+
+        if (!refinedAcceptanceCriteria && Array.isArray(refinedSpec.acceptanceCriteria)) {
+          refinedAcceptanceCriteria = refinedSpec.acceptanceCriteria;
+        }
+        if (!refinedValidationPlan && Array.isArray(refinedSpec.validationPlan)) {
+          refinedValidationPlan = refinedSpec.validationPlan;
+        }
+        if (!refinedExecutionSteps && Array.isArray(refinedSpec.executionSteps)) {
+          refinedExecutionSteps = refinedSpec.executionSteps;
+        }
+        if (!refinedConstraints && Array.isArray(refinedSpec.constraints)) {
+          refinedConstraints = refinedSpec.constraints;
+        }
+        if (!refinedInstructions && Array.isArray(refinedSpec.executionInstructions)) {
+          refinedInstructions = refinedSpec.executionInstructions;
+        }
+        if (!refinedRisks && Array.isArray(refinedSpec.risks)) {
+          refinedRisks = refinedSpec.risks;
+        }
+        if (!refinedEscalations && Array.isArray(refinedSpec.escalationConditions)) {
+          refinedEscalations = refinedSpec.escalationConditions;
+        }
+        if (!refinedObjective && typeof refinedSpec.objective === 'string' && refinedSpec.objective.trim()) {
+          refinedObjective = refinedSpec.objective.trim();
+        }
+      } catch {
+        // Safe fallback to canonical static spec
+      }
+    }
+
+    const spec = buildCanonicalExecutionSpec(intake, {
+      ...combinedOptions,
+      context: enrichedContext,
+      acceptanceCriteria: refinedAcceptanceCriteria,
+      validationPlan: refinedValidationPlan,
+      executionSteps: refinedExecutionSteps,
+      constraints: refinedConstraints,
+      executionInstructions: refinedInstructions,
+      risks: refinedRisks,
+      escalationConditions: refinedEscalations,
+    });
+
+    if (refinedObjective) {
+      spec.objective = refinedObjective;
     }
 
     const validation = validateExecutionSpec(spec);
