@@ -1,6 +1,6 @@
-﻿import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { createPpApp } from '../src/pp/api/entry.js';
-import { createPdlApp } from '../src/pdl-api-entry.js';
+import { createPdlApp } from '../src/pdl/api/entry.js';
 
 describe('FASE 3 — Testes de Inicialização e Rotas das APIs Desacopladas', () => {
   const mockTasks: any = {

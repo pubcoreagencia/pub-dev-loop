@@ -31,7 +31,7 @@ describe('FASE 3 — Prova Arquitetural de Falha Cruzada (Cross-Failure Immunity
   });
 
   it('2. Cenário: Simulação de quebra no preview/runtime do Prototype não afeta a árvore do PDL API', () => {
-    const pdlEntry = readFileSync(resolve(rootDir, 'pdl-api-entry.ts'), 'utf8');
+    const pdlEntry = readFileSync(resolve(rootDir, 'pdl', 'api', 'entry.ts'), 'utf8');
 
     // Todos os módulos do Prototype que poderiam falhar
     const ppModules = [

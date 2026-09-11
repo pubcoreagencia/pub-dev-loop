@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import type { Task } from '../src/domain.js';
 import type { PrototypeSession, PrototypePromotion } from '../src/pp/domain/domain.js';
 import { PrototypeHandoffService } from '../src/pp/handoff/handoff.js';
-import { PdlTaskIngestionAdapter } from '../src/pdl-handoff-adapter.js';
+import { PdlTaskIngestionAdapter } from '../src/pdl/handoff/adapter.js';
 import type { PrototypeEventPublisher } from '../src/pp/events/events.js';
 import type { TaskRepository, PrototypeRepository } from '../src/domain.js';
 

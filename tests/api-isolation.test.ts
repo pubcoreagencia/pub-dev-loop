@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -22,7 +22,7 @@ describe('FASE 3 — Testes de Isolamento Arquitetural entre APIs', () => {
   });
 
   it('2. src/pdl-api-entry.ts não importa Prototype UI, Preview Runtimes, nem SSE do PP', () => {
-    const pdlApiPath = resolve(rootDir, 'pdl-api-entry.ts');
+    const pdlApiPath = resolve(rootDir, 'pdl', 'api', 'entry.ts');
     expect(existsSync(pdlApiPath)).toBe(true);
     const content = readFileSync(pdlApiPath, 'utf8');
 

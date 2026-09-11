@@ -1,67 +1,32 @@
-/**
- * @deprecated [DEPRECATED na Fase 3 do Desacoplamento PDL × PP]
- * src/api.ts acoplava as rotas e inicializações de ambos os runtimes no mesmo Express.
- * 
- * Utilize os entrypoints dedicados:
- * - PUB Prototype API: `src/pp/api/entry.ts` (npm run pp:api, porta 3001)
- * - PUB Development Loop API: `src/pdl/api/entry.ts` (npm run pdl:api, porta 3000)
- */
 import 'dotenv/config';
 import express from 'express';
-import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { Pool } from 'pg';
-import { PostgresTaskRepository } from './repository.js';
-import { PostgresPrototypeRepository } from './pp/persistence/repository.js';
-import { PrototypeEventStream, PostgresPrototypeEventBridge } from './pp/events/events.js';
-import { PrototypeSseBroker } from './pp/events/sse.js';
-import { prototypeUiHtml } from './pp/ui/ui.js';
-import { prototypeHistoryUiScript } from './pp/ui/history-ui.js';
-import { PrototypeComparisonPreviewManager } from './pp/preview/comparison-preview.js';
-import { LocalPreviewRuntime } from './pp/preview/local-preview-runtime.js';
-import { PublicPreviewRuntime } from './pp/preview/public-preview-runtime.js';
-import { PrototypeHandoffService, type PrototypeHandoffInput } from './pp/handoff/handoff.js';
-import { PdlTaskIngestionAdapter } from './pdl-handoff-adapter.js';
-import { defaultAgentRegistry, isValidAgentId } from './office/registry.js';
-import { defaultOfficeOrganization } from './office/organization.js';
-import { createOrganizationalPlan, planStepToTask } from './office/planning.js';
-import { defaultOfficeEventBus } from './office/events.js';
-import { defaultCodeReviewManager } from './office/review.js';
-import { defaultApprovalManager } from './office/approval.js';
-import { authenticateOfficeRequest } from './office/auth.js';
-import { defaultMemoryStore, defaultMemoryRetrievalEngine, defaultOrganizationalAwarenessEngine, defaultDailySkillEngine, defaultAutonomousPipelineEngine } from './office/memory.js';
-import { parseEngineeringTask, validateEngineeringTask, createEngineeringPlan, engineeringTaskToTask } from './office/intent.js';
-import { resolveContext } from './office/context-resolver.js';
+import { PostgresTaskRepository } from '../../repository.js';
+import { defaultAgentRegistry, isValidAgentId } from '../../office/registry.js';
+import { defaultOfficeOrganization } from '../../office/organization.js';
+import { createOrganizationalPlan, planStepToTask } from '../../office/planning.js';
+import { defaultOfficeEventBus } from '../../office/events.js';
+import { defaultCodeReviewManager } from '../../office/review.js';
+import { defaultApprovalManager } from '../../office/approval.js';
+import { authenticateOfficeRequest } from '../../office/auth.js';
+import { defaultMemoryRetrievalEngine, defaultOrganizationalAwarenessEngine, defaultDailySkillEngine, defaultAutonomousPipelineEngine } from '../../office/memory.js';
+import { parseEngineeringTask, validateEngineeringTask, createEngineeringPlan, engineeringTaskToTask } from '../../office/intent.js';
+import { resolveContext } from '../../office/context-resolver.js';
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const prototypeEvents = new PrototypeEventStream();
-const prototypeEventBridge = new PostgresPrototypeEventBridge(pool, prototypeEvents);
-const prototypeSse = new PrototypeSseBroker();
-prototypeEvents.subscribe(event => prototypeSse.publish(event));
-void prototypeEventBridge.start().catch(error => console.error('Prototype event bridge failed:', error));
+export const createPdlApp = (
+  pool?: Pool,
+  tasks?: PostgresTaskRepository,
+) => {
+  const activePool = pool ?? new Pool({ connectionString: process.env.DATABASE_URL });
+  const taskRepo = tasks ?? new PostgresTaskRepository(activePool);
 
-const defaultPrototypeRepository = process.env.PROTOTYPE_TEMPLATE_REPOSITORY ?? 'https://github.com/pubcoreagencia/pub-dev-loop-template.git';
-const prototypeWorkspaceRoot = process.env.PROTOTYPE_WORKSPACES_ROOT ?? '/tmp/pub-prototype';
-const comparisonRuntime = (process.env.PROTOTYPE_PREVIEW_MODE ?? 'public') === 'local'
-  ? new LocalPreviewRuntime()
-  : new PublicPreviewRuntime();
-const comparisonPreviews = new PrototypeComparisonPreviewManager(comparisonRuntime);
-const previewCommand = process.env.PROTOTYPE_PREVIEW_COMMAND ?? 'npm';
-const previewArgs = (process.env.PROTOTYPE_PREVIEW_ARGS ?? 'run dev -- --host 0.0.0.0 --port {PORT}')
-  .split(' ')
-  .filter(Boolean);
-const previewPublicBaseUrl = process.env.PROTOTYPE_PREVIEW_BASE_URL || undefined;
+  const app = express();
+  app.use(express.json());
 
-const repoPath = (sessionId: string) => path.join(prototypeWorkspaceRoot, sessionId);
-function gitDiff(cwd: string, base: string, head: string): string {
-  return execFileSync('git', ['diff', '--no-ext-diff', '--unified=3', base, head], { cwd, encoding: 'utf8', maxBuffer: 250_000 }).slice(0, 200_000);
-}
+  // Healthcheck dedicado do PDL
+  app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'pdl-api' }));
 
-export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes = new PostgresPrototypeRepository(pool)) => {
-  const app = express(); app.use(express.json());
-  const handoff = new PrototypeHandoffService(new PdlTaskIngestionAdapter(tasks), prototypes, prototypeEvents);
-
-  app.get('/health', (_q,res)=>res.json({status:'ok'}));
+  // Organização & Agentes
   app.get('/office/organization', (_req, res) => res.json({ organization: defaultOfficeOrganization.getOrganization() }));
   app.get('/office/agents', (_req, res) => res.json({ agents: defaultAgentRegistry.listAgents() }));
   app.get('/office/agents/:id', (req, res) => {
@@ -113,7 +78,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
         engineeringPlan
       );
 
-      const task = await tasks.create(runtimeTaskInput);
+      const task = await taskRepo.create(runtimeTaskInput);
 
       return res.status(201).json({
         ...task,
@@ -126,14 +91,47 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     }
   });
 
+  // GET /tasks
   app.get('/tasks', async (_req, res, next) => {
     try {
-      const allTasks = await tasks.list();
+      const allTasks = await taskRepo.list();
       return res.json(allTasks);
     } catch (err) {
       return next(err);
     }
   });
+
+  // GET /tasks/:id
+  app.get('/tasks/:id', async (req, res, next) => {
+    try {
+      const t = await taskRepo.get(req.params.id);
+      return t ? res.json(t) : res.sendStatus(404);
+    } catch (e) {
+      return next(e);
+    }
+  });
+
+  // POST /tasks/:id/cancel
+  app.post('/tasks/:id/cancel', async (req, res, next) => {
+    try {
+      const t = await taskRepo.cancel(req.params.id);
+      return t ? res.json(t) : res.status(409).json({ error: 'Task cannot be cancelled' });
+    } catch (e) {
+      return next(e);
+    }
+  });
+
+  // POST /tasks/:id/retry
+  app.post('/tasks/:id/retry', async (req, res, next) => {
+    try {
+      const t = await taskRepo.retry(req.params.id);
+      return t ? res.json(t) : res.status(409).json({ error: 'Task cannot be retried' });
+    } catch (e) {
+      return next(e);
+    }
+  });
+
+  // POST /office/plans
   app.post('/office/plans', (req, res) => {
     try {
       const { objective, project = 'pub-dev-loop', repository, context, steps } = req.body ?? {};
@@ -189,6 +187,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     }
   });
 
+  // POST /office/plans/execute-step
   app.post('/office/plans/execute-step', async (req, res, next) => {
     try {
       const { plan, stepId, overrides } = req.body ?? {};
@@ -200,7 +199,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
         return res.status(404).json({ error: `Step '${stepId}' not found in plan` });
       }
       const taskPayload = planStepToTask(step, plan, overrides);
-      const createdTask = await tasks.create(taskPayload);
+      const createdTask = await taskRepo.create(taskPayload);
 
       if (step.agentId) {
         defaultOfficeEventBus.publish({
@@ -243,6 +242,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     }
   });
 
+  // POST /office/reviews/evaluate
   app.post('/office/reviews/evaluate', (req, res) => {
     try {
       const { taskId, planId, developerAgentId, reviewerAgentId, project, findings, testPassed, typecheckPassed, buildPassed } = req.body ?? {};
@@ -266,6 +266,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     }
   });
 
+  // POST /office/approvals/request
   app.post('/office/approvals/request', (req, res) => {
     try {
       const { planId, taskId, project, type, title, rationale, requestedBy } = req.body ?? {};
@@ -287,9 +288,9 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     }
   });
 
+  // POST /office/approvals/:id/decide
   app.post('/office/approvals/:id/decide', (req, res) => {
     try {
-      // 1. Authoritative Backend Authentication (Never trusts x-user-role or client payload)
       let principal;
       try {
         principal = authenticateOfficeRequest(req.headers);
@@ -318,12 +319,14 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     }
   });
 
+  // GET /office/approvals
   app.get('/office/approvals', (req, res) => {
     const project = typeof req.query.project === 'string' ? req.query.project.trim() : undefined;
     const approvals = defaultApprovalManager.listApprovals(project);
     return res.status(200).json({ approvals });
   });
 
+  // GET /office/memory
   app.get('/office/memory', async (req, res) => {
     try {
       let principal;
@@ -362,6 +365,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     }
   });
 
+  // GET /office/intelligence & /office/awareness
   app.get(['/office/intelligence', '/office/awareness'], async (req, res) => {
     try {
       let principal;
@@ -374,7 +378,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
       const project = typeof req.query.project === 'string' ? req.query.project.trim() : 'pub-dev-loop';
       const tenantId = principal.tenantId || 'pub-dev-loop';
 
-      const allTasks = await tasks.list();
+      const allTasks = await taskRepo.list();
       const allEvents = defaultOfficeEventBus.getEventsSince(0, { project });
 
       const awareness = defaultOrganizationalAwarenessEngine.generateAwareness({
@@ -390,6 +394,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     }
   });
 
+  // GET /office/skills
   app.get('/office/skills', async (req, res) => {
     try {
       let principal;
@@ -419,6 +424,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     }
   });
 
+  // GET /office/skills/:id
   app.get('/office/skills/:id', async (req, res) => {
     try {
       let principal;
@@ -442,6 +448,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     }
   });
 
+  // POST /office/pipelines/create
   app.post('/office/pipelines/create', async (req, res) => {
     try {
       let principal;
@@ -473,6 +480,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     }
   });
 
+  // GET /office/pipelines
   app.get('/office/pipelines', async (req, res) => {
     try {
       let principal;
@@ -498,6 +506,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     }
   });
 
+  // GET /office/pipelines/:id
   app.get('/office/pipelines/:id', async (req, res) => {
     try {
       let principal;
@@ -521,6 +530,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     }
   });
 
+  // POST /office/pipelines/:id/tick
   app.post('/office/pipelines/:id/tick', async (req, res) => {
     try {
       let principal;
@@ -540,6 +550,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     }
   });
 
+  // POST /office/pipelines/:id/checkpoints/:stepId/decide
   app.post('/office/pipelines/:id/checkpoints/:stepId/decide', async (req, res) => {
     try {
       let principal;
@@ -571,6 +582,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     }
   });
 
+  // GET /office/stream (SSE)
   app.get('/office/stream', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -593,9 +605,7 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
     const unsubscribe = defaultOfficeEventBus.subscribe({ project }, (evt) => {
       try {
         res.write(`id: ${evt.sequence}\nevent: office\ndata: ${JSON.stringify(evt)}\n\n`);
-      } catch {
-        // Conexão encerrada
-      }
+      } catch {}
     });
 
     const heartbeatTimer = setInterval(() => {
@@ -611,159 +621,15 @@ export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes =
       unsubscribe();
     });
   });
-  app.get(['/prototype', '/prototype/sessions/:id/view'], (_req,res)=>res.status(200).type('html').send(prototypeUiHtml()+prototypeHistoryUiScript()));
 
-  app.post('/tasks', async(req,res,next)=>{
-    try {
-      const {project,repository,objective,prompt,priority,agentId}=req.body??{};
-      if(!project||!repository||!objective||!prompt) return res.status(400).json({error:'project, repository, objective and prompt are required'});
-      if(agentId !== undefined && agentId !== null) {
-        if(!isValidAgentId(agentId)) {
-          return res.status(400).json({error:`Invalid agentId: '${agentId}'. Must be a registered agent in The Office.`});
-        }
-      }
-      return res.status(201).json(await tasks.create({
-        project,
-        repository,
-        objective,
-        prompt,
-        priority,
-        agentId: typeof agentId === 'string' ? agentId.trim() : undefined,
-      }));
-    } catch(e){return next(e);}
-  });
-  app.get('/tasks',async(_q,res,next)=>{try{return res.json(await tasks.list())}catch(e){return next(e)}});
-  app.get('/tasks/:id',async(req,res,next)=>{try{const t=await tasks.get(req.params.id);return t?res.json(t):res.sendStatus(404)}catch(e){return next(e)}});
-  app.post('/tasks/:id/cancel',async(req,res,next)=>{try{const t=await tasks.cancel(req.params.id);return t?res.json(t):res.status(409).json({error:'Task cannot be cancelled'})}catch(e){return next(e)}});
-  app.post('/tasks/:id/retry',async(req,res,next)=>{try{const t=await tasks.retry(req.params.id);return t?res.json(t):res.status(409).json({error:'Task cannot be retried'})}catch(e){return next(e)}});
-
-  app.post('/prototype/sessions', async(req,res,next)=>{
-    try {
-      const {project, repository, branch} = req.body ?? {};
-      if(!project) return res.status(400).json({error:'project is required'});
-      const session = await prototypes.createSession({project, repository: repository || defaultPrototypeRepository, branch});
-      prototypeEvents.emit({sessionId:session.id,type:'PREVIEW_STARTED',payload:{phase:'session_created',repository:session.repository}});
-      return res.status(201).json(session);
-    } catch(e){return next(e);}
-  });
-
-  app.get('/prototype/sessions',async(_req,res,next)=>{try{return res.json(await prototypes.listSessions())}catch(e){return next(e)}});
-  app.get('/prototype/sessions/:id',async(req,res,next)=>{try{const session=await prototypes.getSession(req.params.id);if(!session)return res.sendStatus(404);const allTasks = await tasks.list();const filtered = allTasks.filter(t => t.prototypeSessionId === session.id);return res.json({session,checkpoints:await prototypes.listCheckpoints(session.id),tasks:filtered})}catch(e){return next(e)}});
-  app.get('/prototype/sessions/:id/events',async(req,res,next)=>{
-    try { const session=await prototypes.getSession(req.params.id); if(!session)return res.sendStatus(404);
-      res.status(200); res.setHeader('Content-Type','text/event-stream'); res.setHeader('Cache-Control','no-cache, no-transform'); res.setHeader('Connection','keep-alive'); res.flushHeaders?.();
-      const unsubscribe=prototypeSse.subscribe(session.id,res); const heartbeat=setInterval(()=>prototypeSse.heartbeat(session.id),15000); req.on('close',()=>{clearInterval(heartbeat);unsubscribe();}); res.write(': connected\\n\\n');
-    } catch(e){return next(e);}
-  });
-
-  app.patch('/prototype/sessions/:id',async(req,res,next)=>{
-    try { const allowed=['status','mode','previewUrl','previewRuntime','workspacePath','lastCheckpointSha'] as const;
-      const patch=Object.fromEntries(allowed.filter(k=>req.body?.[k]!==undefined).map(k=>[k,req.body[k]]));
-      const session=await prototypes.updateSession(req.params.id,patch); if(!session)return res.sendStatus(404);
-      const eventType=patch.status==='READY'?'PREVIEW_READY':patch.status==='FAILED'?'ERROR':null;
-      if(eventType)prototypeEvents.emit({sessionId:session.id,type:eventType,payload:{status:session.status,previewUrl:session.previewUrl}});
-      return res.json(session);
-    } catch(e){return next(e);
-    }
-  });
-
-  app.post('/prototype/sessions/:id/prompts',async(req,res,next)=>{
-    try { const session=await prototypes.getSession(req.params.id); if(!session)return res.sendStatus(404); const {objective='Prototype MVP iteration',prompt,priority}=req.body??{};
-      if(!prompt)return res.status(400).json({error:'prompt is required'});
-      if(['BUILDING','PREVIEWING'].includes(session.status))return res.status(409).json({error:'Prototype session is already processing a prompt'});
-      const updated=await prototypes.incrementPromptCount(session.id); if(!updated)return res.sendStatus(409);
-      prototypeEvents.emit({sessionId:updated.id,type:'USER_PROMPT',payload:{prompt,promptIndex:updated.promptCount,objective}});
-      const task=await tasks.create({project:updated.project,repository:updated.repository,objective,prompt,priority:priority??0,prototypeSessionId:updated.id});
-      await tasks.update(task.id,{branch:updated.branch,workspacePath:path.join(prototypeWorkspaceRoot,updated.id)});
-      prototypeEvents.emit({sessionId:updated.id,type:'AGENT_STARTED',payload:{taskId:task.id}});
-      return res.status(202).json({session:updated,task,mode:'PROTOTYPE'});
-    } catch(e){return next(e);}
-  });
-
-  app.get('/prototype/sessions/:id/diff',async(req,res,next)=>{
-    try {
-      const session=await prototypes.getSession(req.params.id); if(!session)return res.sendStatus(404);
-      const checkpoints=await prototypes.listCheckpoints(session.id);
-      const fromId=String(req.query.from ?? '');
-      const toId=String(req.query.to ?? '');
-      const from=fromId?checkpoints.find(c=>c.id===fromId):null;
-      const to=toId?checkpoints.find(c=>c.id===toId):null;
-      if(!from||!to||!from.commitSha||!to.commitSha)return res.status(400).json({error:'from and to must reference checkpoints with commits from this session'});
-      const workspace=session.workspacePath || repoPath(session.id);
-      const diff=gitDiff(workspace,from.commitSha,to.commitSha);
-      return res.json({from,to,diff,truncated:diff.length>=200000});
-    } catch(e){return next(e);}
-  });
-
-  app.post('/prototype/sessions/:id/comparison-previews',async(req,res,next)=>{
-    try {
-      const session=await prototypes.getSession(req.params.id); if(!session)return res.sendStatus(404);
-      const checkpointId=String(req.body?.checkpointId ?? '');
-      const checkpoint=(await prototypes.listCheckpoints(session.id)).find(c=>c.id===checkpointId);
-      if(!checkpoint||!checkpoint.commitSha)return res.status(400).json({error:'checkpointId must reference a committed checkpoint from this session'});
-      if(!session.workspacePath)return res.status(409).json({error:'Prototype workspace is not available'});
-      const comparison=await comparisonPreviews.create({
-        sessionId:session.id,
-        checkpointId:checkpoint.id,
-        repositoryWorkspace:session.workspacePath,
-        commitSha:checkpoint.commitSha,
-        command:previewCommand,
-        args:previewArgs,
-        publicBaseUrl:previewPublicBaseUrl,
-      });
-      prototypeEvents.emit({sessionId:session.id,type:'PREVIEW_READY',payload:{kind:'comparison',checkpointId:checkpoint.id,url:comparison.info.url,runtimeId:comparison.runtimeId,comparisonId:comparison.id}});
-      return res.status(201).json(comparison);
-    } catch(e){return next(e);}
-  });
-
-  app.get('/prototype/sessions/:id/comparison-previews/:previewId',async(req,res,next)=>{
-    try { const comparison=await comparisonPreviews.get(req.params.previewId); if(!comparison||comparison.sessionId!==req.params.id)return res.sendStatus(404); return res.json(comparison); } catch(e){return next(e); }
-  });
-
-  app.delete('/prototype/sessions/:id/comparison-previews/:previewId',async(req,res,next)=>{
-    try { const session=await prototypes.getSession(req.params.id); if(!session)return res.sendStatus(404); const comparison=await comparisonPreviews.get(req.params.previewId); if(!comparison||comparison.sessionId!==session.id)return res.sendStatus(404); await comparisonPreviews.destroy(comparison.id,session.workspacePath ?? repoPath(session.id)); return res.sendStatus(204); } catch(e){return next(e); }
-  });
-
-  app.post('/prototype/sessions/:id/checkpoints',async(req,res,next)=>{
-    try { const session=await prototypes.getSession(req.params.id); if(!session)return res.sendStatus(404); const {promptIndex,prompt,commitSha,previewUrl,buildPassed}=req.body??{};
-      if(!Number.isInteger(promptIndex)||promptIndex<1||typeof prompt!=='string')return res.status(400).json({error:'promptIndex and prompt are required'});
-      const checkpoint=await prototypes.createCheckpoint({sessionId:session.id,promptIndex,prompt,commitSha:commitSha??null,previewUrl:previewUrl??null,buildPassed:buildPassed===true});
-      const updated=await prototypes.updateSession(session.id,{lastCheckpointSha:checkpoint.commitSha,previewUrl:checkpoint.previewUrl,status:checkpoint.buildPassed?'READY':'FAILED'});
-      prototypeEvents.emit({sessionId:session.id,type:'CHECKPOINT_CREATED',payload:checkpoint as unknown as Record<string,unknown>});
-      if(updated)prototypeEvents.emit({sessionId:session.id,type:checkpoint.buildPassed?'PREVIEW_READY':'PREVIEW_FAILED',payload:{previewUrl:updated.previewUrl,buildPassed:checkpoint.buildPassed}});
-      return res.status(201).json(checkpoint);
-    } catch(e){return next(e);
-    }
-  });
-
-  app.post('/prototype/sessions/:id/promote', async (req, res, next) => {
-    try {
-      const input: PrototypeHandoffInput = {
-        sessionId: req.params.id,
-        objective: req.body?.objective,
-        prompt: req.body?.prompt,
-        priority: req.body?.priority,
-      };
-
-      const result = await handoff.execute(input);
-      return res.status(200).json({
-        session: result.session,
-        promotion: result.promotion,
-        task: result.task,
-        mode: result.mode,
-      });
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      if (message.startsWith('NOT_FOUND:')) {
-        return res.sendStatus(404);
-      }
-      if (message.startsWith('CONFLICT:')) {
-        return res.status(409).json({ error: message.replace(/^CONFLICT:\s*/, '') });
-      }
-      return next(e);
-    }
-  });
   return app;
 };
 
-if(process.argv[1]?.endsWith('api.ts')||process.argv[1]?.endsWith('api.js')){const port=Number(process.env.PORT??3000);createApp().listen(port,()=>console.log(`API listening on ${port}`));}
+const isDirectRun = process.argv[1]?.endsWith('entry.ts') || process.argv[1]?.endsWith('entry.js') || process.argv[1]?.endsWith('pdl-api-entry.ts') || process.argv[1]?.endsWith('pdl-api-entry.js');
+if (isDirectRun) {
+  const port = Number(process.env.PDL_API_PORT ?? 3000);
+  const app = createPdlApp();
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`[PDL API] Dedicated server listening on 0.0.0.0:${port}`);
+  });
+}

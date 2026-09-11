@@ -69,12 +69,12 @@ describe('FASE 4 — Testes de Isolamento de Banco e Repositórios PP × PDL', (
   });
 
   it('7. PdlTaskIngestionAdapter reside no PDL, conhece PostgresTaskRepository e implementa PdlTaskIngestionPort', () => {
-    const adapterPath = resolve(rootDir, 'pdl-handoff-adapter.ts');
+    const adapterPath = resolve(rootDir, 'pdl', 'handoff', 'adapter.ts');
     expect(existsSync(adapterPath)).toBe(true);
     const content = readFileSync(adapterPath, 'utf8');
 
     expect(content).toContain('class PdlTaskIngestionAdapter implements PdlTaskIngestionPort');
     expect(content).toContain('PostgresTaskRepository');
-    expect(content).toContain("from './domain.js'");
+    expect(content).toContain("from '../../domain.js'");
   });
 });

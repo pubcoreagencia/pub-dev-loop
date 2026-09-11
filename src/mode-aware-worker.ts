@@ -14,8 +14,8 @@ import { PrototypeWorker } from './pp/worker/prototype-worker.js';
  * com o PDL (RouterWorker).
  * 
  * Utilize os entrypoints dedicados e desacoplados:
- * - Para o PUB Prototype: `src/pp-worker-entry.ts` (npm run pp:worker)
- * - Para o PUB Development Loop: `src/pdl-worker-entry.ts` (npm run pdl:worker)
+ * - Para o PUB Prototype: `src/pp/worker/entry.ts` (npm run pp:worker)
+ * - Para o PUB Development Loop: `src/pdl/worker/entry.ts` (npm run pdl:worker)
  */
 export class ModeAwareWorker {
   readonly prototype: PrototypeWorker;
