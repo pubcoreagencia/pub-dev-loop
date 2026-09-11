@@ -31,9 +31,9 @@ describe('P5.6 Model Routing Hierarchy on OpenRouter Primary', () => {
 
   describe('Scenario A to D: Profile Classification & Tier 1 Deterministic Selection', () => {
     it('Scenario A: fast_prototype selects minimax / cohere free models first, then Tier 2 free pool', () => {
-      const task: Partial<Task> = {
+      const task = {
         objective: 'Build mockup layout landingpage and visual design preview',
-        prototypeSessionId: 'proto-session-123',
+        routingProfile: 'fast_prototype' as const,
       };
       const profile = classifyTaskProfile(task);
       expect(profile).toBe('fast_prototype');

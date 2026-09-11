@@ -2,12 +2,6 @@
 import type { Task } from '../domain.js';
 import type { TaskRoutingProfile } from './types.js';
 
-const FAST_PROTOTYPE_KEYWORDS = [
-  'prototype', 'prototipo', 'protótipo', 'preview', 'mvp', 'mockup',
-  'interface', 'layout', 'landing page', 'landingpage', 'ui', 'tela',
-  'dashboard', 'formulario', 'formulário', 'componente visual'
-];
-
 const REASONING_KEYWORDS = [
   'architecture', 'arquitetura', 'migration', 'migração', 'audit',
   'auditoria', 'investigate', 'investigar', 'root cause', 'causa raiz',
@@ -25,31 +19,42 @@ const CODING_KEYWORDS = [
 ];
 
 /**
- * Deterministic, zero-token local task classifier.
- * Evaluates task properties (prototypeSessionId, objective, prompt) to assign a TaskRoutingProfile.
+ * Deterministic task classifier.
+ *
+ * If a routingProfile is explicitly supplied (by the caller/worker or as a profileHint),
+ * it is returned directly.
+ * Otherwise, evaluates objective and prompt for technical complexity (reasoning, coding)
+ * and falls back to general.
+ *
+ * Strictly neutral: does NOT infer domain-specific profiles (e.g. fast_prototype)
+ * through heuristics, keywords, or session IDs.
  */
-export function classifyTaskProfile(task: Partial<Task>): TaskRoutingProfile {
-  // 1. If linked to prototypeSessionId or explicit prototype objective, prioritize fast_prototype
-  if (task.prototypeSessionId) {
-    return 'fast_prototype';
+export function classifyTaskProfile(
+  task?: Partial<Task> | { routingProfile?: TaskRoutingProfile; [key: string]: unknown } | null,
+  profileHint?: TaskRoutingProfile
+): TaskRoutingProfile {
+  if (profileHint) {
+    return profileHint;
+  }
+
+  if (task && 'routingProfile' in task && typeof task.routingProfile === 'string' && task.routingProfile) {
+    return task.routingProfile as TaskRoutingProfile;
+  }
+
+  if (!task) {
+    return 'general';
   }
 
   const textToAnalyze = [
-    task.objective ?? '',
-    task.prompt ?? '',
-    task.project ?? '',
+    typeof task.objective === 'string' ? task.objective : '',
+    typeof task.prompt === 'string' ? task.prompt : '',
+    typeof task.project === 'string' ? task.project : '',
   ].join(' ').toLowerCase();
 
   // Check for reasoning indicators first (high complexity/structural tasks)
   const hasReasoning = REASONING_KEYWORDS.some(kw => textToAnalyze.includes(kw));
   if (hasReasoning) {
     return 'reasoning';
-  }
-
-  // Check for prototype / UI indicators
-  const hasPrototype = FAST_PROTOTYPE_KEYWORDS.some(kw => textToAnalyze.includes(kw));
-  if (hasPrototype) {
-    return 'fast_prototype';
   }
 
   // Check for coding indicators

@@ -6,7 +6,7 @@ import { CodexApiProvider } from './providers/codex-api.js';
 import { RouterProvider } from './providers/router.js';
 import { OpenRouterProvider } from './providers/openrouter.js';
 import { DualGatewayProvider } from './providers/gateway.js';
-import type { AgentProvider, ProviderTaskResult } from './providers/types.js';
+import type { AgentProvider, ProviderTaskResult, ProviderTaskInput } from './providers/types.js';
 
 export interface AgentOutcome {
   summary: string;
@@ -32,7 +32,7 @@ export class MockCodingAgent implements CodingAgent {
 class MockProvider implements AgentProvider {
   readonly kind = 'mock' as const;
   readonly model = null;
-  async execute(task: Task, _workspace: string): Promise<ProviderTaskResult> {
+  async execute(task: Task | ProviderTaskInput, _workspace: string): Promise<ProviderTaskResult> {
     return {
       status: 'COMPLETED',
       provider: this.kind,

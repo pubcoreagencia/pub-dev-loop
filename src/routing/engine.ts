@@ -46,7 +46,7 @@ export const DEFAULT_PAID_MODELS = [
  * Build a strongly-typed ModelRoutingPolicy from task and environment variables.
  */
 export function buildRoutingPolicy(
-  task?: Partial<Task>,
+  task?: Partial<Task> | { routingProfile?: TaskRoutingProfile; [key: string]: unknown },
   env: NodeJS.ProcessEnv = process.env,
   profileOverride?: TaskRoutingProfile
 ): ModelRoutingPolicy {

@@ -16,10 +16,11 @@ import type { Task } from '../src/domain.js';
 
 describe('Model Routing Policy Engine (P4 & P4.1)', () => {
   describe('1. Deterministic Task Classification', () => {
-    it('classifies prototype tasks as fast_prototype', () => {
-      expect(classifyTaskProfile({ prototypeSessionId: 'sess-123' })).toBe('fast_prototype');
-      expect(classifyTaskProfile({ objective: 'Create dashboard prototype for barber shop' })).toBe('fast_prototype');
-      expect(classifyTaskProfile({ prompt: 'Build a new landing page layout with buttons' })).toBe('fast_prototype');
+    it('uses explicit routingProfile and does NOT infer fast_prototype from objective or prototypeSessionId', () => {
+      expect(classifyTaskProfile({ routingProfile: 'fast_prototype' })).toBe('fast_prototype');
+      expect(classifyTaskProfile({ prototypeSessionId: 'sess-123' } as any)).not.toBe('fast_prototype');
+      expect(classifyTaskProfile({ objective: 'Create dashboard prototype for barber shop' })).not.toBe('fast_prototype');
+      expect(classifyTaskProfile({ prompt: 'Build a new landing page layout with buttons' })).not.toBe('fast_prototype');
     });
 
     it('classifies coding tasks as coding', () => {
@@ -147,7 +148,7 @@ describe('Model Routing Policy Engine (P4 & P4.1)', () => {
 
   describe('5. openrouterConfig Integration', () => {
     it('loads policy-resolved candidate queue seamlessly', () => {
-      const dummyTask: Partial<Task> = { objective: 'Prototype modern SaaS dashboard' };
+      const dummyTask = { objective: 'Prototype modern SaaS dashboard', routingProfile: 'fast_prototype' as const };
       const config = loadOpenRouterConfig(undefined, dummyTask, {
         OPENROUTER_PAID_FALLBACK_ENABLED: 'false',
         OPENROUTER_FREE_POOL_ENABLED: 'true',

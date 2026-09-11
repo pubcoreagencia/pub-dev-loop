@@ -1,6 +1,6 @@
 import type { Task } from '../domain.js';
 import type { AgentExecutor, ExecutionResult } from '../executor.js';
-import type { AgentProvider, ProviderTaskResult } from './types.js';
+import type { AgentProvider, ProviderTaskResult, ProviderTaskInput } from './types.js';
 
 function buildProviderTaskResult(
   provider: 'codex-api',
@@ -33,7 +33,7 @@ export class CodexApiProvider implements AgentProvider {
     private readonly timeoutMs = Number(process.env.AGENT_TIMEOUT_MS ?? 900000),
   ) {}
 
-  async execute(task: Task, workspace: string): Promise<ProviderTaskResult> {
+  async execute(task: Task | ProviderTaskInput, workspace: string): Promise<ProviderTaskResult> {
     const execution = await this.executor.execute({
       command: this.command,
       args: ['-c', 'approval_policy=never', '-c', 'sandbox_mode=workspace-write', 'exec', task.prompt],

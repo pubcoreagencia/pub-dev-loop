@@ -201,11 +201,17 @@ export class PrototypeWorker {
         { taskId: task.id, attempt: 0 }
       );
 
+      const taskWithInstructions: ProviderTaskInput = {
+        ...task,
+        systemInstructions: [...PREVIEW_SYSTEM_INSTRUCTIONS],
+        routingProfile: 'fast_prototype',
+      };
+
       // Resolve the dynamic model selected by policy for this task (if provider is OpenRouter or DualGateway)
       let initialModel = (this.provider as any).model;
       if (!initialModel || initialModel === 'default' || initialModel === 'openrouter/free') {
         try {
-          const cfg = loadOpenRouterConfig(undefined, task);
+          const cfg = loadOpenRouterConfig(undefined, taskWithInstructions);
           if (cfg?.primaryModel) {
             initialModel = cfg.primaryModel;
           }
@@ -220,11 +226,6 @@ export class PrototypeWorker {
         provider: this.provider.kind || 'openrouter',
         model: initialModel || (this.provider as any).model || 'default',
       });
-
-      const taskWithInstructions: ProviderTaskInput = {
-        ...task,
-        systemInstructions: [...PREVIEW_SYSTEM_INSTRUCTIONS],
-      };
 
       const result = await this.provider.execute(taskWithInstructions, workspace, {
         consumer: sink,

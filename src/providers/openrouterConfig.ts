@@ -1,5 +1,6 @@
 // src/providers/openrouterConfig.ts
 import type { Task } from '../domain.js';
+import type { ProviderTaskInput } from './types.js';
 import {
   type ModelRoutingPolicy,
   type CandidateModelEntry,
@@ -23,10 +24,11 @@ export interface OpenRouterConfig {
 
 export function loadOpenRouterConfig(
   modelOverride?: string,
-  task?: Partial<Task>,
+  task?: Partial<Task> | ProviderTaskInput,
   env: NodeJS.ProcessEnv = process.env
 ): OpenRouterConfig {
-  const policy = buildRoutingPolicy(task, env);
+  const profileHint = task && 'routingProfile' in task ? task.routingProfile : undefined;
+  const policy = buildRoutingPolicy(task, env, profileHint);
   const candidates = resolveCandidateModels(policy, modelOverride, env);
 
   // If candidate models were resolved via policy engine:

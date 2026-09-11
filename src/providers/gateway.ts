@@ -1,5 +1,5 @@
 import type { Task } from '../domain.js';
-import type { AgentProvider, ProviderKind, ProviderTaskResult } from './types.js';
+import type { AgentProvider, ProviderKind, ProviderTaskResult, ProviderTaskInput } from './types.js';
 import type { StreamConsumer } from './streaming/index.js';
 
 export interface DualGatewayConfig {
@@ -67,7 +67,7 @@ export class DualGatewayProvider implements AgentProvider {
   }
 
   async execute(
-    task: Task,
+    task: Task | ProviderTaskInput,
     workspace: string,
     options?: { signal?: AbortSignal; consumer?: StreamConsumer }
   ): Promise<ProviderTaskResult> {

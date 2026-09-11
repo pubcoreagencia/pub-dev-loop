@@ -1,5 +1,6 @@
 import type { Task } from '../domain.js';
 import type { ExecutionResult } from '../executor.js';
+import type { TaskRoutingProfile } from '../routing/types.js';
 
 export type ProviderKind = 'mock' | 'codex-api' | '9router' | 'openrouter';
 
@@ -57,6 +58,8 @@ export interface ProviderTaskInput {
   branch?: string | null;
   /** Domain/agent-specific system instructions injected by workers */
   systemInstructions?: string[];
+  /** Optional task routing profile explicitly provided by caller (e.g., 'fast_prototype') */
+  routingProfile?: TaskRoutingProfile;
   [key: string]: unknown;
 }
 
