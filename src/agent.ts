@@ -33,15 +33,36 @@ class MockProvider implements AgentProvider {
   readonly kind = 'mock' as const;
   readonly model = null;
   async execute(task: Task | ProviderTaskInput, _workspace: string): Promise<ProviderTaskResult> {
+    let changedFiles: string[] = [];
+    if (_workspace) {
+      try {
+        const { writeFileSync, existsSync } = await import('node:fs');
+        const { join } = await import('node:path');
+        const isCorrection = typeof task.prompt === 'string' && (
+          task.prompt.includes('CORRECTION INSTRUCTIONS') ||
+          task.prompt.includes('VALIDATION FAILURE REPORT')
+        );
+        const buildFile = join(_workspace, 'AUTONOMOUS_BUILD.md');
+        const content = `# Autonomous Build Record\n\nTask: ${task.id}\nObjective: ${task.objective || ''}\nCorrection: ${isCorrection}\nTimestamp: ${new Date().toISOString()}\n`;
+        writeFileSync(buildFile, content, 'utf8');
+        changedFiles.push('AUTONOMOUS_BUILD.md');
+
+        if (isCorrection) {
+          const flagFile = join(_workspace, 'calibrated.flag');
+          writeFileSync(flagFile, 'CALIBRATED=true\n', 'utf8');
+          changedFiles.push('calibrated.flag');
+        }
+      } catch {}
+    }
     return {
       status: 'COMPLETED',
       provider: this.kind,
       model: null,
       exitCode: 0,
       durationMs: 0,
-      stdout: `Mock provider completed task ${task.id}; no source changes were made.`,
+      stdout: `Mock provider completed task ${task.id}; updated files: ${changedFiles.join(', ')}`,
       stderr: '',
-      changedFiles: [],
+      changedFiles,
       commit: null,
       errorCode: null,
       errorMessage: null,
