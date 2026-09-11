@@ -1,4 +1,5 @@
 import type { TaskIntake } from './intake.js';
+import type { Evidence } from './trust-contracts.js';
 
 export const CONTEXT_BUNDLE_VERSION = '1.0.0' as const;
 
@@ -30,6 +31,7 @@ export interface ContextBundle {
   relevantDocumentation: ContextReference[];
   knownConstraints: string[];
   limitations: ContextLimitation[];
+  evidence: Evidence[]; // collected & normalized evidence from all sources
 }
 
 export interface ContextSource {
@@ -38,6 +40,7 @@ export interface ContextSource {
   getOperationalContext(intake: TaskIntake): Promise<ContextFact[]>;
   getRelevantDocumentation(intake: TaskIntake): Promise<ContextReference[]>;
   getKnownConstraints(intake: TaskIntake): Promise<string[]>;
+  collectEvidence(intake: TaskIntake): Promise<Evidence[]>;
 }
 
 export interface ContextDiscovery {
@@ -142,6 +145,7 @@ export class BoundedContextDiscovery implements ContextDiscovery {
       relevantDocumentation: boundedDocumentation,
       knownConstraints: boundedConstraints,
       limitations,
+      evidence: [], // populated by upstream evidence collection; immutable after construction
     };
   }
 }

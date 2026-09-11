@@ -12,6 +12,7 @@ import {
   type TaskLineage,
   type ExecutionSpecMetadata,
 } from './execution-spec.js';
+import type { GovernanceLevel, PermissionSet } from './trust-contracts.js';
 import { normalizeTaskIntake, type TaskIntake, type TaskIntakeInput } from './intake.js';
 import type { Preflight, PreflightResult } from './preflight.js';
 import {
@@ -19,6 +20,7 @@ import {
   ExecutionSpecValidationError,
   type ValidationResult,
 } from './spec-validator.js';
+import { createEvidenceSnapshot, type TrustBoundary, type EvidenceSnapshot, type Evidence, type ExecutionInstruction } from './trust-contracts.js';
 
 export interface RefinementProviderResponse {
   objective?: string | null;
@@ -27,15 +29,19 @@ export interface RefinementProviderResponse {
   acceptanceCriteria?: KnownOrUnknown<string[]> | null;
   validationPlan?: KnownOrUnknown<string[]> | null;
   executionInstructions?: KnownOrUnknown<string[]> | null;
+  structuredExecutionInstructions?: KnownOrUnknown<ExecutionInstruction[]> | null;
   executionSteps?: KnownOrUnknown<ExecutionStep[]> | null;
   risks?: KnownOrUnknown<string[]> | null;
   escalationConditions?: KnownOrUnknown<string[]> | null;
+  governanceLevel?: GovernanceLevel | null;
+  permissions?: PermissionSet | null;
 }
 
 export interface RefinementRequest {
   intake: TaskIntake;
   context: ContextBundle;
   preflight: PreflightResult;
+  evidenceSnapshot: EvidenceSnapshot;
 }
 
 export interface RefinementProvider {
@@ -60,6 +66,7 @@ export interface PromptRefinement {
     intake: TaskIntake,
     context: ContextBundle,
     preflight: PreflightResult,
+    evidenceSnapshot?: EvidenceSnapshot,
   ): Promise<ExecutionSpec>;
 }
 
@@ -70,6 +77,7 @@ export class StructuredPromptRefinement implements PromptRefinement {
     intake: TaskIntake,
     context: ContextBundle,
     preflight: PreflightResult,
+    evidenceSnapshot?: EvidenceSnapshot,
   ): Promise<ExecutionSpec> {
     if (preflight.status === 'FAILED') {
       throw new TaskRefinementError(
@@ -81,13 +89,9 @@ export class StructuredPromptRefinement implements PromptRefinement {
 
     let response: unknown;
     try {
-      response = await this.provider.refine({ intake, context, preflight });
+      response = await this.provider.refine({ intake, context, preflight, evidenceSnapshot: evidenceSnapshot ?? createEvidenceSnapshot({ intakeVersion: '1.0.0', intakeHash: '', source: '', createdAt: '' }, '', '', 0, 'SAFE', { tier: 'TRUSTED_CONTROL', data: null, origin: 'pipeline', canInfluenceGovernance: false, canInfluencePermissions: false, canInfluenceRepositoryTarget: false, canInfluenceExecution: false }) });
     } catch (error) {
-      throw new TaskRefinementError(
-        'REFINEMENT_FAILED',
-        'Refinement provider failed',
-        [error instanceof Error ? error.message : String(error)],
-      );
+      throw new TaskRefinementError('REFINEMENT_FAILED', 'Refinement provider failed', [error instanceof Error ? error.message : String(error)]);
     }
 
     if (!isRecord(response)) {
@@ -99,6 +103,14 @@ export class StructuredPromptRefinement implements PromptRefinement {
       throw new TaskRefinementError('REFINEMENT_FAILED', 'Refinement response must contain a non-empty objective');
     }
 
+    const governanceLevel = response.governanceLevel === undefined || response.governanceLevel === null
+      ? undefined
+      : normalizeGovernanceLevel(response.governanceLevel, 'governanceLevel');
+    const permissions = response.permissions === undefined || response.permissions === null
+      ? undefined
+      : normalizePermissions(response.permissions, 'permissions');
+
+    // Only include governanceLevel and permissions if they are known (not ExplicitUnknown)
     return {
       specVersion: EXECUTION_SPEC_VERSION,
       objective: objective.trim(),
@@ -112,6 +124,8 @@ export class StructuredPromptRefinement implements PromptRefinement {
       escalationConditions: normalizeUnknownOrStringArray(response.escalationConditions, 'escalationConditions', false),
       lineage: generateLineage(intake, context),
       metadata: generateMetadata(),
+      ...(governanceLevel !== undefined && !isExplicitUnknown(governanceLevel) ? { governanceLevel: governanceLevel as GovernanceLevel } : {}),
+      ...(permissions !== undefined && !isExplicitUnknown(permissions) ? { permissions: permissions as PermissionSet } : {}),
     };
   }
 }
@@ -129,7 +143,15 @@ export class TaskIntakePipeline {
     const intake = normalizeTaskIntake(input);
     const context = await this.dependencies.contextDiscovery.discover(intake);
     const preflight = await this.dependencies.preflight.run(intake, context);
-    const spec = await this.dependencies.refinement.refine(intake, context, preflight);
+    const evidenceSnapshot = createEvidenceSnapshot(
+      intake.lineage,
+      'pdl-v1:',
+      'pdl-v1:',
+      0,
+      'SAFE',
+      { tier: 'TRUSTED_CONTROL', data: null, origin: 'preflight', canInfluenceGovernance: false, canInfluencePermissions: false, canInfluenceRepositoryTarget: false, canInfluenceExecution: false },
+    );
+    const spec = await this.dependencies.refinement.refine(intake, context, preflight, evidenceSnapshot);
     const validation: ValidationResult<ExecutionSpec> = validateExecutionSpec(spec);
     if (!validation.valid) {
       throw new ExecutionSpecValidationError(validation.errors);
@@ -159,10 +181,7 @@ function generateMetadata(): ExecutionSpecMetadata {
   return { generatedAt, specHash: `pdl-v1:${generatedAt}` };
 }
 
-function normalizeUnknownOr(
-  value: unknown,
-  field: string,
-): KnownOrUnknown<ContextBundle> {
+function normalizeUnknownOr(value: unknown, field: string): KnownOrUnknown<ContextBundle> {
   if (value === null || value === undefined) return unknownFor(field);
   if (isExplicitUnknown(value)) return value;
   if (isContextBundle(value)) return value;
@@ -216,6 +235,42 @@ function normalizeUnknownOrExecutionStepArray(
     throw new TaskRefinementError('REFINEMENT_FAILED', `Refinement response field is malformed: ${field}`);
   });
   return steps;
+}
+
+function normalizeUnknownOrForType<T>(value: unknown, field: string, isValid: (value: unknown) => value is T): KnownOrUnknown<T> {
+  if (value === null || value === undefined) return unknownFor(field);
+  if (isExplicitUnknown(value)) return value;
+  if (isValid(value)) return value as T;
+  throw new TaskRefinementError('REFINEMENT_FAILED', `Refinement response field is malformed: ${field}`);
+}
+
+function normalizeGovernanceLevel(value: unknown, field: string): KnownOrUnknown<GovernanceLevel> {
+  if (value === null || value === undefined) return unknownFor(field);
+  if (isExplicitUnknown(value)) return value;
+  const governanceLevels: GovernanceLevel[] = ['SYSTEM', 'ADMIN', 'DEVELOPER', 'READONLY'];
+  if (typeof value === 'string' && governanceLevels.includes(value as GovernanceLevel)) {
+    return value as GovernanceLevel;
+  }
+  throw new TaskRefinementError('REFINEMENT_FAILED', `Refinement response field is malformed: ${field}`);
+}
+
+function normalizePermissions(value: unknown, field: string): KnownOrUnknown<PermissionSet> {
+  if (value === null || value === undefined) return unknownFor(field);
+  if (isExplicitUnknown(value)) return value;
+  if (isRecord(value)) {
+    const perms = value as Record<string, unknown>;
+    return {
+      repositoryRead: typeof perms.repositoryRead === 'boolean' ? perms.repositoryRead : false,
+      repositoryWrite: typeof perms.repositoryWrite === 'boolean' ? perms.repositoryWrite : false,
+      branchWrite: typeof perms.branchWrite === 'boolean' ? perms.branchWrite : false,
+      commit: typeof perms.commit === 'boolean' ? perms.commit : false,
+      push: typeof perms.push === 'boolean' ? perms.push : false,
+      externalResearch: typeof perms.externalResearch === 'boolean' ? perms.externalResearch : false,
+      filesystemWorkspace: typeof perms.filesystemWorkspace === 'boolean' ? perms.filesystemWorkspace : false,
+      privilegedOperations: typeof perms.privilegedOperations === 'boolean' ? perms.privilegedOperations : false,
+    };
+  }
+  throw new TaskRefinementError('REFINEMENT_FAILED', `Refinement response field is malformed: ${field}`);
 }
 
 function unknownFor(field: string) {

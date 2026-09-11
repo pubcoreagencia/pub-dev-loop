@@ -1,3 +1,6 @@
+import { stableHash } from './hash.js';
+import type { TaskLineage } from './execution-spec.js';
+
 export const TASK_INTAKE_VERSION = '1.0.0' as const;
 export const MAX_RAW_REQUEST_LENGTH = 50000;
 export const MAX_OBJECTIVE_LENGTH = 2000;
@@ -26,12 +29,6 @@ export interface TaskIntake {
   source: string;
   createdAt: string;
   lineage: TaskLineage;
-}
-
-export interface TaskLineage {
-  intakeHash: string;
-  source: string;
-  createdAt: string;
 }
 
 export type TaskIntakeErrorCategory = 'INVALID_TASK';
@@ -109,20 +106,11 @@ export function normalizeTaskIntake(input: TaskIntakeInput): TaskIntake {
 
 function generateLineage(input: TaskIntakeInput): TaskLineage {
   return {
-    intakeHash: hashString(`${input.rawRequest}|${input.source}|${input.createdAt}`),
+    intakeVersion: '1.0.0',
+    intakeHash: stableHash(`${input.rawRequest}|${input.source}|${input.createdAt}`),
     source: input.source.trim(),
     createdAt: input.createdAt,
   };
-}
-
-function hashString(input: string): string {
-  let hash = 0;
-  for (let i = 0; i < input.length; i++) {
-    const char = input.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0;
-  }
-  return `sha256:${Math.abs(hash).toString(16).padStart(8, '0')}`;
 }
 
 export function normalizeRequest(rawRequest: string): string {
@@ -161,7 +149,7 @@ export function parseConstraints(normalizedRequest: string): string[] {
 }
 
 export function extractRequestedOutcome(normalizedRequest: string): string | null {
-  const labels = /(?:requested outcome|requested deliverable|resultado esperado|entreg[aá]vel|definition of done|acceptance criteria|crit[eé]rios de aceite)\s*[:\-]\s*(.*)/i;
+  const labels = /(?:requested outcome|requested deliverable|resultado esperado|entreg[aá]vel|definition of done|acceptance criteria|crit[eé]rios de aceite)\s*[:\\-]\s*(.*)/i;
   for (const line of normalizedRequest.split('\n')) {
     const match = line.match(labels);
     const value = match?.[1]?.trim();

@@ -38,7 +38,9 @@ export type PreflightFailureCategory =
   | 'CAPABILITY_UNAVAILABLE'
   | 'CAPABILITY_TIMEOUT';
 
-export type PreflightStatus = 'COMPLETED' | 'PARTIAL' | 'FAILED';
+export type PreflightStatus = 'COMPLETED' | 'READY' | 'BLOCKED' | 'FAILED';
+
+export type PreflightGateStatus = 'READY' | 'BLOCKED' | 'WAIVED';
 
 export interface PreflightCategoryResult {
   category: PreflightCategory;
@@ -50,6 +52,7 @@ export interface PreflightCategoryResult {
 export interface PreflightResult {
   version: typeof PREFLIGHT_VERSION;
   status: PreflightStatus;
+  gateStatus: PreflightGateStatus;
   findings: PreflightFinding[];
   failures: PreflightFailure[];
   warnings: string[];
@@ -145,16 +148,21 @@ export class StructuredPreflight implements Preflight {
       (f) => f.category === 'CAPABILITY_UNAVAILABLE' || f.category === 'RESEARCH_UNAVAILABLE' || f.category === 'CAPABILITY_TIMEOUT' || f.category === 'RESEARCH_TIMEOUT' || f.category === 'CONFLICTING_INFORMATION',
     );
 
-    const findings = categoryResults.flatMap((result) => result.findings);
+  const findings = categoryResults.flatMap((result) => result.findings);
     const status: PreflightStatus = hasCapabilityFailure
       ? 'FAILED'
-      : failures.length === 0
-        ? 'COMPLETED'
-        : 'PARTIAL';
+      : categoryResults.length === 0
+        ? 'FAILED'
+        : failures.length === 0 && categoryResults.every((r) => r.status === 'COMPLETED')
+          ? 'COMPLETED'
+          : 'BLOCKED';
+
+    const gateStatus: PreflightGateStatus = computeGateStatus(status, categoryResults, failures);
 
     return {
       version: PREFLIGHT_VERSION,
       status,
+      gateStatus,
       findings,
       failures,
       warnings,
@@ -192,10 +200,10 @@ export class StructuredPreflight implements Preflight {
         for (const query of queries) {
           const ac = new AbortController();
           const result = await withTimeout(
-            () => this.dependencies.externalResearcher!.research(
+            (signal) => this.dependencies.externalResearcher!.research(
               query,
               context,
-              { signal: ac.signal },
+              { signal },
             ),
             effectiveTimeout,
             'RESEARCH_TIMEOUT',
@@ -235,6 +243,7 @@ export class StructuredPreflight implements Preflight {
         () => capability(intake, context),
         effectiveTimeout,
         'CAPABILITY_TIMEOUT',
+        () => { /* abort signal already handled in operation */ },
       );
       if (findings.length === 0) {
         return this.failed(category, {
@@ -323,32 +332,61 @@ class CapabilityTimeoutError extends Error {
 }
 
 async function withTimeout<T>(
-  operation: () => Promise<T>,
+  operation: (signal: AbortSignal) => Promise<T>,
   timeoutMs: number | undefined,
   timeoutCategory: PreflightFailureCategory,
   onTimeout?: () => void,
 ): Promise<T> {
-  if (!timeoutMs || timeoutMs <= 0) return operation();
+  if (!timeoutMs || timeoutMs <= 0) return operation(new AbortController().signal);
   return new Promise<T>((resolve, reject) => {
+    const ac = new AbortController();
     let settled = false;
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
+      ac.abort();
       if (onTimeout) onTimeout();
       reject(new CapabilityTimeoutError(timeoutCategory));
     }, timeoutMs);
-    operation()
+    operation(ac.signal)
       .then((value) => {
         if (settled) return;
+        // se operação completou antes do timeout, cancelar timer e liberar signal
         settled = true;
         clearTimeout(timer);
+        ac.abort(); // liberar recurso
         resolve(value);
       })
       .catch((error: unknown) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        ac.abort(); // liberar recurso
         reject(error);
       });
   });
+}
+
+export interface PreflightWaiver {
+  reason: string;
+  grantedAt: string;
+  grantedBy: string;
+  auditTrail?: string[];
+}
+
+export function computeGateStatus(
+  preflightStatus: PreflightStatus,
+  categoryResults: PreflightCategoryResult[],
+  failures: PreflightFailure[],
+  waiver?: PreflightWaiver,
+): PreflightGateStatus {
+  if (waiver && waiver.reason.trim().length > 0 && waiver.grantedBy.trim().length > 0) {
+    return 'WAIVED';
+  }
+  if (failures.length > 0) return 'BLOCKED';
+  if (preflightStatus === 'FAILED') return 'BLOCKED';
+  if (categoryResults.length === 0) return 'BLOCKED';
+  if (categoryResults.some((r) => r.status === 'FAILED')) return 'BLOCKED';
+  if (!categoryResults.every((r) => r.status === 'COMPLETED')) return 'BLOCKED';
+  return 'READY';
 }

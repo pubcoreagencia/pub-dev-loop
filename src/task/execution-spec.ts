@@ -1,4 +1,17 @@
+import { stableHash } from './hash.js';
 import type { ContextBundle } from './context-discovery.js';
+import type {
+  RepositoryTarget,
+  ProviderConstraints,
+  ResourceLimits,
+  EvidenceSnapshot,
+  GovernanceLevel,
+  PermissionSet,
+  TrustBoundary,
+} from './trust-contracts.js';
+
+export type Evidence = import('./trust-contracts.js').Evidence;
+export type ExecutionInstruction = import('./trust-contracts.js').ExecutionInstruction;
 
 export const EXECUTION_SPEC_VERSION = '1.0.0' as const;
 export type ExecutionSpecVersion = typeof EXECUTION_SPEC_VERSION;
@@ -39,6 +52,9 @@ export interface ExecutionSpecMetadata {
   specHash: string;
 }
 
+// Re-exported from trust-contracts.ts for pipeline integration (non-conflicting aliasing)
+export type SnapshotEvidenceSnapshot = import('./trust-contracts.js').EvidenceSnapshot;
+
 export interface ExecutionSpec {
   specVersion: ExecutionSpecVersion;
   objective: string;
@@ -52,6 +68,12 @@ export interface ExecutionSpec {
   escalationConditions: KnownOrUnknown<string[]>;
   lineage: TaskLineage;
   metadata: ExecutionSpecMetadata;
+  repositoryTarget?: KnownOrUnknown<RepositoryTarget>;
+  providerConstraints?: KnownOrUnknown<ProviderConstraints>;
+  resourceLimits?: KnownOrUnknown<ResourceLimits>;
+  evidenceSnapshot?: KnownOrUnknown<SnapshotEvidenceSnapshot>;
+  governanceLevel?: GovernanceLevel;
+  permissions?: PermissionSet;
 }
 
 export type ExecutionSpecErrorCategory =
@@ -168,15 +190,6 @@ export function isExecutionSpecValue(value: unknown): value is ExecutionSpec {
   }
 
   return true;
-}
-
-export function stableHash(value: string): string {
-  let hash = 2_166_136_261;
-  for (let index = 0; index < value.length; index++) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16_777_619);
-  }
-  return `pdl-v1:${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

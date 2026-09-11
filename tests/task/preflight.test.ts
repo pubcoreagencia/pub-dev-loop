@@ -70,7 +70,7 @@ describe('Preflight', () => {
       });
     });
 
-    it('should return PARTIAL when some categories return empty results', async () => {
+    it('should return BLOCKED when some categories return empty results (PARTIAL=BLOCKED)', async () => {
       mockDependencies.repositoryInspector = { inspect: vi.fn().mockResolvedValue([]) };
       mockDependencies.documentationLookup = { lookup: vi.fn().mockResolvedValue([
         { category: 'DOCUMENTATION_LOOKUP' as PreflightCategory, key: 'guide', value: 'User guide', source: 'docs', confidence: 'HIGH' }
@@ -82,7 +82,7 @@ describe('Preflight', () => {
         { categories: ['REPOSITORY_INSPECTION', 'DOCUMENTATION_LOOKUP'] }
       );
 
-      expect(result.status).toBe('PARTIAL');
+      expect(result.status).toBe('BLOCKED');
       expect(result.failures).toHaveLength(1);
       expect(result.failures[0]).toMatchObject({
         category: 'EMPTY_RESULT',
@@ -91,6 +91,7 @@ describe('Preflight', () => {
       });
       expect(result.warnings).toContain('Preflight category REPOSITORY_INSPECTION returned no findings');
       expect(result.findings).toHaveLength(1);
+      expect(result.gateStatus).toBe('BLOCKED');
     });
 
     it('should return FAILED when a category capability throws', async () => {
