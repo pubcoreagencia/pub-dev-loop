@@ -257,6 +257,9 @@ export class RouterWorker extends BaseWorker {
     repository: string,
     prepared?: PreparedExecution,
   ): Promise<AttemptResult> {
+    if (!prepared) {
+      throw new Error('RouterWorker: PreparedExecution is required; execution without sealed ExecutionSpec is prohibited');
+    }
     this.active = true;
     let effectiveTask = await enrichDeveloperTaskWithMemory(task);
     effectiveTask = await enrichArchitectTaskWithMemory(effectiveTask);
@@ -404,26 +407,24 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
             toolRounds: 0,
             httpStatus: undefined,
           };
-          if (prepared) {
-            attemptExecutionResult = {
-              execution: {
-                status: 'FAILED',
-                provider: provider.kind,
-                model: provider.model,
-                workspace: repo,
-                changedFiles: [],
-                durationMs: Date.now() - globalStart,
-                errorCode: 'ROUTER_TIMEOUT',
-                errorMessage: 'Remaining budget exhausted before provider execution',
-              },
-              finalization: undefined,
-              specIdentity: {
-                specVersion: prepared.executionSpec.specVersion,
-                taskId: task.id,
-                lineage: prepared.executionSpec.lineage,
-              },
-            };
-          }
+          attemptExecutionResult = {
+            execution: {
+              status: 'FAILED',
+              provider: provider.kind,
+              model: provider.model,
+              workspace: repo,
+              changedFiles: [],
+              durationMs: Date.now() - globalStart,
+              errorCode: 'ROUTER_TIMEOUT',
+              errorMessage: 'Remaining budget exhausted before provider execution',
+            },
+            finalization: undefined,
+            specIdentity: {
+              specVersion: prepared.executionSpec.specVersion,
+              taskId: task.id,
+              lineage: prepared.executionSpec.lineage,
+            },
+          };
         } else {
           let timeoutTimer: NodeJS.Timeout | undefined;
           let capturedSubResult: ProviderTaskResult | undefined;
@@ -484,67 +485,24 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
             },
           };
 
-          if (prepared) {
-            const engine = new DefaultExecutionEngine(attemptProvider);
-            const attemptTask: Task = { ...effectiveTask, workspacePath: repo };
-            attemptExecutionResult = await engine.execute(attemptTask, prepared.executionSpec);
-            subResult = capturedSubResult ?? {
-              status: attemptExecutionResult.execution.status === 'COMPLETED' ? 'COMPLETED' : 'FAILED',
-              provider: provider.kind,
-              model: provider.model,
-              exitCode: attemptExecutionResult.execution.status === 'COMPLETED' ? 0 : 1,
-              durationMs: attemptExecutionResult.execution.durationMs,
-              stdout: '',
-              stderr: attemptExecutionResult.execution.errorMessage || '',
-              changedFiles: attemptExecutionResult.execution.changedFiles,
-              commit: null,
-              errorCode: attemptExecutionResult.execution.errorCode,
-              errorMessage: attemptExecutionResult.execution.errorMessage,
-              toolCalls: 0,
-              toolRounds: 0,
-            };
-          } else {
-            try {
-              const taskWithInstructions: ProviderTaskInput = {
-                ...effectiveTask,
-                systemInstructions: [...PDL_SYSTEM_INSTRUCTIONS],
-              };
-              subResult = await Promise.race([
-                provider.execute(taskWithInstructions, repo, {
-                  signal: attemptController.signal,
-                  consumer: attemptSink,
-                }),
-                new Promise<ProviderTaskResult>((_, reject) => {
-                  timeoutTimer = setTimeout(() => {
-                    attemptController.abort();
-                    reject(new Error('Provider timeout after ' + effectiveTimeout + 'ms'));
-                  }, effectiveTimeout);
-                }),
-              ]);
-            } catch (error: any) {
-              subResult = {
-                status: 'ROUTER_TIMEOUT',
-                provider: provider.kind,
-                model: provider.model,
-                exitCode: null,
-                durationMs: Date.now() - globalStart,
-                stdout: '',
-                stderr: error?.message || 'Provider timeout or cancelled',
-                changedFiles: [],
-                commit: null,
-                errorCode: 'ROUTER_TIMEOUT',
-                errorMessage: error?.message || 'Provider timeout or cancelled',
-                toolCalls: 0,
-                toolRounds: 0,
-                httpStatus: undefined,
-              };
-            } finally {
-              if (timeoutTimer) clearTimeout(timeoutTimer);
-              if (this.currentAttemptController === attemptController) {
-                this.currentAttemptController = undefined;
-              }
-            }
-          }
+          const engine = new DefaultExecutionEngine(attemptProvider);
+          const attemptTask: Task = { ...effectiveTask, workspacePath: repo };
+          attemptExecutionResult = await engine.execute(attemptTask, prepared.executionSpec);
+          subResult = capturedSubResult ?? {
+            status: attemptExecutionResult.execution.status === 'COMPLETED' ? 'COMPLETED' : 'FAILED',
+            provider: provider.kind,
+            model: provider.model,
+            exitCode: attemptExecutionResult.execution.status === 'COMPLETED' ? 0 : 1,
+            durationMs: attemptExecutionResult.execution.durationMs,
+            stdout: '',
+            stderr: attemptExecutionResult.execution.errorMessage || '',
+            changedFiles: attemptExecutionResult.execution.changedFiles,
+            commit: null,
+            errorCode: attemptExecutionResult.execution.errorCode,
+            errorMessage: attemptExecutionResult.execution.errorMessage,
+            toolCalls: 0,
+            toolRounds: 0,
+          };
         }
 
         // Collect attempt trace

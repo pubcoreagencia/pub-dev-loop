@@ -8,6 +8,8 @@ import type { PpTaskRepository } from './pp/domain/domain.js';
 import type { PrototypeEventPublisher } from './pp/events/events.js';
 import { PrototypeWorker } from './pp/worker/prototype-worker.js';
 
+import type { ExecutionSpecDatabase } from './execution/execution-spec-persistence.js';
+
 /**
  * @deprecated [DEPRECATED na Fase 2 do Desacoplamento PDL × PP]
  * ModeAwareWorker acoplava rigidamente o ciclo de vida do PP (PrototypeWorker)
@@ -28,10 +30,12 @@ export class ModeAwareWorker {
     provider: AgentProvider,
     events: PrototypeEventPublisher,
     ppTasks?: PpTaskRepository,
+    executionSpecDb?: ExecutionSpecDatabase,
   ) {
-    const ppRepo = ppTasks ?? new PostgresPpTaskRepository((tasks as any).pool);
+    const pool = (tasks as any).pool;
+    const ppRepo = ppTasks ?? new PostgresPpTaskRepository(pool);
     this.prototype = new PrototypeWorker(ppRepo, prototypes, provider, events);
-    this.development = new RouterWorker(tasks, provider, 'router');
+    this.development = new RouterWorker(tasks, provider, 'router', undefined, executionSpecDb ?? pool);
   }
 
   status(): string { return this.state; }

@@ -87,15 +87,45 @@ export class DefaultExecutionEngine implements ExecutionEngine {
     throw new Error('ExecutionEngine: No execution workspace defined on task or repositoryTarget');
   }
 
-  private buildProviderInput(task: Task, spec: ExecutionSpec): ProviderTaskInput {
+  public buildProviderInput(task: Task, spec: ExecutionSpec): ProviderTaskInput {
     const target = spec.repositoryTarget && !isExplicitUnknown(spec.repositoryTarget)
       ? spec.repositoryTarget
       : undefined;
 
+    let enrichedPrompt = task.prompt ?? '';
+    const sections: string[] = [];
+
+    const constraints = spec.constraints && !isExplicitUnknown(spec.constraints) && Array.isArray(spec.constraints)
+      ? spec.constraints
+      : [];
+    if (constraints.length > 0) {
+      sections.push('### Constraints\n' + constraints.map(c => `- ${c}`).join('\n'));
+    }
+
+    const acceptanceCriteria = spec.acceptanceCriteria && !isExplicitUnknown(spec.acceptanceCriteria) && Array.isArray(spec.acceptanceCriteria)
+      ? spec.acceptanceCriteria
+      : [];
+    if (acceptanceCriteria.length > 0) {
+      sections.push('### Acceptance Criteria\n' + acceptanceCriteria.map(ac => `- ${ac}`).join('\n'));
+    }
+
+    const validationPlan = spec.validationPlan && !isExplicitUnknown(spec.validationPlan) && Array.isArray(spec.validationPlan)
+      ? spec.validationPlan
+      : [];
+    if (validationPlan.length > 0) {
+      sections.push('### Validation Plan\n' + validationPlan.map(vp => `- ${vp}`).join('\n'));
+    }
+
+    if (sections.length > 0) {
+      enrichedPrompt = enrichedPrompt.length > 0
+        ? `${enrichedPrompt}\n\n${sections.join('\n\n')}`
+        : sections.join('\n\n');
+    }
+
     return {
       id: task.id,
       objective: spec.objective || task.objective,
-      prompt: task.prompt,
+      prompt: enrichedPrompt,
       project: task.project,
       repository: target?.remote || task.repository,
       branch: target?.branch || task.branch,

@@ -85,10 +85,10 @@ export function createProductionWorker(): BaseWorker | ModeAwareWorker {
     const provider = createProvider(providerName);
     const prototypes = new PostgresPrototypeRepository(pool);
     const events = new PostgresPrototypeEventPublisher(pool);
-    return new ModeAwareWorker(tasks, prototypes, provider, events);
+    return new ModeAwareWorker(tasks, prototypes, provider, events, undefined, pool);
   }
 
-  return new CodexWorker(tasks, createAgent());
+  return new CodexWorker(tasks, createAgent(), 'codex', pool);
 }
 
 const currentFile = fileURLToPath(import.meta.url);

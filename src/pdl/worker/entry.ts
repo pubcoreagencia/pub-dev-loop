@@ -18,10 +18,10 @@ export function createPdlWorkerDaemon(pool: Pool): BaseWorker {
 
   if (providerName) {
     const provider = createProvider(providerName);
-    return new RouterWorker(tasks, provider, 'pdl-router');
+    return new RouterWorker(tasks, provider, 'pdl-router', undefined, pool);
   }
 
-  return new CodexWorker(tasks, createAgent());
+  return new CodexWorker(tasks, createAgent(), 'codex', pool);
 }
 
 export function startPdlHealthServer(port = PORT): http.Server {
