@@ -15,6 +15,8 @@ import { resolveContext } from '../../office/context-resolver.js';
 import { TaskIntakeService } from '../service/task-intake-service.js';
 import { TaskIntakeError } from '../../task/intake.js';
 import { ExecutionSpecValidationError } from '../../task/spec-validator.js';
+import { PdlTaskIngestionAdapter } from '../handoff/adapter.js';
+import type { PdlTaskIngestionRequest } from '../handoff/types.js';
 
 export const createPdlApp = (
   pool?: Pool,
@@ -96,6 +98,53 @@ export const createPdlApp = (
       return res.status(500).json({
         error: 'Failed to process task intake due to database transaction error',
       });
+    }
+  });
+
+  // POST /tasks/ingest — Canonical Handoff Ingestion Boundary (Phase 3E)
+  app.post('/tasks/ingest', async (req, res, next) => {
+    try {
+      const body = req.body as PdlTaskIngestionRequest;
+      if (!body || typeof body !== 'object') {
+        return res.status(400).json({ error: 'Request body is required' });
+      }
+
+      const requiredFields: (keyof PdlTaskIngestionRequest)[] = [
+        'project',
+        'repository',
+        'branch',
+        'checkpointSha',
+        'promotionId',
+        'prototypeSessionId',
+        'objective',
+        'prompt',
+      ];
+
+      for (const field of requiredFields) {
+        if (!body[field] || typeof body[field] !== 'string' || !body[field].trim()) {
+          return res.status(400).json({ error: `Missing or invalid required field: ${field}` });
+        }
+      }
+
+      const adapter = new PdlTaskIngestionAdapter(taskRepo, intakeService);
+      const result = await adapter.ingest(body);
+      return res.status(201).json(result);
+    } catch (err: any) {
+      if (err instanceof TaskIntakeError || err?.code === 'INVALID_TASK' || err?.name === 'TaskIntakeError') {
+        return res.status(400).json({ error: err.message });
+      }
+      if (
+        err instanceof ExecutionSpecValidationError ||
+        err?.code === 'VALIDATION_FAILED' ||
+        err?.name === 'ExecutionSpecValidationError' ||
+        err?.message?.includes('validation failed')
+      ) {
+        return res.status(422).json({
+          error: err.message,
+          details: err.issues ?? [],
+        });
+      }
+      return next(err);
     }
   });
 

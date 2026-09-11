@@ -30,12 +30,15 @@ export class PdlTaskIngestionAdapter implements PdlTaskIngestionPort {
 
   async ingest(request: PdlTaskIngestionRequest): Promise<PdlTaskIngestionResult> {
     const existingList = typeof this.tasks.list === 'function' ? await this.tasks.list() : [];
-    const existing = existingList.find(t =>
-      t.branch === request.branch &&
-      ((((t.result as Record<string, unknown> | null))?.promotionId === request.promotionId) ||
-       (((t.result as Record<string, unknown> | null))?.prototypeSessionId === request.prototypeSessionId) ||
-       /Prototype/i.test(t.objective))
-    );
+    const existing = existingList.find(t => {
+      const res = t.result as Record<string, unknown> | null;
+      if (res?.promotionId && res.promotionId === request.promotionId) return true;
+      if (t.branch === request.branch) {
+        if (res?.prototypeSessionId === request.prototypeSessionId) return true;
+        if (t.prototypeSessionId === request.prototypeSessionId) return true;
+      }
+      return false;
+    });
 
     if (existing) {
       return {
@@ -45,7 +48,7 @@ export class PdlTaskIngestionAdapter implements PdlTaskIngestionPort {
         status: existing.status,
         branch: existing.branch,
         repository: existing.repository,
-        prototypeSessionId: existing.prototypeSessionId,
+        prototypeSessionId: existing.prototypeSessionId ?? (existing.result as any)?.prototypeSessionId ?? request.prototypeSessionId,
         result: existing.result,
       };
     }
@@ -75,6 +78,7 @@ export class PdlTaskIngestionAdapter implements PdlTaskIngestionPort {
 
     const updated = await this.tasks.update(created.id, {
       branch: request.branch,
+      prototypeSessionId: request.prototypeSessionId,
       result: resultPayload,
     });
 
