@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { Task } from '../src/domain.js';
-import type { PrototypeSession, PrototypePromotion } from '../src/prototype/domain.js';
-import { PrototypeHandoffService } from '../src/prototype/handoff.js';
-import type { PrototypeEventPublisher } from '../src/prototype/events.js';
+import type { PrototypeSession, PrototypePromotion } from '../src/pp/domain/domain.js';
+import { PrototypeHandoffService } from '../src/pp/handoff/handoff.js';
+import { PdlTaskIngestionAdapter } from '../src/pdl-handoff-adapter.js';
+import type { PrototypeEventPublisher } from '../src/pp/events/events.js';
 import type { TaskRepository, PrototypeRepository } from '../src/domain.js';
 
 class InMemoryTaskRepository implements TaskRepository {
@@ -145,7 +146,7 @@ describe('PrototypeHandoffService', () => {
     tasks = new InMemoryTaskRepository();
     prototypes = new InMemoryPrototypeRepository();
     events = new FakeEventPublisher();
-    service = new PrototypeHandoffService(tasks as any, prototypes as any, events as any);
+    service = new PrototypeHandoffService(new PdlTaskIngestionAdapter(tasks), prototypes as any, events as any);
   });
 
   it('promotes READY session and creates Development Task', async () => {
@@ -195,5 +196,23 @@ describe('PrototypeHandoffService', () => {
 
     expect(second.task.id).toBe(first.task.id);
     expect(events.events.filter(e => e.type === 'PROMOTED_TO_DEVELOPMENT').length).toBe(1);
+  });
+
+  it('funciona com mock de PdlTaskIngestionPort puro provando que não depende de TaskRepository nem de Task', async () => {
+    let capturedRequest: any = null;
+    const purePort = {
+      async ingest(req: any) {
+        capturedRequest = req;
+        return { id: 'pure-task-99', taskId: 'pure-task-99', status: 'QUEUED' };
+      },
+    };
+    const isolatedService = new PrototypeHandoffService(purePort, prototypes as any, events as any);
+    const session = await prototypes.createSession({ project: 'pure', repository: 'repo', branch: 'prototype/pure/1' });
+    await prototypes.updateSession(session.id, { status: 'READY', lastCheckpointSha: 'sha999', branch: session.branch, repository: session.repository });
+
+    const res = await isolatedService.execute({ sessionId: session.id });
+    expect(res.task.taskId).toBe('pure-task-99');
+    expect(capturedRequest.promotionId).toBeDefined();
+    expect(capturedRequest.checkpointSha).toBe('sha999');
   });
 });

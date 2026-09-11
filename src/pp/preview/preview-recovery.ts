@@ -6,7 +6,7 @@ import path from 'node:path';
 import { LocalPreviewRuntime } from './local-preview-runtime.js';
 import { PublicPreviewRuntime } from './public-preview-runtime.js';
 import type { PreviewRuntime, PreviewRuntimeInfo } from './preview-runtime.js';
-import { PostgresPrototypeRepository } from './repository.js';
+import { PostgresPrototypeRepository } from '../persistence/repository.js';
 
 export interface PreviewRecoveryResult {
   sessionId: string;

@@ -23,12 +23,13 @@ import { Container, getContainer } from '@cloudflare/containers';
 import pkg from 'pg';
 const { Pool } = pkg;
 import { PostgresTaskRepository } from './repository.js';
-import { PostgresPrototypeRepository } from './prototype/repository.js';
-import { PrototypeHandoffService, type PrototypeHandoffInput } from './prototype/handoff.js';
-import { PrototypeEventStream } from './prototype/events.js';
-import { PreviewRecoveryService } from './prototype/preview-recovery.js';
-import { prototypeUiHtml } from './prototype/ui.js';
-import { prototypeHistoryUiScript } from './prototype/history-ui.js';
+import { PostgresPrototypeRepository } from './pp/persistence/repository.js';
+import { PrototypeHandoffService, type PrototypeHandoffInput } from './pp/handoff/handoff.js';
+import { PdlTaskIngestionAdapter } from './pdl-handoff-adapter.js';
+import { PrototypeEventStream } from './pp/events/events.js';
+import { PreviewRecoveryService } from './pp/preview/preview-recovery.js';
+import { prototypeUiHtml } from './pp/ui/ui.js';
+import { prototypeHistoryUiScript } from './pp/ui/history-ui.js';
 import { defaultAgentRegistry, isValidAgentId } from './office/registry.js';
 import { defaultOfficeOrganization } from './office/organization.js';
 import { createOrganizationalPlan, planStepToTask } from './office/planning.js';
@@ -3964,7 +3965,7 @@ ${d.commits.slice(0, 3).join('\n') || '- Repositório sincronizado na branch pri
         const prototypes = getPrototypesRepository(env);
         const tasks = getRepository(env);
         const events = new PrototypeEventStream();
-        const handoff = new PrototypeHandoffService(tasks, prototypes, events);
+        const handoff = new PrototypeHandoffService(new PdlTaskIngestionAdapter(tasks), prototypes, events);
 
         try {
           const result = await handoff.execute({

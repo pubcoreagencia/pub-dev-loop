@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PrototypeSseBroker } from '../src/prototype/sse.js';
+import { PrototypeSseBroker } from '../src/pp/events/sse.js';
 
 class FakeResponse {
   chunks: string[] = [];

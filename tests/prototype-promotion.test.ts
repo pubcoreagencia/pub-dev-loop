@@ -5,10 +5,10 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import http from 'node:http';
 import type { Task } from '../src/domain.js';
-import type { PrototypeSession, PrototypePromotion } from '../src/prototype/domain.js';
+import type { PrototypeSession, PrototypePromotion } from '../src/pp/domain/domain.js';
 import type { AgentProvider, ProviderTaskResult } from '../src/providers/types.js';
 import { PostgresTaskRepository } from '../src/repository.js';
-import { PostgresPrototypeRepository } from '../src/prototype/repository.js';
+import { PostgresPrototypeRepository } from '../src/pp/persistence/repository.js';
 import { RouterWorker } from '../src/router-worker.js';
 import { createApp } from '../src/api.js';
 

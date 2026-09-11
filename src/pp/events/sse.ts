@@ -1,5 +1,5 @@
 import type { Response } from 'express';
-import type { PrototypeEvent } from './domain.js';
+import type { PrototypeEvent } from '../domain/domain.js';
 
 /**
  * Session-scoped SSE broker.

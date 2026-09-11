@@ -4,13 +4,13 @@ import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { PrototypeWorker } from '../src/prototype-worker.js';
-import { CorrectionController } from '../src/correction-controller.js';
-import { PrototypeEventStream } from '../src/prototype/events.js';
+import { PrototypeWorker } from '../src/pp/worker/prototype-worker.js';
+import { CorrectionController } from '../src/pp/worker/correction-controller.js';
+import { PrototypeEventStream } from '../src/pp/events/events.js';
 import { WorkspaceValidator } from '../src/finalizer.js';
 import type { Task } from '../src/domain.js';
 import type { AgentProvider, ProviderTaskResult } from '../src/providers/types.js';
-import type { PreviewRuntime, PreviewRuntimeInfo } from '../src/prototype/preview-runtime.js';
+import type { PreviewRuntime, PreviewRuntimeInfo } from '../src/pp/preview/preview-runtime.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

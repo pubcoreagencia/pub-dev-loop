@@ -2,10 +2,21 @@ import type { AgentProvider } from './providers/types.js';
 import type { BaseWorker } from './worker-service.js';
 import { RouterWorker } from './router-worker.js';
 import { PostgresTaskRepository } from './repository.js';
-import { PostgresPrototypeRepository } from './prototype/repository.js';
-import type { PrototypeEventPublisher } from './prototype/events.js';
-import { PrototypeWorker } from './prototype-worker.js';
+import { PostgresPrototypeRepository } from './pp/persistence/repository.js';
+import { PostgresPpTaskRepository } from './pp/persistence/task-repository.js';
+import type { PpTaskRepository } from './pp/domain/domain.js';
+import type { PrototypeEventPublisher } from './pp/events/events.js';
+import { PrototypeWorker } from './pp/worker/prototype-worker.js';
 
+/**
+ * @deprecated [DEPRECATED na Fase 2 do Desacoplamento PDL × PP]
+ * ModeAwareWorker acoplava rigidamente o ciclo de vida do PP (PrototypeWorker)
+ * com o PDL (RouterWorker).
+ * 
+ * Utilize os entrypoints dedicados e desacoplados:
+ * - Para o PUB Prototype: `src/pp-worker-entry.ts` (npm run pp:worker)
+ * - Para o PUB Development Loop: `src/pdl-worker-entry.ts` (npm run pdl:worker)
+ */
 export class ModeAwareWorker {
   readonly prototype: PrototypeWorker;
   readonly development: RouterWorker;
@@ -16,8 +27,10 @@ export class ModeAwareWorker {
     prototypes: PostgresPrototypeRepository,
     provider: AgentProvider,
     events: PrototypeEventPublisher,
+    ppTasks?: PpTaskRepository,
   ) {
-    this.prototype = new PrototypeWorker(tasks, prototypes, provider, events);
+    const ppRepo = ppTasks ?? new PostgresPpTaskRepository((tasks as any).pool);
+    this.prototype = new PrototypeWorker(ppRepo, prototypes, provider, events);
     this.development = new RouterWorker(tasks, provider, 'router');
   }
 

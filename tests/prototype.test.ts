@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { PrototypeEventStream } from '../src/prototype/events.js';
-import { PROTOTYPE_MODES, PROTOTYPE_SESSION_STATUSES } from '../src/prototype/domain.js';
-import { PREVIEW_RUNTIME_STATUSES } from '../src/prototype/preview-runtime.js';
+import { PrototypeEventStream } from '../src/pp/events/events.js';
+import { PROTOTYPE_MODES, PROTOTYPE_SESSION_STATUSES } from '../src/pp/domain/domain.js';
+import { PREVIEW_RUNTIME_STATUSES } from '../src/pp/preview/preview-runtime.js';
 
 describe('Prototype Mode contracts', () => {
   it('defines explicit prototype and development modes', () => {

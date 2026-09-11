@@ -1,7 +1,7 @@
 // tests/event-bridge-compatibility.test.ts
 import { describe, it, expect, vi } from 'vitest';
-import { PrototypeEventStream } from '../src/prototype/events.js';
-import { OperationalEventBridge } from '../src/prototype/bridge.js';
+import { PrototypeEventStream } from '../src/pp/events/events.js';
+import { OperationalEventBridge } from '../src/pp/events/bridge.js';
 
 describe('P5.5 — Event Bridge: Legacy Compatibility & Non-Streaming Fallback', () => {
   it('1. coexists cleanly with direct legacy event emissions on PrototypeEventStream', async () => {
@@ -57,7 +57,7 @@ describe('P5.5 — Event Bridge: Legacy Compatibility & Non-Streaming Fallback',
   });
 
   it('2. persistent idempotency: prevents duplicate database insertion across process instances', async () => {
-    const { PostgresPrototypeEventPublisher } = await import('../src/prototype/events.js');
+    const { PostgresPrototypeEventPublisher } = await import('../src/pp/events/events.js');
     const insertedRows: any[] = [];
     const uniqueKeys = new Set<string>();
 

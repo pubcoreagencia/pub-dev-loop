@@ -5,7 +5,7 @@ import net from 'node:net';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { LocalPreviewRuntime } from '../src/prototype/local-preview-runtime.js';
+import { LocalPreviewRuntime } from '../src/pp/preview/local-preview-runtime.js';
 
 const runningRuntimes: Array<{ runtime: LocalPreviewRuntime; id: string }> = [];
 

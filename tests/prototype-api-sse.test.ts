@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { PrototypeEventStream } from '../src/prototype/events.js';
-import { PrototypeSseBroker } from '../src/prototype/sse.js';
+import { PrototypeEventStream } from '../src/pp/events/events.js';
+import { PrototypeSseBroker } from '../src/pp/events/sse.js';
 
 class FakeResponse {
   headers = new Map<string, string>();

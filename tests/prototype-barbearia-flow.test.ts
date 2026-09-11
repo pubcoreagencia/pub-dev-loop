@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import type { Task, CreateTask } from '../src/domain.js';
-import type { PrototypeSession, CreatePrototypeSession, PrototypeCheckpoint } from '../src/prototype/domain.js';
+import type { PrototypeSession, CreatePrototypeSession, PrototypeCheckpoint } from '../src/pp/domain/domain.js';
 import type { AgentProvider, ProviderTaskResult } from '../src/providers/types.js';
-import { PrototypeEventStream } from '../src/prototype/events.js';
-import { LocalPreviewRuntime } from '../src/prototype/local-preview-runtime.js';
-import { PrototypeWorker } from '../src/prototype-worker.js';
+import { PrototypeEventStream } from '../src/pp/events/events.js';
+import { LocalPreviewRuntime } from '../src/pp/preview/local-preview-runtime.js';
+import { PrototypeWorker } from '../src/pp/worker/prototype-worker.js';
 import { PostgresTaskRepository } from '../src/repository.js';
-import { PostgresPrototypeRepository } from '../src/prototype/repository.js';
+import { PostgresPrototypeRepository } from '../src/pp/persistence/repository.js';
 
 function git(args: string[], cwd: string): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });

@@ -21,7 +21,7 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 // Now import the service
-import { PreviewRecoveryService } from '../src/prototype/preview-recovery.js';
+import { PreviewRecoveryService } from '../src/pp/preview/preview-recovery.js';
 
 // Mock PostgresPrototypeRepository (still constructed normally)
 const createMockPrototypes = () => {

@@ -6,8 +6,8 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createProvider, createAgent } from './agent.js';
 import { PostgresTaskRepository } from './repository.js';
-import { PostgresPrototypeRepository } from './prototype/repository.js';
-import { PostgresPrototypeEventPublisher } from './prototype/events.js';
+import { PostgresPrototypeRepository } from './pp/persistence/repository.js';
+import { PostgresPrototypeEventPublisher } from './pp/events/events.js';
 import { CodexWorker, BaseWorker } from './worker-service.js';
 import { ModeAwareWorker } from './mode-aware-worker.js';
 import { cleanupOrphanWorkspaces } from './workspace-cleanup.js';
@@ -129,8 +129,8 @@ function startHealthServer(port = Number(process.env.PORT ?? 3000)): http.Server
             return;
           }
 
-          const { PreviewRecoveryService } = await import('./prototype/preview-recovery.js');
-          const { PostgresPrototypeRepository } = await import('./prototype/repository.js');
+          const { PreviewRecoveryService } = await import('./pp/preview/preview-recovery.js');
+          const { PostgresPrototypeRepository } = await import('./pp/persistence/repository.js');
           const pg = await import('pg');
 
           // Get database connection from env

@@ -1,7 +1,7 @@
 // tests/event-bridge-mapping.test.ts
 import { describe, it, expect, vi } from 'vitest';
-import { OperationalEventBridge, OPERATIONAL_TO_PROTOTYPE_EVENT_MAP } from '../src/prototype/bridge.js';
-import type { PrototypeEventPublisher, PrototypeEventInput } from '../src/prototype/events.js';
+import { OperationalEventBridge, OPERATIONAL_TO_PROTOTYPE_EVENT_MAP } from '../src/pp/events/bridge.js';
+import type { PrototypeEventPublisher, PrototypeEventInput } from '../src/pp/events/events.js';
 import type { OperationalEventEnvelope } from '../src/providers/streaming/types.js';
 
 describe('P5.5 — OperationalEventBridge: Mapping & Sanitization', () => {

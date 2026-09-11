@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
-import { PostgresPrototypeEventPublisher } from '../src/prototype/events.js';
+import { PostgresPrototypeEventPublisher } from '../src/pp/events/events.js';
 
 describe('PostgresPrototypeEventPublisher', () => {
   let pool: Pool;

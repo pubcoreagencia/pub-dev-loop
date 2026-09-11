@@ -4,8 +4,8 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { PrototypeEventStream } from '../src/prototype/events.js';
-import { LocalPreviewRuntime } from '../src/prototype/local-preview-runtime.js';
+import { PrototypeEventStream } from '../src/pp/events/events.js';
+import { LocalPreviewRuntime } from '../src/pp/preview/local-preview-runtime.js';
 
 const running: Array<{ runtime: LocalPreviewRuntime; id: string; workspace: string }> = [];
 

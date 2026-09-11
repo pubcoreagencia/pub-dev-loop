@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import path from 'node:path';
-import { PrototypeWorker } from '../src/prototype-worker.js';
+import { PrototypeWorker } from '../src/pp/worker/prototype-worker.js';
 import type { AgentProvider, ProviderTaskResult } from '../src/providers/types.js';
-import type { PrototypeEventPublisher, PrototypeEventInput } from '../src/prototype/events.js';
+import type { PrototypeEventPublisher, PrototypeEventInput } from '../src/pp/events/events.js';
 import type { Task } from '../src/domain.js';
 
 

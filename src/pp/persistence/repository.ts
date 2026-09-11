@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
-import type { CreatePrototypeSession, PrototypeCheckpoint, PrototypeSession, PrototypeSessionStatus, PrototypeMode, PrototypePromotion, PrototypeMessage } from './domain.js';
+import type { CreatePrototypeSession, PrototypeCheckpoint, PrototypeSession, PrototypeSessionStatus, PrototypeMode, PrototypePromotion, PrototypeMessage } from '../domain/domain.js';
 
 const mapSession = (r: Record<string, unknown>): PrototypeSession => ({
   id: r.id as string,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { prototypeUiHtml } from '../src/prototype/ui.js';
+import { prototypeUiHtml } from '../src/pp/ui/ui.js';
 
 describe('P1.1 — Preview Lifecycle State Machine', () => {
   const html = prototypeUiHtml();

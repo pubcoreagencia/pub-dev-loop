@@ -1,18 +1,27 @@
+/**
+ * @deprecated [DEPRECATED na Fase 3 do Desacoplamento PDL × PP]
+ * src/api.ts acoplava as rotas e inicializações de ambos os runtimes no mesmo Express.
+ * 
+ * Utilize os entrypoints dedicados:
+ * - PUB Prototype API: `src/pp-api-entry.ts` (npm run pp:api, porta 3001)
+ * - PUB Development Loop API: `src/pdl-api-entry.ts` (npm run pdl:api, porta 3000)
+ */
 import 'dotenv/config';
 import express from 'express';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Pool } from 'pg';
 import { PostgresTaskRepository } from './repository.js';
-import { PostgresPrototypeRepository } from './prototype/repository.js';
-import { PrototypeEventStream, PostgresPrototypeEventBridge } from './prototype/events.js';
-import { PrototypeSseBroker } from './prototype/sse.js';
-import { prototypeUiHtml } from './prototype/ui.js';
-import { prototypeHistoryUiScript } from './prototype/history-ui.js';
-import { PrototypeComparisonPreviewManager } from './prototype/comparison-preview.js';
-import { LocalPreviewRuntime } from './prototype/local-preview-runtime.js';
-import { PublicPreviewRuntime } from './prototype/public-preview-runtime.js';
-import { PrototypeHandoffService, type PrototypeHandoffInput } from './prototype/handoff.js';
+import { PostgresPrototypeRepository } from './pp/persistence/repository.js';
+import { PrototypeEventStream, PostgresPrototypeEventBridge } from './pp/events/events.js';
+import { PrototypeSseBroker } from './pp/events/sse.js';
+import { prototypeUiHtml } from './pp/ui/ui.js';
+import { prototypeHistoryUiScript } from './pp/ui/history-ui.js';
+import { PrototypeComparisonPreviewManager } from './pp/preview/comparison-preview.js';
+import { LocalPreviewRuntime } from './pp/preview/local-preview-runtime.js';
+import { PublicPreviewRuntime } from './pp/preview/public-preview-runtime.js';
+import { PrototypeHandoffService, type PrototypeHandoffInput } from './pp/handoff/handoff.js';
+import { PdlTaskIngestionAdapter } from './pdl-handoff-adapter.js';
 import { defaultAgentRegistry, isValidAgentId } from './office/registry.js';
 import { defaultOfficeOrganization } from './office/organization.js';
 import { createOrganizationalPlan, planStepToTask } from './office/planning.js';
@@ -50,7 +59,7 @@ function gitDiff(cwd: string, base: string, head: string): string {
 
 export const createApp = (tasks = new PostgresTaskRepository(pool), prototypes = new PostgresPrototypeRepository(pool)) => {
   const app = express(); app.use(express.json());
-  const handoff = new PrototypeHandoffService(tasks, prototypes, prototypeEvents);
+  const handoff = new PrototypeHandoffService(new PdlTaskIngestionAdapter(tasks), prototypes, prototypeEvents);
 
   app.get('/health', (_q,res)=>res.json({status:'ok'}));
   app.get('/office/organization', (_req, res) => res.json({ organization: defaultOfficeOrganization.getOrganization() }));

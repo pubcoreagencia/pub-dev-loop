@@ -1,7 +1,7 @@
 // tests/event-bridge-sse-replay.test.ts
 import { describe, it, expect } from 'vitest';
-import { PrototypeEventStream } from '../src/prototype/events.js';
-import { OperationalEventBridge } from '../src/prototype/bridge.js';
+import { PrototypeEventStream } from '../src/pp/events/events.js';
+import { OperationalEventBridge } from '../src/pp/events/bridge.js';
 
 describe('P5.5 — Event Bridge: SSE Replay & Last-Event-ID Semantics', () => {
   it('1. correctly replays stored events past Last-Event-ID threshold without duplicate or loss', async () => {

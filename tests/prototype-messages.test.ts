@@ -1,6 +1,6 @@
 ﻿import { describe, expect, it } from 'vitest';
-import { PrototypeEventStream } from '../src/prototype/events.js';
-import type { PrototypeMessage } from '../src/prototype/domain.js';
+import { PrototypeEventStream } from '../src/pp/events/events.js';
+import type { PrototypeMessage } from '../src/pp/domain/domain.js';
 
 class InMemoryMessageStore {
   private messages: PrototypeMessage[] = [];

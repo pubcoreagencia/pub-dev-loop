@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { prototypeUiHtml } from '../src/prototype/ui.js';
+import { prototypeUiHtml } from '../src/pp/ui/ui.js';
 
 describe('P1 UI — Empty States', () => {
   const html = prototypeUiHtml();
@@ -168,7 +168,7 @@ describe('P1 UI — Design Tokens', () => {
 
 describe('P1 UI — Safety Gate & Runtime Integrity', () => {
   it('contains valid executable JavaScript with ZERO SyntaxErrors across ALL inline scripts', async () => {
-    const { prototypeUiHtml } = await import('../src/prototype/ui.js');
+    const { prototypeUiHtml } = await import('../src/pp/ui/ui.js');
     const html = prototypeUiHtml();
     const scriptRegex = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
     const scripts: string[] = [];
@@ -202,7 +202,7 @@ describe('P1 UI — Safety Gate & Runtime Integrity', () => {
   });
 
   it('guarantees unique declaration of loadSessionAt in the generated HTML', async () => {
-    const { prototypeUiHtml } = await import('../src/prototype/ui.js');
+    const { prototypeUiHtml } = await import('../src/pp/ui/ui.js');
     const html = prototypeUiHtml();
     
     // Check let declarations containing loadSessionAt
@@ -215,7 +215,7 @@ describe('P1 UI — Safety Gate & Runtime Integrity', () => {
   });
 
   it('executes in simulated browser DOM, fetches /prototype/sessions and renders projects', async () => {
-    const { prototypeUiHtml } = await import('../src/prototype/ui.js');
+    const { prototypeUiHtml } = await import('../src/pp/ui/ui.js');
     const html = prototypeUiHtml();
     const { JSDOM } = await import('jsdom');
 

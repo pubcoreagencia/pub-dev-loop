@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
-import type { PrototypeEvent, PrototypeEventType } from './domain.js';
+import type { PrototypeEvent, PrototypeEventType } from '../domain/domain.js';
 
 export interface PrototypeEventInput<TPayload extends Record<string, unknown> = Record<string, unknown>> {
   sessionId: string;

@@ -73,3 +73,63 @@ export interface PrototypeMessage {
   createdAt: Date;
   order: number;
 }
+
+// === FASE 4: CONTRATOS DEDICADOS DE TAREFAS DO PROTOTYPE (PP) ===
+
+export type PrototypeTaskStatus =
+  | 'QUEUED'
+  | 'ASSIGNED'
+  | 'RUNNING'
+  | 'TESTING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'BLOCKED'
+  | 'CANCELLED'
+  | 'NEEDS_REVIEW';
+
+export interface PrototypeTask {
+  id: string;
+  prototypeSessionId: string;
+  project: string;
+  repository: string;
+  objective: string;
+  prompt: string;
+  status: PrototypeTaskStatus;
+  priority: number;
+  worker: string | null;
+  result: Record<string, unknown> | null;
+  error: string | null;
+  branch: string | null;
+  commitSha: string | null;
+  gitStatus: string | null;
+  workspacePath: string | null;
+  leaseOwner: string | null;
+  leaseDeadline: Date | null;
+  heartbeatAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreatePrototypeTaskInput {
+  prototypeSessionId: string;
+  project: string;
+  repository: string;
+  objective: string;
+  prompt: string;
+  priority?: number;
+  branch?: string;
+  workspacePath?: string;
+}
+
+export interface PpTaskRepository {
+  create(input: CreatePrototypeTaskInput): Promise<PrototypeTask>;
+  list(sessionId?: string): Promise<PrototypeTask[]>;
+  get(id: string): Promise<PrototypeTask | null>;
+  claim(worker: string): Promise<PrototypeTask | null>;
+  update(id: string, patch: Partial<PrototypeTask>): Promise<PrototypeTask | null>;
+  cancel(id: string): Promise<PrototypeTask | null>;
+  retry(id: string): Promise<PrototypeTask | null>;
+  reclaimStuck(worker: string, leaseWindowMs: number, now: Date): Promise<number>;
+  heartbeat(id: string, deadline: Date): Promise<boolean>;
+}
+

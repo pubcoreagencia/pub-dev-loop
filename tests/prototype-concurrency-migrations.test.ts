@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PublicPreviewRuntime } from '../src/prototype/public-preview-runtime.js';
-import { LocalPreviewRuntime } from '../src/prototype/local-preview-runtime.js';
-import { PostgresPrototypeRepository } from '../src/prototype/repository.js';
+import { PublicPreviewRuntime } from '../src/pp/preview/public-preview-runtime.js';
+import { LocalPreviewRuntime } from '../src/pp/preview/local-preview-runtime.js';
+import { PostgresPrototypeRepository } from '../src/pp/persistence/repository.js';
 import type { Pool } from 'pg';
 
 describe('PUB Prototype — Concurrency, Migrations & Preview Error Handling', () => {

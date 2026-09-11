@@ -3,8 +3,8 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { PrototypeComparisonPreviewManager } from '../src/prototype/comparison-preview.js';
-import type { PreviewRuntime, PreviewRuntimeConfig, PreviewRuntimeInfo, PreviewLogEvent } from '../src/prototype/preview-runtime.js';
+import { PrototypeComparisonPreviewManager } from '../src/pp/preview/comparison-preview.js';
+import type { PreviewRuntime, PreviewRuntimeConfig, PreviewRuntimeInfo, PreviewLogEvent } from '../src/pp/preview/preview-runtime.js';
 
 class FakePreviewRuntime implements PreviewRuntime {
   private readonly records = new Map<string, PreviewRuntimeInfo>();

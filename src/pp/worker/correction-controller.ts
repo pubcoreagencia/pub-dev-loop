@@ -1,7 +1,7 @@
-import type { Task } from './domain.js';
-import type { AgentProvider, ProviderTaskResult } from './providers/types.js';
-import type { PrototypeEventPublisher } from './prototype/events.js';
-import { TaskFinalizer, WorkspaceSnapshot } from './finalizer.js';
+import type { PrototypeTask } from '../domain/domain.js';
+import type { AgentProvider, ProviderTaskResult } from '../../providers/types.js';
+import type { PrototypeEventPublisher } from '../events/events.js';
+import { TaskFinalizer, type WorkspaceSnapshot } from '../../finalizer.js';
 
 /**
  * Orchestrates in‑process correction attempts when a task finalization fails.
@@ -65,7 +65,7 @@ export class CorrectionController {
    * @returns 'SUCCESS' if a correction succeeded, otherwise 'ESCALATED'.
    */
   async runCorrectionLoop(
-    task: Task,
+    task: PrototypeTask | any,
     workspace: string,
     baseline: WorkspaceSnapshot,
     providerResult: ProviderTaskResult,

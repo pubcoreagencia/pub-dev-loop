@@ -2,18 +2,17 @@ import { execFileSync } from 'node:child_process';
 import { access, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { Task } from './domain.js';
-import { PostgresTaskRepository } from './repository.js';
-import { TaskFinalizer, captureWorkspaceSnapshot } from './finalizer.js';
-import type { AgentProvider } from './providers/types.js';
-import type { PrototypeEventPublisher } from './prototype/events.js';
-import { PostgresPrototypeRepository } from './prototype/repository.js';
-import { LocalPreviewRuntime } from './prototype/local-preview-runtime.js';
-import { PublicPreviewRuntime } from './prototype/public-preview-runtime.js';
-import type { PreviewRuntime, PreviewRuntimeInfo } from './prototype/preview-runtime.js';
-import { StreamEventSink } from './providers/streaming/index.js';
-import { OperationalEventBridge } from './prototype/bridge.js';
-import { loadOpenRouterConfig } from './providers/openrouterConfig.js';
+import type { PrototypeTask, PpTaskRepository } from '../domain/domain.js';
+import { TaskFinalizer, captureWorkspaceSnapshot } from '../../finalizer.js';
+import type { AgentProvider } from '../../providers/types.js';
+import type { PrototypeEventPublisher } from '../events/events.js';
+import { PostgresPrototypeRepository } from '../persistence/repository.js';
+import { LocalPreviewRuntime } from '../preview/local-preview-runtime.js';
+import { PublicPreviewRuntime } from '../preview/public-preview-runtime.js';
+import type { PreviewRuntime, PreviewRuntimeInfo } from '../preview/preview-runtime.js';
+import { StreamEventSink } from '../../providers/streaming/index.js';
+import { OperationalEventBridge } from '../events/bridge.js';
+import { loadOpenRouterConfig } from '../../providers/openrouterConfig.js';
 import { CorrectionController } from './correction-controller.js';
 
 
@@ -31,7 +30,7 @@ function git(args: string[], cwd?: string): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
 }
 
-function workspaceFor(task: Task): string {
+function workspaceFor(task: PrototypeTask): string {
   if (!task.prototypeSessionId) throw new Error('Prototype task missing prototypeSessionId');
   return task.workspacePath ?? path.join(WORKSPACE_ROOT, task.prototypeSessionId);
 }
@@ -51,7 +50,7 @@ export class PrototypeWorker {
   private readonly preview: PreviewRuntime;
 
   constructor(
-    private readonly tasks: PostgresTaskRepository,
+    private readonly tasks: PpTaskRepository,
     private readonly prototypes: PostgresPrototypeRepository,
     private readonly provider: AgentProvider,
     private readonly events: PrototypeEventPublisher,
@@ -68,7 +67,7 @@ export class PrototypeWorker {
   status(): string { return this.state; }
 
   async executeOnce(): Promise<boolean> {
-    const task = await this.tasks.claimPrototype(this.name);
+    const task = await this.tasks.claim(this.name);
     if (!task) return false;
 
     const sessionId = task.prototypeSessionId!;
@@ -110,7 +109,7 @@ export class PrototypeWorker {
       //   - template = base for the first clone (has package.json, etc.)
       //   - For 1st task: clone template, push to persistent
       //   - For 2nd+ tasks: clone persistent, fetch existing branch
-      const { PROTOTYPE_REPOSITORY, getGitHubToken } = await import('./github-app.js');
+      const { PROTOTYPE_REPOSITORY, getGitHubToken } = await import('../../github-app.js');
       const usePersistentPush =
         process.env.PROTOTYPE_PERSISTENT_PUSH === 'true' &&
         !!getGitHubToken();
@@ -413,7 +412,7 @@ export class PrototypeWorker {
     }
   }
 
-  private async restoreCheckpoint(task: Task, workspace: string, branch: string): Promise<boolean> {
+  private async restoreCheckpoint(task: PrototypeTask, workspace: string, branch: string): Promise<boolean> {
     const sessionId = task.prototypeSessionId!;
     const { commitSha, checkpointId } = parseRestore(task.prompt);
     const currentSha = git(['rev-parse', 'HEAD'], workspace).trim();

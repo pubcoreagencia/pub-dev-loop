@@ -1,7 +1,6 @@
-// src/prototype/bridge.ts
-import type { OperationalEventEnvelope } from '../providers/streaming/types.js';
+import type { OperationalEventEnvelope } from '../../providers/streaming/types.js';
 import type { PrototypeEventPublisher, PrototypeEventInput } from './events.js';
-import type { PrototypeEventType } from './domain.js';
+import type { PrototypeEventType } from '../domain/domain.js';
 
 export const OPERATIONAL_TO_PROTOTYPE_EVENT_MAP: Record<string, PrototypeEventType | null> = {
   attempt_started: 'AGENT_ATTEMPT_STARTED',
