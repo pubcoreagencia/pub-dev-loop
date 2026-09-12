@@ -64,6 +64,70 @@ export const createPdlApp = (
     }
   });
 
+  // Phase 5.8: Observability Control Plane — "O que o PDL está fazendo agora?"
+  app.get('/observability/active-tasks', async (_req, res) => {
+    try {
+      const q = `
+        SELECT 
+          t.id AS "taskId",
+          COALESCE(t.project, 'pub-dev-loop') AS "productId",
+          COALESCE((t.result->>'promotionId'), '') AS "promotionId",
+          t.prototype_session_id AS "prototypeSessionId",
+          e.id AS "executionSpecId",
+          COALESCE(t.lease_owner, t.worker, 'none') AS "worker",
+          COALESCE(t.result->>'provider', 'none') AS "provider",
+          COALESCE(t.result->>'model', 'none') AS "model",
+          COALESCE(t.result->'trace'->>'gateway', 'none') AS "gateway",
+          COALESCE(jsonb_array_length(COALESCE(t.result->'corrections', '[]'::jsonb)), 0) AS "attempt",
+          t.status AS "currentPhase",
+          CASE WHEN t.status = 'COMPLETED' THEN 'PASSED' WHEN t.status = 'FAILED' THEN 'FAILED' ELSE 'PENDING' END AS "validationStatus",
+          COALESCE(t.result->>'recoveredViaCorrection', 'false') AS "correctionStatus",
+          t.branch,
+          COALESCE(t.commit_sha, '') AS "commitSha",
+          t.status AS "finalStatus",
+          t.created_at AS "startedAt",
+          t.updated_at AS "updatedAt"
+        FROM tasks t
+        LEFT JOIN execution_specs e ON e.task_id = t.id
+        ORDER BY t.created_at DESC
+        LIMIT 25;
+      `;
+      const rows = await activePool.query(q);
+      return res.json({
+        service: 'pdl-api',
+        activeTasksCount: rows.rows.filter(r => ['QUEUED', 'ASSIGNED', 'RUNNING', 'TESTING'].includes(r.currentPhase)).length,
+        tasks: rows.rows,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Failed to retrieve observability telemetry', details: err.message });
+    }
+  });
+
+  app.get('/observability/tasks/:id/lineage', async (req, res) => {
+    try {
+      const taskId = req.params.id;
+      const t = await activePool.query('SELECT * FROM tasks WHERE id = $1', [taskId]);
+      if (!t.rows[0]) return res.status(404).json({ error: 'Task not found' });
+      const e = await activePool.query('SELECT * FROM execution_specs WHERE task_id = $1', [taskId]);
+
+      return res.json({
+        task: t.rows[0],
+        executionSpec: e.rows[0] || null,
+        lineage: {
+          taskId,
+          prototypeSessionId: t.rows[0].prototype_session_id,
+          promotionId: t.rows[0].result?.promotionId || null,
+          specHash: e.rows[0]?.spec_hash || null,
+          commitSha: t.rows[0].commit_sha,
+          status: t.rows[0].status,
+        },
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Failed to retrieve task lineage', details: err.message });
+    }
+  });
+
   // Organização & Agentes
   app.get('/office/organization', (_req, res) => res.json({ organization: defaultOfficeOrganization.getOrganization() }));
   app.get('/office/agents', (_req, res) => res.json({ agents: defaultAgentRegistry.listAgents() }));

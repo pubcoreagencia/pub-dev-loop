@@ -30,6 +30,8 @@ import {
 } from '../../execution/finalization-bridge.js';
 import type { FinalizeResult } from '../../finalizer.js';
 import { PdlCorrectionLoop, type CorrectionLoopResult } from '../correction/index.js';
+import { defaultProductCatalog } from '../products/catalog.js';
+import { defaultRepositoryAuthorizationPolicy } from '../security/repo-authorization.js';
 
 const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
 const HEARTBEAT_INTERVAL_MS = Number(process.env.WORKER_HEARTBEAT_MS ?? 10000);
@@ -182,11 +184,14 @@ export class PdlCorrectionWorker extends RouterWorker {
       }
 
       // 5. Initial Finalization via DefaultFinalizationBridge
+      const catalogProduct = defaultProductCatalog.get(task.project || task.repository || '');
+      const effectiveTestCommand = process.env.TASK_TEST_COMMAND || catalogProduct?.testCommand || null;
+
       const bridge = new DefaultFinalizationBridge();
       const finalizationContext: FinalizationContext = {
         objective: prepared.executionSpec.objective || task.objective,
         prompt: task.prompt,
-        testCommand: process.env.TASK_TEST_COMMAND || null,
+        testCommand: effectiveTestCommand,
         commitMessage: process.env.TASK_COMMIT_MESSAGE || null,
         baselineSnapshot: winningAttempt.baselineSnapshot,
         allowUnexpectedFiles: false,
@@ -210,10 +215,23 @@ export class PdlCorrectionWorker extends RouterWorker {
         errorMessage: 'Bridge did not return finalization result',
       };
 
+      // Phase 5.5: Validate modified paths against ProductManifest allowed/protected paths
+      if (catalogProduct && finalizeResult.changedFiles.length > 0) {
+        const pathCheck = defaultRepositoryAuthorizationPolicy.validateModifiedPaths(
+          finalizeResult.changedFiles,
+          { allowedPaths: catalogProduct.allowedPaths, protectedPaths: catalogProduct.protectedPaths }
+        );
+        if (!pathCheck.authorized) {
+          finalizeResult.status = 'FAILED';
+          finalizeResult.errorCode = 'SECURITY_VIOLATION';
+          finalizeResult.errorMessage = pathCheck.reason || 'Protected path violation';
+        }
+      }
+
       let correctionResult: CorrectionLoopResult | undefined;
 
       // 6. In-Process Correction Loop (Gate 3D.4)
-      if (finalizeResult.status === 'FAILED') {
+      if (finalizeResult.status === 'FAILED' && finalizeResult.errorCode !== 'SECURITY_VIOLATION') {
         correctionResult = await PdlCorrectionLoop.runCorrectionLoop({
           task,
           executionSpec: prepared.executionSpec,
@@ -223,7 +241,7 @@ export class PdlCorrectionWorker extends RouterWorker {
           initialFinalizeResult: finalizeResult,
           declaredChangedFiles: winningAttempt.declaredChangedFiles,
           commandTimeoutMs: 60000,
-          testCommand: process.env.TASK_TEST_COMMAND || null,
+          testCommand: effectiveTestCommand,
           commitMessage: process.env.TASK_COMMIT_MESSAGE || null,
         });
 
@@ -238,18 +256,25 @@ export class PdlCorrectionWorker extends RouterWorker {
 
       this.lastFinalizeStatus = finalizeResult.status;
 
-      // 7. Remote Git Push if COMPLETED
+      // 7. Remote Git Push if COMPLETED and Autonomy Level >= 5
+      const maxAutonomy = catalogProduct?.maxAutonomyLevel ?? 5;
+      const autonomyCheck = defaultRepositoryAuthorizationPolicy.authorizeAutonomy(maxAutonomy, 'PUSH');
+
       if (finalizeResult.status === 'COMPLETED' && finalizeResult.commitSha) {
-        try {
-          console.log(`[PDL Worker] Pushing branch ${branch} to remote...`);
-          await run('git', ['push', 'origin', `HEAD:${branch}`], winningAttempt.workspace);
-          console.log(`[PDL Worker] Successfully pushed branch ${branch} to remote.`);
-        } catch (pushError: any) {
-          console.error(`[PDL Worker] GITHUB_PUSH_FAILED:`, pushError.message);
-          finalizeResult.status = 'FAILED';
-          finalizeResult.errorCode = 'GITHUB_PUSH_FAILED';
-          finalizeResult.errorMessage = `GitHub push failed: ${pushError.message}`;
-          this.lastFinalizeStatus = 'FAILED';
+        if (autonomyCheck.permitted) {
+          try {
+            console.log(`[PDL Worker] Pushing branch ${branch} to remote...`);
+            await run('git', ['push', 'origin', `HEAD:${branch}`], winningAttempt.workspace);
+            console.log(`[PDL Worker] Successfully pushed branch ${branch} to remote.`);
+          } catch (pushError: any) {
+            console.error(`[PDL Worker] GITHUB_PUSH_FAILED:`, pushError.message);
+            finalizeResult.status = 'FAILED';
+            finalizeResult.errorCode = 'GITHUB_PUSH_FAILED';
+            finalizeResult.errorMessage = `GitHub push failed: ${pushError.message}`;
+            this.lastFinalizeStatus = 'FAILED';
+          }
+        } else {
+          console.log(`[PDL Worker] Autonomy level ${maxAutonomy} prohibits remote push. Push skipped as intended.`);
         }
       }
 

@@ -72,6 +72,7 @@ export class PdlTaskIngestionAdapter implements PdlTaskIngestionPort {
       source: 'prototype-promotion',
       project: request.project,
       repository: request.repository,
+      branch: request.branch,
       priority: request.priority ?? 0,
       executionInstructions: [request.objective],
       acceptanceCriteria: [`Complete prototype promotion for branch ${request.branch}`],

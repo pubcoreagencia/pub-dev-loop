@@ -109,19 +109,30 @@ export class PostgresTaskRepository implements TaskRepository {
     return sovereignFallbackTasks.get(id) ?? null;
   }
 
-  async claim(worker: string): Promise<Task | null> {
+  async claim(worker: string, productConcurrencyLimit?: number): Promise<Task | null> {
+    const limit = productConcurrencyLimit ?? Number(process.env.PRODUCT_CONCURRENCY_LIMIT ?? 10);
     try {
       const r = await this.pool.query(`
-        WITH candidate AS (
-          SELECT id FROM tasks
-          WHERE status = 'QUEUED'
-             OR (status IN ('ASSIGNED', 'RUNNING', 'TESTING') AND lease_deadline IS NOT NULL AND lease_deadline < now())
-          ORDER BY priority DESC, created_at ASC
+        WITH active_product_counts AS (
+          SELECT project, count(*)::int AS cnt
+          FROM tasks
+          WHERE status IN ('ASSIGNED', 'RUNNING', 'TESTING')
+            AND lease_deadline IS NOT NULL
+            AND lease_deadline >= now()
+          GROUP BY project
+        ),
+        candidate AS (
+          SELECT t.id FROM tasks t
+          LEFT JOIN active_product_counts a ON a.project = t.project
+          WHERE (t.status = 'QUEUED'
+             OR (t.status IN ('ASSIGNED', 'RUNNING', 'TESTING') AND t.lease_deadline IS NOT NULL AND t.lease_deadline < now()))
+            AND (a.cnt IS NULL OR a.cnt < $2)
+          ORDER BY t.priority DESC, t.created_at ASC
           FOR UPDATE SKIP LOCKED LIMIT 1
         )
         UPDATE tasks SET status='ASSIGNED', worker=$1, lease_owner=$1,
           lease_deadline=now()+interval '30 seconds', heartbeat_at=now(), updated_at=now()
-        WHERE id=(SELECT id FROM candidate) RETURNING *`, [worker]);
+        WHERE id=(SELECT id FROM candidate) RETURNING *`, [worker, limit]);
       if (r?.rows?.[0]) return map(r.rows[0]);
     } catch (err: any) {
       console.warn('[PostgresTaskRepository] DB quota/connection issue on claim, checking sovereign memory:', err.message);

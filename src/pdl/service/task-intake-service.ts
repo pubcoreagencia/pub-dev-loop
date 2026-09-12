@@ -43,6 +43,7 @@ export interface PoolLike {
 export interface TaskIntakeOptions {
   project?: string;
   repository?: string;
+  branch?: string;
   priority?: number;
   agentId?: string;
   source?: string;
@@ -153,9 +154,10 @@ export function buildCanonicalExecutionSpec(
     evidence: [],
   };
 
+  const targetBranch = options?.branch?.trim() || 'feat/autonomous-task';
   const authResult = defaultRepositoryAuthorizationPolicy.authorize({
     repository,
-    branch: 'main',
+    branch: targetBranch,
   });
   if (!authResult.authorized) {
     throw new TaskIntakeError('INVALID_TASK', `Repository authorization rejected: ${authResult.reason}`);
@@ -170,7 +172,7 @@ export function buildCanonicalExecutionSpec(
     { owner, name: repoName, fullName: `${owner}/${repoName}` },
     'git',
     repository,
-    'main',
+    targetBranch,
     `projects/${repoName}`,
     'HEAD',
     'pdl:internal:token',
@@ -304,6 +306,11 @@ export class TaskIntakeService {
         (isTaskIntake(input)
           ? undefined
           : (input as TaskIntakePayload).priority),
+      branch:
+        options?.branch ??
+        (isTaskIntake(input)
+          ? undefined
+          : ((input as TaskIntakePayload).branch ?? undefined)),
       agentId:
         options?.agentId ??
         (isTaskIntake(input)
@@ -455,9 +462,11 @@ export class TaskIntakeService {
           ? (input as TaskIntakePayload).prompt!
           : intake.rawRequest;
 
+      const taskBranch = combinedOptions.branch?.trim() || null;
+
       const taskRes = await client.query(
-        `INSERT INTO tasks (project, repository, objective, prompt, priority, status)
-         VALUES ($1, $2, $3, $4, $5, 'QUEUED')
+        `INSERT INTO tasks (project, repository, objective, prompt, priority, status, branch)
+         VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6)
          RETURNING *`,
         [
           taskProject,
@@ -465,6 +474,7 @@ export class TaskIntakeService {
           finalObjective,
           finalPrompt,
           taskPriority,
+          taskBranch,
         ],
       );
 
