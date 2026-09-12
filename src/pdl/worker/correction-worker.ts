@@ -33,6 +33,7 @@ import { PdlCorrectionLoop, type CorrectionLoopResult } from '../correction/inde
 import { defaultProductCatalog } from '../products/catalog.js';
 import { defaultRepositoryAuthorizationPolicy } from '../security/repo-authorization.js';
 import { defaultRemotePersistence } from '../persistence/remote-persistence.js';
+import { PdlGovernanceEngine, defaultGovernanceEngine } from '../governance/index.js';
 
 const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
 const HEARTBEAT_INTERVAL_MS = Number(process.env.WORKER_HEARTBEAT_MS ?? 10000);
@@ -54,22 +55,47 @@ function run(cmd: string, args: string[], cwd?: string): Promise<string> {
 }
 
 export class PdlCorrectionWorker extends RouterWorker {
+  public readonly governance: PdlGovernanceEngine;
+
   constructor(
     tasks?: TaskRepository,
     provider?: AgentProvider,
     name = 'pdl-router',
     onStreamEvent?: TaskStreamEventCallback,
     executionSpecDb?: ExecutionSpecDatabase,
+    governance?: PdlGovernanceEngine,
   ) {
     super(tasks, provider, name, onStreamEvent, executionSpecDb);
+    this.governance = governance || defaultGovernanceEngine;
   }
 
   /**
-   * Overrides executeOnce to integrate PdlCorrectionLoop into the finalization path.
+   * Overrides executeOnce to integrate PdlCorrectionLoop and PdlGovernanceEngine gates.
    */
   override async executeOnce(): Promise<boolean> {
+    // Gate A: Check governance before claiming a task
+    const claimDecision = await this.governance.evaluateClaim();
+    if (!claimDecision.allowed) {
+      console.log(`[PDL Worker] Task claim blocked by governance (${claimDecision.reasonCode}): ${claimDecision.reason}`);
+      return false;
+    }
+
     const task = await this.tasks.claim(this.name);
     if (!task) return false;
+
+    // Gate B: Check governance before running/executing claimed task
+    const execDecision = await this.governance.evaluateExecution(task);
+    if (!execDecision.allowed) {
+      console.log(`[PDL Worker] Execution start blocked by governance (${execDecision.reasonCode}): ${execDecision.reason}`);
+      await this.tasks.update(task.id, {
+        status: 'BLOCKED',
+        error: `Execution start blocked by governance: ${execDecision.reason}`,
+        leaseOwner: null,
+        leaseDeadline: null,
+        workspacePath: null,
+      });
+      return true;
+    }
 
     this.active = true;
 
@@ -231,38 +257,51 @@ export class PdlCorrectionWorker extends RouterWorker {
 
       let correctionResult: CorrectionLoopResult | undefined;
 
-      // 6. In-Process Correction Loop (Gate 3D.4)
+      // 6. In-Process Correction Loop (Gate 3D.4 + Governance Gate C)
       if (finalizeResult.status === 'FAILED' && finalizeResult.errorCode !== 'SECURITY_VIOLATION') {
-        correctionResult = await PdlCorrectionLoop.runCorrectionLoop({
-          task,
-          executionSpec: prepared.executionSpec,
-          workspace: winningAttempt.workspace,
-          provider: this.provider,
-          baselineSnapshot: winningAttempt.baselineSnapshot,
-          initialFinalizeResult: finalizeResult,
-          declaredChangedFiles: winningAttempt.declaredChangedFiles,
-          commandTimeoutMs: 60000,
-          testCommand: effectiveTestCommand,
-          commitMessage: process.env.TASK_COMMIT_MESSAGE || null,
-        });
-
-        if (correctionResult.recovered && correctionResult.finalization.status === 'COMPLETED') {
-          finalizeResult = correctionResult.finalization;
-          bridgeResult.finalization = finalizeResult;
+        const correctionDecision = await this.governance.evaluateCorrection(task, { attemptNumber: 1 });
+        if (!correctionDecision.allowed) {
+          console.log(`[PDL Worker] Correction loop blocked by governance (${correctionDecision.reasonCode}): ${correctionDecision.reason}`);
+          finalizeResult.errorMessage = `Correction blocked by governance: ${correctionDecision.reason}`;
         } else {
-          finalizeResult = correctionResult.finalization;
-          bridgeResult.finalization = finalizeResult;
+          correctionResult = await PdlCorrectionLoop.runCorrectionLoop({
+            task,
+            executionSpec: prepared.executionSpec,
+            workspace: winningAttempt.workspace,
+            provider: this.provider,
+            baselineSnapshot: winningAttempt.baselineSnapshot,
+            initialFinalizeResult: finalizeResult,
+            declaredChangedFiles: winningAttempt.declaredChangedFiles,
+            commandTimeoutMs: 60000,
+            testCommand: effectiveTestCommand,
+            commitMessage: process.env.TASK_COMMIT_MESSAGE || null,
+          });
+
+          if (correctionResult.recovered && correctionResult.finalization.status === 'COMPLETED') {
+            finalizeResult = correctionResult.finalization;
+            bridgeResult.finalization = finalizeResult;
+          } else {
+            finalizeResult = correctionResult.finalization;
+            bridgeResult.finalization = finalizeResult;
+          }
         }
       }
 
       this.lastFinalizeStatus = finalizeResult.status;
 
-      // 7. Canonical PDL Remote Persistence if COMPLETED and Autonomy Level >= 5
+      // 7. Canonical PDL Remote Persistence if COMPLETED and Autonomy Level >= 5 + Governance Gate D
       const maxAutonomy = catalogProduct?.maxAutonomyLevel ?? 5;
       const autonomyCheck = defaultRepositoryAuthorizationPolicy.authorizeAutonomy(maxAutonomy, 'PUSH');
 
       if (finalizeResult.status === 'COMPLETED' && finalizeResult.commitSha) {
-        if (autonomyCheck.permitted && catalogProduct?.remotePersistenceEligible) {
+        const finalizationDecision = await this.governance.evaluateFinalization(task);
+        if (!finalizationDecision.allowed) {
+          console.log(`[PDL Worker] Remote finalization blocked by governance (${finalizationDecision.reasonCode}): ${finalizationDecision.reason}`);
+          finalizeResult.status = 'FAILED';
+          finalizeResult.errorCode = finalizationDecision.reasonCode;
+          finalizeResult.errorMessage = `Remote finalization blocked by governance: ${finalizationDecision.reason}`;
+          this.lastFinalizeStatus = 'FAILED';
+        } else if (autonomyCheck.permitted && catalogProduct?.remotePersistenceEligible) {
           console.log(`[PDL Worker] Initiating canonical remote persistence for product '${catalogProduct.productId}'...`);
           const persistenceResult = await defaultRemotePersistence.persist({
             workspace: winningAttempt.workspace,

@@ -90,17 +90,14 @@ export function createProductionWorker(forceMode?: 'pdl' | 'legacy'): BaseWorker
   const tasks = new PostgresTaskRepository(pool);
   const providerName = process.env.AGENT_PROVIDER;
 
-  // Modo dedicado PDL: retorna o PdlCorrectionWorker puro sem instanciar PP
-  if (forceMode === 'pdl' || process.env.WORKER_MODE === 'pdl' || process.env.PDL_WORKER === 'true') {
-    return createPdlWorkerDaemon(pool);
+  if (forceMode === 'legacy') {
+    throw new Error(
+      'UNAUTHORIZED_WORKER_MODE: Legacy un-governed worker execution is strictly prohibited. All operational workers must run PdlCorrectionWorker under PdlGovernanceEngine.'
+    );
   }
 
-  if (providerName) {
-    const provider = createProvider(providerName);
-    return new RouterWorker(tasks, provider, 'router', undefined, pool);
-  }
-
-  return new CodexWorker(tasks, createAgent(), 'codex', pool);
+  // Canonical PDL operational worker daemon: strictly enforced with PdlGovernanceEngine
+  return createPdlWorkerDaemon(pool);
 }
 
 const currentFile = fileURLToPath(import.meta.url);

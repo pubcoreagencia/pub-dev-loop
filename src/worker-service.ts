@@ -23,11 +23,12 @@ import {
 } from './execution/finalization-bridge.js';
 import { DefaultExecutionEngine } from './execution/default-execution-engine.js';
 import type { AgentProvider, ProviderTaskInput } from './providers/types.js';
+import { PdlGovernanceEngine } from './pdl/governance/index.js';
 
 const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
 const HEARTBEAT_INTERVAL_MS = Number(process.env.WORKER_HEARTBEAT_MS ?? 10000);
 
-function run(cmd: string, args: string[], cwd?: string): Promise<string> {
+export function run(cmd: string, args: string[], cwd?: string): Promise<string> {
   // Use execSync for cross-platform PATH resolution reliability.
   // spawn with shell: false doesn't find git on Windows/MSYS,
   // and spawn with shell: true tries cmd.exe which may not exist.
@@ -278,11 +279,20 @@ export abstract class BaseWorker implements Worker {
    */
   protected lastFinalizeStatus: 'SKIPPED_AGENT_FAILED' | 'COMPLETED' | 'FAILED' | null = null;
 
+  public readonly governance?: PdlGovernanceEngine;
+
   constructor(
     protected readonly tasks: TaskRepository,
     protected readonly name: string,
     protected readonly executionSpecDb?: ExecutionSpecDatabase,
-  ) {}
+    governance?: PdlGovernanceEngine,
+  ) {
+    if (governance) {
+      this.governance = governance;
+    } else if (executionSpecDb && typeof (executionSpecDb as any).query === 'function') {
+      this.governance = new PdlGovernanceEngine({ pool: executionSpecDb as any });
+    }
+  }
 
   status(): string {
     return this.state;
@@ -320,16 +330,43 @@ export abstract class BaseWorker implements Worker {
 
   /**
    * Execute one task cycle:
-   * 1. Claim task
-   * 2. Delegate to executeWithRetry — subclasses create attempt workspaces, run providers, handle retry
-   * 3. If FAILED → mark FAILED (no finalize, no commit)
-   * 4. If COMPLETED → finalize (validate + auto-commit) using WINNING attempt's workspace + baseline
-   * 5. Update task status
-   * 6. Cleanup (only the winning workspace)
+   * 1. Check Governance Gate A
+   * 2. Claim task
+   * 3. Check Governance Gate B
+   * 4. Delegate to executeWithRetry — subclasses create attempt workspaces, run providers, handle retry
+   * 5. If FAILED → mark FAILED (no finalize, no commit)
+   * 6. If COMPLETED → finalize (validate + auto-commit) using WINNING attempt's workspace + baseline
+   * 7. Update task status
+   * 8. Cleanup (only the winning workspace)
    */
   async executeOnce(): Promise<boolean> {
+    // Gate A: Check governance before claiming a task
+    if (this.governance) {
+      const claimDecision = await this.governance.evaluateClaim();
+      if (!claimDecision.allowed) {
+        console.log(`[BaseWorker] Task claim blocked by governance (${claimDecision.reasonCode}): ${claimDecision.reason}`);
+        return false;
+      }
+    }
+
     const task = await this.tasks.claim(this.name);
     if (!task) return false;
+
+    // Gate B: Check governance before running/executing claimed task
+    if (this.governance) {
+      const execDecision = await this.governance.evaluateExecution(task);
+      if (!execDecision.allowed) {
+        console.log(`[BaseWorker] Execution start blocked by governance (${execDecision.reasonCode}): ${execDecision.reason}`);
+        await this.tasks.update(task.id, {
+          status: 'BLOCKED',
+          error: `Execution start blocked by governance: ${execDecision.reason}`,
+          leaseOwner: null,
+          leaseDeadline: null,
+          workspacePath: null,
+        });
+        return true;
+      }
+    }
 
     this.active = true;
 
@@ -477,16 +514,29 @@ export abstract class BaseWorker implements Worker {
       this.lastFinalizeStatus = finalizeResult.status;
 
       if (finalizeResult.status === 'COMPLETED' && !task.prototypeSessionId && finalizeResult.commitSha) {
-        try {
-          console.log(`[Worker] Pushing branch ${branch} to remote...`);
-          await run('git', ['push', 'origin', `HEAD:${branch}`], winningAttempt.workspace);
-          console.log(`[Worker] Successfully pushed branch ${branch} to remote.`);
-        } catch (pushError: any) {
-          console.error(`[Worker] GITHUB_PUSH_FAILED:`, pushError.message);
-          finalizeResult.status = 'FAILED';
-          finalizeResult.errorCode = 'GITHUB_PUSH_FAILED';
-          finalizeResult.errorMessage = `GitHub push failed: ${pushError.message}`;
-          this.lastFinalizeStatus = 'FAILED';
+        if (this.governance) {
+          const finalizationDecision = await this.governance.evaluateFinalization(task);
+          if (!finalizationDecision.allowed) {
+            console.log(`[BaseWorker] Remote push blocked by governance (${finalizationDecision.reasonCode}): ${finalizationDecision.reason}`);
+            finalizeResult.status = 'FAILED';
+            finalizeResult.errorCode = finalizationDecision.reasonCode;
+            finalizeResult.errorMessage = `Remote finalization blocked by governance: ${finalizationDecision.reason}`;
+            this.lastFinalizeStatus = 'FAILED';
+          }
+        }
+
+        if (finalizeResult.status === 'COMPLETED') {
+          try {
+            console.log(`[Worker] Pushing branch ${branch} to remote...`);
+            await run('git', ['push', 'origin', `HEAD:${branch}`], winningAttempt.workspace);
+            console.log(`[Worker] Successfully pushed branch ${branch} to remote.`);
+          } catch (pushError: any) {
+            console.error(`[Worker] GITHUB_PUSH_FAILED:`, pushError.message);
+            finalizeResult.status = 'FAILED';
+            finalizeResult.errorCode = 'GITHUB_PUSH_FAILED';
+            finalizeResult.errorMessage = `GitHub push failed: ${pushError.message}`;
+            this.lastFinalizeStatus = 'FAILED';
+          }
         }
       }
 
@@ -756,8 +806,9 @@ export class CodexWorker extends BaseWorker {
     agent: CodingAgent,
     name = 'codex',
     executionSpecDb?: ExecutionSpecDatabase,
+    governance?: PdlGovernanceEngine,
   ) {
-    super(tasks, name, executionSpecDb);
+    super(tasks, name, executionSpecDb, governance);
     this.agent = agent;
   }
 
@@ -813,11 +864,28 @@ export class CodexWorker extends BaseWorker {
       outcome = await this.agent.execute(task, repo);
     }
     const started = Date.now();
+    // Compute changed files attributable to this execution (baseline-aware)
+    const parseStatus = (status: string): string[] =>
+      status
+        .split(/\r?\n/)
+        .filter(line => line.length >= 4)
+        .map(line => {
+          // Git status format: XY <path>
+          const filename = line.slice(3).trim();
+          return filename.startsWith('"') && filename.endsWith('"')
+            ? filename.slice(1, -1)
+            : filename;
+        })
+        .filter(Boolean);
+    const baselineChanged = parseStatus(baseline.gitStatus);
+    const currentStatus = execSync('git status --porcelain', { cwd: repo }).toString();
+    const currentChanged = parseStatus(currentStatus);
+    const executionChanged = currentChanged.filter(f => !baselineChanged.includes(f));
     return {
       status: 'COMPLETED',
       workspace: repo,
       baselineSnapshot: baseline,
-      declaredChangedFiles: [],
+      declaredChangedFiles: executionChanged,
       stdout: outcome.summary,
       stderr: '',
       exitCode: 0,
@@ -879,7 +947,22 @@ export class CodexWorker extends BaseWorker {
     execution?: Record<string, unknown>;
     errorCode?: string | null;
   }> {
+    // Execute the coding agent to modify the workspace
     const outcome = await this.agent.execute(task, repo);
+
+    // Determine actual changed files using git status
+    let changedFiles: string[] = [];
+    try {
+      const statusOutput = execSync('git status --porcelain', { cwd: repo }).toString();
+      changedFiles = statusOutput
+        .split('\n')
+        .filter(line => line.trim().length > 0)
+        .map(line => line.slice(3).trim()); // format: XY <file>
+    } catch {
+      // If git fails, fallback to empty list; finalizer will treat as no changes.
+      changedFiles = [];
+    }
+
     return {
       stdout: outcome.summary,
       stderr: '',
@@ -887,7 +970,7 @@ export class CodexWorker extends BaseWorker {
       status: 'COMPLETED',
       provider: 'codex',
       model: null,
-      changedFiles: [],
+      changedFiles,
       toolCalls: 0,
       toolRounds: 0,
       durationMs: 0,

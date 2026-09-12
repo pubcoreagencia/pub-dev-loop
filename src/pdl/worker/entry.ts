@@ -6,6 +6,7 @@ import path from 'node:path';
 import { createProvider, createAgent } from '../../agent.js';
 import { PostgresTaskRepository } from '../../repository.js';
 import { PdlCorrectionWorker } from './correction-worker.js';
+import { PdlGovernanceEngine } from '../governance/index.js';
 import { CodexWorker, BaseWorker } from '../../worker-service.js';
 import { configureGitCredentials } from '../../worker.js';
 
@@ -18,10 +19,16 @@ export function createPdlWorkerDaemon(pool: Pool): BaseWorker {
 
   if (providerName) {
     const provider = createProvider(providerName);
-    return new PdlCorrectionWorker(tasks, provider, 'pdl-router', undefined, pool);
+    if (provider.kind === 'mock') {
+      console.error('[PDL Worker] FATAL: Real provider not configured (AGENT_PROVIDER resolves to mock). Worker cannot start.');
+      process.exit(1);
+    }
+    const governance = new PdlGovernanceEngine({ pool });
+    return new PdlCorrectionWorker(tasks, provider, 'pdl-router', undefined, pool, governance);
   }
 
-  return new CodexWorker(tasks, createAgent(), 'codex', pool);
+  console.error('[PDL Worker] FATAL: No AGENT_PROVIDER defined. Worker cannot start without a real provider.');
+  process.exit(1);
 }
 
 export function startPdlHealthServer(port = PORT, poolGetter?: () => Pool | undefined): http.Server {

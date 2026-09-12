@@ -2,6 +2,7 @@ import type { AgentProvider, ProviderTaskResult, ProviderResultStatus, ProviderT
 import type { Task, TaskRepository } from './domain.js';
 import { PDL_SYSTEM_INSTRUCTIONS } from './pdl/constants.js';
 import { BaseWorker, type AttemptResult, type AttemptTrace, type WorkerExecutionTrace } from './worker-service.js';
+import { PdlGovernanceEngine } from './pdl/governance/index.js';
 import { DefaultExecutionEngine } from './execution/default-execution-engine.js';
 import type { ExecutionResult } from './execution/execution-engine.js';
 import type { PreparedExecution } from './execution/execution-seam.js';
@@ -137,8 +138,9 @@ export class RouterWorker extends BaseWorker {
     name = 'router',
     onStreamEvent?: TaskStreamEventCallback,
     executionSpecDb?: ExecutionSpecDatabase,
+    governance?: PdlGovernanceEngine,
   ) {
-    super(tasks ?? ({} as any), name, executionSpecDb);
+    super(tasks ?? ({} as any), name, executionSpecDb, governance);
     this.provider = provider ?? ({} as any);
     this.onStreamEvent = onStreamEvent;
   }

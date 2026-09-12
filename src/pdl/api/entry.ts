@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import * as dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
 import express from 'express';
 import { Pool } from 'pg';
 import { PostgresTaskRepository } from '../../repository.js';
@@ -17,15 +19,28 @@ import { TaskIntakeError } from '../../task/intake.js';
 import { ExecutionSpecValidationError } from '../../task/spec-validator.js';
 import { PdlTaskIngestionAdapter } from '../handoff/adapter.js';
 import type { PdlTaskIngestionRequest } from '../handoff/types.js';
+import {
+  PdlGovernanceEngine,
+  requireGovernanceAuth,
+  type GovernanceAuthConfig,
+} from '../governance/index.js';
+
+export interface PdlAppOptions {
+  governance?: PdlGovernanceEngine;
+  authConfig?: GovernanceAuthConfig;
+}
 
 export const createPdlApp = (
   pool?: Pool,
   tasks?: PostgresTaskRepository,
   intake?: TaskIntakeService,
+  options?: PdlAppOptions,
 ) => {
   const activePool = pool ?? new Pool({ connectionString: process.env.DATABASE_URL });
   const taskRepo = tasks ?? new PostgresTaskRepository(activePool);
   const intakeService = intake ?? new TaskIntakeService(activePool);
+  const governance = options?.governance ?? new PdlGovernanceEngine({ pool: activePool });
+  const authConfigGetter = () => options?.authConfig;
 
   const app = express();
   app.use(express.json());
@@ -63,6 +78,113 @@ export const createPdlApp = (
       });
     }
   });
+
+  // Phase 5.5: Governance Observability & Emergency Stop Endpoints
+  app.get(
+    '/governance/status',
+    requireGovernanceAuth('READ', authConfigGetter),
+    async (_req, res) => {
+      try {
+        const limits = await governance.loadLimits();
+        const killSwitchStatus = await governance.getKillSwitch().checkStatus();
+        return res.json({
+          service: 'pdl-api',
+          governance: {
+            activeLevel: limits.activeLevel,
+            killSwitchActive: limits.killSwitchActive,
+            limits,
+            killSwitchStatus,
+          },
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err: any) {
+        return res.status(500).json({ error: 'Failed to retrieve governance status', details: err.message });
+      }
+    }
+  );
+
+  app.post(
+    '/governance/kill-switch',
+    requireGovernanceAuth('ADMIN_WRITE', authConfigGetter),
+    async (req, res) => {
+      try {
+        const { active, reason, updatedBy } = req.body ?? {};
+        if (typeof active !== 'boolean') {
+          return res.status(400).json({ error: 'Field "active" (boolean) is required' });
+        }
+        const principal = (req as any).governancePrincipal;
+        const effectiveUpdatedBy =
+          typeof updatedBy === 'string' ? updatedBy : principal?.identifier || 'api-operator';
+
+        await governance.getKillSwitch().setDatabaseState(
+          active,
+          effectiveUpdatedBy,
+          typeof reason === 'string' ? reason : 'Kill switch toggled via API'
+        );
+        governance.invalidateCache();
+        const status = await governance.getKillSwitch().checkStatus();
+        return res.json({
+          message: `Kill switch state successfully set to ${active}`,
+          killSwitchStatus: status,
+        });
+      } catch (err: any) {
+        return res.status(500).json({ error: 'Failed to update kill switch state', details: err.message });
+      }
+    }
+  );
+
+  app.post(
+    '/governance/limits',
+    requireGovernanceAuth('ADMIN_WRITE', authConfigGetter),
+    async (req, res) => {
+      try {
+        const {
+          activeLevel,
+          maxConsecutiveTasks,
+          maxTaskDurationMs,
+          maxToolRoundsPerTask,
+          maxCorrectionAttempts,
+          maxConsecutiveFailures,
+          allowedProducts,
+          killSwitchActive,
+          reason,
+          updatedBy,
+        } = req.body ?? {};
+
+        if (activeLevel !== undefined && (activeLevel === 5 || activeLevel < 0 || activeLevel > 4)) {
+          return res.status(400).json({
+            error: `Invalid governance level (${activeLevel}). Level 5 is strictly forbidden. Allowed levels: 0, 1, 2, 3, 4.`,
+          });
+        }
+
+        const principal = (req as any).governancePrincipal;
+        const effectiveUpdatedBy =
+          typeof updatedBy === 'string' ? updatedBy : principal?.identifier || 'api-operator';
+
+        const updated = await governance.updateLimits(
+          {
+            activeLevel,
+            maxConsecutiveTasks,
+            maxTaskDurationMs,
+            maxToolRoundsPerTask,
+            maxCorrectionAttempts,
+            maxConsecutiveFailures,
+            allowedProducts,
+            killSwitchActive,
+          },
+          effectiveUpdatedBy,
+          typeof reason === 'string' ? reason : 'Limits updated via API'
+        );
+
+        return res.json({
+          message: 'Governance limits updated successfully',
+          limits: updated,
+        });
+      } catch (err: any) {
+        return res.status(500).json({ error: 'Failed to update governance limits', details: err.message });
+      }
+    }
+  );
 
   // Phase 5.8: Observability Control Plane — "O que o PDL está fazendo agora?"
   app.get('/observability/active-tasks', async (_req, res) => {

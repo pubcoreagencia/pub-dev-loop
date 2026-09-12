@@ -171,6 +171,8 @@ export interface FinalizeOptions {
     product?: string;
     branch?: string;
   };
+  governance?: import('./pdl/governance/index.js').PdlGovernanceEngine;
+  task?: import('./domain.js').Task;
 }
 
 /**
@@ -352,14 +354,56 @@ export class TaskFinalizer {
     }
 
     // CANONICAL PDL REMOTE PERSISTENCE:
-    // If requested via options or PDL_REMOTE_PERSISTENCE=true, persist using PdlRemotePersistence
+    // Remote persistence must NEVER be triggered by ambient environment variables alone.
+    // Every remote persistence operation requires explicit authorization from PdlGovernanceEngine (Gate D).
     let remotePersistence: RemotePersistenceResult | undefined;
-    if (options.remotePersistence?.enabled || process.env.PDL_REMOTE_PERSISTENCE === 'true') {
-      const { defaultRemotePersistence } = await import('./pdl/persistence/remote-persistence.js');
+    if (options.remotePersistence?.enabled) {
+      const { defaultGovernanceEngine } = await import('./pdl/governance/index.js');
+      const governance = options.governance || defaultGovernanceEngine;
+      const persistenceProduct = options.remotePersistence?.product || 'pub-dev-loop';
       const branchResult = await this.exec('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
       const branchName = options.remotePersistence?.branch || branchResult.stdout?.trim() || 'main';
-      const persistenceProduct = options.remotePersistence?.product || 'pub-dev-loop';
 
+      const governanceTask: import('./domain.js').Task = options.task || {
+        id: 'finalizer-direct',
+        project: persistenceProduct,
+        repository: `https://github.com/pubcoreagencia/${persistenceProduct}.git`,
+        objective: 'Direct finalizer remote persistence',
+        prompt: 'Direct remote persistence finalization',
+        status: 'RUNNING',
+        priority: 1,
+        worker: 'finalizer',
+        result: null,
+        error: null,
+        branch: branchName,
+        commitSha: commitSha || '',
+        gitStatus,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        leaseOwner: null,
+        leaseDeadline: null,
+        heartbeatAt: null,
+        workspacePath: this.security.root,
+        prototypeSessionId: null,
+      };
+
+      const gateDecision = await governance.evaluateFinalization(governanceTask);
+      if (!gateDecision.allowed) {
+        console.log(`[TaskFinalizer] Remote persistence blocked by governance (${gateDecision.reasonCode}): ${gateDecision.reason}`);
+        return {
+          status: 'FAILED',
+          commitSha,
+          commitMessage,
+          changedFiles,
+          gitStatus,
+          testsPassed,
+          testOutput: '',
+          errorCode: gateDecision.reasonCode,
+          errorMessage: `Remote persistence blocked by governance: ${gateDecision.reason}`,
+        };
+      }
+
+      const { defaultRemotePersistence } = await import('./pdl/persistence/remote-persistence.js');
       remotePersistence = await defaultRemotePersistence.persist({
         workspace: this.security.root,
         product: persistenceProduct,
@@ -379,26 +423,6 @@ export class TaskFinalizer {
           errorCode: remotePersistence.errorCode || 'REMOTE_PERSISTENCE_FAILED',
           errorMessage: remotePersistence.errorMessage || 'Remote persistence verification failed',
           remotePersistence,
-        };
-      }
-    } else if (process.env.PROTOTYPE_PERSISTENT_PUSH === 'true') {
-      // Legacy prototype push for backward compatibility
-      const { pushBranch, getPrototypesRepo } = await import('./github-app.js');
-      console.log('[Finalizer] [DEPRECATED] Starting legacy persistent push to prototype repo...');
-      const branchResult = await this.exec('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
-      const branchName = branchResult.stdout?.trim() || 'main';
-      const pushResult = pushBranch(this.security.root, branchName);
-      if (!pushResult.ok) {
-        return {
-          status: 'FAILED',
-          commitSha: null,
-          commitMessage,
-          changedFiles,
-          gitStatus,
-          testsPassed,
-          testOutput: '',
-          errorCode: 'PUSH_FAILED',
-          errorMessage: `git push to ${getPrototypesRepo()} failed: ${pushResult.error}`,
         };
       }
     }
