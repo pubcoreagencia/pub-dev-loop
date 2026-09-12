@@ -12,6 +12,7 @@ import { captureWorkspaceSnapshot } from './finalizer.js';
 import { RouterProvider } from './providers/router.js';
 import { OpenRouterProvider } from './providers/openrouter.js';
 import { StreamEventSink, type OperationalEventEnvelope, type OperationalEventType } from './providers/streaming/index.js';
+import { verifyRepositoryIdentity } from './pdl/security/repository-identity.js';
 import { classifyTaskProfile } from './routing/index.js';
 import {
   enrichDeveloperTaskWithMemory,
@@ -351,6 +352,14 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
           await run('git', ['checkout', '-b', branch], repo);
         }
 
+        // GATE 1: Post-Provisioning Repository Identity Verification
+        verifyRepositoryIdentity({
+          taskRepository: task.repository,
+          workspacePath: repo,
+          gate: 'Gate 1 (Post-Provisioning)',
+          activeProject: (task as any).activeProject || (task as any).project,
+        });
+
         // 4. CAPTURE BASELINE (of THIS attempt's workspace)
         attemptBaseline = captureWorkspaceSnapshot(repo);
 
@@ -442,6 +451,14 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
             capabilities: () => provider.capabilities(),
             metadata: () => provider.metadata(),
             execute: async (input: ProviderTaskInput, ws: string): Promise<ProviderTaskResult> => {
+              // GATE 2: Pre-Agent-Execution Repository Identity Verification
+              verifyRepositoryIdentity({
+                taskRepository: task.repository,
+                workspacePath: ws,
+                gate: 'Gate 2 (Pre-Agent-Execution)',
+                activeProject: (task as any).activeProject || (task as any).project,
+              });
+
               try {
                 const taskWithInstructions: ProviderTaskInput = {
                   ...input,

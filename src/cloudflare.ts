@@ -22,11 +22,7 @@ export default {
     return apiWorker.fetch(request, env, ctx);
   },
   async scheduled(controller: any, env: Env, ctx: any): Promise<void> {
-    console.log('[Cloudflare Cron Trigger] 24/7 Autonomous Holding tick executed via 10-Sector Parallel Bus.');
-    if (ctx && typeof ctx.waitUntil === 'function') {
-      ctx.waitUntil(defaultAutonomousOrchestrator.runMultiSectorParallelTick(env));
-    } else {
-      await defaultAutonomousOrchestrator.runMultiSectorParallelTick(env);
-    }
+    console.warn('[CEO RECOVERY PROTOCOL HARD STOP] Scheduled autonomous holding tick is PERMANENTLY DISABLED / HARD STOPPED. Zero ticks executed.');
+    return;
   },
 };

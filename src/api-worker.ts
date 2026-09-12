@@ -1572,6 +1572,7 @@ export class AutonomousEcosystemOrchestrator {
     commitSha?: string;
     summary: string;
   }> {
+    throw new Error('CEO RECOVERY PROTOCOL HARD STOP: Autonomous scheduled execution is strictly disabled. No automatic commits or pushes permitted.');
     this.lastCycleIndex++;
     const targetRepo = await this.getScheduledRepo(env, customRepo);
     const directive = customDirective || `Desenvolvimento Contínuo 24/7 da Holding: Mapear e evoluir módulo ${targetRepo.name} sob kernel neural-os`;
@@ -1580,8 +1581,11 @@ export class AutonomousEcosystemOrchestrator {
     const botToken = env.GITHUB_TOKEN || env.PROTOTYPE_BOT_TOKEN || '';
     let pool: InstanceType<typeof Pool> | null = null;
     try {
-      pool = getPool(env);
-      await ensureMigrations(pool);
+      const activePool = getPool(env);
+      if (activePool) {
+        await ensureMigrations(activePool);
+        pool = activePool;
+      }
     } catch {}
 
     const ghHeaders: Record<string, string> = {
@@ -1909,6 +1913,7 @@ export function runAutonomousOptimization(): AutonomousExecutionMeta {
     successfulTicks: number;
     results: Array<{ sector: string; repo: string; success: boolean; commitSha?: string; error?: string }>;
   }> {
+    throw new Error('CEO RECOVERY PROTOCOL HARD STOP: Multi-sector parallel ticks are strictly disabled. No automatic commits or pushes permitted.');
     const sectors = PUB_HOLDING_SECTORS;
     const currentTick = this.lastCycleIndex;
 
@@ -3104,26 +3109,12 @@ ${d.commits.slice(0, 3).join('\n') || '- Repositório sincronizado na branch pri
 
       // POST /office/autonomous/cycle (Trigger next scheduled or specific repo autonomous cycle)
       if (method === 'POST' && path === '/office/autonomous/cycle') {
-        try {
-          const body = (await request.json().catch(() => ({}))) as any;
-          const { directive, repo } = body;
-          const result = await defaultAutonomousOrchestrator.runScheduledTick(env, directive, repo);
-          return jsonResponse({ success: true, ...result }, 200);
-        } catch (err: any) {
-          return jsonResponse({ error: err.message }, 500);
-        }
+        return jsonResponse({ error: 'CEO RECOVERY PROTOCOL HARD STOP: Autonomous cycle execution is strictly disabled.' }, 403);
       }
 
       // POST /office/autonomous/parallel-cycle (Barramento Simultâneo: Dispara os 10 setores em paralelo)
       if (method === 'POST' && path === '/office/autonomous/parallel-cycle') {
-        try {
-          const body = (await request.json().catch(() => ({}))) as any;
-          const { directive } = body;
-          const result = await defaultAutonomousOrchestrator.runMultiSectorParallelTick(env, directive);
-          return jsonResponse({ success: true, ...result }, 200);
-        } catch (err: any) {
-          return jsonResponse({ error: err.message }, 500);
-        }
+        return jsonResponse({ error: 'CEO RECOVERY PROTOCOL HARD STOP: Parallel autonomous cycle execution is strictly disabled.' }, 403);
       }
 
       // GET /office/autonomous/audit (Daily summary & timeline of all autonomous actions)

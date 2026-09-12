@@ -24,6 +24,7 @@ import {
 import { DefaultExecutionEngine } from './execution/default-execution-engine.js';
 import type { AgentProvider, ProviderTaskInput } from './providers/types.js';
 import { PdlGovernanceEngine } from './pdl/governance/index.js';
+import { verifyRepositoryIdentity } from './pdl/security/repository-identity.js';
 
 const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
 const HEARTBEAT_INTERVAL_MS = Number(process.env.WORKER_HEARTBEAT_MS ?? 10000);
@@ -848,6 +849,14 @@ export class CodexWorker extends BaseWorker {
     await run('git', ['clone', repository, repo]);
     await run('git', ['checkout', '-b', branch], repo);
 
+    // GATE 1: Post-Provisioning Repository Identity Verification
+    verifyRepositoryIdentity({
+      taskRepository: task.repository,
+      workspacePath: repo,
+      gate: 'Gate 1 (Post-Provisioning)',
+      activeProject: (task as any).activeProject || task.project,
+    });
+
     const baseline = captureWorkspaceSnapshot(repo);
 
     let executionResult: ExecutionResult | undefined;
@@ -862,6 +871,13 @@ export class CodexWorker extends BaseWorker {
         capabilities: () => [],
         metadata: () => ({}),
         execute: async (_input: ProviderTaskInput, wsPath: string): Promise<ProviderTaskResult> => {
+          // GATE 2: Pre-Agent-Execution Repository Identity Verification
+          verifyRepositoryIdentity({
+            taskRepository: task.repository,
+            workspacePath: wsPath,
+            gate: 'Gate 2 (Pre-Agent-Execution)',
+            activeProject: (task as any).activeProject || task.project,
+          });
           executedOutcome = await this.agent.execute(task, wsPath);
           return {
             status: 'COMPLETED',
@@ -884,6 +900,13 @@ export class CodexWorker extends BaseWorker {
       executionResult = await engine.execute(attemptTask, prepared.executionSpec);
       outcome = executedOutcome!;
     } else {
+      // GATE 2: Pre-Agent-Execution Repository Identity Verification
+      verifyRepositoryIdentity({
+        taskRepository: task.repository,
+        workspacePath: repo,
+        gate: 'Gate 2 (Pre-Agent-Execution)',
+        activeProject: (task as any).activeProject || task.project,
+      });
       outcome = await this.agent.execute(task, repo);
     }
     const started = Date.now();
