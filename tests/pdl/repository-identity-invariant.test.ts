@@ -299,4 +299,91 @@ describe('CEO RECOVERY PROTOCOL — Hard Repository Identity Invariant', () => {
       }).toThrowError(/WORKSPACE_IDENTITY_UNVERIFIED|WORKSPACE_MISSING_REMOTE/);
     });
   });
+
+  describe('Structural Hard Stop & Multi-Repository Mutation Immunity', () => {
+    it('A: direct internal call to runScheduledTick fails closed and cannot mutate any repository', async () => {
+      const { defaultAutonomousOrchestrator } = await import('../../src/api-worker.js');
+      const mockEnv: any = { GITHUB_TOKEN: 'fake-token' };
+
+      await expect(
+        defaultAutonomousOrchestrator.runScheduledTick(mockEnv, 'test directive', 'pubet')
+      ).rejects.toThrowError(/CEO RECOVERY PROTOCOL HARD STOP: Autonomous scheduled tick execution and multi-repository code mutation are permanently removed/);
+    });
+
+    it('B: direct internal call to runMultiSectorParallelTick fails closed and cannot loop through holding sectors', async () => {
+      const { defaultAutonomousOrchestrator } = await import('../../src/api-worker.js');
+      const mockEnv: any = { GITHUB_TOKEN: 'fake-token' };
+
+      await expect(
+        defaultAutonomousOrchestrator.runMultiSectorParallelTick(mockEnv, 'test parallel')
+      ).rejects.toThrowError(/CEO RECOVERY PROTOCOL HARD STOP: Multi-sector parallel ticks and autonomous repository mutation loops are permanently removed/);
+    });
+
+    it('C: direct internal call to rollbackBackup fails closed and cannot perform GitHub Contents PUT', async () => {
+      const { defaultAutonomousOrchestrator } = await import('../../src/api-worker.js');
+      const mockEnv: any = { GITHUB_TOKEN: 'fake-token' };
+
+      await expect(
+        defaultAutonomousOrchestrator.rollbackBackup(mockEnv, 'snap-any-123', null)
+      ).rejects.toThrowError(/CEO RECOVERY PROTOCOL HARD STOP: Direct GitHub contents mutation \/ rollback via API Worker is permanently removed/);
+    });
+
+    it('D: API endpoints /office/autonomous/cycle and /office/autonomous/parallel-cycle return HTTP 403 Forbidden', async () => {
+      const apiWorkerModule = await import('../../src/api-worker.js');
+      const apiWorker = apiWorkerModule.default;
+      const mockEnv: any = {};
+      const mockCtx: any = { waitUntil: vi.fn() };
+
+      const resCycle = await apiWorker.fetch(
+        new Request('https://pub-dev-loop-api.test/office/autonomous/cycle', { method: 'POST' }),
+        mockEnv,
+        mockCtx
+      );
+      expect(resCycle.status).toBe(403);
+      const cycleJson = await resCycle.json() as any;
+      expect(cycleJson.error).toContain('CEO RECOVERY PROTOCOL HARD STOP');
+
+      const resParallel = await apiWorker.fetch(
+        new Request('https://pub-dev-loop-api.test/office/autonomous/parallel-cycle', { method: 'POST' }),
+        mockEnv,
+        mockCtx
+      );
+      expect(resParallel.status).toBe(403);
+      const parallelJson = await resParallel.json() as any;
+      expect(parallelJson.error).toContain('CEO RECOVERY PROTOCOL HARD STOP');
+    });
+
+    it('E: API endpoints /office/autonomous/rollback and /office/github/commit return HTTP 403 Forbidden', async () => {
+      const apiWorkerModule = await import('../../src/api-worker.js');
+      const apiWorker = apiWorkerModule.default;
+      const mockEnv: any = {};
+      const mockCtx: any = { waitUntil: vi.fn() };
+
+      const resRollback = await apiWorker.fetch(
+        new Request('https://pub-dev-loop-api.test/office/autonomous/rollback', {
+          method: 'POST',
+          body: JSON.stringify({ backupId: 'snap-test' }),
+          headers: { 'Content-Type': 'application/json' },
+        }),
+        mockEnv,
+        mockCtx
+      );
+      expect(resRollback.status).toBe(403);
+      const rollbackJson = await resRollback.json() as any;
+      expect(rollbackJson.error).toContain('CEO RECOVERY PROTOCOL HARD STOP');
+
+      const resCommit = await apiWorker.fetch(
+        new Request('https://pub-dev-loop-api.test/office/github/commit', {
+          method: 'POST',
+          body: JSON.stringify({ repo: 'pubet', path: 'src/file.ts', content: 'hello' }),
+          headers: { 'Content-Type': 'application/json' },
+        }),
+        mockEnv,
+        mockCtx
+      );
+      expect(resCommit.status).toBe(403);
+      const commitJson = await resCommit.json() as any;
+      expect(commitJson.error).toContain('CEO RECOVERY PROTOCOL HARD STOP');
+    });
+  });
 });

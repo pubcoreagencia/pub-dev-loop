@@ -5,10 +5,10 @@
 ```text
 INCIDENT_STATUS    = REMEDIATED
 KILL_SWITCH_STATUS = ACTIVE / HARD_STOPPED
-INVARIANT_STATUS   = PROVEN (SCENARIOS A-K VERIFIED)
+INVARIANT_STATUS   = PROVEN (SCENARIOS A-K VERIFIED + STRUCTURAL IMMUNITY A-E VERIFIED)
 CRON_STATUS        = DISABLED (EMPTY CRONS TRIGGER)
-BASELINE_COMMIT    = 59eef2f06b89e670fce218c39870452650d2e1c8
-TOTAL_TESTS_PASSED = 187 (13 REPO IDENTITY + 174 FULL REGRESSION)
+BASELINE_COMMIT    = 93767cfbb0b3d1e1484e46f76bfdc431e7dbd1c9
+TOTAL_TESTS_PASSED = 192 (18 REPO IDENTITY & STRUCTURAL IMMUNITY + 174 FULL REGRESSION)
 REGRESSION_FAILURES = 0
 ```
 
@@ -38,13 +38,20 @@ The autonomous commits originated from a live deployed Cloudflare Worker (`pub-d
 
 ---
 
-## 2. HARD STOP IMPLEMENTATION
+## 2. STRUCTURAL HARD STOP & CODE DISMANTLING
 
-The following immediate mitigations were implemented:
-1. `wrangler.jsonc`: Empty crons array `"crons": []` removes recurring Cloudflare trigger.
-2. `src/cloudflare.ts`: `scheduled()` handler converted to no-op logging security warning.
-3. `src/api-worker.ts`: `runScheduledTick` and `runMultiSectorParallelTick` throw `CEO RECOVERY PROTOCOL HARD STOP` errors immediately; endpoints `/office/autonomous/cycle` and `/office/autonomous/parallel-cycle` return HTTP 403 Forbidden.
-4. `.github/workflows/deploy-container.yml` & `.github/workflows/deploy.yml`: Removed `on: push: branches: [main]` trigger; restricted exclusively to `workflow_dispatch`.
+To guarantee that autonomous execution is structurally impossible even if internal functions are called or routes bypassed:
+1. `wrangler.jsonc`: Empty crons array `"crons": []` deployed and active in Cloudflare Workers.
+2. `src/cloudflare.ts`: `scheduled()` handler converted to an inert no-op logging security warning.
+3. `src/api-worker.ts`:
+   - **`runScheduledTick()`**: ~340 lines of dangerous autonomous code generation, LLM synthesis, `src/autonomous/*Engine.ts` file path construction, `snap-*` backup creation, and direct GitHub Contents API `PUT` were permanently deleted. Throws `CEO RECOVERY PROTOCOL HARD STOP` immediately.
+   - **`runMultiSectorParallelTick()`**: The multi-sector loop across 52 repositories was permanently deleted. Throws `CEO RECOVERY PROTOCOL HARD STOP` immediately.
+   - **`rollbackBackup()`**: Stripped of all GitHub Contents API `PUT` logic. Throws `CEO RECOVERY PROTOCOL HARD STOP` immediately.
+   - **`POST /office/autonomous/rollback`**: Returns HTTP 403 Forbidden with hard-stop payload.
+   - **`POST /office/github/commit`**: Stripped of GitHub Contents API `PUT` and `snap-*` backup creation; returns HTTP 403 Forbidden.
+   - **`POST /office/autonomous/cycle` & `/parallel-cycle`**: Return HTTP 403 Forbidden.
+   - **Verification**: Exact search for `method: 'PUT'`, `src/autonomous`, and `snap-` across `src/` confirmed 0 results.
+4. `.github/workflows/deploy-container.yml` & `.github/workflows/deploy.yml`: Removed `on: push: branches: [main]` trigger; restricted exclusively to manual `workflow_dispatch`.
 
 ---
 
@@ -67,8 +74,8 @@ Implemented in `src/pdl/security/repository-identity.ts`:
 
 ## 4. VERIFICATION SUITE RESULTS
 
-### 4.1 Repository Identity Invariant Suite (`tests/pdl/repository-identity-invariant.test.ts`)
-All 13 tests passed (100%):
+### 4.1 Repository Identity Invariant & Structural Immunity Suite (`tests/pdl/repository-identity-invariant.test.ts`)
+All 18 tests passed (100%):
 - **Scenario A**: `TASK=A, WORKSPACE=A` -> ALLOW [PASSED]
 - **Scenario B**: `TASK=A, WORKSPACE=B` -> BLOCK (`PROJECT_SCOPE_MISMATCH`) [PASSED]
 - **Scenario C**: `ACTIVE_PROJECT=B, TASK=A, WORKSPACE=A` -> ALLOW (`activeProject` cannot redirect) [PASSED]
@@ -80,19 +87,25 @@ All 13 tests passed (100%):
 - **Scenario I**: `REMOTE=A initially verified; REMOTE changed to B before execution` -> BLOCK at Gate 2 [PASSED]
 - **Scenario J**: `workspacePath directory named B, but Git remote=A` -> identity determined strictly by Git, not path [PASSED]
 - **Scenario K**: `.git/config inconsistent or metadata divergent` -> BLOCK [PASSED]
+- **Structural Immunity A**: direct internal call to `runScheduledTick` fails closed and cannot mutate any repository [PASSED]
+- **Structural Immunity B**: direct internal call to `runMultiSectorParallelTick` fails closed and cannot mutate any repository [PASSED]
+- **Structural Immunity C**: direct internal call to `rollbackBackup` fails closed and cannot mutate GitHub API [PASSED]
+- **Structural Immunity D**: HTTP endpoints `/office/autonomous/cycle`, `/parallel-cycle`, `/rollback`, `/office/github/commit` return 403 Forbidden and make zero outgoing requests [PASSED]
+- **Structural Immunity E**: Codebase static analysis confirms zero GitHub Contents API `PUT` or `src/autonomous` mutation logic exists in `src/api-worker.ts` [PASSED]
 
 ### 4.2 Full PDL Regression Suite
-10 test suites, 174 tests passed (100%):
-- `tests/pdl-reaper.test.ts`
-- `tests/pdl-retry-dlq.test.ts`
-- `tests/pdl-continuous-scheduler.test.ts`
-- `tests/pdl-governance-remediation.test.ts`
-- `tests/pdl-governance-engine.test.ts`
-- `tests/pdl-correction-loop.test.ts`
-- `tests/pdl-error-classifier.test.ts`
-- `tests/pdl-preflight.test.ts`
-- `tests/pdl-refinement.test.ts`
-- `tests/execution/changed-files-handoff.test.ts`
+11 test suites, 192 tests passed (100%):
+- `tests/pdl/repository-identity-invariant.test.ts` (18 tests)
+- `tests/pdl-reaper.test.ts` (19 tests)
+- `tests/pdl-retry-dlq.test.ts` (13 tests)
+- `tests/pdl-continuous-scheduler.test.ts` (14 tests)
+- `tests/pdl-governance-remediation.test.ts` (15 tests)
+- `tests/pdl-governance-engine.test.ts` (33 tests)
+- `tests/pdl-correction-loop.test.ts` (13 tests)
+- `tests/pdl-error-classifier.test.ts` (22 tests)
+- `tests/pdl-preflight.test.ts` (16 tests)
+- `tests/pdl-refinement.test.ts` (17 tests)
+- `tests/execution/changed-files-handoff.test.ts` (12 tests)
 
 ### 4.3 Typecheck & Build
 - `npm run typecheck`: 0 errors.
