@@ -22,7 +22,7 @@ describe('PUB Neural PDL onboarding contract', () => {
     expect(manifest?.protectedPaths).toEqual(expect.arrayContaining(['.github/**', '.env*']));
   });
 
-  it('authorizes a pub-neural worker branch but not the protected main branch for remote persistence', () => {
+  it('authorizes a pub-neural worker branch but blocks main for autonomous branch execution', () => {
     const policy = new RepositoryAuthorizationPolicy();
 
     const workerBranch = policy.authorize({ repository, branch: 'worker/pdl-pub-neural-test' });
@@ -32,7 +32,8 @@ describe('PUB Neural PDL onboarding contract', () => {
     expect(workerBranch.owner).toBe('pubcoreagencia');
     expect(workerBranch.name).toBe('pub-neural');
     expect(workerBranch.branch).toBe('worker/pdl-pub-neural-test');
-    expect(mainBranch.authorized).toBe(true);
+    expect(mainBranch.authorized).toBe(false);
+    expect(mainBranch.reason).toContain("Branch 'main' is not authorized");
   });
 
   it('permits execution only when governance explicitly includes pub-neural', async () => {
