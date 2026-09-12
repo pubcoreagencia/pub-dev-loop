@@ -30,8 +30,39 @@ export const createPdlApp = (
   const app = express();
   app.use(express.json());
 
-  // Healthcheck dedicado do PDL
-  app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'pdl-api' }));
+  // Healthcheck dedicado do PDL (Liveness)
+  app.get('/health', (_req, res) => res.json({
+    status: 'ok',
+    service: 'pdl-api',
+    name: 'PDL API',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  }));
+
+  // Readiness dedicado do PDL (Database connectivity + Intake ready)
+  app.get('/ready', async (_req, res) => {
+    try {
+      await activePool.query('SELECT 1');
+      return res.json({
+        status: 'ready',
+        service: 'pdl-api',
+        name: 'PDL API',
+        database: 'connected',
+        intakeService: 'ready',
+        repositoryAuthorization: 'active',
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      return res.status(503).json({
+        status: 'not_ready',
+        service: 'pdl-api',
+        name: 'PDL API',
+        database: 'disconnected',
+        error: err.message,
+      });
+    }
+  });
 
   // Organização & Agentes
   app.get('/office/organization', (_req, res) => res.json({ organization: defaultOfficeOrganization.getOrganization() }));
@@ -130,7 +161,12 @@ export const createPdlApp = (
       const result = await adapter.ingest(body);
       return res.status(201).json(result);
     } catch (err: any) {
-      if (err instanceof TaskIntakeError || err?.code === 'INVALID_TASK' || err?.name === 'TaskIntakeError') {
+      if (
+        err instanceof TaskIntakeError ||
+        err?.code === 'INVALID_TASK' ||
+        err?.name === 'TaskIntakeError' ||
+        err?.message?.includes('Repository authorization denied')
+      ) {
         return res.status(400).json({ error: err.message });
       }
       if (

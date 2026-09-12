@@ -339,8 +339,12 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
 
         await run('git', ['clone', repository, repo]);
         if (task.branch) {
-          await run('git', ['fetch', 'origin', task.branch], repo);
-          await run('git', ['checkout', '-B', task.branch, `origin/${task.branch}`], repo);
+          try {
+            await run('git', ['fetch', 'origin', task.branch], repo);
+            await run('git', ['checkout', '-B', task.branch, `origin/${task.branch}`], repo);
+          } catch {
+            await run('git', ['checkout', '-B', task.branch], repo);
+          }
         } else {
           await run('git', ['checkout', '-b', branch], repo);
         }

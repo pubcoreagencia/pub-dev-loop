@@ -5,7 +5,9 @@ import type {
   PdlTaskIngestionRequest,
   PdlTaskIngestionResult,
 } from './types.js';
+import { TaskIntakeError } from '../../task/intake.js';
 import { TaskIntakeService } from '../service/task-intake-service.js';
+import { defaultRepositoryAuthorizationPolicy } from '../security/repo-authorization.js';
 
 /**
  * FASE 4.3: Adaptador concreto do PDL para o contrato neutro de ingestão de tarefas.
@@ -29,6 +31,14 @@ export class PdlTaskIngestionAdapter implements PdlTaskIngestionPort {
   }
 
   async ingest(request: PdlTaskIngestionRequest): Promise<PdlTaskIngestionResult> {
+    const auth = defaultRepositoryAuthorizationPolicy.authorize({
+      repository: request.repository,
+      branch: request.branch,
+    });
+    if (!auth.authorized) {
+      throw new TaskIntakeError('INVALID_TASK', `Repository authorization denied: ${auth.reason}`);
+    }
+
     const existingList = typeof this.tasks.list === 'function' ? await this.tasks.list() : [];
     const existing = existingList.find(t => {
       const res = t.result as Record<string, unknown> | null;

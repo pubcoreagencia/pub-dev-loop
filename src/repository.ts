@@ -115,6 +115,7 @@ export class PostgresTaskRepository implements TaskRepository {
         WITH candidate AS (
           SELECT id FROM tasks
           WHERE status = 'QUEUED'
+             OR (status IN ('ASSIGNED', 'RUNNING', 'TESTING') AND lease_deadline IS NOT NULL AND lease_deadline < now())
           ORDER BY priority DESC, created_at ASC
           FOR UPDATE SKIP LOCKED LIMIT 1
         )
@@ -126,8 +127,9 @@ export class PostgresTaskRepository implements TaskRepository {
       console.warn('[PostgresTaskRepository] DB quota/connection issue on claim, checking sovereign memory:', err.message);
     }
 
+    const now = new Date();
     for (const task of sovereignFallbackTasks.values()) {
-      if (task.status === 'QUEUED') {
+      if (task.status === 'QUEUED' || (['ASSIGNED', 'RUNNING', 'TESTING'].includes(task.status) && task.leaseDeadline && task.leaseDeadline < now)) {
         task.status = 'ASSIGNED';
         task.worker = worker;
         task.leaseOwner = worker;

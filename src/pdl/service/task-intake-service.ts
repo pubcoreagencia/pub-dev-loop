@@ -28,6 +28,7 @@ import {
 } from '../../task/trust-contracts.js';
 import { PdlPreflightEngine } from '../research/index.js';
 import { PdlRefinementEngine } from '../refinement/index.js';
+import { defaultRepositoryAuthorizationPolicy } from '../security/repo-authorization.js';
 
 
 export interface PoolClientLike extends QueryableDb {
@@ -152,10 +153,18 @@ export function buildCanonicalExecutionSpec(
     evidence: [],
   };
 
-  const owner = repository.includes('/')
+  const authResult = defaultRepositoryAuthorizationPolicy.authorize({
+    repository,
+    branch: 'main',
+  });
+  if (!authResult.authorized) {
+    throw new TaskIntakeError('INVALID_TASK', `Repository authorization rejected: ${authResult.reason}`);
+  }
+
+  const owner = authResult.owner || (repository.includes('/')
     ? repository.split('/').slice(-2, -1)[0] || 'pubcoreagencia'
-    : 'pubcoreagencia';
-  const repoName = project || 'pub-dev-loop';
+    : 'pubcoreagencia');
+  const repoName = authResult.name || project || 'pub-dev-loop';
 
   const repositoryTarget: RepositoryTarget = createRepositoryTarget(
     { owner, name: repoName, fullName: `${owner}/${repoName}` },

@@ -161,7 +161,7 @@ function validateKnownOrUnknownField<T>(
   path: string,
   validate: (value: T) => string[],
   errors: SemanticValidationIssue[],
-): { trustBoundary?: string } | undefined {
+): { trustBoundary?: any } | undefined {
   if (field === undefined) {
     return undefined;
   }
