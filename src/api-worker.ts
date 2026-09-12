@@ -1297,56 +1297,15 @@ export class AutonomousEcosystemOrchestrator {
   private memoryAuditLogs: AutonomousAuditLog[] = [];
   private lastCycleIndex = 0;
 
-  public async getScheduledRepo(env: Env, preferredRepo?: string): Promise<EcosystemRepoMeta> {
-    if (preferredRepo) {
-      const match = PUB_ECOSYSTEM_CATALOG.find(
-        (r) => r.name.toLowerCase() === preferredRepo.toLowerCase() || r.fullName.toLowerCase().includes(preferredRepo.toLowerCase())
-      );
-      if (match) return match;
-    }
-
-    const currentHour = new Date().getUTCHours();
-    const cycle = (currentHour + this.lastCycleIndex) % PUB_ECOSYSTEM_CATALOG.length;
-    return PUB_ECOSYSTEM_CATALOG[cycle] || PUB_ECOSYSTEM_CATALOG[0];
+  public async getScheduledRepo(_env: Env, _preferredRepo?: string): Promise<EcosystemRepoMeta> {
+    throw new Error('CEO RECOVERY PROTOCOL HARD STOP: Autonomous repository selection and multi-repository scheduling are permanently dismantled.');
   }
 
   public async createSafetyBackup(
-    pool: InstanceType<typeof Pool> | null,
-    backup: Omit<AutonomousBackupRecord, 'createdAt' | 'status'>
+    _pool: InstanceType<typeof Pool> | null,
+    _backup: Omit<AutonomousBackupRecord, 'createdAt' | 'status'>
   ): Promise<AutonomousBackupRecord> {
-    const record: AutonomousBackupRecord = {
-      ...backup,
-      createdAt: new Date().toISOString(),
-      status: 'ACTIVE',
-    };
-
-    this.memoryBackups.set(record.id, record);
-
-    if (pool) {
-      try {
-        await pool.query(
-          `INSERT INTO autonomous_backups (id, repo, file_path, previous_sha, previous_content, new_sha, commit_sha, directive, created_at, status)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-           ON CONFLICT (id) DO UPDATE SET commit_sha = EXCLUDED.commit_sha, new_sha = EXCLUDED.new_sha`,
-          [
-            record.id,
-            record.repo,
-            record.filePath,
-            record.previousSha || null,
-            record.previousContent || null,
-            record.newSha || null,
-            record.commitSha || null,
-            record.directive,
-            record.createdAt,
-            record.status,
-          ]
-        );
-      } catch (err: any) {
-        console.warn('[Orchestrator] Backup DB write fallback to memory:', err.message);
-      }
-    }
-
-    return record;
+    throw new Error('CEO RECOVERY PROTOCOL HARD STOP: Direct code backup and autonomous mutation records are permanently dismantled.');
   }
 
   public async logAudit(

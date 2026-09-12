@@ -5,10 +5,10 @@
 ```text
 INCIDENT_STATUS    = REMEDIATED
 KILL_SWITCH_STATUS = ACTIVE / HARD_STOPPED
-INVARIANT_STATUS   = PROVEN (SCENARIOS A-K VERIFIED + STRUCTURAL IMMUNITY A-E VERIFIED)
+INVARIANT_STATUS   = PROVEN (SCENARIOS A-K VERIFIED + STRUCTURAL IMMUNITY A-G VERIFIED)
 CRON_STATUS        = DISABLED (EMPTY CRONS TRIGGER)
-BASELINE_COMMIT    = 93767cfbb0b3d1e1484e46f76bfdc431e7dbd1c9
-TOTAL_TESTS_PASSED = 192 (18 REPO IDENTITY & STRUCTURAL IMMUNITY + 174 FULL REGRESSION)
+BASELINE_COMMIT    = 43910c6095dfcfbdb6ee8c6fb33aa96e34842d69
+TOTAL_TESTS_PASSED = 194 (20 REPO IDENTITY & STRUCTURAL IMMUNITY + 174 FULL REGRESSION)
 REGRESSION_FAILURES = 0
 ```
 
@@ -47,6 +47,8 @@ To guarantee that autonomous execution is structurally impossible even if intern
    - **`runScheduledTick()`**: ~340 lines of dangerous autonomous code generation, LLM synthesis, `src/autonomous/*Engine.ts` file path construction, `snap-*` backup creation, and direct GitHub Contents API `PUT` were permanently deleted. Throws `CEO RECOVERY PROTOCOL HARD STOP` immediately.
    - **`runMultiSectorParallelTick()`**: The multi-sector loop across 52 repositories was permanently deleted. Throws `CEO RECOVERY PROTOCOL HARD STOP` immediately.
    - **`rollbackBackup()`**: Stripped of all GitHub Contents API `PUT` logic. Throws `CEO RECOVERY PROTOCOL HARD STOP` immediately.
+   - **`getScheduledRepo()`**: Permanently dismantled. Throws `CEO RECOVERY PROTOCOL HARD STOP` immediately.
+   - **`createSafetyBackup()`**: Permanently dismantled. Throws `CEO RECOVERY PROTOCOL HARD STOP` immediately.
    - **`POST /office/autonomous/rollback`**: Returns HTTP 403 Forbidden with hard-stop payload.
    - **`POST /office/github/commit`**: Stripped of GitHub Contents API `PUT` and `snap-*` backup creation; returns HTTP 403 Forbidden.
    - **`POST /office/autonomous/cycle` & `/parallel-cycle`**: Return HTTP 403 Forbidden.
@@ -75,7 +77,7 @@ Implemented in `src/pdl/security/repository-identity.ts`:
 ## 4. VERIFICATION SUITE RESULTS
 
 ### 4.1 Repository Identity Invariant & Structural Immunity Suite (`tests/pdl/repository-identity-invariant.test.ts`)
-All 18 tests passed (100%):
+All 20 tests passed (100%):
 - **Scenario A**: `TASK=A, WORKSPACE=A` -> ALLOW [PASSED]
 - **Scenario B**: `TASK=A, WORKSPACE=B` -> BLOCK (`PROJECT_SCOPE_MISMATCH`) [PASSED]
 - **Scenario C**: `ACTIVE_PROJECT=B, TASK=A, WORKSPACE=A` -> ALLOW (`activeProject` cannot redirect) [PASSED]
@@ -92,10 +94,12 @@ All 18 tests passed (100%):
 - **Structural Immunity C**: direct internal call to `rollbackBackup` fails closed and cannot mutate GitHub API [PASSED]
 - **Structural Immunity D**: HTTP endpoints `/office/autonomous/cycle`, `/parallel-cycle`, `/rollback`, `/office/github/commit` return 403 Forbidden and make zero outgoing requests [PASSED]
 - **Structural Immunity E**: Codebase static analysis confirms zero GitHub Contents API `PUT` or `src/autonomous` mutation logic exists in `src/api-worker.ts` [PASSED]
+- **Structural Immunity F**: direct internal call to `getScheduledRepo` fails closed and cannot select any repository [PASSED]
+- **Structural Immunity G**: direct internal call to `createSafetyBackup` fails closed and cannot record backups for mutation [PASSED]
 
 ### 4.2 Full PDL Regression Suite
-11 test suites, 192 tests passed (100%):
-- `tests/pdl/repository-identity-invariant.test.ts` (18 tests)
+11 test suites, 194 tests passed (100%):
+- `tests/pdl/repository-identity-invariant.test.ts` (20 tests)
 - `tests/pdl-reaper.test.ts` (19 tests)
 - `tests/pdl-retry-dlq.test.ts` (13 tests)
 - `tests/pdl-continuous-scheduler.test.ts` (14 tests)

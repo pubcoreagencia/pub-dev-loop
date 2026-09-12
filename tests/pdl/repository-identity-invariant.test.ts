@@ -385,5 +385,27 @@ describe('CEO RECOVERY PROTOCOL — Hard Repository Identity Invariant', () => {
       const commitJson = await resCommit.json() as any;
       expect(commitJson.error).toContain('CEO RECOVERY PROTOCOL HARD STOP');
     });
+
+    it('F: direct internal call to getScheduledRepo fails closed and cannot select any repository', async () => {
+      const { defaultAutonomousOrchestrator } = await import('../../src/api-worker.js');
+      const mockEnv: any = {};
+
+      await expect(
+        defaultAutonomousOrchestrator.getScheduledRepo(mockEnv, 'pubet')
+      ).rejects.toThrowError(/CEO RECOVERY PROTOCOL HARD STOP: Autonomous repository selection and multi-repository scheduling are permanently dismantled/);
+    });
+
+    it('G: direct internal call to createSafetyBackup fails closed and cannot record backups for mutation', async () => {
+      const { defaultAutonomousOrchestrator } = await import('../../src/api-worker.js');
+
+      await expect(
+        defaultAutonomousOrchestrator.createSafetyBackup(null, {
+          id: 'test-backup',
+          repo: 'pubet',
+          filePath: 'src/app.ts',
+          directive: 'test',
+        })
+      ).rejects.toThrowError(/CEO RECOVERY PROTOCOL HARD STOP: Direct code backup and autonomous mutation records are permanently dismantled/);
+    });
   });
 });
