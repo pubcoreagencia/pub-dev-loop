@@ -24,10 +24,12 @@ import {
   requireGovernanceAuth,
   type GovernanceAuthConfig,
 } from '../governance/index.js';
+import { PdlContinuousScheduler } from '../scheduler/index.js';
 
 export interface PdlAppOptions {
   governance?: PdlGovernanceEngine;
   authConfig?: GovernanceAuthConfig;
+  scheduler?: PdlContinuousScheduler;
 }
 
 export const createPdlApp = (
@@ -40,6 +42,10 @@ export const createPdlApp = (
   const taskRepo = tasks ?? new PostgresTaskRepository(activePool);
   const intakeService = intake ?? new TaskIntakeService(activePool);
   const governance = options?.governance ?? new PdlGovernanceEngine({ pool: activePool });
+  const scheduler = options?.scheduler ?? new PdlContinuousScheduler({
+    governance,
+    pool: activePool,
+  });
   const authConfigGetter = () => options?.authConfig;
 
   const app = express();
@@ -182,6 +188,57 @@ export const createPdlApp = (
         });
       } catch (err: any) {
         return res.status(500).json({ error: 'Failed to update governance limits', details: err.message });
+      }
+    }
+  );
+
+  // Phase 5.5 Step 2: Bounded Continuous Scheduler Endpoints
+  app.get(
+    '/scheduler/status',
+    requireGovernanceAuth('READ', authConfigGetter),
+    async (_req, res) => {
+      try {
+        const status = scheduler.getStatus();
+        return res.json({
+          service: 'pdl-api',
+          scheduler: status,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err: any) {
+        return res.status(500).json({ error: 'Failed to retrieve scheduler status', details: err.message });
+      }
+    }
+  );
+
+  app.post(
+    '/scheduler/start',
+    requireGovernanceAuth('ADMIN_WRITE', authConfigGetter),
+    async (_req, res) => {
+      try {
+        const session = await scheduler.start();
+        return res.json({
+          message: 'Scheduler session started',
+          session,
+        });
+      } catch (err: any) {
+        return res.status(500).json({ error: 'Failed to start scheduler session', details: err.message });
+      }
+    }
+  );
+
+  app.post(
+    '/scheduler/stop',
+    requireGovernanceAuth('ADMIN_WRITE', authConfigGetter),
+    async (req, res) => {
+      try {
+        const { reason } = req.body ?? {};
+        const session = await scheduler.stop(typeof reason === 'string' ? reason : 'Stopped via API');
+        return res.json({
+          message: 'Scheduler session stopped',
+          session,
+        });
+      } catch (err: any) {
+        return res.status(500).json({ error: 'Failed to stop scheduler session', details: err.message });
       }
     }
   );

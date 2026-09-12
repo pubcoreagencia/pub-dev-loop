@@ -81,12 +81,21 @@ export class PdlCorrectionWorker extends RouterWorker {
     }
 
     const task = await this.tasks.claim(this.name);
-    if (!task) return false;
+    if (!task) {
+      this.lastExecutedTask = null;
+      return false;
+    }
+    this.lastExecutedTask = task;
 
     // Gate B: Check governance before running/executing claimed task
     const execDecision = await this.governance.evaluateExecution(task);
     if (!execDecision.allowed) {
       console.log(`[PDL Worker] Execution start blocked by governance (${execDecision.reasonCode}): ${execDecision.reason}`);
+      this.lastExecutedTask = {
+        ...task,
+        status: 'BLOCKED',
+        error: `Execution start blocked by governance: ${execDecision.reason}`,
+      };
       await this.tasks.update(task.id, {
         status: 'BLOCKED',
         error: `Execution start blocked by governance: ${execDecision.reason}`,
@@ -344,6 +353,14 @@ export class PdlCorrectionWorker extends RouterWorker {
       }
 
       // 8. Authoritative Result Persistence (tasks.result JSONB)
+      this.lastExecutedTask = {
+        ...task,
+        status: finalizeResult.status as Task['status'],
+        branch,
+        commitSha: finalizeResult.commitSha,
+        gitStatus: finalizeResult.gitStatus,
+        error: finalizeResult.status === 'FAILED' ? finalizeResult.errorMessage : null,
+      };
       await this.tasks.update(task.id, {
         status: finalizeResult.status as Task['status'],
         branch,
@@ -375,6 +392,11 @@ export class PdlCorrectionWorker extends RouterWorker {
         ? { code: error.message, execution: error.execution }
         : undefined;
 
+      this.lastExecutedTask = {
+        ...task,
+        status: 'FAILED',
+        error: error instanceof Error ? error.message.slice(0, 4000) : 'Unknown worker error',
+      };
       await this.tasks.update(task.id, {
         status: 'FAILED',
         error: error instanceof Error ? error.message.slice(0, 4000) : 'Unknown worker error',

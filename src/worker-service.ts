@@ -275,9 +275,10 @@ export abstract class BaseWorker implements Worker {
   protected active = false;
   /**
    * Tracks whether TaskFinalizer.finalize() was called for the last
-   * executeOnce() cycle. Exposed for testing.
+   * executeOnce() cycle. Exposed for testing and scheduler observability.
    */
-  protected lastFinalizeStatus: 'SKIPPED_AGENT_FAILED' | 'COMPLETED' | 'FAILED' | null = null;
+  public lastFinalizeStatus: 'SKIPPED_AGENT_FAILED' | 'COMPLETED' | 'FAILED' | null = null;
+  public lastExecutedTask: Task | null = null;
 
   public readonly governance?: PdlGovernanceEngine;
 
@@ -350,13 +351,22 @@ export abstract class BaseWorker implements Worker {
     }
 
     const task = await this.tasks.claim(this.name);
-    if (!task) return false;
+    if (!task) {
+      this.lastExecutedTask = null;
+      return false;
+    }
+    this.lastExecutedTask = task;
 
     // Gate B: Check governance before running/executing claimed task
     if (this.governance) {
       const execDecision = await this.governance.evaluateExecution(task);
       if (!execDecision.allowed) {
         console.log(`[BaseWorker] Execution start blocked by governance (${execDecision.reasonCode}): ${execDecision.reason}`);
+        this.lastExecutedTask = {
+          ...task,
+          status: 'BLOCKED',
+          error: `Execution start blocked by governance: ${execDecision.reason}`,
+        };
         await this.tasks.update(task.id, {
           status: 'BLOCKED',
           error: `Execution start blocked by governance: ${execDecision.reason}`,
@@ -549,6 +559,14 @@ export abstract class BaseWorker implements Worker {
       }
 
       // Update task with final status
+      this.lastExecutedTask = {
+        ...task,
+        status: finalizeResult.status as Task['status'],
+        branch,
+        commitSha: finalizeResult.commitSha,
+        gitStatus: finalizeResult.gitStatus,
+        error: finalizeResult.status === 'FAILED' ? finalizeResult.errorMessage : null,
+      };
       await this.tasks.update(task.id, {
         status: finalizeResult.status as Task['status'],
         branch,
@@ -578,6 +596,11 @@ export abstract class BaseWorker implements Worker {
         ? { code: error.message, execution: error.execution }
         : undefined;
 
+      this.lastExecutedTask = {
+        ...task,
+        status: 'FAILED',
+        error: error instanceof Error ? error.message.slice(0, 4000) : 'Unknown worker error',
+      };
       await this.tasks.update(task.id, {
         status: 'FAILED',
         error: error instanceof Error ? error.message.slice(0, 4000) : 'Unknown worker error',
