@@ -62,7 +62,7 @@ export const CANONICAL_PUB_PRODUCTS: Record<string, ProductManifest> = {
     organization: 'pubcoreagencia',
     defaultBranch: 'main',
     developmentBranchPolicy: ['feat/*', 'feature/*', 'fix/*', 'template-*', 'worker/*'],
-    testCommand: 'node -e "const fs = require(\'fs\'); if (!fs.existsSync(\'AUTONOMOUS_CYCLE.md\')) process.exit(1); console.log(\'[Validate] Template baseline OK\');"',
+    testCommand: "node -e \"const fs = require('fs'); if (!fs.existsSync('AUTONOMOUS_CYCLE.md')) process.exit(1); console.log('[Validate] Template baseline OK');\"",
     allowedPaths: ['*.md', 'devloop-*', 'docs/**', 'src/**'],
     protectedPaths: ['.github/**', '.env*', 'secrets/**'],
     maxAutonomyLevel: 5,
@@ -74,7 +74,7 @@ export const CANONICAL_PUB_PRODUCTS: Record<string, ProductManifest> = {
     organization: 'pubcoreagencia',
     defaultBranch: 'main',
     developmentBranchPolicy: ['feat/*', 'feature/*', 'fix/*', 'shopee-*', 'worker/*'],
-    testCommand: 'node -e "const fs = require(\'fs\'); if (!fs.existsSync(\'src\')) process.exit(1); console.log(\'[Validate] Shopee scraper structure OK\');"',
+    testCommand: "node -e \"const fs = require('fs'); if (!fs.existsSync('src')) process.exit(1); console.log('[Validate] Shopee scraper structure OK');\"",
     allowedPaths: ['src/**', 'docs/**', 'tests/**', '*.md'],
     protectedPaths: ['.github/**', '.env*', 'wrangler.*', 'package*.json'],
     maxAutonomyLevel: 5,
@@ -105,6 +105,19 @@ export const CANONICAL_PUB_PRODUCTS: Record<string, ProductManifest> = {
     protectedPaths: ['.github/**', '.env*'],
     maxAutonomyLevel: 4, // Frontend core requires human release approval before push
     remotePersistenceEligible: false,
+  },
+  'pub-neural': {
+    productId: 'pub-neural',
+    repository: 'https://github.com/pubcoreagencia/pub-neural.git',
+    organization: 'pubcoreagencia',
+    defaultBranch: 'main',
+    developmentBranchPolicy: ['feat/*', 'feature/*', 'fix/*', 'worker/*', 'neural-*'],
+    testCommand: 'bash tests/ingestion/run_ingestion_tests.sh',
+    validationCommand: 'python3 -m compileall -q src',
+    allowedPaths: ['src/**', 'tests/**', 'docs/**', 'migrations/**', '*.md'],
+    protectedPaths: ['.github/**', '.env*'],
+    maxAutonomyLevel: 4,
+    remotePersistenceEligible: true,
   },
 };
 
