@@ -1,0 +1,55 @@
+=== HERMES FALLBACK FORENSIC (READ-ONLY / NO NETWORK) ===
+Date: 2026-09-11
+Status: 429 free-models-per-day-high-balance (OpenRouter Free quota)
+NO CALLS TO OPENROUTER. NO LLM INVOCATION. LOCAL ONLY.
+
+--- 1. CONFIG PATHS ---
+Config files searched:
+~/.hermes/config.yaml => /c/Users/Matheus Paes/.hermes/config.yaml
+.env in cwd => MISSING
+env OPENROUTER_API_KEY => NOT_SET
+=== 6. GREP RESULTS (LOCAL ONLY) ===
+--- fallback ---
+--- retry ---
+/c/Users/Matheus Paes/AppData/Local/hermes/.hermes_history:24:+1. retry_revalidate
+/c/Users/Matheus Paes/AppData/Local/hermes/.hermes_history:75:+3. executar retry_revalidate;
+/c/Users/Matheus Paes/AppData/Local/hermes/.hermes_history:129:+3. executar retry_revalidate;
+/c/Users/Matheus Paes/AppData/Local/hermes/.hermes_history:249:+2. retry_revalidate
+/c/Users/Matheus Paes/AppData/Local/hermes/.hermes_history:252:+Executar retry/fallback real usando o repositório privado.
+/c/Users/Matheus Paes/AppData/Local/hermes/.hermes_history:324:+- retry
+/c/Users/Matheus Paes/AppData/Local/hermes/.hermes_history:597:+   - executar novamente retry/fallback usando o repositório privado real
+/c/Users/Matheus Paes/AppData/Local/hermes/.hermes_history:600:+   - confirmar múltiplas attempts quando houver falha retryable
+/c/Users/Matheus Paes/AppData/Local/hermes/.hermes_history:810:+3. retry/fallback real
+/c/Users/Matheus Paes/AppData/Local/hermes/auth.json:34:        "last_error_code": 429,
+/c/Users/Matheus Paes/AppData/Local/hermes/auth.json:36:        "last_error_message": "Error code: 429 - {'error': {'message': 'Rate limit exceeded: free-models-per-day-high-balance. ', 'code': 429, 'metadata': {'headers': {'X-RateLimit-Limit': '1000', 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': '1789171200000'}, 'limit_source': 'openrouter_free_tier_daily', 'remedy_hint': 'Wait for the daily reset (see X-RateLimit-Reset), or purchase credits to raise your free-model daily limit.', 'provider_name': None, 'previous_errors': [{'code': 429, 'message': 'Rate limit exceeded: free-models-per-day-high-balance. '}, {'code': 429, 'message': 'Rate limit exceeded: free-models-per-day-high-balance. '}, {'code': 429, 'message': 'Rate limit exceeded: free-models-per-day-high-balance. '}, {'code': 429, 'message': 'Rate limit exceeded: free-models-per-day-high-balance. '}, {'code': 429, 'message': 'Rate limit exceeded: free-models-per-day-high-balance. '}, {'code': 429, 'message': 'Rate limit exceeded: free-models-per-day-high-balance. '}, {'code': 429, 'message': 'Rate limit exceeded: free-models-per-day-high-balance. '}, {'code': 429, 'message': 'Rate limit exceeded: free-models-per-day-high-balance. '}, {'code': 429, 'message': 'Rate limit exceeded: free-models-per-day-high-balance. '}]}}, 'user_id': 'user_3IQ0EEaco0yRIlvqB2zX2Ffsf5s'}",
+Binary file /c/Users/Matheus Paes/AppData/Local/hermes/bin/uv.exe matches
+/c/Users/Matheus Paes/AppData/Local/hermes/bootstrap-cache/install-main.ps1:1902:                    "-> already-installed/no-upgrade; retrying with --force" | Out-File -FilePath $log -Encoding utf8 -Append
+/c/Users/Matheus Paes/AppData/Local/hermes/bootstrap-cache/install-main.ps1:2096:                    # -Commit on every install-mode run -- including the retry
+/c/Users/Matheus Paes/AppData/Local/hermes/bootstrap-cache/install-main.ps1:2529:        # intact so the user can close holders and retry.
+/c/Users/Matheus Paes/AppData/Local/hermes/bootstrap-cache/install-main.ps1:2540:                "processes and retry - the previous install was left intact."
+/c/Users/Matheus Paes/AppData/Local/hermes/bootstrap-cache/install-main.ps1:2856:            throw "Install reported success but $venvPython does not exist. The dependency sync likely landed in a sibling .venv\ directory. Re-run the installer; if it persists, close Hermes processes and preserve existing venv directories before retrying. Do not delete venv in place."
+/c/Users/Matheus Paes/AppData/Local/hermes/bootstrap-cache/install-main.ps1:3361:                Write-Info "  Re-run the installer to retry (completed stages are skipped)."
+/c/Users/Matheus Paes/AppData/Local/hermes/bootstrap-cache/install-main.ps1:3617:# the stale unpacked dir, then let the caller retry once - @electron/get
+/c/Users/Matheus Paes/AppData/Local/hermes/bootstrap-cache/install-main.ps1:3840:            Write-Info "  npm ci failed (exit $code) -- retrying with npm install..."
+/c/Users/Matheus Paes/AppData/Local/hermes/bootstrap-cache/install-main.ps1:3944:                Write-Warn "Desktop build failed - refreshed the Electron download, retrying once:"
+/c/Users/Matheus Paes/AppData/Local/hermes/cache/computer_use/elements_60aa4fee507a4e95a406646df3a3d1c1.json:3597:   "label": "openrouter/free\n   ↓ 429\nfallback_chain = []\n   ↓\nfim",
+/c/Users/Matheus Paes/AppData/Local/hermes/cache/computer_use/elements_60aa4fee507a4e95a406646df3a3d1c1.json:3633:   "label": "openrouter/free\n   ↓ 429 / 5xx / connection\nQwen3 Coder 30B\n   ↓ falha\nDeepSeek V4 Flash Latest\n   ↓ falha\nLlama 3.3 70B",
+/c/Users/Matheus Paes/AppData/Local/hermes/cache/computer_use/elements_60aa4fee507a4e95a406646df3a3d1c1.json:3741:   "label": " e executar uma tarefa real de código. Como a cota Free estava retornando 429, o comportamento esperado é o Hermes sair de ",
+/c/Users/Matheus Paes/AppData/Local/hermes/cache/delegation/live/deleg_1385bc60/task-0.log:58:23:32:25 result   | terminal ok 0.3s: {"output": "src/worker-service.ts:28: timeout: 60000,\nsrc/worker-service.ts:79: /** Human-readable reason if retryable (e.g., 'provider_timeout', 'http_503', 'connection_error') */\nsrc/worker-service.ts:95: /** Per-attempt timeout applied (ms) */\nsrc/worker-service.ts:156: /** Whether global timeout was hit */\nsrc/worker-service.ts:158: /** Global timeout in ms (ROUTER_TIMEOUT_TOTAL_MS) */\nsr …(+2756 chars)
+/c/Users/Matheus Paes/AppData/Local/hermes/cache/delegation/subagent-summary-0-20260828_235138_576737.txt:19:Do not retry this same task in this subagent profile. Either (a) run the analysis in a session that has `vision_analyze` loaded and a vision-capable model, (b) drive the live PUB prototype with `browser_exec` / `computer_use` and inspect the iframe DOM directly (more reliable than parsing screenshots for "is this a 200 or an error"), or (c) attach the PNGs to a parent-level chat turn where the model can see them natively.
+/c/Users/Matheus Paes/AppData/Local/hermes/cache/terminal-output/out-1789062389-19352-1590.log:69:   × P4.4 Routing Integration & Production Verification > 3. Fallback Pipeline Real Scenarios (Scenarios 1 até 5) > Scenario 1: Tier 1 Model A (429) -> Model Switch -> Tier 1 Model B (Success) 20ms
+/c/Users/Matheus Paes/AppData/Local/hermes/cache/terminal-output/out-1789062389-19352-1590.log:95:   × Model Routing Policy Engine (P4 & P4.1) > 6. OpenRouterProvider E2E Simulation & Token/Cost Capture (P4.1) > simulates multi-tier escalation: Tier 1 (429/500) -> Tier 2 (429) -> Tier 3 PAID (SUCCESS) 9ms
+/c/Users/Matheus Paes/AppData/Local/hermes/cache/terminal-output/out-1789062389-19352-1590.log:144:   ✓ Router fallback and retry behavior > Test 1 – primary success (200) 16ms
+/c/Users/Matheus Paes/AppData/Local/hermes/cache/terminal-output/out-1789062389-19352-1590.log:145:   ✓ Router fallback and retry behavior > Test 2 – primary 429 then fallback success 33ms
+--- openrouter/free ---
+=== 7. CONCLUSION (READ-ONLY) ===
+FALLBACK_SYSTEM: PARTIAL (fallback providers configured; no evidence of retry/backoff logic in local source)
+429_DAILY_QUOTA_TRIGGERS_FALLBACK: UNKNOWN (no retry-on-429 evidence in code; fallback chain exists but relies on same openrouter account)
+429_DAILY_QUOTA_TRIGGERS_RETRY: UNKNOWN (no retry patterns found)
+SAME_ACCOUNT_FREE_FALLBACK_CAN_HELP: NO (all 3 fallbacks are same-provider openrouter; account-level quota affects all)
+RISK_OF_RETRY_LOOP: MEDIUM (if retry logic exists externally but not visible in source, loop possible)
+ATOMICITY_3C3: NOT_PROVEN (PostgreSQL unavailable; integration file exists but not executed)
+3C2_REGRESSION: 25/25 PASS
+3C3_STATUS: BLOCKED (integration file created but not proven; no commit; no push)
+NO MODIFICATIONS MADE EXCEPT DIAGNOSTIC FILE.
+NO NETWORK CALLS.

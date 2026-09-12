@@ -39,3 +39,16 @@ scripts/capture-*.cjs
 scripts/p1-e2e.cjs
 scripts/p11-e2e.cjs
 scripts/check-container.cjs
+
+# Product repositories and external workspaces (Product & PP Isolation)
+projects/
+pub-rate-calculator/
+pub-servers/
+temp_dev_loop_template/
+temp_rate_calc/
+
+# Ephemeral scratch and ad-hoc diagnostic scripts
+scratch/
+test_atomic_3c3.cjs
+test_atomic_3c3.mjs
+test_pg.cjs

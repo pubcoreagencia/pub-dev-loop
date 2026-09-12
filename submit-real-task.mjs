@@ -6,11 +6,12 @@ async function submitTask() {
     prompt: 'Please create a verified status file named 9ROUTER_STATUS.md containing "9Router officially verified and operational for PUB DEV LOOP.". Do not alter other files.',
     priority: 1
   };
-  const res = await fetch('http://localhost:3001/tasks', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
+const API_URL = process.env.SUBMITTER_API_URL ?? 'http://localhost:3000/tasks';
+const res = await fetch(API_URL, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(payload)
+});
   console.log('API POST /tasks status:', res.status);
   const task = await res.json();
   console.log('Created Task ID:', task.id);
