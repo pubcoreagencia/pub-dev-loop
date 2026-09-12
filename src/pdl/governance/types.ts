@@ -72,6 +72,5 @@ export const DEFAULT_FAIL_CLOSED_LIMITS: GovernanceLimits = {
     'pub-rate-calculator',
     'pub-dev-loop-template',
     'pub-shopee-scraper',
-    'pub-neural',
   ],
 };
