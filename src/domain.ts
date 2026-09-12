@@ -52,4 +52,8 @@ export interface TaskRepository {
   reclaimStuck(worker: string, leaseWindowMs: number, now: Date): Promise<number>;
   /** Heartbeat: refresh lease deadline for an active task (TASK-000032) */
   heartbeat(id: string, deadline: Date): Promise<boolean>;
+  /** Periodic Reaper: find stale tasks with expired leases (Phase 5.5 Step 4) */
+  findStaleTasks?(now: Date, limit?: number): Promise<Task[]>;
+  /** Periodic Reaper: atomically recover a stale task if still expired (Phase 5.5 Step 4) */
+  recoverStaleTask?(id: string, patch: Partial<Task>, now: Date): Promise<Task | null>;
 }

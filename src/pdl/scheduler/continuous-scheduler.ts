@@ -35,6 +35,7 @@ import {
   PdlDeadLetterRepository,
   type IPdlDeadLetterRepository,
 } from '../dlq/index.js';
+import type { PdlTaskReaper } from '../reaper/reaper.js';
 
 export interface ContinuousSchedulerOptions {
   governance?: PdlGovernanceEngine;
@@ -43,6 +44,7 @@ export interface ContinuousSchedulerOptions {
   repository?: ISchedulerSessionRepository;
   retryPolicy?: PdlRetryPolicy;
   dlq?: IPdlDeadLetterRepository;
+  reaper?: PdlTaskReaper;
   config?: Partial<SchedulerConfig>;
   pool?: Pool;
 }
@@ -59,6 +61,7 @@ export class PdlContinuousScheduler {
   public readonly repository: ISchedulerSessionRepository;
   public readonly retryPolicy: PdlRetryPolicy;
   public readonly dlq: IPdlDeadLetterRepository;
+  public readonly reaper?: PdlTaskReaper;
   public readonly config: SchedulerConfig;
 
   private activeSession: SchedulerSessionInfo | null = null;
@@ -94,6 +97,7 @@ export class PdlContinuousScheduler {
     this.repository = options.repository || new SchedulerSessionRepository(options.pool);
     this.retryPolicy = options.retryPolicy || new PdlRetryPolicy();
     this.dlq = options.dlq || new PdlDeadLetterRepository(options.pool);
+    this.reaper = options.reaper;
   }
 
   /**
@@ -255,6 +259,9 @@ export class PdlContinuousScheduler {
 
     this.abortController = new AbortController();
     this.isLoopRunning = true;
+    if (this.reaper) {
+      this.reaper.start();
+    }
     this.emitEvent('SCHEDULER_STARTED', {
       details: {
         authorizedBy: this.config.authorizedBy,
@@ -576,6 +583,9 @@ export class PdlContinuousScheduler {
     this.isLoopRunning = false;
     if (this.abortController) {
       this.abortController.abort();
+    }
+    if (this.reaper) {
+      this.reaper.stop();
     }
 
     if (this.activeSession) {

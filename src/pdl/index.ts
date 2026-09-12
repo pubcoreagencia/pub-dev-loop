@@ -4,5 +4,6 @@ export { PdlTaskIngestionAdapter } from './handoff/adapter.js';
 export * from './scheduler/index.js';
 export * from './retry/index.js';
 export * from './dlq/index.js';
+export * from './reaper/index.js';
 
 

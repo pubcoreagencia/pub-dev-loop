@@ -29,12 +29,14 @@ import {
   PdlDeadLetterRepository,
   type IPdlDeadLetterRepository,
 } from '../dlq/index.js';
+import { PdlTaskReaper } from '../reaper/index.js';
 
 export interface PdlAppOptions {
   governance?: PdlGovernanceEngine;
   authConfig?: GovernanceAuthConfig;
   scheduler?: PdlContinuousScheduler;
   dlq?: IPdlDeadLetterRepository;
+  reaper?: PdlTaskReaper;
 }
 
 export const createPdlApp = (
@@ -52,6 +54,12 @@ export const createPdlApp = (
     governance,
     pool: activePool,
     dlq,
+  });
+  const reaper = options?.reaper ?? new PdlTaskReaper({
+    tasks: taskRepo,
+    governance,
+    dlq,
+    pool: activePool,
   });
   const authConfigGetter = () => options?.authConfig;
 
@@ -288,6 +296,24 @@ export const createPdlApp = (
         });
       } catch (err: any) {
         return res.status(500).json({ error: 'Failed to retrieve DLQ records', details: err.message });
+      }
+    }
+  );
+
+  // Phase 5.5 Step 4: Periodic Reaper & Stale Task Recovery Endpoints
+  app.get(
+    '/reaper/status',
+    requireGovernanceAuth('READ', authConfigGetter),
+    async (_req, res) => {
+      try {
+        const status = reaper.getStatus();
+        return res.json({
+          service: 'pdl-api',
+          reaper: status,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err: any) {
+        return res.status(500).json({ error: 'Failed to retrieve reaper status', details: err.message });
       }
     }
   );

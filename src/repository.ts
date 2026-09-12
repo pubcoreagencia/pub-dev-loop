@@ -294,4 +294,69 @@ export class PostgresTaskRepository implements TaskRepository {
   async retry(id: string): Promise<Task | null> {
     return this.update(id, { status: 'QUEUED', worker: null, leaseOwner: null, leaseDeadline: null });
   }
+
+  async findStaleTasks(now: Date, limit = 10): Promise<Task[]> {
+    try {
+      const r = await this.pool.query(
+        `SELECT * FROM tasks
+         WHERE status IN ('ASSIGNED', 'RUNNING', 'TESTING')
+           AND lease_deadline IS NOT NULL
+           AND lease_deadline < $1
+         ORDER BY priority DESC, created_at ASC
+         LIMIT $2`,
+        [now, limit]
+      );
+      if (r?.rows) return r.rows.map(map);
+    } catch (err: any) {
+      console.warn('[PostgresTaskRepository] DB quota/connection issue on findStaleTasks, checking sovereign memory:', err.message);
+    }
+
+    const list: Task[] = [];
+    for (const task of sovereignFallbackTasks.values()) {
+      if (['ASSIGNED', 'RUNNING', 'TESTING'].includes(task.status) && task.leaseDeadline && task.leaseDeadline < now) {
+        list.push({ ...task });
+        if (list.length >= limit) break;
+      }
+    }
+    return list;
+  }
+
+  async recoverStaleTask(id: string, patch: Partial<Task>, now: Date): Promise<Task | null> {
+    const set: string[] = [];
+    const vals: unknown[] = [];
+    let i = 1;
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === undefined) continue;
+      set.push(`${toColumn(k)}=$${i}`);
+      vals.push(v);
+      i++;
+    }
+    set.push('updated_at=now()');
+    vals.push(id);
+    const idParam = i++;
+    vals.push(now);
+    const nowParam = i++;
+
+    try {
+      const r = await this.pool.query(
+        `UPDATE tasks SET ${set.join(', ')}
+         WHERE id = $${idParam}
+           AND status IN ('ASSIGNED', 'RUNNING', 'TESTING')
+           AND lease_deadline IS NOT NULL
+           AND lease_deadline < $${nowParam}
+         RETURNING *`,
+        vals
+      );
+      if (r?.rows?.[0]) return map(r.rows[0]);
+    } catch (err: any) {
+      console.warn('[PostgresTaskRepository] DB quota/connection issue on recoverStaleTask, updating sovereign memory:', err.message);
+    }
+
+    const mem = sovereignFallbackTasks.get(id);
+    if (mem && ['ASSIGNED', 'RUNNING', 'TESTING'].includes(mem.status) && mem.leaseDeadline && mem.leaseDeadline < now) {
+      Object.assign(mem, patch, { updatedAt: new Date() });
+      return { ...mem };
+    }
+    return null;
+  }
 }

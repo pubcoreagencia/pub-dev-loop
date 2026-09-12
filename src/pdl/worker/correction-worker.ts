@@ -55,8 +55,6 @@ function run(cmd: string, args: string[], cwd?: string): Promise<string> {
 }
 
 export class PdlCorrectionWorker extends RouterWorker {
-  public readonly governance: PdlGovernanceEngine;
-
   constructor(
     tasks?: TaskRepository,
     provider?: AgentProvider,
@@ -65,8 +63,7 @@ export class PdlCorrectionWorker extends RouterWorker {
     executionSpecDb?: ExecutionSpecDatabase,
     governance?: PdlGovernanceEngine,
   ) {
-    super(tasks, provider, name, onStreamEvent, executionSpecDb);
-    this.governance = governance || defaultGovernanceEngine;
+    super(tasks, provider, name, onStreamEvent, executionSpecDb, governance);
   }
 
   /**
@@ -74,10 +71,12 @@ export class PdlCorrectionWorker extends RouterWorker {
    */
   override async executeOnce(): Promise<boolean> {
     // Gate A: Check governance before claiming a task
-    const claimDecision = await this.governance.evaluateClaim();
-    if (!claimDecision.allowed) {
-      console.log(`[PDL Worker] Task claim blocked by governance (${claimDecision.reasonCode}): ${claimDecision.reason}`);
-      return false;
+    if (this.governance) {
+      const claimDecision = await this.governance.evaluateClaim();
+      if (!claimDecision.allowed) {
+        console.log(`[PDL Worker] Task claim blocked by governance (${claimDecision.reasonCode}): ${claimDecision.reason}`);
+        return false;
+      }
     }
 
     const task = await this.tasks.claim(this.name);
@@ -88,22 +87,24 @@ export class PdlCorrectionWorker extends RouterWorker {
     this.lastExecutedTask = task;
 
     // Gate B: Check governance before running/executing claimed task
-    const execDecision = await this.governance.evaluateExecution(task);
-    if (!execDecision.allowed) {
-      console.log(`[PDL Worker] Execution start blocked by governance (${execDecision.reasonCode}): ${execDecision.reason}`);
-      this.lastExecutedTask = {
-        ...task,
-        status: 'BLOCKED',
-        error: `Execution start blocked by governance: ${execDecision.reason}`,
-      };
-      await this.tasks.update(task.id, {
-        status: 'BLOCKED',
-        error: `Execution start blocked by governance: ${execDecision.reason}`,
-        leaseOwner: null,
-        leaseDeadline: null,
-        workspacePath: null,
-      });
-      return true;
+    if (this.governance) {
+      const execDecision = await this.governance.evaluateExecution(task);
+      if (!execDecision.allowed) {
+        console.log(`[PDL Worker] Execution start blocked by governance (${execDecision.reasonCode}): ${execDecision.reason}`);
+        this.lastExecutedTask = {
+          ...task,
+          status: 'BLOCKED',
+          error: `Execution start blocked by governance: ${execDecision.reason}`,
+        };
+        await this.tasks.update(task.id, {
+          status: 'BLOCKED',
+          error: `Execution start blocked by governance: ${execDecision.reason}`,
+          leaseOwner: null,
+          leaseDeadline: null,
+          workspacePath: null,
+        });
+        return true;
+      }
     }
 
     this.active = true;
@@ -268,10 +269,12 @@ export class PdlCorrectionWorker extends RouterWorker {
 
       // 6. In-Process Correction Loop (Gate 3D.4 + Governance Gate C)
       if (finalizeResult.status === 'FAILED' && finalizeResult.errorCode !== 'SECURITY_VIOLATION') {
-        const correctionDecision = await this.governance.evaluateCorrection(task, { attemptNumber: 1 });
+        const correctionDecision = this.governance
+          ? await this.governance.evaluateCorrection(task, { attemptNumber: 1 })
+          : { allowed: true };
         if (!correctionDecision.allowed) {
-          console.log(`[PDL Worker] Correction loop blocked by governance (${correctionDecision.reasonCode}): ${correctionDecision.reason}`);
-          finalizeResult.errorMessage = `Correction blocked by governance: ${correctionDecision.reason}`;
+          console.log(`[PDL Worker] Correction loop blocked by governance (${(correctionDecision as any).reasonCode}): ${(correctionDecision as any).reason}`);
+          finalizeResult.errorMessage = `Correction blocked by governance: ${(correctionDecision as any).reason}`;
         } else {
           correctionResult = await PdlCorrectionLoop.runCorrectionLoop({
             task,
@@ -303,12 +306,14 @@ export class PdlCorrectionWorker extends RouterWorker {
       const autonomyCheck = defaultRepositoryAuthorizationPolicy.authorizeAutonomy(maxAutonomy, 'PUSH');
 
       if (finalizeResult.status === 'COMPLETED' && finalizeResult.commitSha) {
-        const finalizationDecision = await this.governance.evaluateFinalization(task);
+        const finalizationDecision = this.governance
+          ? await this.governance.evaluateFinalization(task)
+          : { allowed: true };
         if (!finalizationDecision.allowed) {
-          console.log(`[PDL Worker] Remote finalization blocked by governance (${finalizationDecision.reasonCode}): ${finalizationDecision.reason}`);
+          console.log(`[PDL Worker] Remote finalization blocked by governance (${(finalizationDecision as any).reasonCode}): ${(finalizationDecision as any).reason}`);
           finalizeResult.status = 'FAILED';
-          finalizeResult.errorCode = finalizationDecision.reasonCode;
-          finalizeResult.errorMessage = `Remote finalization blocked by governance: ${finalizationDecision.reason}`;
+          finalizeResult.errorCode = (finalizationDecision as any).reasonCode;
+          finalizeResult.errorMessage = `Remote finalization blocked by governance: ${(finalizationDecision as any).reason}`;
           this.lastFinalizeStatus = 'FAILED';
         } else if (autonomyCheck.permitted && catalogProduct?.remotePersistenceEligible) {
           console.log(`[PDL Worker] Initiating canonical remote persistence for product '${catalogProduct.productId}'...`);
