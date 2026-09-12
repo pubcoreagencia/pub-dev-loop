@@ -36,6 +36,10 @@ export interface ProductManifest {
   };
   /** Maximum autonomy level authorized for this product */
   maxAutonomyLevel: AutonomyLevel;
+  /** Whether remote git persistence is authorized and eligible for this product (Phase 5.4 fail-closed) */
+  remotePersistenceEligible?: boolean;
+  /** Protected branches that cannot receive autonomous pushes */
+  protectedBranches?: string[];
 }
 
 export const CANONICAL_PUB_PRODUCTS: Record<string, ProductManifest> = {
@@ -44,34 +48,37 @@ export const CANONICAL_PUB_PRODUCTS: Record<string, ProductManifest> = {
     repository: 'https://github.com/pubcoreagencia/pub-rate-calculator.git',
     organization: 'pubcoreagencia',
     defaultBranch: 'main',
-    developmentBranchPolicy: ['feat/*', 'feature/*', 'fix/*'],
+    developmentBranchPolicy: ['feat/*', 'feature/*', 'fix/*', 'rate-calculator-*', 'worker/*'],
     testCommand: 'node test/validate.mjs',
     validationCommand: 'node test/validate.mjs',
     allowedPaths: ['src/**', 'test/**', 'public/**', 'config/**'],
     protectedPaths: ['.github/**', 'package.json', 'package-lock.json', '.env*'],
     maxAutonomyLevel: 5,
+    remotePersistenceEligible: true,
   },
   'pub-dev-loop-template': {
     productId: 'pub-dev-loop-template',
     repository: 'https://github.com/pubcoreagencia/pub-dev-loop-template.git',
     organization: 'pubcoreagencia',
     defaultBranch: 'main',
-    developmentBranchPolicy: ['feat/*', 'feature/*', 'fix/*'],
+    developmentBranchPolicy: ['feat/*', 'feature/*', 'fix/*', 'template-*', 'worker/*'],
     testCommand: 'node -e "const fs = require(\'fs\'); if (!fs.existsSync(\'AUTONOMOUS_CYCLE.md\')) process.exit(1); console.log(\'[Validate] Template baseline OK\');"',
     allowedPaths: ['*.md', 'devloop-*', 'docs/**', 'src/**'],
     protectedPaths: ['.github/**', '.env*', 'secrets/**'],
     maxAutonomyLevel: 5,
+    remotePersistenceEligible: true,
   },
   'pub-shopee-scraper': {
     productId: 'pub-shopee-scraper',
     repository: 'https://github.com/pubcoreagencia/pub-shopee-scraper.git',
     organization: 'pubcoreagencia',
     defaultBranch: 'main',
-    developmentBranchPolicy: ['feat/*', 'feature/*', 'fix/*'],
+    developmentBranchPolicy: ['feat/*', 'feature/*', 'fix/*', 'shopee-*', 'worker/*'],
     testCommand: 'node -e "const fs = require(\'fs\'); if (!fs.existsSync(\'src\')) process.exit(1); console.log(\'[Validate] Shopee scraper structure OK\');"',
     allowedPaths: ['src/**', 'docs/**', 'tests/**', '*.md'],
     protectedPaths: ['.github/**', '.env*', 'wrangler.*', 'package*.json'],
     maxAutonomyLevel: 5,
+    remotePersistenceEligible: true,
   },
   'pub-github-mcp': {
     productId: 'pub-github-mcp',
@@ -84,6 +91,7 @@ export const CANONICAL_PUB_PRODUCTS: Record<string, ProductManifest> = {
     allowedPaths: ['src/**', 'tests/**'],
     protectedPaths: ['.github/**', '.env*'],
     maxAutonomyLevel: 5,
+    remotePersistenceEligible: false,
   },
   'pubcore': {
     productId: 'pubcore',
@@ -96,6 +104,7 @@ export const CANONICAL_PUB_PRODUCTS: Record<string, ProductManifest> = {
     allowedPaths: ['src/**', 'public/**'],
     protectedPaths: ['.github/**', '.env*'],
     maxAutonomyLevel: 4, // Frontend core requires human release approval before push
+    remotePersistenceEligible: false,
   },
 };
 

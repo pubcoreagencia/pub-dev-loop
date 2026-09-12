@@ -2,6 +2,7 @@ import { execSync, spawn } from 'node:child_process';
 import { WorkspaceSecurity } from './tools/security.js';
 import type { ToolExecutionContext } from './tools/types.js';
 import { sanitizeCommitMessage } from './tools/runtime.js';
+import type { RemotePersistenceResult } from './pdl/persistence/types.js';
 
 // Git subcommands that are explicitly blocked for security
 const BLOCKED_GIT_COMMANDS = [
@@ -152,6 +153,7 @@ export interface FinalizeResult {
   testOutput: string;
   errorCode: string | null;
   errorMessage: string | null;
+  remotePersistence?: RemotePersistenceResult;
 }
 
 /**
@@ -164,6 +166,11 @@ export interface FinalizeOptions {
   allowUnexpectedFiles?: boolean;  // If false, only commit changedFiles
   baselineSnapshot?: WorkspaceSnapshot; // Snapshot taken before agent ran
   declaredChangedFiles?: string[]; // Files the agent claims to have changed
+  remotePersistence?: {
+    enabled?: boolean;
+    product?: string;
+    branch?: string;
+  };
 }
 
 /**
@@ -344,23 +351,44 @@ export class TaskFinalizer {
       };
     }
 
-    // PERSISTENT PUSH (optional): push the commit to the persistent prototypes
-    // repository before reporting success. This ensures lastCheckpointSha points
-    // to a commit that is actually retrievable from the remote.
-    // Disabled by default to maintain backwards compatibility with existing tests.
-    // Enable in production via env var: PROTOTYPE_PERSISTENT_PUSH=true
-    console.log('[Finalizer] PROTOTYPE_PERSISTENT_PUSH:', process.env.PROTOTYPE_PERSISTENT_PUSH);
-    if (process.env.PROTOTYPE_PERSISTENT_PUSH === 'true') {
+    // CANONICAL PDL REMOTE PERSISTENCE:
+    // If requested via options or PDL_REMOTE_PERSISTENCE=true, persist using PdlRemotePersistence
+    let remotePersistence: RemotePersistenceResult | undefined;
+    if (options.remotePersistence?.enabled || process.env.PDL_REMOTE_PERSISTENCE === 'true') {
+      const { defaultRemotePersistence } = await import('./pdl/persistence/remote-persistence.js');
+      const branchResult = await this.exec('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
+      const branchName = options.remotePersistence?.branch || branchResult.stdout?.trim() || 'main';
+      const persistenceProduct = options.remotePersistence?.product || 'pub-dev-loop';
+
+      remotePersistence = await defaultRemotePersistence.persist({
+        workspace: this.security.root,
+        product: persistenceProduct,
+        branch: branchName,
+        localSha: commitSha,
+      });
+
+      if (remotePersistence.status !== 'VERIFIED') {
+        return {
+          status: 'FAILED',
+          commitSha,
+          commitMessage,
+          changedFiles,
+          gitStatus,
+          testsPassed,
+          testOutput: '',
+          errorCode: remotePersistence.errorCode || 'REMOTE_PERSISTENCE_FAILED',
+          errorMessage: remotePersistence.errorMessage || 'Remote persistence verification failed',
+          remotePersistence,
+        };
+      }
+    } else if (process.env.PROTOTYPE_PERSISTENT_PUSH === 'true') {
+      // Legacy prototype push for backward compatibility
       const { pushBranch, getPrototypesRepo } = await import('./github-app.js');
-      console.log('[Finalizer] Starting persistent push...');
-      // Discover current branch from git (works for both prototype and worker)
+      console.log('[Finalizer] [DEPRECATED] Starting legacy persistent push to prototype repo...');
       const branchResult = await this.exec('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
       const branchName = branchResult.stdout?.trim() || 'main';
-      console.log('[Finalizer] Branch:', branchName);
       const pushResult = pushBranch(this.security.root, branchName);
-      console.log('[Finalizer] Push result:', JSON.stringify(pushResult));
       if (!pushResult.ok) {
-        // Push failed — return FAILED so checkpoint is not persisted
         return {
           status: 'FAILED',
           commitSha: null,
@@ -389,6 +417,7 @@ export class TaskFinalizer {
       testOutput: this.redactSecrets(testOutput),
       errorCode: null,
       errorMessage: null,
+      remotePersistence,
     };
   }
 

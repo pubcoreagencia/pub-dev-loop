@@ -32,6 +32,7 @@ import type { FinalizeResult } from '../../finalizer.js';
 import { PdlCorrectionLoop, type CorrectionLoopResult } from '../correction/index.js';
 import { defaultProductCatalog } from '../products/catalog.js';
 import { defaultRepositoryAuthorizationPolicy } from '../security/repo-authorization.js';
+import { defaultRemotePersistence } from '../persistence/remote-persistence.js';
 
 const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
 const HEARTBEAT_INTERVAL_MS = Number(process.env.WORKER_HEARTBEAT_MS ?? 10000);
@@ -256,25 +257,42 @@ export class PdlCorrectionWorker extends RouterWorker {
 
       this.lastFinalizeStatus = finalizeResult.status;
 
-      // 7. Remote Git Push if COMPLETED and Autonomy Level >= 5
+      // 7. Canonical PDL Remote Persistence if COMPLETED and Autonomy Level >= 5
       const maxAutonomy = catalogProduct?.maxAutonomyLevel ?? 5;
       const autonomyCheck = defaultRepositoryAuthorizationPolicy.authorizeAutonomy(maxAutonomy, 'PUSH');
 
       if (finalizeResult.status === 'COMPLETED' && finalizeResult.commitSha) {
-        if (autonomyCheck.permitted) {
-          try {
-            console.log(`[PDL Worker] Pushing branch ${branch} to remote...`);
-            await run('git', ['push', 'origin', `HEAD:${branch}`], winningAttempt.workspace);
-            console.log(`[PDL Worker] Successfully pushed branch ${branch} to remote.`);
-          } catch (pushError: any) {
-            console.error(`[PDL Worker] GITHUB_PUSH_FAILED:`, pushError.message);
+        if (autonomyCheck.permitted && catalogProduct?.remotePersistenceEligible) {
+          console.log(`[PDL Worker] Initiating canonical remote persistence for product '${catalogProduct.productId}'...`);
+          const persistenceResult = await defaultRemotePersistence.persist({
+            workspace: winningAttempt.workspace,
+            product: catalogProduct,
+            branch,
+            localSha: finalizeResult.commitSha,
+            targetRepository: task.repository,
+          });
+          finalizeResult.remotePersistence = persistenceResult;
+          if (persistenceResult.status !== 'VERIFIED') {
+            console.error(`[PDL Worker] REMOTE_PERSISTENCE_FAILED (${persistenceResult.errorCode}):`, persistenceResult.errorMessage);
             finalizeResult.status = 'FAILED';
-            finalizeResult.errorCode = 'GITHUB_PUSH_FAILED';
-            finalizeResult.errorMessage = `GitHub push failed: ${pushError.message}`;
+            finalizeResult.errorCode = persistenceResult.errorCode || 'REMOTE_PERSISTENCE_FAILED';
+            finalizeResult.errorMessage = persistenceResult.errorMessage || 'Remote persistence verification failed';
             this.lastFinalizeStatus = 'FAILED';
+          } else {
+            console.log(`[PDL Worker] Canonical remote persistence verified: SHA ${persistenceResult.remoteSha} on ${persistenceResult.repository} (${persistenceResult.branch})`);
           }
         } else {
-          console.log(`[PDL Worker] Autonomy level ${maxAutonomy} prohibits remote push. Push skipped as intended.`);
+          finalizeResult.remotePersistence = {
+            status: 'NOT_REQUESTED',
+            repository: catalogProduct?.repository || task.repository || '',
+            branch,
+            pushAttempted: false,
+            pushSucceeded: false,
+            localSha: finalizeResult.commitSha,
+            remoteSha: null,
+            remoteVerified: false,
+          };
+          console.log(`[PDL Worker] Remote persistence skipped (autonomy permitted: ${autonomyCheck.permitted}, eligible: ${catalogProduct?.remotePersistenceEligible}).`);
         }
       }
 
