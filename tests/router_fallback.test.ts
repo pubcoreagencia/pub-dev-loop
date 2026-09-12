@@ -43,34 +43,34 @@ function baseTask() {
 describe('Router fallback and retry behavior', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    process.env.ROUTER_MODEL = 'gemini/gemini-3.7-flash';
-    process.env.ROUTER_FALLBACK_MODELS = 'gemini/gemini-3.6-flash';
+    process.env.ROUTER_MODEL = 'openrouter/cohere/north-mini-code:free';
+    process.env.ROUTER_FALLBACK_MODELS = 'kc/cohere/north-mini-code:free';
     process.env.ROUTER_MAX_RETRIES = '2';
     process.env.ROUTER_RETRY_BASE_DELAY_MS = '0';
   });
 
   it('Test 1 – primary success (200)', async () => {
     const fetchMock = createFetchMock([
-      { status: 200, body: { model: 'gemini/gemini-3.7-flash', choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] } },
+      { status: 200, body: { model: 'openrouter/cohere/north-mini-code:free', choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] } },
     ]);
     vi.stubGlobal('fetch', fetchMock);
     const provider = new RouterProvider('http://localhost:20128/v1', undefined, 1000);
     const result = await provider.execute(baseTask(), 'C:/tmp/ws');
     expect(result.status).toBe('COMPLETED');
-    expect(result.model).toBe('gemini/gemini-3.7-flash');
+    expect(result.model).toBe('openrouter/cohere/north-mini-code:free');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('Test 2 – primary 429 then fallback success', async () => {
     const fetchMock = createFetchMock([
       { status: 429, body: { error: { message: 'quota' } } },
-      { status: 200, body: { model: 'gemini/gemini-3.6-flash', choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] } },
+      { status: 200, body: { model: 'kc/cohere/north-mini-code:free', choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] } },
     ]);
     vi.stubGlobal('fetch', fetchMock);
     const provider = new RouterProvider('http://localhost:20128/v1', undefined, 1000);
     const result = await provider.execute(baseTask(), 'C:/tmp/ws');
     expect(result.status).toBe('COMPLETED');
-    expect(result.model).toBe('gemini/gemini-3.6-flash');
+    expect(result.model).toBe('kc/cohere/north-mini-code:free');
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -78,13 +78,13 @@ describe('Router fallback and retry behavior', () => {
     const fetchMock = createFetchMock([
       { status: 429, body: { error: { message: 'quota' } } },
       { status: 429, body: { error: { message: 'quota' } } },
-      { status: 200, body: { model: 'gemini/gemini-3.6-flash', choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] } },
+      { status: 200, body: { model: 'kc/cohere/north-mini-code:free', choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] } },
     ]);
     vi.stubGlobal('fetch', fetchMock);
     const provider = new RouterProvider('http://localhost:20128/v1', undefined, 1000);
     const result = await provider.execute(baseTask(), 'C:/tmp/ws');
     expect(result.status).toBe('COMPLETED');
-    expect(result.model).toBe('gemini/gemini-3.6-flash');
+    expect(result.model).toBe('kc/cohere/north-mini-code:free');
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
@@ -106,7 +106,7 @@ describe('Router fallback and retry behavior', () => {
   it('Test 5 – 5xx retry then success', async () => {
     const fetchMock = createFetchMock([
       { status: 500, body: { error: { message: 'server' } } },
-      { status: 200, body: { model: 'gemini/gemini-3.7-flash', choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] } },
+      { status: 200, body: { model: 'openrouter/cohere/north-mini-code:free', choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] } },
     ]);
     vi.stubGlobal('fetch', fetchMock);
     const provider = new RouterProvider('http://localhost:20128/v1', undefined, 1000);

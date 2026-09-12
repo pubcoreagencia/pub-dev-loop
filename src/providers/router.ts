@@ -12,6 +12,7 @@ import {
   resolveModelQueue,
   type ResolvedModelQueue,
 } from './model-routing-policy.js';
+import { isFreeModel } from './model-registry.js';
 
 interface OpenAIChatMessage {
   role: string;
@@ -106,6 +107,25 @@ export class RouterProvider implements AgentProvider {
   ): Promise<ProviderTaskResult> {
 
     const started = Date.now();
+    // Strict FREE_ONLY_POLICY enforcement: fail closed immediately on paid or unknown models
+    if (this.model && !isFreeModel(this.model)) {
+      return {
+        status: 'FAILED',
+        provider: this.kind,
+        model: this.model,
+        exitCode: null,
+        durationMs: 0,
+        stdout: '',
+        stderr: `Model '${this.model}' is not allowed by FREE_ONLY_POLICY. Only verified 0/0 pricing models are permitted.`,
+        changedFiles: [],
+        commit: null,
+        errorCode: 'MODEL_NOT_ALLOWED_BY_FREE_ONLY_POLICY',
+        errorMessage: `Model '${this.model}' is not allowed by FREE_ONLY_POLICY`,
+        toolCalls: 0,
+        toolRounds: 0,
+      };
+    }
+
     const rawConsumer = options?.consumer ?? this.consumer;
     const effectiveConsumer = rawConsumer instanceof StreamEventSink ? rawConsumer : rawConsumer ? new StreamEventSink(rawConsumer) : undefined;
     const ctx: ToolExecutionContext = {
@@ -128,9 +148,30 @@ export class RouterProvider implements AgentProvider {
       modelOverride: this.model || undefined,
       allowEmergency: process.env.ROUTER_ALLOW_EMERGENCY === 'true',
     });
-    const modelQueue = (cfg.fallbackModels && cfg.fallbackModels.length > 0)
+    let rawModelQueue = (cfg.fallbackModels && cfg.fallbackModels.length > 0)
       ? [cfg.primaryModel, ...cfg.fallbackModels]
       : (routingResult.candidateQueue.length > 0 ? routingResult.candidateQueue : [cfg.primaryModel]);
+    
+    // Strict FREE_ONLY_POLICY enforcement: retain only verified free models
+    const modelQueue = rawModelQueue.filter(m => isFreeModel(m));
+
+    if (modelQueue.length === 0) {
+      return {
+        status: 'FAILED',
+        provider: this.kind,
+        model: null,
+        exitCode: null,
+        durationMs: 0,
+        stdout: '',
+        stderr: 'No free models available conforming to FREE_ONLY_POLICY',
+        changedFiles: [],
+        commit: null,
+        errorCode: 'MODEL_NOT_ALLOWED_BY_FREE_ONLY_POLICY',
+        errorMessage: 'No free models available conforming to FREE_ONLY_POLICY',
+        toolCalls: 0,
+        toolRounds: 0,
+      };
+    }
     const modelAttempts: string[] = [];
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -197,11 +238,30 @@ export class RouterProvider implements AgentProvider {
               if (!response.ok) {
                 const text = await response.text();
                 const errPayload = this.parseError(text);
-                if (response.status === 429 && attempt < cfg.maxRetries) {
-                  const retryAfter = response.headers.get('retry-after');
-                  const delayMs = retryAfter ? Number(retryAfter) * 1000 : cfg.baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 100;
-                  await new Promise(r => setTimeout(r, delayMs));
-                  continue;
+                const errMsgLower = (errPayload.message || text).toLowerCase();
+                const isDailyQuota = errMsgLower.includes('free-models-per-day') ||
+                                     errMsgLower.includes('daily limit') ||
+                                     response.headers.get('x-ratelimit-remaining') === '0';
+
+                if (response.status === 429) {
+                  if (isDailyQuota) {
+                    defaultModelHealthTracker.recordQuotaExhaustion('9router', model, 3600000, errPayload.message || text);
+                    lastModelError = {
+                      status: 429,
+                      isAuth: false,
+                      isRateLimit: true,
+                      isServerError: false,
+                      message: errPayload.message || text,
+                      model,
+                    };
+                    break;
+                  }
+                  if (attempt < cfg.maxRetries) {
+                    const retryAfter = response.headers.get('retry-after');
+                    const delayMs = retryAfter ? Number(retryAfter) * 1000 : cfg.baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 100;
+                    await new Promise(r => setTimeout(r, delayMs));
+                    continue;
+                  }
                 }
                 if (response.status >= 500 && attempt < cfg.maxRetries) {
                   const delayMs = cfg.baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 100;

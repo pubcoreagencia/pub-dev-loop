@@ -1,5 +1,5 @@
-// src/providers/routerConfig.ts
 import { resolveModelQueue } from './model-routing-policy.js';
+import { isFreeModel, BEST_FREE_PROVEN } from './model-registry.js';
 
 /**
  * Centralized loader for Router provider configuration.
@@ -25,8 +25,13 @@ export function loadRouterConfig(modelOverride?: string): RouterConfig {
     allowEmergency: process.env.ROUTER_ALLOW_EMERGENCY === 'true',
   });
 
-  const primary = modelOverride?.trim() || envModel || routing.primaryModel || 'gemini/gemini-3.7-flash';
-  const fallbackModels = fallbackEnvModels.length > 0 ? fallbackEnvModels : routing.fallbackModels;
+  const primaryCandidate = modelOverride?.trim() || envModel;
+  const primary = (primaryCandidate && isFreeModel(primaryCandidate))
+    ? primaryCandidate
+    : (routing.primaryModel || BEST_FREE_PROVEN);
+
+  const fallbackCandidates = fallbackEnvModels.length > 0 ? fallbackEnvModels : routing.fallbackModels;
+  const fallbackModels = fallbackCandidates.filter(m => isFreeModel(m));
 
   const maxRetries = Number(process.env.ROUTER_MAX_RETRIES ?? 2);
   const baseDelayMs = Number(process.env.ROUTER_RETRY_BASE_DELAY_MS ?? 500);

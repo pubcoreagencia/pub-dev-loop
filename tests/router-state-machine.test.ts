@@ -47,7 +47,7 @@ describe('RouterProvider State Machine Flow Control', () => {
   beforeEach(async () => {
     vi.restoreAllMocks();
     tempWs = await mkdtemp(join(tmpdir(), 'router-sm-test-'));
-    process.env.ROUTER_MODEL = 'gemini/gemini-3.5-flash-lite';
+    process.env.ROUTER_MODEL = 'openrouter/cohere/north-mini-code:free';
     delete process.env.ROUTER_FALLBACK_MODELS;
     process.env.ROUTER_MAX_RETRIES = '2';
     process.env.ROUTER_RETRY_BASE_DELAY_MS = '0';
@@ -64,7 +64,7 @@ describe('RouterProvider State Machine Flow Control', () => {
       {
         status: 200,
         body: {
-          model: 'gemini/gemini-3.5-flash-lite',
+          model: 'openrouter/cohere/north-mini-code:free',
           choices: [{ message: { role: 'assistant', content: 'Task completed successfully.' }, finish_reason: 'stop' }],
         },
       },
@@ -90,7 +90,7 @@ describe('RouterProvider State Machine Flow Control', () => {
       {
         status: 200,
         body: {
-          model: 'gemini/gemini-3.5-flash-lite',
+          model: 'openrouter/cohere/north-mini-code:free',
           choices: [
             {
               message: {
@@ -115,7 +115,7 @@ describe('RouterProvider State Machine Flow Control', () => {
       {
         status: 200,
         body: {
-          model: 'gemini/gemini-3.5-flash-lite',
+          model: 'openrouter/cohere/north-mini-code:free',
           choices: [
             {
               message: {
@@ -153,7 +153,7 @@ describe('RouterProvider State Machine Flow Control', () => {
       {
         status: 200,
         body: {
-          model: 'gemini/gemini-3.5-flash-lite',
+          model: 'openrouter/cohere/north-mini-code:free',
           choices: [
             {
               message: {
@@ -178,7 +178,7 @@ describe('RouterProvider State Machine Flow Control', () => {
       {
         status: 200,
         body: {
-          model: 'gemini/gemini-3.5-flash-lite',
+          model: 'openrouter/cohere/north-mini-code:free',
           choices: [
             {
               message: {
@@ -203,7 +203,7 @@ describe('RouterProvider State Machine Flow Control', () => {
       {
         status: 200,
         body: {
-          model: 'gemini/gemini-3.5-flash-lite',
+          model: 'openrouter/cohere/north-mini-code:free',
           choices: [
             {
               message: {
@@ -235,7 +235,7 @@ describe('RouterProvider State Machine Flow Control', () => {
       {
         status: 200,
         body: {
-          model: 'gemini/gemini-3.5-flash-lite',
+          model: 'openrouter/cohere/north-mini-code:free',
           choices: [
             {
               message: {
@@ -275,7 +275,7 @@ describe('RouterProvider State Machine Flow Control', () => {
       {
         status: 200,
         body: {
-          model: 'gemini/gemini-3.5-flash-lite',
+          model: 'openrouter/cohere/north-mini-code:free',
           choices: [
             {
               message: {
@@ -336,7 +336,7 @@ describe('RouterProvider State Machine Flow Control', () => {
   });
 
   it('Case 8: Fallback on primary failure with tool call and text completion (CASE 5)', async () => {
-    process.env.ROUTER_FALLBACK_MODELS = 'gemini/gemini-3.6-flash';
+    process.env.ROUTER_FALLBACK_MODELS = 'kc/cohere/north-mini-code:free';
     const fetchMock = createFetchMock([
       // Primary model: 2 failed attempts (429)
       { status: 429, body: { error: { message: 'Quota exceeded' } } },
@@ -345,7 +345,7 @@ describe('RouterProvider State Machine Flow Control', () => {
       {
         status: 200,
         body: {
-          model: 'gemini/gemini-3.6-flash',
+          model: 'kc/cohere/north-mini-code:free',
           choices: [
             {
               message: {
@@ -371,7 +371,7 @@ describe('RouterProvider State Machine Flow Control', () => {
       {
         status: 200,
         body: {
-          model: 'gemini/gemini-3.6-flash',
+          model: 'kc/cohere/north-mini-code:free',
           choices: [
             {
               message: {
@@ -390,7 +390,7 @@ describe('RouterProvider State Machine Flow Control', () => {
     const result = await provider.execute(baseTask(), tempWs);
 
     expect(result.status).toBe('COMPLETED');
-    expect(result.model).toBe('gemini/gemini-3.6-flash');
+    expect(result.model).toBe('kc/cohere/north-mini-code:free');
     expect(result.toolCalls).toBe(1);
     expect(result.toolRounds).toBe(1);
     expect(result.changedFiles).toContain('fallback.txt');
@@ -398,7 +398,7 @@ describe('RouterProvider State Machine Flow Control', () => {
   });
 
   it('Case 9: All models fail in fallback chain (CASE 6)', async () => {
-    process.env.ROUTER_FALLBACK_MODELS = 'gemini/gemini-3.6-flash';
+    process.env.ROUTER_FALLBACK_MODELS = 'kc/cohere/north-mini-code:free';
     const fetchMock = createFetchMock([
       // Primary: 2 attempts
       { status: 429, body: { error: { message: 'quota' } } },

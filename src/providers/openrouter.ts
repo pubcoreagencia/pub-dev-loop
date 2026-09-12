@@ -8,6 +8,7 @@ import type { ToolCall, ToolResult, ToolExecutionContext, ToolDefinition } from 
 import { loadOpenRouterConfig, type OpenRouterConfig } from './openrouterConfig.js';
 import { canUsePaidFallback } from '../routing/index.js';
 import { parseOpenAISSEStream, type StreamConsumer, StreamEventSink } from './streaming/index.js';
+import { isFreeModel } from './model-registry.js';
 
 interface OpenAIChatMessage {
   role: string;
@@ -94,7 +95,7 @@ export class OpenRouterProvider implements AgentProvider {
     this.timeoutMs = timeoutMs;
     this.maxToolRounds = Number(process.env.OPENROUTER_MAX_TOOL_ROUNDS ?? 20);
     this.maxToolCalls = Number(process.env.OPENROUTER_MAX_TOOL_CALLS ?? 50);
-    this.model = modelOverride ?? process.env.OPENROUTER_MODEL ?? (this.apiKey ? 'anthropic/claude-3.5-haiku' : 'openrouter/free');
+    this.model = modelOverride ?? process.env.OPENROUTER_MODEL ?? 'cohere/north-mini-code:free';
     this.enableStream = enableStream;
     this.consumer = consumer;
   }
@@ -105,6 +106,25 @@ export class OpenRouterProvider implements AgentProvider {
     options?: { signal?: AbortSignal; consumer?: StreamConsumer }
   ): Promise<ProviderTaskResult> {
     const started = Date.now();
+    // Strict FREE_ONLY_POLICY enforcement: fail closed immediately on paid or unknown models
+    if (this.model && !isFreeModel(this.model)) {
+      return {
+        status: 'FAILED',
+        provider: this.kind,
+        model: this.model,
+        exitCode: null,
+        durationMs: 0,
+        stdout: '',
+        stderr: `Model '${this.model}' is not allowed by FREE_ONLY_POLICY. Only verified 0/0 pricing models are permitted.`,
+        changedFiles: [],
+        commit: null,
+        errorCode: 'MODEL_NOT_ALLOWED_BY_FREE_ONLY_POLICY',
+        errorMessage: `Model '${this.model}' is not allowed by FREE_ONLY_POLICY`,
+        toolCalls: 0,
+        toolRounds: 0,
+      };
+    }
+
     const rawConsumer = options?.consumer ?? this.consumer;
     const effectiveConsumer = rawConsumer instanceof StreamEventSink ? rawConsumer : rawConsumer ? new StreamEventSink(rawConsumer) : undefined;
     const ctx: ToolExecutionContext = {
@@ -146,15 +166,36 @@ export class OpenRouterProvider implements AgentProvider {
     // Ordered list of model identifiers that will be attempted (one entry per candidate model)
     const modelAttempts: string[] = [];
 
-    const candidateEntries = cfg.candidateModels || modelQueue.map(m => {
-      const isFree = m.includes(':free') || m.endsWith('/free');
+    const rawCandidateEntries = cfg.candidateModels || modelQueue.map(m => {
+      const isFree = isFreeModel(m);
       return {
         model: m,
-        tier: m === 'openrouter/free' ? 2 : isFree ? 1 : 3,
+        tier: m === 'openrouter/free' ? 2 : 1,
         free: isFree,
         maxRetries: cfg.maxRetries,
       };
     });
+
+    // Strict FREE_ONLY_POLICY: Filter out any non-free models
+    const candidateEntries = rawCandidateEntries.filter(e => isFreeModel(e.model));
+
+    if (candidateEntries.length === 0) {
+      return {
+        status: 'FAILED',
+        provider: this.kind,
+        model: null,
+        exitCode: null,
+        durationMs: 0,
+        stdout: '',
+        stderr: 'No free models available conforming to FREE_ONLY_POLICY',
+        changedFiles: [],
+        commit: null,
+        errorCode: 'MODEL_NOT_ALLOWED_BY_FREE_ONLY_POLICY',
+        errorMessage: 'No free models available conforming to FREE_ONLY_POLICY',
+        toolCalls: 0,
+        toolRounds: 0,
+      };
+    }
 
     try {
       while (toolRounds < this.maxToolRounds) {
