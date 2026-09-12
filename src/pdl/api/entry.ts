@@ -25,11 +25,16 @@ import {
   type GovernanceAuthConfig,
 } from '../governance/index.js';
 import { PdlContinuousScheduler } from '../scheduler/index.js';
+import {
+  PdlDeadLetterRepository,
+  type IPdlDeadLetterRepository,
+} from '../dlq/index.js';
 
 export interface PdlAppOptions {
   governance?: PdlGovernanceEngine;
   authConfig?: GovernanceAuthConfig;
   scheduler?: PdlContinuousScheduler;
+  dlq?: IPdlDeadLetterRepository;
 }
 
 export const createPdlApp = (
@@ -42,9 +47,11 @@ export const createPdlApp = (
   const taskRepo = tasks ?? new PostgresTaskRepository(activePool);
   const intakeService = intake ?? new TaskIntakeService(activePool);
   const governance = options?.governance ?? new PdlGovernanceEngine({ pool: activePool });
+  const dlq = options?.dlq ?? new PdlDeadLetterRepository(activePool);
   const scheduler = options?.scheduler ?? new PdlContinuousScheduler({
     governance,
     pool: activePool,
+    dlq,
   });
   const authConfigGetter = () => options?.authConfig;
 
@@ -239,6 +246,48 @@ export const createPdlApp = (
         });
       } catch (err: any) {
         return res.status(500).json({ error: 'Failed to stop scheduler session', details: err.message });
+      }
+    }
+  );
+
+  // Phase 5.5 Step 3: Dead-Letter Queue & Quarantine Endpoints
+  app.get(
+    '/dlq/status',
+    requireGovernanceAuth('READ', authConfigGetter),
+    async (_req, res) => {
+      try {
+        const status = await dlq.getStatus();
+        return res.json({
+          service: 'pdl-api',
+          dlq: status,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err: any) {
+        return res.status(500).json({ error: 'Failed to retrieve DLQ status', details: err.message });
+      }
+    }
+  );
+
+  app.get(
+    '/dlq/records',
+    requireGovernanceAuth('READ', authConfigGetter),
+    async (req, res) => {
+      try {
+        const records = await dlq.list({
+          taskId: typeof req.query.taskId === 'string' ? req.query.taskId : undefined,
+          product: typeof req.query.product === 'string' ? req.query.product : undefined,
+          failureClass: typeof req.query.failureClass === 'string' ? req.query.failureClass : undefined,
+          failureCode: typeof req.query.failureCode === 'string' ? req.query.failureCode : undefined,
+          quarantined: req.query.quarantined !== undefined ? req.query.quarantined === 'true' : undefined,
+        });
+        return res.json({
+          service: 'pdl-api',
+          records,
+          count: records.length,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err: any) {
+        return res.status(500).json({ error: 'Failed to retrieve DLQ records', details: err.message });
       }
     }
   );

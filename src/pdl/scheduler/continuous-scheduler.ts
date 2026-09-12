@@ -30,12 +30,19 @@ import {
   SchedulerSessionRepository,
   type ISchedulerSessionRepository,
 } from './session-repository.js';
+import { PdlRetryPolicy } from '../retry/policy.js';
+import {
+  PdlDeadLetterRepository,
+  type IPdlDeadLetterRepository,
+} from '../dlq/index.js';
 
 export interface ContinuousSchedulerOptions {
   governance?: PdlGovernanceEngine;
   worker?: BaseWorker;
   tasks?: TaskRepository;
   repository?: ISchedulerSessionRepository;
+  retryPolicy?: PdlRetryPolicy;
+  dlq?: IPdlDeadLetterRepository;
   config?: Partial<SchedulerConfig>;
   pool?: Pool;
 }
@@ -50,6 +57,8 @@ export class PdlContinuousScheduler {
   public readonly worker?: BaseWorker;
   public readonly tasks?: TaskRepository;
   public readonly repository: ISchedulerSessionRepository;
+  public readonly retryPolicy: PdlRetryPolicy;
+  public readonly dlq: IPdlDeadLetterRepository;
   public readonly config: SchedulerConfig;
 
   private activeSession: SchedulerSessionInfo | null = null;
@@ -83,6 +92,8 @@ export class PdlContinuousScheduler {
     this.worker = options.worker;
     this.tasks = options.tasks;
     this.repository = options.repository || new SchedulerSessionRepository(options.pool);
+    this.retryPolicy = options.retryPolicy || new PdlRetryPolicy();
+    this.dlq = options.dlq || new PdlDeadLetterRepository(options.pool);
   }
 
   /**
@@ -395,6 +406,133 @@ export class PdlContinuousScheduler {
           consecutiveFailures: this.activeSession.consecutiveFailures,
           details: { error: cycleRecord.error },
         });
+
+        if (lastTask && this.tasks) {
+          try {
+            const decision = this.retryPolicy.evaluate(lastTask, cycleRecord.error, {
+              maxRetries: lastTask.maxRetries,
+              finalizeStatus: lastFinalize,
+            });
+
+            if (decision.action === 'RETRY') {
+              const newRetryCount = (lastTask.retryCount ?? 0) + 1;
+              await this.tasks.update(lastTask.id, {
+                status: 'QUEUED',
+                retryCount: newRetryCount,
+                lastRetryAt: new Date(),
+                nextRetryAt: decision.nextRetryAt ?? new Date(),
+                lastFailureCode: decision.failureCode,
+                lastFailureClass: decision.failureClass,
+                worker: null,
+                leaseOwner: null,
+                leaseDeadline: null,
+                workspacePath: null,
+              });
+
+              this.emitEvent('SCHEDULER_TASK_RETRY_SCHEDULED', {
+                taskId: lastTask.id,
+                product: lastTask.project || lastTask.repository,
+                reasonCode: decision.failureCode,
+                details: {
+                  retryCount: newRetryCount,
+                  delayMs: decision.delayMs,
+                  nextRetryAt: decision.nextRetryAt?.toISOString(),
+                  failureClass: decision.failureClass,
+                  reason: decision.reason,
+                },
+              });
+            } else if (decision.action === 'QUARANTINE') {
+              const attemptCount = (lastTask.retryCount ?? 0) + 1;
+              await this.tasks.update(lastTask.id, {
+                status: 'QUARANTINED',
+                quarantinedAt: new Date(),
+                quarantineReason: decision.reason,
+                lastFailureCode: decision.failureCode,
+                lastFailureClass: decision.failureClass,
+                worker: null,
+                leaseOwner: null,
+                leaseDeadline: null,
+                workspacePath: null,
+              });
+
+              await this.dlq.record({
+                taskId: lastTask.id,
+                repository: lastTask.repository,
+                product: lastTask.project || lastTask.repository,
+                failureCode: decision.failureCode,
+                failureClass: decision.failureClass,
+                attemptCount,
+                reason: decision.reason,
+                quarantined: true,
+                originalTaskResult: lastTask.result,
+              });
+
+              this.emitEvent('SCHEDULER_TASK_QUARANTINED', {
+                taskId: lastTask.id,
+                product: lastTask.project || lastTask.repository,
+                reasonCode: decision.failureCode,
+                details: {
+                  reason: decision.reason,
+                  failureClass: decision.failureClass,
+                  attemptCount,
+                },
+              });
+
+              this.emitEvent('SCHEDULER_TASK_DEAD_LETTERED', {
+                taskId: lastTask.id,
+                product: lastTask.project || lastTask.repository,
+                reasonCode: decision.failureCode,
+                details: {
+                  reason: decision.reason,
+                  failureClass: decision.failureClass,
+                  quarantined: true,
+                  attemptCount,
+                },
+              });
+            } else {
+              // DEAD_LETTER
+              const attemptCount = (lastTask.retryCount ?? 0) + 1;
+              const targetStatus = lastTask.status === 'BLOCKED' ? 'BLOCKED' : 'FAILED';
+              await this.tasks.update(lastTask.id, {
+                status: targetStatus,
+                deadLetteredAt: new Date(),
+                deadLetterReason: decision.reason,
+                lastFailureCode: decision.failureCode,
+                lastFailureClass: decision.failureClass,
+                worker: null,
+                leaseOwner: null,
+                leaseDeadline: null,
+                workspacePath: null,
+              });
+
+              await this.dlq.record({
+                taskId: lastTask.id,
+                repository: lastTask.repository,
+                product: lastTask.project || lastTask.repository,
+                failureCode: decision.failureCode,
+                failureClass: decision.failureClass,
+                attemptCount,
+                reason: decision.reason,
+                quarantined: false,
+                originalTaskResult: lastTask.result,
+              });
+
+              this.emitEvent('SCHEDULER_TASK_DEAD_LETTERED', {
+                taskId: lastTask.id,
+                product: lastTask.project || lastTask.repository,
+                reasonCode: decision.failureCode,
+                details: {
+                  reason: decision.reason,
+                  failureClass: decision.failureClass,
+                  quarantined: false,
+                  attemptCount,
+                },
+              });
+            }
+          } catch (retryErr: any) {
+            console.error('[PDL Scheduler] Failed to process task retry/DLQ:', retryErr.message);
+          }
+        }
       }
 
       await this.repository.updateSession(this.activeSession.id, {

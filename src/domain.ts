@@ -1,4 +1,4 @@
-export const TASK_STATUSES = ['QUEUED','ASSIGNED','RUNNING','TESTING','COMPLETED','FAILED','BLOCKED','CANCELLED','NEEDS_REVIEW'] as const;
+export const TASK_STATUSES = ['QUEUED','ASSIGNED','RUNNING','TESTING','COMPLETED','FAILED','BLOCKED','CANCELLED','NEEDS_REVIEW','QUARANTINED'] as const;
 export type TaskStatus = typeof TASK_STATUSES[number];
 export interface Task {
   id: string;
@@ -27,6 +27,17 @@ export interface Task {
   agentId?: string | null;
   /** Optional tenant ID for multi-tenant isolation (Phase 8.1) */
   tenantId?: string;
+  /** Retry metadata & Dead-Letter Queue (Phase 5.5 Step 3) */
+  retryCount?: number;
+  maxRetries?: number;
+  nextRetryAt?: Date | null;
+  lastRetryAt?: Date | null;
+  lastFailureCode?: string | null;
+  lastFailureClass?: string | null;
+  deadLetteredAt?: Date | null;
+  deadLetterReason?: string | null;
+  quarantinedAt?: Date | null;
+  quarantineReason?: string | null;
 }
 export type CreateTask = Pick<Task, 'project'|'repository'|'objective'|'prompt'> & Partial<Pick<Task,'priority'|'prototypeSessionId'|'agentId'|'tenantId'>>;
 export interface TaskRepository {

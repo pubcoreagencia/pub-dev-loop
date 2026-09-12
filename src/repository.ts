@@ -24,6 +24,16 @@ const map = (r: Record<string, unknown>): Task => ({
   prototypeSessionId: r.prototype_session_id as string | null,
   agentId: (r.agent_id as string | null) ?? (r.agentId as string | null) ?? null,
   tenantId: (r.tenant_id as string | null) ?? (r.tenantId as string | null) ?? undefined,
+  retryCount: (r.retry_count as number) ?? (r.retryCount as number) ?? 0,
+  maxRetries: (r.max_retries as number) ?? (r.maxRetries as number) ?? 3,
+  nextRetryAt: r.next_retry_at ? new Date(r.next_retry_at as string | Date) : (r.nextRetryAt ? new Date(r.nextRetryAt as string | Date) : null),
+  lastRetryAt: r.last_retry_at ? new Date(r.last_retry_at as string | Date) : (r.lastRetryAt ? new Date(r.lastRetryAt as string | Date) : null),
+  lastFailureCode: (r.last_failure_code as string | null) ?? (r.lastFailureCode as string | null) ?? null,
+  lastFailureClass: (r.last_failure_class as string | null) ?? (r.lastFailureClass as string | null) ?? null,
+  deadLetteredAt: r.dead_lettered_at ? new Date(r.dead_lettered_at as string | Date) : (r.deadLetteredAt ? new Date(r.deadLetteredAt as string | Date) : null),
+  deadLetterReason: (r.dead_letter_reason as string | null) ?? (r.deadLetterReason as string | null) ?? null,
+  quarantinedAt: r.quarantined_at ? new Date(r.quarantined_at as string | Date) : (r.quarantinedAt ? new Date(r.quarantinedAt as string | Date) : null),
+  quarantineReason: (r.quarantine_reason as string | null) ?? (r.quarantineReason as string | null) ?? null,
 });
 
 const toColumn = (key: string): string => ({
@@ -31,6 +41,11 @@ const toColumn = (key: string): string => ({
   leaseOwner: 'lease_owner', leaseDeadline: 'lease_deadline', heartbeatAt: 'heartbeat_at',
   workspacePath: 'workspace_path', prototypeSessionId: 'prototype_session_id',
   agentId: 'agent_id', tenantId: 'tenant_id',
+  retryCount: 'retry_count', maxRetries: 'max_retries',
+  nextRetryAt: 'next_retry_at', lastRetryAt: 'last_retry_at',
+  lastFailureCode: 'last_failure_code', lastFailureClass: 'last_failure_class',
+  deadLetteredAt: 'dead_lettered_at', deadLetterReason: 'dead_letter_reason',
+  quarantinedAt: 'quarantined_at', quarantineReason: 'quarantine_reason',
 }[key] ?? key);
 
 // Sovereign in-memory fallback store to ensure zero downtime when database quota is reached
@@ -75,6 +90,16 @@ export class PostgresTaskRepository implements TaskRepository {
       prototypeSessionId: input.prototypeSessionId ?? null,
       agentId: input.agentId ?? null,
       tenantId: input.tenantId,
+      retryCount: 0,
+      maxRetries: 3,
+      nextRetryAt: null,
+      lastRetryAt: null,
+      lastFailureCode: null,
+      lastFailureClass: null,
+      deadLetteredAt: null,
+      deadLetterReason: null,
+      quarantinedAt: null,
+      quarantineReason: null,
     };
     sovereignFallbackTasks.set(id, task);
     return task;
@@ -126,6 +151,7 @@ export class PostgresTaskRepository implements TaskRepository {
           LEFT JOIN active_product_counts a ON a.project = t.project
           WHERE (t.status = 'QUEUED'
              OR (t.status IN ('ASSIGNED', 'RUNNING', 'TESTING') AND t.lease_deadline IS NOT NULL AND t.lease_deadline < now()))
+            AND (t.next_retry_at IS NULL OR t.next_retry_at <= now())
             AND (a.cnt IS NULL OR a.cnt < $2)
           ORDER BY t.priority DESC, t.created_at ASC
           FOR UPDATE SKIP LOCKED LIMIT 1
@@ -140,6 +166,8 @@ export class PostgresTaskRepository implements TaskRepository {
 
     const now = new Date();
     for (const task of sovereignFallbackTasks.values()) {
+      if (task.status === 'QUARANTINED') continue;
+      if (task.nextRetryAt && task.nextRetryAt > now) continue;
       if (task.status === 'QUEUED' || (['ASSIGNED', 'RUNNING', 'TESTING'].includes(task.status) && task.leaseDeadline && task.leaseDeadline < now)) {
         task.status = 'ASSIGNED';
         task.worker = worker;
@@ -159,6 +187,7 @@ export class PostgresTaskRepository implements TaskRepository {
         WITH candidate AS (
           SELECT id FROM tasks
           WHERE status = 'QUEUED' AND prototype_session_id IS NOT NULL
+            AND (next_retry_at IS NULL OR next_retry_at <= now())
           ORDER BY priority DESC, created_at ASC
           FOR UPDATE SKIP LOCKED LIMIT 1
         )
@@ -170,7 +199,10 @@ export class PostgresTaskRepository implements TaskRepository {
       console.warn('[PostgresTaskRepository] DB quota/connection issue on claimPrototype, checking sovereign memory:', err.message);
     }
 
+    const now = new Date();
     for (const task of sovereignFallbackTasks.values()) {
+      if (task.status === 'QUARANTINED') continue;
+      if (task.nextRetryAt && task.nextRetryAt > now) continue;
       if (task.status === 'QUEUED' && task.prototypeSessionId) {
         task.status = 'ASSIGNED';
         task.worker = worker;
