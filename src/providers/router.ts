@@ -6,6 +6,12 @@ import { AgentExecutor } from '../executor.js';
 import type { ToolCall, ToolResult, ToolExecutionContext, ToolDefinition } from '../tools/types.js';
 import { loadRouterConfig, type RouterConfig } from './routerConfig.js';
 import { parseOpenAISSEStream, type StreamConsumer, StreamEventSink } from './streaming/index.js';
+import {
+  classifyFailure,
+  defaultModelHealthTracker,
+  resolveModelQueue,
+  type ResolvedModelQueue,
+} from './model-routing-policy.js';
 
 interface OpenAIChatMessage {
   role: string;
@@ -118,7 +124,14 @@ export class RouterProvider implements AgentProvider {
       buildUserPrompt(task),
     ];
     const cfg: RouterConfig = loadRouterConfig(this.model || undefined);
-    const modelQueue = [cfg.primaryModel, ...cfg.fallbackModels];
+    const routingResult: ResolvedModelQueue = resolveModelQueue('9router', task, {
+      modelOverride: this.model || undefined,
+      allowEmergency: process.env.ROUTER_ALLOW_EMERGENCY === 'true',
+    });
+    const modelQueue = (cfg.fallbackModels && cfg.fallbackModels.length > 0)
+      ? [cfg.primaryModel, ...cfg.fallbackModels]
+      : (routingResult.candidateQueue.length > 0 ? routingResult.candidateQueue : [cfg.primaryModel]);
+    const modelAttempts: string[] = [];
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     if (options?.signal) {
@@ -134,7 +147,7 @@ export class RouterProvider implements AgentProvider {
     let toolRounds = 0;
     let finalMessage = '';
     let lastResponseText = '';
-    const hasFallbacks = cfg.fallbackModels && cfg.fallbackModels.length > 0;
+    const hasFallbacks = modelQueue.length > 1;
 
     try {
       while (toolRounds < this.maxToolRounds) {
@@ -154,6 +167,9 @@ export class RouterProvider implements AgentProvider {
         } | null = null;
 
         for (const model of candidateModels) {
+          if (!modelAttempts.includes(model)) {
+            modelAttempts.push(model);
+          }
           let attempt = 0;
           let modelSucceeded = false;
 
@@ -193,6 +209,9 @@ export class RouterProvider implements AgentProvider {
                   continue;
                 }
 
+                const failureType = classifyFailure(response.status, errPayload.message || text);
+                defaultModelHealthTracker.recordFailure('9router', model, failureType, errPayload.message || text);
+
                 lastModelError = {
                   status: response.status,
                   isAuth: response.status === 401 || response.status === 403,
@@ -229,6 +248,7 @@ export class RouterProvider implements AgentProvider {
                 toolCalls = message?.tool_calls;
               }
 
+              defaultModelHealthTracker.recordSuccess('9router', model);
               modelUsed = modelUsed ?? model;
               activeModel = modelUsed;
               lastResponseText = messageContent;
@@ -251,6 +271,9 @@ export class RouterProvider implements AgentProvider {
                   errorMessage: null,
                   toolCalls: totalToolCalls,
                   toolRounds: toolRounds,
+                  modelAttempts,
+                  decisionTrace: routingResult.decisionTrace,
+                  fallbackUsed: modelAttempts.length > 1 || candidateModels.indexOf(modelUsed) > 0,
                 };
               }
 
@@ -306,7 +329,10 @@ export class RouterProvider implements AgentProvider {
 
               messages.push({ role: 'assistant', content: messageContent || null, tool_calls: toolCalls });
               for (const tr of toolResults) {
-                messages.push({ role: 'tool', content: tr.success ? tr.content : `Error: ${tr.error}`, tool_call_id: tr.toolCallId });
+                const content = tr.success
+                  ? (tr.content && tr.content.trim().length > 0 ? tr.content : '(no output)')
+                  : (tr.error && tr.error.trim().length > 0 ? `Error: ${tr.error}` : 'Error: Tool execution failed');
+                messages.push({ role: 'tool', content, tool_call_id: tr.toolCallId });
               }
 
               modelSucceeded = true;
@@ -318,6 +344,9 @@ export class RouterProvider implements AgentProvider {
                 await new Promise(r => setTimeout(r, cfg.baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 100));
                 continue;
               }
+              const failureType = classifyFailure(null, fetchErr instanceof Error ? fetchErr.message : 'Router connection error', true);
+              defaultModelHealthTracker.recordFailure('9router', model, failureType, fetchErr instanceof Error ? fetchErr.message : 'Router connection error');
+
               const isAbort = fetchErr?.message?.includes('abort') || fetchErr?.name === 'AbortError' || controller.signal.aborted;
               if (isAbort) {
                 clearTimeout(timer);
@@ -335,6 +364,9 @@ export class RouterProvider implements AgentProvider {
                   errorMessage: fetchErr instanceof Error ? fetchErr.message : 'Router request timed out',
                   toolCalls: totalToolCalls,
                   toolRounds: toolRounds,
+                  modelAttempts,
+                  decisionTrace: routingResult.decisionTrace,
+                  fallbackUsed: modelAttempts.length > 1,
                 };
               }
               lastModelError = {
@@ -365,6 +397,32 @@ export class RouterProvider implements AgentProvider {
           const httpStatus = lastModelError?.status ?? null;
           const rawMsg = lastModelError?.message || 'All configured models failed';
 
+          const failureType = lastModelError
+            ? classifyFailure(lastModelError.status, lastModelError.message, lastModelError.isConnectionError)
+            : 'UNKNOWN';
+
+          if (failureType === 'TOOL_PROTOCOL_FAILURE') {
+            return {
+              status: 'FAILED',
+              provider: this.kind,
+              model: modelUsed ?? lastModelError?.model ?? null,
+              exitCode: httpStatus,
+              durationMs: Date.now() - started,
+              stdout: finalMessage || lastResponseText,
+              stderr: rawMsg,
+              changedFiles: runtime.getChangedFiles(),
+              commit: null,
+              errorCode: 'TOOL_PROTOCOL_FAILURE',
+              errorMessage: `Tool protocol error: ${rawMsg}`,
+              toolCalls: totalToolCalls,
+              toolRounds: toolRounds,
+              httpStatus: httpStatus ?? undefined,
+              modelAttempts,
+              decisionTrace: routingResult.decisionTrace,
+              fallbackUsed: modelAttempts.length > 1,
+            };
+          }
+
           if (isAuth) {
             return {
               status: 'FAILED',
@@ -381,6 +439,9 @@ export class RouterProvider implements AgentProvider {
               toolCalls: totalToolCalls,
               toolRounds: toolRounds,
               httpStatus: httpStatus ?? undefined,
+              modelAttempts,
+              decisionTrace: routingResult.decisionTrace,
+              fallbackUsed: modelAttempts.length > 1,
             };
           }
 
@@ -402,6 +463,9 @@ export class RouterProvider implements AgentProvider {
               toolCalls: totalToolCalls,
               toolRounds: toolRounds,
               httpStatus: httpStatus ?? undefined,
+              modelAttempts,
+              decisionTrace: routingResult.decisionTrace,
+              fallbackUsed: modelAttempts.length > 1,
             };
           }
 
@@ -425,6 +489,9 @@ export class RouterProvider implements AgentProvider {
             toolCalls: totalToolCalls,
             toolRounds: toolRounds,
             httpStatus: httpStatus ?? undefined,
+            modelAttempts,
+            decisionTrace: routingResult.decisionTrace,
+            fallbackUsed: modelAttempts.length > 1,
           };
         }
       } // end while (toolRounds < this.maxToolRounds)
@@ -490,17 +557,35 @@ export class RouterProvider implements AgentProvider {
       errorMessage: 'No response',
       toolCalls: totalToolCalls,
       toolRounds: toolRounds,
+      modelAttempts,
+      decisionTrace: routingResult.decisionTrace,
+      fallbackUsed: modelAttempts.length > 1,
     };
   }
 
   /**
    * Convert internal message format to API-compatible format.
-   * Always include content (null when empty) for OpenAI-compatible compliance.
+   * Strips orphaned trailing assistant turns and guarantees non-empty content on tool turns.
    */
   private messagesToApi(messages: OpenAIChatMessage[]): Record<string, unknown>[] {
-    return messages.map(msg => {
+    const sanitized = [...messages];
+    while (
+      sanitized.length > 0 &&
+      sanitized[sanitized.length - 1].role === 'assistant' &&
+      (!sanitized[sanitized.length - 1].tool_calls || sanitized[sanitized.length - 1].tool_calls!.length === 0)
+    ) {
+      sanitized.pop();
+    }
+
+    return sanitized.map(msg => {
       const result: Record<string, unknown> = { role: msg.role };
-      // Always include content — null when not present (required by Gemini via 9Router)
+      if (msg.role === 'tool') {
+        result.content = msg.content && String(msg.content).trim().length > 0 ? msg.content : '(no output)';
+        if (msg.tool_call_id) {
+          result.tool_call_id = msg.tool_call_id;
+        }
+        return result;
+      }
       if (msg.content !== undefined) {
         result.content = msg.content;
       } else {

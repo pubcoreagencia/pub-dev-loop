@@ -540,7 +540,10 @@ export class OpenRouterProvider implements AgentProvider {
 
               messages.push({ role: 'assistant', content: messageContent || null, tool_calls: toolCalls });
               for (const tr of toolResults) {
-                messages.push({ role: 'tool', content: tr.success ? tr.content : `Error: ${tr.error}`, tool_call_id: tr.toolCallId });
+                const content = tr.success
+                  ? (tr.content && tr.content.trim().length > 0 ? tr.content : '(no output)')
+                  : (tr.error && tr.error.trim().length > 0 ? `Error: ${tr.error}` : 'Error: Tool execution failed');
+                messages.push({ role: 'tool', content, tool_call_id: tr.toolCallId });
               }
 
               modelFound = true;
@@ -612,8 +615,24 @@ export class OpenRouterProvider implements AgentProvider {
   }
 
   private messagesToApi(messages: OpenAIChatMessage[]): Record<string, unknown>[] {
-    return messages.map(msg => {
+    const sanitized = [...messages];
+    while (
+      sanitized.length > 0 &&
+      sanitized[sanitized.length - 1].role === 'assistant' &&
+      (!sanitized[sanitized.length - 1].tool_calls || sanitized[sanitized.length - 1].tool_calls!.length === 0)
+    ) {
+      sanitized.pop();
+    }
+
+    return sanitized.map(msg => {
       const result: Record<string, unknown> = { role: msg.role };
+      if (msg.role === 'tool') {
+        result.content = msg.content && String(msg.content).trim().length > 0 ? msg.content : '(no output)';
+        if (msg.tool_call_id) {
+          result.tool_call_id = msg.tool_call_id;
+        }
+        return result;
+      }
       if (msg.content !== undefined) {
         result.content = msg.content;
       } else {

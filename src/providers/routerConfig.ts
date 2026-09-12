@@ -1,7 +1,9 @@
 // src/providers/routerConfig.ts
+import { resolveModelQueue } from './model-routing-policy.js';
+
 /**
  * Centralized loader for Router provider configuration.
- * Reads environment variables and provides strongly‑typed defaults.
+ * Reads environment variables and provides strongly-typed defaults based on the Model Routing Policy.
  */
 export interface RouterConfig {
   primaryModel: string; // required
@@ -11,15 +13,20 @@ export interface RouterConfig {
 }
 
 export function loadRouterConfig(modelOverride?: string): RouterConfig {
-  const primary = modelOverride?.trim() || process.env.ROUTER_MODEL?.trim() || 'gemini/gemini-3.5-flash-lite';
-  if (!primary) {
-    throw new Error('ROUTER_MODEL must be defined in the environment');
-  }
-
+  const envModel = process.env.ROUTER_MODEL?.trim();
   const fallbackRaw = process.env.ROUTER_FALLBACK_MODELS?.trim() ?? '';
-  const fallbackModels = fallbackRaw
+  const fallbackEnvModels = fallbackRaw
     ? fallbackRaw.split(',').map(s => s.trim()).filter(Boolean)
     : [];
+
+  // Resolve defaults from canonical Model Routing Policy if not overridden by env
+  const routing = resolveModelQueue('9router', undefined, {
+    modelOverride: modelOverride || envModel || undefined,
+    allowEmergency: process.env.ROUTER_ALLOW_EMERGENCY === 'true',
+  });
+
+  const primary = modelOverride?.trim() || envModel || routing.primaryModel || 'gemini/gemini-3.7-flash';
+  const fallbackModels = fallbackEnvModels.length > 0 ? fallbackEnvModels : routing.fallbackModels;
 
   const maxRetries = Number(process.env.ROUTER_MAX_RETRIES ?? 2);
   const baseDelayMs = Number(process.env.ROUTER_RETRY_BASE_DELAY_MS ?? 500);

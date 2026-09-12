@@ -38,6 +38,8 @@ export interface ProviderTaskResult {
   costUsd?: number;
   // New field: ordered list of model identifiers attempted by the provider
   modelAttempts?: string[];
+  decisionTrace?: unknown[];
+  telemetry?: Record<string, unknown>;
   /**
    * true → gateway fallback was invoked (regardless of success).
    * false / undefined → no gateway fallback.
