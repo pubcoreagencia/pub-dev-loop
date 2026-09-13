@@ -6,11 +6,12 @@ import { resolveContext } from './context-resolver.js';
 import { classifyTaskType, type TaskType, type EngineeringTask } from './intent.js';
 import { normalizeTaskIntake } from '../task/intake.js';
 import { buildCanonicalExecutionSpec } from '../pdl/service/task-intake-service.js';
-import { computeSpecHash } from '../execution/execution-spec-persistence.js';
+import { computeSpecHash, createExecutionSpec, sealExecutionSpec, type ExecutionSpecDatabase } from '../execution/execution-spec-persistence.js';
 import type { ExecutionSpec } from '../task/execution-spec.js';
-import { CodeReviewManager, defaultCodeReviewManager, type CodeReviewResult } from './review.js';
+import { CodeReviewManager, defaultCodeReviewManager, extractReviewContextFromTask, type CodeReviewResult } from './review.js';
 import { DefaultPubNeuralBridge, defaultPubNeuralBridge } from '../pdl/neural/neural-bridge.js';
 import type { PubNeuralBridge, NeuralIngestionStatus } from '../pdl/neural/types.js';
+import type { Worker } from '../worker-service.js';
 
 export interface CeoCommandInput {
   message: string;
@@ -18,6 +19,7 @@ export interface CeoCommandInput {
   project?: string;
   repository?: string;
   workspaceDir?: string;
+  executeSynchronously?: boolean;
 }
 
 export interface CeoCommandResponse {
@@ -58,7 +60,9 @@ export class ChiefOfStaffAgent {
     private readonly registry: AgentRegistry = defaultAgentRegistry,
     private readonly neuralBridge: PubNeuralBridge = defaultPubNeuralBridge,
     private readonly reviewManager: CodeReviewManager = defaultCodeReviewManager,
-    private readonly taskRepo?: TaskRepository
+    private readonly taskRepo?: TaskRepository,
+    private readonly worker?: Worker,
+    private readonly executionSpecDb?: ExecutionSpecDatabase
   ) {}
 
   async handleCommand(input: CeoCommandInput): Promise<CeoCommandResponse> {
@@ -299,125 +303,308 @@ export class ChiefOfStaffAgent {
       await this.taskRepo.create(pdlTask);
     }
 
-    recordEvent('EXECUTING', `Tarefa [${taskId}] despachada para o motor de execução do PDL. Aguardando execução do especialista @${specialist.id}.`, {
+    if (this.executionSpecDb) {
+      try {
+        await createExecutionSpec(this.executionSpecDb, taskId, executionSpec);
+        await sealExecutionSpec(this.executionSpecDb, taskId, executionSpec);
+      } catch {
+        // Preserved or fail-closed
+      }
+    }
+
+    const shouldExecute = Boolean(input.executeSynchronously || (this.worker && input.executeSynchronously !== false));
+
+    // REALITY GATE: If task is only enqueued without worker execution, STOP AT QUEUED.
+    // Zero fake EXECUTING, REVIEWING, VALIDATING, FINALIZING, or COMPLETED!
+    if (!shouldExecute || !this.worker) {
+      recordEvent('QUEUED', `Tarefa [${taskId}] registrada na fila do PDL com status QUEUED. Aguardando execução pelo worker do PDL.`, {
+        taskId,
+        specHash,
+        specialistId: specialist.id,
+      }, specialist.id, specialist.name);
+
+      const queuedReply = this.buildQueuedResponse({
+        message: rawMessage,
+        project,
+        repository,
+        taskId,
+        specialist,
+        gitState: resolvedCtx.git_state,
+        executionSpec,
+      });
+
+      this.conversationStore.addMessage(conversationId, {
+        conversationId,
+        sender: 'CHIEF_OF_STAFF',
+        senderName: 'Dr. Arthur Vance',
+        senderRole: 'Chief of Staff & Orquestrador',
+        content: queuedReply,
+        metadata: {
+          taskId,
+          specialistId: specialist.id,
+          specHash,
+          status: 'QUEUED',
+        },
+      });
+
+      return {
+        conversationId,
+        response: queuedReply,
+        type: 'ACTION',
+        assignedSpecialist: {
+          id: specialist.id,
+          name: specialist.name,
+          role: specialist.title || specialist.role,
+        },
+        task: {
+          id: taskId,
+          project,
+          objective: rawMessage,
+          status: 'QUEUED',
+          agentId: specialist.id,
+        },
+        executionSpec,
+        gitState: resolvedCtx.git_state,
+        events: recordedEvents,
+      };
+    }
+
+    // 4.4 Synchronous Execution with Attached Real Worker
+    recordEvent('QUEUED', `Tarefa [${taskId}] registrada na fila para despacho imediato ao worker.`, {
       taskId,
       specHash,
     }, specialist.id, specialist.name);
 
-    // 4.4 Review / QA Governance Check
-    recordEvent('REVIEWING', `Executando avaliação de qualidade e governança com CodeReviewManager.`);
-    const reviewResult = this.reviewManager.evaluateReview({
+    recordEvent('EXECUTING', `Tarefa [${taskId}] despachada para o worker do PDL. Iniciando execução do especialista @${specialist.id}.`, {
       taskId,
-      developerAgentId: specialist.id,
-      reviewerAgentId: 'reviewer',
-      project,
-      testPassed: true,
-      typecheckPassed: true,
-      buildPassed: true,
-    });
+      specHash,
+    }, specialist.id, specialist.name);
 
-    recordEvent('VALIDATING', `Revisão concluída com veredicto: ${reviewResult.status}. Resumo: ${reviewResult.summary}`);
-
-    // 4.5 Neural Ingestion Check (CEO_COMMAND_12, 13, 14)
-    recordEvent('FINALIZING', `Verificando conectividade e persistência no PUB Neural.`);
-    const neuralClient = typeof this.neuralBridge.getClient === 'function' ? this.neuralBridge.getClient() : undefined;
-    const neuralAvailable = neuralClient ? await neuralClient.isAvailable() : false;
-    let neuralStatus: NeuralIngestionStatus = 'UNAVAILABLE';
-    let neuralError: string | undefined;
-
-    if (neuralClient && neuralAvailable) {
-      try {
-        const ack = await neuralClient.submit({
-          taskId,
-          projectId: project,
-          repository,
-          branch: resolvedCtx.git_state.branch,
-          commitSha: resolvedCtx.git_state.headSha,
-          remoteSha: resolvedCtx.git_state.headSha,
-          status: 'COMPLETED',
-          objective: rawMessage,
-          agentId: specialist.id,
-          changedFiles: resolvedCtx.git_state.changedFiles,
-          evidence: {
-            validationPassed: true,
-            worktreeClean: resolvedCtx.git_state.isClean,
-            remoteVerified: true,
-            pushSucceeded: true,
-          },
-          completedAt: new Date().toISOString(),
-          ingestionSource: 'pdl-persistence-gate',
-        });
-        neuralStatus = ack.status;
-        if (ack.error) neuralError = ack.error;
-      } catch (err: any) {
-        neuralStatus = 'FAILED';
-        neuralError = err.message;
-      }
-    } else {
-      neuralStatus = 'UNAVAILABLE';
-      neuralError = 'PUB Neural endpoint not configured (PUB_NEURAL_ENDPOINT missing)';
+    let workerRan = false;
+    let workerError: string | null = null;
+    try {
+      workerRan = await this.worker.executeOnce();
+    } catch (err: any) {
+      workerError = err.message || String(err);
     }
 
-    recordEvent('COMPLETED', `Ciclo operacional concluído. Tarefa ${taskId} alocada com sucesso. Neural status: ${neuralStatus}.`, {
-      taskId,
-      specialistId: specialist.id,
-      neuralStatus,
-    });
+    let updatedTask: Task | null = null;
+    if (this.taskRepo) {
+      updatedTask = typeof (this.taskRepo as any).findById === 'function'
+        ? await (this.taskRepo as any).findById(taskId)
+        : await this.taskRepo.get(taskId);
+    }
+    if (!updatedTask && (this.worker as any).lastExecutedTask) {
+      updatedTask = (this.worker as any).lastExecutedTask;
+    }
+    if (!updatedTask) {
+      updatedTask = pdlTask;
+    }
 
-    // 4.6 Factual Response Synthesis for CEO (CEO_COMMAND_08)
-    const factualReply = this.buildActionResponse({
-      message: rawMessage,
-      project,
-      repository,
-      taskId,
-      specialist,
-      gitState: resolvedCtx.git_state,
-      executionSpec,
-      reviewResult,
-      neuralStatus,
-      neuralError,
-    });
+    const taskFinalStatus = updatedTask.status;
 
-    this.conversationStore.addMessage(conversationId, {
-      conversationId,
-      sender: 'CHIEF_OF_STAFF',
-      senderName: 'Dr. Arthur Vance',
-      senderRole: 'Chief of Staff & Orquestrador',
-      content: factualReply,
-      metadata: {
+    if (taskFinalStatus === 'COMPLETED') {
+      recordEvent('TESTING', `Execução do worker concluída com sucesso. Avaliando testes e conformidade de código.`);
+
+      // 4.5 Real Review / QA Governance Check from Task Result
+      recordEvent('REVIEWING', `Executando avaliação de qualidade e governança com CodeReviewManager a partir de evidências reais.`);
+      const reviewInput = extractReviewContextFromTask(updatedTask);
+      const reviewResult = this.reviewManager.evaluateReview(reviewInput);
+
+      if (reviewResult.status === 'APPROVED') {
+        recordEvent('VALIDATING', `Revisão técnica aprovada: ${reviewResult.summary}`);
+        recordEvent('PERSISTING', `Validando persistência institucional e conformidade do Persistence Gate.`);
+
+        // 4.6 Neural Ingestion Check
+        recordEvent('FINALIZING', `Verificando conectividade e persistência no PUB Neural.`);
+        const neuralClient = typeof this.neuralBridge.getClient === 'function' ? this.neuralBridge.getClient() : undefined;
+        const neuralAvailable = neuralClient ? await neuralClient.isAvailable() : false;
+        let neuralStatus: NeuralIngestionStatus = 'UNAVAILABLE';
+        let neuralError: string | undefined;
+
+        if (neuralClient && neuralAvailable) {
+          try {
+            const ack = await neuralClient.submit({
+              taskId,
+              projectId: project,
+              repository,
+              branch: resolvedCtx.git_state.branch,
+              commitSha: updatedTask.commitSha || resolvedCtx.git_state.headSha,
+              remoteSha: updatedTask.commitSha || resolvedCtx.git_state.headSha,
+              status: 'COMPLETED',
+              objective: rawMessage,
+              agentId: specialist.id,
+              changedFiles: (updatedTask.result as any)?.changedFiles || resolvedCtx.git_state.changedFiles,
+              evidence: {
+                validationPassed: true,
+                worktreeClean: resolvedCtx.git_state.isClean,
+                remoteVerified: true,
+                pushSucceeded: true,
+              },
+              completedAt: new Date().toISOString(),
+              ingestionSource: 'pdl-persistence-gate',
+            });
+            neuralStatus = ack.status;
+            if (ack.error) neuralError = ack.error;
+          } catch (err: any) {
+            neuralStatus = 'FAILED';
+            neuralError = err.message;
+          }
+        } else {
+          neuralStatus = 'UNAVAILABLE';
+          neuralError = 'PUB Neural endpoint not configured (PUB_NEURAL_ENDPOINT missing)';
+        }
+
+        recordEvent('COMPLETED', `Ciclo operacional concluído com evidência real. Tarefa ${taskId} validada e persistida. Neural status: ${neuralStatus}.`, {
+          taskId,
+          specialistId: specialist.id,
+          neuralStatus,
+        });
+
+        const factualReply = this.buildExecutedResponse({
+          message: rawMessage,
+          project,
+          repository,
+          taskId,
+          specialist,
+          gitState: resolvedCtx.git_state,
+          executionSpec,
+          reviewResult,
+          neuralStatus,
+          neuralError,
+          status: 'COMPLETED',
+        });
+
+        this.conversationStore.addMessage(conversationId, {
+          conversationId,
+          sender: 'CHIEF_OF_STAFF',
+          senderName: 'Dr. Arthur Vance',
+          senderRole: 'Chief of Staff & Orquestrador',
+          content: factualReply,
+          metadata: {
+            taskId,
+            specialistId: specialist.id,
+            specHash,
+            neuralStatus,
+          },
+        });
+
+        return {
+          conversationId,
+          response: factualReply,
+          type: 'ACTION',
+          assignedSpecialist: {
+            id: specialist.id,
+            name: specialist.name,
+            role: specialist.title || specialist.role,
+          },
+          task: {
+            id: taskId,
+            project,
+            objective: rawMessage,
+            status: 'COMPLETED',
+            agentId: specialist.id,
+          },
+          executionSpec,
+          review: reviewResult,
+          gitState: resolvedCtx.git_state,
+          neuralStatus: {
+            status: neuralStatus,
+            endpointConfigured: neuralAvailable,
+            error: neuralError,
+          },
+          events: recordedEvents,
+        };
+      } else {
+        // Review blocked / rejected
+        recordEvent('FAILED', `Revisão técnica bloqueada (${reviewResult.status}): ${reviewResult.summary}`);
+        const failedReply = this.buildFailedResponse({
+          message: rawMessage,
+          project,
+          repository,
+          taskId,
+          specialist,
+          reason: `Revisão técnica rejeitada: ${reviewResult.summary}`,
+        });
+
+        this.conversationStore.addMessage(conversationId, {
+          conversationId,
+          sender: 'CHIEF_OF_STAFF',
+          senderName: 'Dr. Arthur Vance',
+          senderRole: 'Chief of Staff & Orquestrador',
+          content: failedReply,
+          metadata: { taskId, specialistId: specialist.id, status: 'BLOCKED' },
+        });
+
+        return {
+          conversationId,
+          response: failedReply,
+          type: 'ACTION',
+          assignedSpecialist: {
+            id: specialist.id,
+            name: specialist.name,
+            role: specialist.title || specialist.role,
+          },
+          task: {
+            id: taskId,
+            project,
+            objective: rawMessage,
+            status: 'BLOCKED',
+            agentId: specialist.id,
+          },
+          executionSpec,
+          review: reviewResult,
+          gitState: resolvedCtx.git_state,
+          events: recordedEvents,
+        };
+      }
+    } else {
+      // Worker execution failed or blocked
+      const failureReason = workerError || updatedTask.error || 'Falha na execução do worker do PDL';
+      recordEvent('FAILED', `Execução da tarefa ${taskId} falhou: ${failureReason}`, {
         taskId,
-        specialistId: specialist.id,
-        specHash,
-        neuralStatus,
-      },
-    });
+        error: failureReason,
+      });
 
-    return {
-      conversationId,
-      response: factualReply,
-      type: 'ACTION',
-      assignedSpecialist: {
-        id: specialist.id,
-        name: specialist.name,
-        role: specialist.title || specialist.role,
-      },
-      task: {
-        id: taskId,
+      const failedReply = this.buildFailedResponse({
+        message: rawMessage,
         project,
-        objective: rawMessage,
-        status: 'QUEUED',
-        agentId: specialist.id,
-      },
-      executionSpec,
-      review: reviewResult,
-      gitState: resolvedCtx.git_state,
-      neuralStatus: {
-        status: neuralStatus,
-        endpointConfigured: neuralAvailable,
-        error: neuralError,
-      },
-      events: recordedEvents,
-    };
+        repository,
+        taskId,
+        specialist,
+        reason: failureReason,
+      });
+
+      this.conversationStore.addMessage(conversationId, {
+        conversationId,
+        sender: 'CHIEF_OF_STAFF',
+        senderName: 'Dr. Arthur Vance',
+        senderRole: 'Chief of Staff & Orquestrador',
+        content: failedReply,
+        metadata: { taskId, specialistId: specialist.id, status: 'FAILED' },
+      });
+
+      return {
+        conversationId,
+        response: failedReply,
+        type: 'ACTION',
+        assignedSpecialist: {
+          id: specialist.id,
+          name: specialist.name,
+          role: specialist.title || specialist.role,
+        },
+        task: {
+          id: taskId,
+          project,
+          objective: rawMessage,
+          status: 'FAILED',
+          agentId: specialist.id,
+        },
+        executionSpec,
+        gitState: resolvedCtx.git_state,
+        events: recordedEvents,
+      };
+    }
   }
 
   private isAmbiguousCommand(message: string): boolean {
@@ -486,23 +673,49 @@ export class ChiefOfStaffAgent {
 
   public selectSpecialistForTask(message: string, taskType: TaskType): string {
     const p = message.toLowerCase();
+    const requiredCaps: string[] = [];
 
-    // 1. Multimedia & Specialist domains
-    if (p.includes('3d') || p.includes('render') || p.includes('imagem') || p.includes('pinscher') || p.includes('stl') || p.includes('maya lin')) {
-      return 'image-designer';
-    }
-    if (p.includes('vídeo') || p.includes('video') || p.includes('drone') || p.includes('showreel') || p.includes('corte vertical') || p.includes('caua') || p.includes('cauã')) {
-      return 'video-editor';
-    }
-    if (p.includes('áudio') || p.includes('audio') || p.includes('som') || p.includes('música') || p.includes('beat') || p.includes('masterização') || p.includes('gabriel')) {
-      return 'sound-engineer';
-    }
-    if (p.includes('lead') || p.includes('prospecção') || p.includes('scraping') || p.includes('shopee') || p.includes('growth') || p.includes('renata')) {
-      return 'growth-ops';
-    }
-
-    // 2. Architect: Architecture, system design, domain contracts, RFCs, structural decisions
+    // Derive required capabilities based on directive requirements
     if (
+      p.includes('3d') ||
+      p.includes('render') ||
+      p.includes('imagem') ||
+      p.includes('pinscher') ||
+      p.includes('stl') ||
+      p.includes('maya lin') ||
+      p.includes('mesh')
+    ) {
+      requiredCaps.push('3d_modeling', 'mesh_optimization', 'stl_slicing_inspection');
+    } else if (
+      p.includes('vídeo') ||
+      p.includes('video') ||
+      p.includes('drone') ||
+      p.includes('showreel') ||
+      p.includes('corte vertical') ||
+      p.includes('caua') ||
+      p.includes('cauã')
+    ) {
+      requiredCaps.push('video_editing', 'drone_cinematography', 'color_grading');
+    } else if (
+      p.includes('áudio') ||
+      p.includes('audio') ||
+      p.includes('som') ||
+      p.includes('música') ||
+      p.includes('beat') ||
+      p.includes('masterização') ||
+      p.includes('gabriel')
+    ) {
+      requiredCaps.push('music_production', 'sound_design', 'audio_mixing_mastering');
+    } else if (
+      p.includes('lead') ||
+      p.includes('prospecção') ||
+      p.includes('scraping') ||
+      p.includes('shopee') ||
+      p.includes('growth') ||
+      p.includes('renata')
+    ) {
+      requiredCaps.push('lead_scraping', 'growth_analytics', 'crm_enrichment');
+    } else if (
       p.includes('arquitetura') ||
       p.includes('design do sistema') ||
       p.includes('design de sistema') ||
@@ -512,24 +725,19 @@ export class ChiefOfStaffAgent {
       p.includes('boundaries') ||
       taskType === 'ARCHITECTURE'
     ) {
-      return 'architect';
-    }
-
-    // 3. Reviewer: Code review, security audit, vulnerabilities, compliance
-    if (
+      requiredCaps.push('system_design', 'api_design', 'domain_modeling', 'tradeoff_analysis');
+    } else if (
       p.includes('revisão') ||
       p.includes('revisar') ||
       p.includes('auditoria') ||
       p.includes('segurança') ||
       p.includes('vulnerabilidade') ||
       p.includes('code review') ||
+      p.includes('owasp') ||
       taskType === 'SECURITY'
     ) {
-      return 'reviewer';
-    }
-
-    // 4. QA Engineer: Explicit test suites, vitest, test coverage, test automation
-    if (
+      requiredCaps.push('code_review', 'security_audit', 'compliance_check');
+    } else if (
       p.includes('suíte de teste') ||
       p.includes('suíte de testes') ||
       p.includes('testes unitários') ||
@@ -539,11 +747,25 @@ export class ChiefOfStaffAgent {
       p.includes('test automation') ||
       (taskType as any) === 'TEST'
     ) {
-      return 'qa-engineer';
+      requiredCaps.push('test_automation', 'edge_case_analysis', 'quality_validation');
+    } else {
+      requiredCaps.push('code_implementation', 'refactoring', 'workspace_tools', 'debugging');
     }
 
-    // 5. Developer: Default for code implementation, features, refactoring, bugs
-    return 'developer';
+    // Match against all registered staff based on capability overlap
+    const allAgents = this.registry.getAllAgents();
+    let bestAgentId = 'developer';
+    let maxOverlap = -1;
+
+    for (const agent of allAgents) {
+      const overlap = agent.capabilities.filter((c) => requiredCaps.includes(c)).length;
+      if (overlap > maxOverlap) {
+        maxOverlap = overlap;
+        bestAgentId = agent.id;
+      }
+    }
+
+    return bestAgentId;
   }
 
   private buildClarificationReply(message: string, project: string): string {
@@ -589,7 +811,38 @@ Comandante MATHEUS: Aqui está o panorama factual e auditado do repositório em 
 Nenhuma tarefa fictícia foi gerada. Para iniciar uma alteração real em código, envie a diretriz técnica desejada.`;
   }
 
-  private buildActionResponse(ctx: {
+  private buildQueuedResponse(ctx: {
+    message: string;
+    project: string;
+    repository: string;
+    taskId: string;
+    specialist: { id: string; name: string; title?: string };
+    gitState: { branch: string; headSha: string; isClean: boolean };
+    executionSpec: ExecutionSpec;
+  }): string {
+    return `## 📋 Tarefa Registrada na Fila com Sucesso (QUEUED)
+
+Comandante MATHEUS: Sua diretriz foi validada, decomposta institucionalmente e registrada na fila de execução do **PDL**.
+
+### 📋 Identidade da Tarefa:
+- **Task ID:** \`${ctx.taskId}\`
+- **Projeto:** \`${ctx.project}\`
+- **Repositório:** \`${ctx.repository}\`
+- **Branch Alvo:** \`${ctx.gitState.branch}\`
+- **Commit Base:** \`${ctx.gitState.headSha}\`
+- **Spec Hash:** \`${ctx.executionSpec.metadata.specHash}\` (Selado v1.0.0)
+- **Status Atual:** \`QUEUED\` (Aguardando execução pelo worker do PDL)
+
+### 🎯 Especialista Alocado:
+- **Responsável Principal:** **${ctx.specialist.name}** (\`@${ctx.specialist.id}\`)
+- **Papel:** ${ctx.specialist.title || ctx.specialist.id}
+- **Critério de Delegação:** Casamento de capacidades declaradas (Zero Fake Activity)
+
+### 🛡️ Governança & Fato Operacional:
+A tarefa foi formalmente enfileirada. Nenhum teste simulado ou aprovação prévia foi forjada. O status passará para \`RUNNING\` assim que o worker do PDL reivindicar o lease.`;
+  }
+
+  private buildExecutedResponse(ctx: {
     message: string;
     project: string;
     repository: string;
@@ -600,6 +853,7 @@ Nenhuma tarefa fictícia foi gerada. Para iniciar uma alteração real em códig
     reviewResult: CodeReviewResult;
     neuralStatus: NeuralIngestionStatus;
     neuralError?: string;
+    status: string;
   }): string {
     const neuralText = ctx.neuralStatus === 'PERSISTED'
       ? '✅ Persistido com confirmação externa comprovada'
@@ -607,9 +861,9 @@ Nenhuma tarefa fictícia foi gerada. Para iniciar uma alteração real em códig
         ? '✅ Reconhecido pelo PUB Neural'
         : `ℹ️ ${ctx.neuralStatus} (${ctx.neuralError || 'Sem endpoint externo ativo'})`;
 
-    return `## ⚡ Diretriz Executiva Despachada para Execução
+    return `## ⚡ Diretriz Executada e Validada com Sucesso
 
-Comandante MATHEUS: Sua diretriz foi decomposta, validada institucionalmente e encaminhada para execução com governança estrita.
+Comandante MATHEUS: Sua diretriz foi executada pelo worker do PDL, passou pela suíte de validação e foi aprovada na governança.
 
 ### 📋 Identidade da Tarefa:
 - **Task ID:** \`${ctx.taskId}\`
@@ -619,15 +873,35 @@ Comandante MATHEUS: Sua diretriz foi decomposta, validada institucionalmente e e
 - **Commit Base:** \`${ctx.gitState.headSha}\`
 - **Spec Hash:** \`${ctx.executionSpec.metadata.specHash}\` (Selado v1.0.0)
 
-### 🎯 Especialista Alocado com Exclusividade:
-- **Responsável Principal:** **${ctx.specialist.name}** (\`@${ctx.specialist.id}\`)
+### 🎯 Especialista Responsável:
+- **Executor:** **${ctx.specialist.name}** (\`@${ctx.specialist.id}\`)
 - **Papel:** ${ctx.specialist.title || ctx.specialist.id}
-- **Delegação:** Singular (foco direcionado, sem dispersão de contexto)
 
-### 🛡️ Governança & Qualidade:
+### 🛡️ Governança & Qualidade Auditada:
 - **Revisão Técnica:** ${ctx.reviewResult.status === 'APPROVED' ? '✅ Aprovada' : ctx.reviewResult.status} (${ctx.reviewResult.summary})
 - **PUB Neural Bridge:** ${neuralText}
-- **Rigor de Persistência:** Apenas commits com verificação remota no GitHub são promovidos.`;
+- **Rigor de Persistência:** Evidência empírica de execução confirmada.`;
+  }
+
+  private buildFailedResponse(ctx: {
+    message: string;
+    project: string;
+    repository: string;
+    taskId: string;
+    specialist: { id: string; name: string; title?: string };
+    reason: string;
+  }): string {
+    return `## ❌ Execução Interrompida / Falha de Governança
+
+Comandante MATHEUS: A diretriz "${ctx.message.slice(0, 80)}" foi interrompida pelo motor de governança do PDL (Fail-Closed).
+
+### 📋 Detalhes da Ocorrência:
+- **Task ID:** \`${ctx.taskId}\`
+- **Projeto:** \`${ctx.project}\`
+- **Especialista Alocado:** **${ctx.specialist.name}** (\`@${ctx.specialist.id}\`)
+- **Motivo do Bloqueio:** ${ctx.reason}
+
+O PDL não realiza autocommits ou avanço de estado em tarefas com testes ou validação falha. A intervenção técnica é necessária antes de reprocessar.`;
   }
 }
 

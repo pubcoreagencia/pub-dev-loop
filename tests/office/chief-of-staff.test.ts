@@ -1,4 +1,4 @@
-﻿import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { ChiefOfStaffAgent } from '../../src/office/chief-of-staff-agent.js';
 import { CeoConversationStore } from '../../src/office/ceo-conversation-store.js';
 import { AgentRegistry, INITIAL_STAFF } from '../../src/office/registry.js';
@@ -118,24 +118,21 @@ describe('ChiefOfStaffAgent (CEO_COMMAND_02, 03, 04, 05, 06, 07, 08, 09, 10, 11)
       expect(res.executionSpec).toBeDefined();
       expect(res.executionSpec?.metadata.specHash).toBeDefined();
 
-      // Verify stream events progression
+      // Verify stream events progression strictly halts at QUEUED (Zero Fake Activity)
       const eventTypes = res.events.map((e) => e.type);
-      expect(eventTypes).toContain('RECEIVED');
-      expect(eventTypes).toContain('ANALYZING');
-      expect(eventTypes).toContain('CONTEXT_RESOLVED');
-      expect(eventTypes).toContain('PLANNING');
-      expect(eventTypes).toContain('DELEGATING');
-      expect(eventTypes).toContain('EXECUTING');
-      expect(eventTypes).toContain('REVIEWING');
-      expect(eventTypes).toContain('VALIDATING');
-      expect(eventTypes).toContain('FINALIZING');
-      expect(eventTypes).toContain('COMPLETED');
+      expect(eventTypes).toEqual(['RECEIVED', 'ANALYZING', 'CONTEXT_RESOLVED', 'PLANNING', 'DELEGATING', 'QUEUED']);
+      expect(eventTypes).not.toContain('EXECUTING');
+      expect(eventTypes).not.toContain('REVIEWING');
+      expect(eventTypes).not.toContain('VALIDATING');
+      expect(eventTypes).not.toContain('FINALIZING');
+      expect(eventTypes).not.toContain('COMPLETED');
 
       // Response to CEO must be factual
-      expect(res.response).toContain('Diretriz Executiva Despachada para Execução');
+      expect(res.response).toContain('Tarefa Registrada na Fila com Sucesso (QUEUED)');
       expect(res.response).toContain(res.task!.id);
       expect(res.response).toContain(res.assignedSpecialist!.name);
       expect(res.response).toContain(res.executionSpec!.metadata.specHash);
+      expect(res.task?.status).toBe('QUEUED');
     });
   });
 

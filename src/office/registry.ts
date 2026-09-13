@@ -311,6 +311,13 @@ export class AgentRegistry {
   }
 
   /**
+   * Alias for listAgents.
+   */
+  getAllAgents(): AgentDefinition[] {
+    return this.listAgents();
+  }
+
+  /**
    * Retrieve all agents belonging to a specific department.
    */
   getAgentsByDepartment(department: AgentDepartment): AgentDefinition[] {

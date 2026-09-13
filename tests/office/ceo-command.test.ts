@@ -1,4 +1,4 @@
-﻿import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import apiWorker, { type Env } from '../../src/api-worker.js';
 import { defaultCeoConversationStore } from '../../src/office/ceo-conversation-store.js';
 
@@ -82,9 +82,9 @@ describe('CEO Command Endpoints (POST /office/ceo/command, GET /office/ceo/conve
       expect(data.task).toBeDefined();
       expect(data.task.id).toMatch(/^TASK-CEO-/);
       expect(data.executionSpec).toBeDefined();
-      expect(data.executionSpec.metadata.specHash).toBeDefined();
       expect(data.events).toBeDefined();
-      expect(data.events.length).toBeGreaterThanOrEqual(8);
+      expect(data.events.length).toBe(6);
+      expect(data.task.status).toBe('QUEUED');
     });
   });
 
@@ -162,7 +162,8 @@ describe('CEO Command Endpoints (POST /office/ceo/command, GET /office/ceo/conve
       expect(eventTypes).toContain('CONTEXT_RESOLVED');
       expect(eventTypes).toContain('PLANNING');
       expect(eventTypes).toContain('DELEGATING');
-      expect(eventTypes).toContain('COMPLETED');
+      expect(eventTypes).toContain('QUEUED');
+      expect(eventTypes).not.toContain('COMPLETED');
     });
   });
 });

@@ -1,4 +1,12 @@
-﻿import { randomUUID } from 'node:crypto';
+/**
+ * CEO Conversation Store — Operational Memory for Chief of Staff
+ *
+ * INSTITUTIONAL CLASSIFICATION: SESSION MEMORY = IN-MEMORY (Volatile boundary).
+ * Canonical persistence of tasks and delivery artifacts belongs exclusively to Git and PostgreSQL.
+ * Conversation sessions are maintained in-memory for active executive dialogue.
+ */
+
+import { randomUUID } from 'node:crypto';
 
 export interface CeoMessage {
   id: string;
@@ -17,9 +25,12 @@ export type CeoOperationalEventType =
   | 'CONTEXT_RESOLVED'
   | 'PLANNING'
   | 'DELEGATING'
+  | 'QUEUED'
   | 'EXECUTING'
+  | 'TESTING'
   | 'REVIEWING'
   | 'VALIDATING'
+  | 'PERSISTING'
   | 'FINALIZING'
   | 'COMPLETED'
   | 'FAILED'

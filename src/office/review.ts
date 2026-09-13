@@ -44,6 +44,23 @@ export function extractReviewContextFromTask(
   overrides?: Partial<CodeReviewEvaluationInput>
 ): CodeReviewEvaluationInput {
   const result = task.result;
+
+  if (!result && overrides?.testPassed === undefined && overrides?.buildPassed === undefined && overrides?.typecheckPassed === undefined) {
+    return {
+      taskId: task.id,
+      planId: overrides?.planId,
+      developerAgentId: task.agentId || 'developer',
+      reviewerAgentId: 'reviewer',
+      project: task.project || 'pub-dev-loop',
+      diff: overrides?.diff,
+      changedFiles: overrides?.changedFiles,
+      testPassed: undefined,
+      typecheckPassed: undefined,
+      buildPassed: undefined,
+      findings: overrides?.findings,
+    };
+  }
+
   const stdout = result?.stdout || '';
   const stderr = result?.stderr || '';
   const exitCode = result?.exitCode ?? (task.status === 'COMPLETED' ? 0 : 1);
@@ -90,6 +107,50 @@ export class CodeReviewManager {
     const reviewerId = input.reviewerAgentId || 'reviewer';
 
     const findings: CodeReviewFinding[] = [...(input.findings || [])];
+
+    // Reality Gate: Fail closed on total absence of empirical execution evidence
+    const hasEvidence =
+      input.testPassed !== undefined ||
+      input.buildPassed !== undefined ||
+      input.typecheckPassed !== undefined ||
+      (typeof input.diff === 'string' && input.diff.trim().length > 0) ||
+      (Array.isArray(input.changedFiles) && input.changedFiles.length > 0) ||
+      findings.length > 0;
+
+    if (!hasEvidence) {
+      const blockedSummary = 'Revisão BLOQUEADA: Nenhuma evidência empírica de testes, build, diff ou arquivos alterados foi fornecida (INSUFFICIENT_EVIDENCE).';
+      const evidenceFinding: CodeReviewFinding = {
+        ruleId: 'INSUFFICIENT_EVIDENCE',
+        severity: 'ERROR',
+        message: 'Ausência total de evidências de execução, testes ou artefatos alterados.',
+        suggestion: 'Executar os testes automatizados ou fornecer artefatos antes de submeter à revisão.',
+      };
+
+      this.eventBus.publish({
+        type: 'REVIEW_BLOCKED',
+        actorId: reviewerId,
+        targetId: developerId,
+        taskId,
+        planId: input.planId,
+        project,
+        summary: blockedSummary,
+        payload: {
+          iteration: currentIteration,
+          maxIterations: MAX_REVIEW_ITERATIONS,
+          findings: [evidenceFinding],
+          requiresEscalation: false,
+        },
+      });
+
+      return {
+        reviewId: `rev-${Date.now()}`,
+        taskId,
+        status: 'BLOCKED',
+        iteration: currentIteration,
+        findings: [evidenceFinding],
+        summary: blockedSummary,
+      };
+    }
 
     // Heurística de inspeção de testes e build reais se não fornecidos explicitamente
     if (input.testPassed === false) {
