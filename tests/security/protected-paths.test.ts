@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 import { ToolRuntime } from '../../src/tools/runtime.js';
 import { AgentExecutor } from '../../src/executor.js';
 import { TaskFinalizer } from '../../src/finalizer.js';
@@ -12,6 +12,7 @@ import { ProductCatalog, type ProductManifest } from '../../src/pdl/products/cat
 
 describe('PDL Trust Boundary & Protected Paths Enforcement (Phase 5.5)', () => {
   let tempDir: string;
+  let remoteDir: string;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'pdl-boundary-test-'));
@@ -60,11 +61,21 @@ describe('PDL Trust Boundary & Protected Paths Enforcement (Phase 5.5)', () => {
     );
 
     execSync('git add -A && git commit -m "init baseline"', { cwd: tempDir, stdio: 'ignore' });
+
+    // Setup authentic remote bare repository for remote-persistence tests
+    remoteDir = mkdtempSync(join(tmpdir(), 'pdl-boundary-remote-'));
+    execSync('git init --bare -b main', { cwd: remoteDir, stdio: 'ignore' });
+    execSync(`git push "${remoteDir}" main`, { cwd: tempDir, stdio: 'ignore' });
   });
 
   afterEach(() => {
     try {
       rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
+    try {
+      rmSync(remoteDir, { recursive: true, force: true });
     } catch {
       // ignore
     }
@@ -313,19 +324,23 @@ describe('PDL Trust Boundary & Protected Paths Enforcement (Phase 5.5)', () => {
   });
 
   describe('Layer 3: Pre-Push Security Gate (PdlRemotePersistence)', () => {
-    const mockProduct: ProductManifest = {
-      productId: 'mock-product',
-      repository: 'https://github.com/pubcoreagencia/mock-product.git',
-      organization: 'pubcoreagencia',
-      defaultBranch: 'main',
-      developmentBranchPolicy: ['feat/autonomous-pdl-*', 'feat/*'],
-      testCommand: 'npm test',
-      allowedPaths: ['src/**'],
-      protectedPaths: ['.github/**'],
-      maxAutonomyLevel: 3,
-      remotePersistenceEligible: true,
-      protectedBranches: ['main', 'master', 'production', 'release/*'],
-    };
+    let mockProduct: ProductManifest;
+
+    beforeEach(() => {
+      mockProduct = {
+        productId: 'mock-product',
+        repository: remoteDir,
+        organization: 'pubcoreagencia',
+        defaultBranch: 'main',
+        developmentBranchPolicy: ['feat/autonomous-pdl-*', 'feat/*'],
+        testCommand: 'npm test',
+        allowedPaths: ['src/**'],
+        protectedPaths: ['.github/**'],
+        maxAutonomyLevel: 3,
+        remotePersistenceEligible: true,
+        protectedBranches: ['main', 'master', 'production', 'release/*'],
+      };
+    });
 
     it('17. blocks push to main (PROTECTED_BRANCH_PROHIBITED)', async () => {
       const catalog = new ProductCatalog([mockProduct]);
@@ -585,6 +600,235 @@ describe('PDL Trust Boundary & Protected Paths Enforcement (Phase 5.5)', () => {
 
       // Must NOT fail with PROTECTED_PATH_VIOLATION
       expect(res.errorCode).not.toBe('PROTECTED_PATH_VIOLATION');
+    });
+
+    it('P0.2 Attack 1: blocks push when workspace tampers with local refs (main/origin/main), proving remote is trusted authority', async () => {
+      execSync('git checkout main', { cwd: tempDir, stdio: 'ignore' });
+      execSync('git checkout -b feat/tampered-refs-attack', { cwd: tempDir, stdio: 'ignore' });
+
+      // Commit A: touches Zone A
+      writeFileSync(join(tempDir, 'src/pdl/governance/policy-engine.ts'), '// Backdoor in commit A\n');
+      execSync('git add -A && git commit -m "feat: commit A backdoor"', { cwd: tempDir, stdio: 'ignore' });
+
+      // Commit B: touches Zone B
+      writeFileSync(join(tempDir, 'src/providers/router.ts'), '// Benign router\n');
+      execSync('git add -A && git commit -m "feat: commit B benign"', { cwd: tempDir, stdio: 'ignore' });
+      const shaB = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf8' }).trim();
+
+      // Adversarial workspace action: move local main ref to commit B
+      execSync(`git update-ref refs/heads/main ${shaB}`, { cwd: tempDir, stdio: 'ignore' });
+
+      // Commit C: touches Zone B (HEAD)
+      writeFileSync(join(tempDir, 'src/providers/router.ts'), '// Benign router 2\n');
+      execSync('git add -A && git commit -m "feat: commit C benign"', { cwd: tempDir, stdio: 'ignore' });
+      const headC = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf8' }).trim();
+
+      const catalog = new ProductCatalog([mockProduct]);
+      const persistence = new PdlRemotePersistence(catalog);
+
+      const res = await persistence.persist({
+        product: mockProduct,
+        workspace: tempDir,
+        branch: 'feat/tampered-refs-attack',
+        localSha: headC,
+      });
+
+      // Remote authority was consulted (remote main is at init baseline), Commit A was detected and BLOCKED!
+      expect(res.status).toBe('FAILED');
+      expect(res.errorCode).toBe('PROTECTED_PATH_VIOLATION');
+      expect(res.errorMessage).toContain('Zone A protected paths');
+    });
+
+    it('P0.2 Attack 2: blocks push when caller injects malicious baseSha (BASE_SHA_MISMATCH)', async () => {
+      execSync('git checkout main', { cwd: tempDir, stdio: 'ignore' });
+      execSync('git checkout -b feat/basesha-injection', { cwd: tempDir, stdio: 'ignore' });
+
+      writeFileSync(join(tempDir, 'src/providers/router.ts'), '// Change 1\n');
+      execSync('git add -A && git commit -m "feat: change 1"', { cwd: tempDir, stdio: 'ignore' });
+      const sha1 = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf8' }).trim();
+
+      writeFileSync(join(tempDir, 'src/providers/router.ts'), '// Change 2\n');
+      execSync('git add -A && git commit -m "feat: change 2"', { cwd: tempDir, stdio: 'ignore' });
+      const sha2 = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf8' }).trim();
+
+      const catalog = new ProductCatalog([mockProduct]);
+      const persistence = new PdlRemotePersistence(catalog);
+
+      // Caller attempts to pass intermediate commit sha1 as baseSha to override remote default branch
+      const res = await persistence.persist({
+        product: mockProduct,
+        workspace: tempDir,
+        branch: 'feat/basesha-injection',
+        localSha: sha2,
+        baseSha: sha1,
+      });
+
+      expect(res.status).toBe('FAILED');
+      expect(res.errorCode).toBe('BASE_SHA_MISMATCH');
+      expect(res.errorMessage).toContain('Caller-supplied baseSha override is strictly prohibited');
+    });
+
+    it('P0.2 Attack 3: fails closed when shallow clone (depth=1) cannot inspect history (CHANGESET_INSPECTION_FAILED)', async () => {
+      // Create shallow clone with depth 1 directly from remoteDir (so workspace origin matches catalog)
+      const shallowDir = mkdtempSync(join(tmpdir(), 'pdl-shallow-test-'));
+      try {
+        execSync(`git clone --depth 1 "${remoteDir}" "${shallowDir}"`, { stdio: 'ignore' });
+        execSync(`git remote set-url origin "${remoteDir}"`, { cwd: shallowDir, stdio: 'ignore' });
+        execSync('git config user.name "PDL Security Invariant"', { cwd: shallowDir, stdio: 'ignore' });
+        execSync('git config user.email "security@pdl.internal"', { cwd: shallowDir, stdio: 'ignore' });
+        execSync('git checkout -b feat/shallow-tamper', { cwd: shallowDir, stdio: 'ignore' });
+
+        // Commit A: touches Zone A
+        writeFileSync(join(shallowDir, 'src/pdl/governance/policy-engine.ts'), '// Tamper in A\n');
+        execSync('git add -A && git commit -m "feat: tamper A"', { cwd: shallowDir, stdio: 'ignore' });
+
+        // Commit B: Zone B
+        writeFileSync(join(shallowDir, 'src/providers/router.ts'), '// Router B\n');
+        execSync('git add -A && git commit -m "feat: router B"', { cwd: shallowDir, stdio: 'ignore' });
+        const shallowHead = execSync('git rev-parse HEAD', { cwd: shallowDir, encoding: 'utf8' }).trim();
+
+        const catalog = new ProductCatalog([mockProduct]);
+        const persistence = new PdlRemotePersistence(catalog);
+
+        const res = await persistence.persist({
+          product: mockProduct,
+          workspace: shallowDir,
+          branch: 'feat/shallow-tamper',
+          localSha: shallowHead,
+        });
+
+        // Must FAIL CLOSED because git log cannot traverse beyond shallow cutoff
+        expect(res.status).toBe('FAILED');
+        expect(['CHANGESET_INSPECTION_FAILED', 'REMOTE_OBJECT_UNAVAILABLE', 'DIVERGED_FROM_REMOTE_BASE', 'PROTECTED_PATH_VIOLATION']).toContain(res.errorCode);
+      } finally {
+        try {
+          rmSync(shallowDir, { recursive: true, force: true });
+        } catch {}
+      }
+    });
+
+    it('P0.2 Attack 4: fails closed when git command fails during historical scan (no silent catch swallow)', async () => {
+      execSync('git checkout main', { cwd: tempDir, stdio: 'ignore' });
+      execSync('git checkout -b feat/git-failure', { cwd: tempDir, stdio: 'ignore' });
+      writeFileSync(join(tempDir, 'src/providers/router.ts'), '// Safe\n');
+      execSync('git add -A && git commit -m "feat: safe"', { cwd: tempDir, stdio: 'ignore' });
+      const head = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf8' }).trim();
+
+      // Custom executor that throws on 'git log'
+      const failingExecutor: GitExecutor = (cmd, args, cwd, env) => {
+        if (cmd === 'git' && args[0] === 'log') {
+          throw new Error('fatal: corrupted git object repository error');
+        }
+        return execFileSync(cmd, args, { cwd, encoding: 'utf8' });
+      };
+
+      const catalog = new ProductCatalog([mockProduct]);
+      const persistence = new PdlRemotePersistence(catalog, failingExecutor);
+
+      const res = await persistence.persist({
+        product: mockProduct,
+        workspace: tempDir,
+        branch: 'feat/git-failure',
+        localSha: head,
+      });
+
+      expect(res.status).toBe('FAILED');
+      expect(res.errorCode).toBe('CHANGESET_INSPECTION_FAILED');
+      expect(res.errorMessage).toContain('corrupted git object repository error');
+    });
+
+    it('P0.2 Attack 5: rejects push when remote branch changed concurrently (remote race / non-fast-forward)', async () => {
+      execSync('git checkout main', { cwd: tempDir, stdio: 'ignore' });
+      execSync('git checkout -b feat/race-test', { cwd: tempDir, stdio: 'ignore' });
+      writeFileSync(join(tempDir, 'src/providers/router.ts'), '// Initial feature\n');
+      execSync('git add -A && git commit -m "feat: initial feature"', { cwd: tempDir, stdio: 'ignore' });
+      const localSha = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf8' }).trim();
+
+      // Push feature branch to remoteDir first
+      execSync(`git push "${remoteDir}" feat/race-test`, { cwd: tempDir, stdio: 'ignore' });
+
+      // Create a concurrent commit on remoteDir
+      const concurrentClone = mkdtempSync(join(tmpdir(), 'pdl-concurrent-'));
+      try {
+        execSync(`git clone "${remoteDir}" "${concurrentClone}"`, { stdio: 'ignore' });
+        execSync('git checkout feat/race-test', { cwd: concurrentClone, stdio: 'ignore' });
+        writeFileSync(join(concurrentClone, 'src/providers/router.ts'), '// Concurrent edit\n');
+        execSync('git add -A && git commit -m "feat: concurrent edit"', { cwd: concurrentClone, stdio: 'ignore' });
+        execSync(`git push origin feat/race-test`, { cwd: concurrentClone, stdio: 'ignore' });
+      } finally {
+        try {
+          rmSync(concurrentClone, { recursive: true, force: true });
+        } catch {}
+      }
+
+      // In tempDir, create divergent commit
+      writeFileSync(join(tempDir, 'src/providers/router.ts'), '// Local conflicting edit\n');
+      execSync('git add -A && git commit -m "feat: local conflicting edit"', { cwd: tempDir, stdio: 'ignore' });
+      const divergentHead = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf8' }).trim();
+
+      const catalog = new ProductCatalog([mockProduct]);
+      const persistence = new PdlRemotePersistence(catalog);
+
+      const res = await persistence.persist({
+        product: mockProduct,
+        workspace: tempDir,
+        branch: 'feat/race-test',
+        localSha: divergentHead,
+      });
+
+      // Must be rejected as non-fast-forward without force push
+      expect(res.status).toBe('FAILED');
+      expect(res.errorCode).toBe('NON_FAST_FORWARD_REJECTED');
+      expect(res.pushAttempted).toBe(false);
+    });
+
+    it('P0.2 Attack 6: Heart of P0.2 — proves workspace refs are adversarial, remote SHA is trusted authority', async () => {
+      execSync('git checkout main', { cwd: tempDir, stdio: 'ignore' });
+      execSync('git checkout -b feat/authority-proof', { cwd: tempDir, stdio: 'ignore' });
+
+      // Commit A: touches Zone A (governance)
+      writeFileSync(join(tempDir, 'src/pdl/governance/policy-engine.ts'), '// Critical Zone A tamper\n');
+      execSync('git add -A && git commit -m "feat: tamper Zone A"', { cwd: tempDir, stdio: 'ignore' });
+      const tamperSha = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf8' }).trim();
+
+      // Commit B: Zone B
+      writeFileSync(join(tempDir, 'src/providers/router.ts'), '// Router safe\n');
+      execSync('git add -A && git commit -m "feat: router safe"', { cwd: tempDir, stdio: 'ignore' });
+      const benignSha = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf8' }).trim();
+
+      // ADVERSARIAL MOVE: The agent rewrites EVERY local ref in workspace to benignSha
+      execSync(`git update-ref refs/heads/main ${benignSha}`, { cwd: tempDir, stdio: 'ignore' });
+      try {
+        execSync(`git update-ref refs/remotes/origin/main ${benignSha}`, { cwd: tempDir, stdio: 'ignore' });
+      } catch {}
+
+      // Commit C: Zone B (HEAD)
+      writeFileSync(join(tempDir, 'src/providers/router.ts'), '// Router safe 2\n');
+      execSync('git add -A && git commit -m "feat: router safe 2"', { cwd: tempDir, stdio: 'ignore' });
+      const headSha = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf8' }).trim();
+
+      // Verify workspace refs are indeed manipulated locally
+      expect(execSync('git rev-parse refs/heads/main', { cwd: tempDir, encoding: 'utf8' }).trim()).toBe(benignSha);
+
+      // Verify remote bare repo main is NOT manipulated
+      const remoteMainSha = execSync(`git ls-remote "${remoteDir}" refs/heads/main`, { encoding: 'utf8' }).split(/\s+/)[0];
+      expect(remoteMainSha).not.toBe(benignSha);
+
+      const catalog = new ProductCatalog([mockProduct]);
+      const persistence = new PdlRemotePersistence(catalog);
+
+      const res = await persistence.persist({
+        product: mockProduct,
+        workspace: tempDir,
+        branch: 'feat/authority-proof',
+        localSha: headSha,
+      });
+
+      // The security gate trusted the REMOTE sha, scanned from the true remote baseline, caught Commit A, and BLOCKED
+      expect(res.status).toBe('FAILED');
+      expect(res.errorCode).toBe('PROTECTED_PATH_VIOLATION');
+      expect(res.errorMessage).toContain('Zone A protected paths');
+      expect(res.errorMessage).toContain('src/pdl/governance/policy-engine.ts');
     });
   });
 });

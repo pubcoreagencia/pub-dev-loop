@@ -27,5 +27,9 @@ export interface RemotePersistenceOptions {
   targetRepository?: string;
   requested?: boolean;
   gitToken?: string;
+  /**
+   * Advisory metadata only. Cannot override the remote baseline.
+   * If supplied, it must strictly match the verified remote baseline SHA or persistence fails closed.
+   */
   baseSha?: string;
 }

@@ -293,7 +293,10 @@ describe('PDL Remote Product Finalization Layer (PdlRemotePersistence)', () => {
       if (cmd === 'git' && args[0] === 'rev-parse' && args[1] === '--is-inside-work-tree') return 'true';
       if (cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return localSha;
       if (cmd === 'git' && args[0] === 'remote' && args[1] === 'get-url') return 'https://github.com/pubcoreagencia/pub-rate-calculator.git';
-      if (cmd === 'git' && args[0] === 'ls-remote') return '';
+      if (cmd === 'git' && args[0] === 'ls-remote') {
+        if (args[2] === 'refs/heads/main') return `${localSha}\trefs/heads/main\n`;
+        return '';
+      }
       if (cmd === 'git' && args[0] === 'push') {
         throw new Error(`fatal: unable to access 'https://x-access-token:${dummyToken}@github.com/pubcoreagencia/pub-rate-calculator.git': 403 Forbidden`);
       }
