@@ -1,7 +1,7 @@
 import { promises as fs, constants as fsConstants } from 'node:fs';
 import { join, relative, sep, parse } from 'node:path';
 import { AgentExecutor, type ExecutionResult, type ExecutionRequest } from '../executor.js';
-import { WorkspaceSecurity } from './security.js';
+import { WorkspaceSecurity, WorkspaceEnvironmentSecurity } from './security.js';
 import type { ToolResult, ToolExecutionContext, ToolDefinition } from './types.js';
 
 // Git subcommands that are explicitly blocked for security
@@ -362,21 +362,32 @@ export class ToolRuntime {
     };
   }
 
+  /**
+   * Generates a safe, unprivileged environment for workspace subprocesses,
+   * enforcing the anti-self-elevation invariant:
+   * "Agent-executed workspace processes cannot modify PDL governance."
+   */
+  private getSafeEnvironment(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+    const safeEnv = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(baseEnv);
+    WorkspaceEnvironmentSecurity.assertNoGovernanceCredentials(safeEnv);
+    return safeEnv;
+  }
+
   private async gitDiff(toolCallId: string, args: Record<string, unknown>): Promise<ToolResult> {
-    const file = args.file ? String(args.file) : '';
-    const gitArgs = file ? ['diff', '--', file] : ['diff'];
-    
-    // Resolve and validate file path if specified
+    const file = args.file ? String(args.file) : undefined;
+    const gitArgs = ['diff'];
+
     if (file) {
       try {
-        this.security.resolvePath(file);
-      } catch (e: any) {
+        const resolved = this.security.resolvePath(file);
+        gitArgs.push('--', relative(this.security.root, resolved));
+      } catch (err: any) {
         return {
           toolCallId,
           toolName: 'git_diff',
           success: false,
           content: '',
-          error: `Invalid file path: ${e.message}`,
+          error: err.message,
         };
       }
     }
@@ -386,7 +397,7 @@ export class ToolRuntime {
       args: gitArgs,
       cwd: this.security.root,
       timeoutMs: this.ctx.commandTimeoutMs,
-      environment: process.env,
+      environment: this.getSafeEnvironment(),
     });
 
     return {
@@ -420,7 +431,7 @@ export class ToolRuntime {
       args: ['status', '--short'],
       cwd: this.security.root,
       timeoutMs: this.ctx.commandTimeoutMs,
-      environment: process.env,
+      environment: this.getSafeEnvironment(),
     });
 
     const gitStatus = statusResult.stdout || '';
@@ -449,7 +460,7 @@ export class ToolRuntime {
       args: ['add', '-A'],
       cwd: this.security.root,
       timeoutMs: this.ctx.commandTimeoutMs,
-      environment: process.env,
+      environment: this.getSafeEnvironment(),
     });
 
     // git diff --cached --stat (to show what will be committed)
@@ -458,7 +469,7 @@ export class ToolRuntime {
       args: ['diff', '--cached', '--stat'],
       cwd: this.security.root,
       timeoutMs: this.ctx.commandTimeoutMs,
-      environment: process.env,
+      environment: this.getSafeEnvironment(),
     });
 
     // git commit
@@ -467,7 +478,7 @@ export class ToolRuntime {
       args: ['commit', '-m', sanitizedMessage],
       cwd: this.security.root,
       timeoutMs: this.ctx.commandTimeoutMs,
-      environment: process.env,
+      environment: this.getSafeEnvironment(),
     });
 
     if (commitResult.status !== 'COMPLETED') {
@@ -486,7 +497,7 @@ export class ToolRuntime {
       args: ['rev-parse', 'HEAD'],
       cwd: this.security.root,
       timeoutMs: this.ctx.commandTimeoutMs,
-      environment: process.env,
+      environment: this.getSafeEnvironment(),
     });
 
     const commitSha = shaResult.stdout?.trim() || null;
@@ -497,7 +508,7 @@ export class ToolRuntime {
       args: ['status', '--short'],
       cwd: this.security.root,
       timeoutMs: this.ctx.commandTimeoutMs,
-      environment: process.env,
+      environment: this.getSafeEnvironment(),
     });
 
     const finalStatus = finalStatusResult.stdout || '';
@@ -549,12 +560,16 @@ export class ToolRuntime {
     // Parse command into parts (simple split — no shell expansion)
     const parts = this.parseCommand(command);
 
+    const safeEnvironment = this.getSafeEnvironment(
+      this.ctx.redactSecrets ? this.redactEnv(process.env) : process.env
+    );
+
     const request: ExecutionRequest = {
       command: parts[0],
       args: parts.slice(1),
       cwd: this.security.root,
       timeoutMs,
-      environment: this.ctx.redactSecrets ? this.redactEnv(process.env) : process.env,
+      environment: safeEnvironment,
     };
 
     const execResult = await this.executor.execute(request);
@@ -609,11 +624,15 @@ export class ToolRuntime {
   }
 
   /**
-   * Redact known secret patterns from environment variables.
+   * Redact known secret patterns from environment variables,
+   * completely scrubbing database URLs, governance keys, and cloud secrets.
    */
   private redactEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-    const redacted: NodeJS.ProcessEnv = { ...env };
-    for (const [key, value] of Object.entries(env)) {
+    // First, completely strip all database, governance, and sensitive variables
+    const scrubbed = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(env);
+    const redacted: NodeJS.ProcessEnv = { ...scrubbed };
+
+    for (const [key, value] of Object.entries(scrubbed)) {
       if (value && /(api[_-]?key|token|password|secret|credential|private[_-]?key)/i.test(key) && value.length >= 4) {
         redacted[key] = '[REDACTED]';
       }

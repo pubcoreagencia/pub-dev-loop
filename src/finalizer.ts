@@ -1,5 +1,5 @@
 import { execSync, spawn } from 'node:child_process';
-import { WorkspaceSecurity } from './tools/security.js';
+import { WorkspaceSecurity, WorkspaceEnvironmentSecurity } from './tools/security.js';
 import type { ToolExecutionContext } from './tools/types.js';
 import { sanitizeCommitMessage } from './tools/runtime.js';
 import type { RemotePersistenceResult } from './pdl/persistence/types.js';
@@ -35,10 +35,14 @@ export class WorkspaceValidator {
    */
   static captureSnapshot(root: string): WorkspaceSnapshot {
     try {
+      const safeEnv = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(process.env);
+      WorkspaceEnvironmentSecurity.assertNoGovernanceCredentials(safeEnv);
+
       const statusResult = execSync('git status --short', {
         cwd: root,
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 10000,
+        env: safeEnv,
       });
       const gitStatus = statusResult.toString().trim();
 
@@ -46,6 +50,7 @@ export class WorkspaceValidator {
         cwd: root,
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 10000,
+        env: safeEnv,
       });
       const trackedFiles = lsFilesResult.toString().trim().split('\n').filter(Boolean);
 
@@ -55,6 +60,7 @@ export class WorkspaceValidator {
           cwd: root,
           stdio: ['pipe', 'pipe', 'pipe'],
           timeout: 10000,
+          env: safeEnv,
         }).toString().trim();
         if (!/^[0-9a-f]{40}$/.test(headSha)) headSha = null;
       } catch {
@@ -113,10 +119,14 @@ export class WorkspaceValidator {
    */
   private static parseChangedFiles(root: string): string[] {
     try {
+      const safeEnv = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(process.env);
+      WorkspaceEnvironmentSecurity.assertNoGovernanceCredentials(safeEnv);
+
       const output = execSync('git status --short', {
         cwd: root,
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 10000,
+        env: safeEnv,
       }).toString();
 
       return output
@@ -458,11 +468,14 @@ export class TaskFinalizer {
   private async execRaw(command: string, args: string[]): Promise<{ status: string; stdout: string; stderr: string; exitCode: number | null }> {
     return new Promise(resolve => {
       try {
+        const safeEnv = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(process.env);
+        WorkspaceEnvironmentSecurity.assertNoGovernanceCredentials(safeEnv);
         // execSync uses shell:true on Windows automatically for PATH resolution
         const output = execSync(command + ' ' + args.map(a => '"' + a.replace(/"/g, '\\"') + '"').join(' '), {
           cwd: this.security.root,
           stdio: ['pipe', 'pipe', 'pipe'],
           timeout: this.ctx.commandTimeoutMs,
+          env: safeEnv,
         });
         resolve({
           status: 'COMPLETED',
@@ -496,10 +509,13 @@ export class TaskFinalizer {
    */
   private async execShell(command: string, opts: { timeoutMs?: number }): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
     return new Promise(resolve => {
+      const safeEnv = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(process.env);
+      WorkspaceEnvironmentSecurity.assertNoGovernanceCredentials(safeEnv);
       const proc = spawn(command, {
         cwd: this.security.root,
         shell: true,
         timeout: opts.timeoutMs ?? this.ctx.commandTimeoutMs,
+        env: safeEnv,
       });
 
       let stdout = '';
@@ -528,8 +544,9 @@ export class TaskFinalizer {
   private redactSecrets(value: string): string {
     if (!value) return value;
     let result = value;
+    result = result.replace(/postgres(?:ql)?:\/\/[^\s'"`]+/gi, 'postgres://[REDACTED]');
     for (const [key, secret] of Object.entries(process.env)) {
-      if (secret && /(api[_-]?key|token|password|secret|credential|private[_-]?key)/i.test(key) && secret.length >= 4) {
+      if (secret && /(api[_-]?key|token|password|secret|credential|private[_-]?key|database|postgres)/i.test(key) && secret.length >= 4) {
         result = result.split(secret).join('[REDACTED]');
       }
     }

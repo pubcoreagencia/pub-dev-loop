@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { WorkspaceEnvironmentSecurity } from './tools/security.js';
 
 export type ExecutionStatus = 'COMPLETED' | 'FAILED' | 'TIMED_OUT' | 'START_ERROR';
 
@@ -23,8 +24,9 @@ const secretPattern = /((?:api[_-]?key|token|password|secret|credential|private[
 
 export const redact = (value: string, environment: NodeJS.ProcessEnv = process.env) => {
   let result = value.replace(secretPattern, '$1[REDACTED]');
+  result = result.replace(/postgres(?:ql)?:\/\/[^\s'"`]+/gi, 'postgres://[REDACTED]');
   for (const [key, secret] of Object.entries(environment)) {
-    if (secret && /(api[_-]?key|token|password|secret|credential|private[_-]?key)/i.test(key) && secret.length >= 4) {
+    if (secret && /(api[_-]?key|token|password|secret|credential|private[_-]?key|database|postgres)/i.test(key) && secret.length >= 4) {
       result = result.split(secret).join('[REDACTED]');
     }
   }
@@ -43,7 +45,9 @@ export const redact = (value: string, environment: NodeJS.ProcessEnv = process.e
 export class AgentExecutor {
   async execute(request: ExecutionRequest): Promise<ExecutionResult> {
     const started = Date.now();
-    const environment = request.environment ?? process.env;
+    const rawEnv = request.environment ?? process.env;
+    const environment = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(rawEnv);
+    WorkspaceEnvironmentSecurity.assertNoGovernanceCredentials(environment);
 
     return new Promise(resolve => {
       let stdout = '';
