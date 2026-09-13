@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { defaultAgentRegistry } from '../src/office/registry.js';
 import { defaultWatercoolerEngine } from '../frontend/src/services/watercoolerEngine.js';
 import { AGENT_AVATAR_PROFILES, CEO_IDENTITY } from '../frontend/src/config/officeLayout.js';
-import { VINYL_ALBUMS } from '../frontend/src/components/VinylJukeboxModal.js';
+import { VINYL_ALBUMS } from '../frontend/src/data/vinylTracks.js';
 
 describe('PDL — Phase 9.0: The Living 3D Office & Workforce Personas Suite', () => {
   it('1. CEO identity is configured with Matheus Paes and Sovereign Director title', () => {

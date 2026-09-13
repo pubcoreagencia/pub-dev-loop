@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { RouterWorker } from '../src/router-worker.js';
+import { DefaultFinalizationBridge } from '../src/execution/finalization-bridge.js';
 import type { AgentProvider, ProviderTaskResult } from '../src/providers/types.js';
 import type { Task, TaskRepository } from '../src/domain.js';
 import { defaultAgentRegistry, getAgent, isValidAgentId } from '../src/office/registry.js';
@@ -189,12 +190,20 @@ describe('P5.7.5 — The Office: Runtime Identity Propagation', () => {
       },
     });
 
-    vi.spyOn(worker as any, 'finalize').mockResolvedValue({
-      status: 'COMPLETED',
-      commitSha: 'abc1234',
-      gitStatus: 'clean',
-      testsPassed: true,
-    });
+    vi.spyOn(DefaultFinalizationBridge.prototype, 'finalize').mockImplementation(async (execResult: any) => ({
+      execution: execResult.execution,
+      finalization: {
+        status: 'COMPLETED',
+        commitSha: null,
+        gitStatus: 'clean',
+        validationErrors: [],
+        testOutput: 'All tests passed',
+        testsPassed: true,
+        changedFiles: [],
+        declaredChangedFiles: [],
+      } as any,
+      specIdentity: execResult.specIdentity,
+    }));
 
     // Execute through BaseWorker.executeOnce
     vi.spyOn(mockRepo, 'claim').mockResolvedValue(task);
@@ -342,12 +351,20 @@ describe('P5.7.5 — The Office: Runtime Identity Propagation', () => {
       },
     });
 
-    vi.spyOn(worker as any, 'finalize').mockResolvedValue({
-      status: 'COMPLETED',
-      commitSha: null,
-      gitStatus: 'clean',
-      testsPassed: true,
-    });
+    vi.spyOn(DefaultFinalizationBridge.prototype, 'finalize').mockImplementation(async (execResult: any) => ({
+      execution: execResult.execution,
+      finalization: {
+        status: 'COMPLETED',
+        commitSha: null,
+        gitStatus: 'clean',
+        validationErrors: [],
+        testOutput: 'All tests passed',
+        testsPassed: true,
+        changedFiles: [],
+        declaredChangedFiles: [],
+      } as any,
+      specIdentity: execResult.specIdentity,
+    }));
 
     vi.spyOn(mockRepo, 'claim').mockResolvedValue(legacyTask);
     const ran = await worker.executeOnce();

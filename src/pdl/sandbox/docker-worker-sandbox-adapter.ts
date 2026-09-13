@@ -226,11 +226,17 @@ export class DockerWorkerSandboxAdapter implements WorkerSandboxAdapter {
 
     // Normalize Windows workspace path to forward slashes for Docker volume mount
     let ws = request.cwd;
-    if (process.platform !== 'win32' && /^[a-zA-Z]:[\\/]/.test(ws)) {
-      // Strip mock Windows drive prefix on POSIX (e.g. C:/tmp/ws -> /tmp/ws) to avoid invalid Docker volume spec
-      ws = ws.replace(/^[a-zA-Z]:/, '');
+    if (process.platform !== 'win32') {
+      if (/^[a-zA-Z]:[\\/]/.test(ws)) {
+        // Strip mock Windows drive prefix on POSIX (e.g. C:/tmp/ws -> /tmp/ws) to avoid invalid Docker volume spec
+        ws = ws.replace(/^[a-zA-Z]:/, '');
+      }
+      ws = ws.replace(/\/[a-zA-Z]:\//g, '/');
     }
-    const normalizedWs = resolve(ws).replace(/\\/g, '/');
+    let normalizedWs = resolve(ws).replace(/\\/g, '/');
+    if (process.platform !== 'win32') {
+      normalizedWs = normalizedWs.replace(/\/[a-zA-Z]:\//g, '/');
+    }
 
     if (!existsSync(normalizedWs)) {
       try {

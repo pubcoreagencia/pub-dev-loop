@@ -15,8 +15,12 @@ export class WorkspaceSecurity {
   private readonly workspaceRoot: string;
 
   constructor(workspaceRoot: string) {
+    let root = workspaceRoot;
+    if (process.platform !== 'win32' && /^[a-zA-Z]:[\\/]/.test(root)) {
+      root = root.replace(/^[a-zA-Z]:/, '');
+    }
     // Normalize and resolve without requiring the directory to exist
-    this.workspaceRoot = resolve(workspaceRoot);
+    this.workspaceRoot = resolve(root);
   }
 
   /**
