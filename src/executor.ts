@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { WorkspaceEnvironmentSecurity, WorkspaceCommandSecurity } from './tools/security.js';
+import type { WorkerSandboxAdapter } from './pdl/sandbox/types.js';
 
 export type ExecutionStatus = 'COMPLETED' | 'FAILED' | 'TIMED_OUT' | 'START_ERROR';
 
@@ -34,15 +35,16 @@ export const redact = (value: string, environment: NodeJS.ProcessEnv = process.e
 };
 
 /**
- * Agent executor: runs commands via spawn with shell: false.
+ * Agent executor: runs commands via spawn with shell: false or through an isolated container sandbox.
  *
- * On Windows, spawn with shell: false doesn't find git via PATH because
- * Git for Windows installs git.exe in paths not visible to node.exe.
- * The ToolRuntime handles PATH resolution by using the full path to git.
- * For non-git commands (node, echo, etc.), shell: false works correctly
- * because node.exe finds itself via process.execPath.
+ * When a WorkerSandboxAdapter is provided and available, execution is delegated
+ * to an ephemeral, unprivileged container sandbox (P0.4.3 Capability Boundary).
+ *
+ * On Windows fallback (no container), spawn with shell: false executes locally.
  */
 export class AgentExecutor {
+  constructor(private readonly sandbox?: WorkerSandboxAdapter) {}
+
   async execute(request: ExecutionRequest): Promise<ExecutionResult> {
     const started = Date.now();
 
@@ -61,6 +63,11 @@ export class AgentExecutor {
     const rawEnv = request.environment ?? process.env;
     const environment = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(rawEnv);
     WorkspaceEnvironmentSecurity.assertNoGovernanceCredentials(environment);
+
+    // If sandbox adapter is configured and active, execute within the container capability boundary
+    if (this.sandbox && this.sandbox.isAvailable) {
+      return this.sandbox.execute(request, environment);
+    }
 
     return new Promise(resolve => {
       let stdout = '';
