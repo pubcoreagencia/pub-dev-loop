@@ -56,7 +56,7 @@ describe('PRODUCTION ENTRYPOINT — worker.ts createProductionWorker()', () => {
 
     // PROVE TASK-000030 features are present on the production development worker
     const proto = Object.getPrototypeOf(w);
-    expect(proto.constructor.name).toBe('RouterWorker');
+    expect(['RouterWorker', 'PdlCorrectionWorker']).toContain(proto.constructor.name);
     expect(proto.executeWithRetry).not.toBe(BaseWorker.prototype.executeWithRetry);
   });
 

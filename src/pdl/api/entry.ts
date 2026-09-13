@@ -30,6 +30,8 @@ import {
   type IPdlDeadLetterRepository,
 } from '../dlq/index.js';
 import { PdlTaskReaper } from '../reaper/index.js';
+import { PdlRetryPolicy } from '../retry/index.js';
+import type { BaseWorker } from '../../worker-service.js';
 
 export interface PdlAppOptions {
   governance?: PdlGovernanceEngine;
@@ -37,6 +39,8 @@ export interface PdlAppOptions {
   scheduler?: PdlContinuousScheduler;
   dlq?: IPdlDeadLetterRepository;
   reaper?: PdlTaskReaper;
+  retryPolicy?: PdlRetryPolicy;
+  worker?: BaseWorker;
 }
 
 export const createPdlApp = (
@@ -50,16 +54,21 @@ export const createPdlApp = (
   const intakeService = intake ?? new TaskIntakeService(activePool);
   const governance = options?.governance ?? new PdlGovernanceEngine({ pool: activePool });
   const dlq = options?.dlq ?? new PdlDeadLetterRepository(activePool);
-  const scheduler = options?.scheduler ?? new PdlContinuousScheduler({
-    governance,
-    pool: activePool,
-    dlq,
-  });
+  const retryPolicy = options?.retryPolicy ?? new PdlRetryPolicy();
   const reaper = options?.reaper ?? new PdlTaskReaper({
     tasks: taskRepo,
     governance,
     dlq,
     pool: activePool,
+  });
+  const scheduler = options?.scheduler ?? new PdlContinuousScheduler({
+    governance,
+    worker: options?.worker,
+    tasks: taskRepo,
+    pool: activePool,
+    dlq,
+    retryPolicy,
+    reaper,
   });
   const authConfigGetter = () => options?.authConfig;
 

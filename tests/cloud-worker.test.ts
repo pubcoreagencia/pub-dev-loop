@@ -113,50 +113,40 @@ describe('Cloudflare Worker API Adapter (src/api-worker.ts)', () => {
     expect(typeof container.onStart).toBe('function');
   });
 
-  it('GET /prototype returns 200 HTML with PUB Prototype UI and history script', async () => {
+  it('GET /prototype returns 404 because PP is isolated (Rule 4)', async () => {
     const req = new Request('https://pub-dev-loop.internal/prototype', { method: 'GET' });
     const res = await apiWorkerDefault.fetch(req, {}, {});
-    expect(res.status).toBe(200);
-    expect(res.headers.get('Content-Type')).toContain('text/html');
-    const html = await res.text();
-    expect(html).toContain('PUB Prototype');
-    expect(html).toContain('Version History');
+    expect(res.status).toBe(404);
   });
 
-  it('POST /prototype/sessions without project returns 400 Bad Request', async () => {
+  it('POST /prototype/sessions returns 404 because PP is isolated (Rule 4)', async () => {
     const req = new Request('https://pub-dev-loop.internal/prototype/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     });
     const res = await apiWorkerDefault.fetch(req, {}, {});
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as any;
-    expect(body.error).toContain('project is required');
+    expect(res.status).toBe(404);
   });
 
-  it('POST /prototype/sessions/:id/prompts without prompt returns 400 Bad Request', async () => {
+  it('POST /prototype/sessions/:id/prompts returns 404 because PP is isolated (Rule 4)', async () => {
     const req = new Request('https://pub-dev-loop.internal/prototype/sessions/session-123/prompts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     });
     const res = await apiWorkerDefault.fetch(req, {}, {});
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as any;
-    expect(body.error).toContain('prompt is required');
+    expect(res.status).toBe(404);
   });
 
-  it('POST /prototype/sessions/:id/checkpoints with invalid promptIndex returns 400', async () => {
+  it('POST /prototype/sessions/:id/checkpoints returns 404 because PP is isolated (Rule 4)', async () => {
     const req = new Request('https://pub-dev-loop.internal/prototype/sessions/session-123/checkpoints', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ promptIndex: -1, prompt: 'test' }),
     });
     const res = await apiWorkerDefault.fetch(req, {}, {});
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as any;
-    expect(body.error).toContain('promptIndex and prompt are required');
+    expect(res.status).toBe(404);
   });
 });
 

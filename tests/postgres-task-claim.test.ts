@@ -17,12 +17,14 @@ describe('PostgresTaskRepository — Canonical Task Claim Semantics (Phase 4B)',
   let pool: Pool;
   let repo: PostgresTaskRepository;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     const pass = getPgPassword();
     const connStr = process.env.DATABASE_URL ||
       `postgres://postgres:${encodeURIComponent(pass)}@127.0.0.1:5432/pub_dev_loop_e2e`;
     pool = new Pool({ connectionString: connStr });
     repo = new PostgresTaskRepository(pool);
+    // Ensure test isolation by clearing any stale queued or expired-lease assigned tasks from prior runs
+    await pool.query("UPDATE tasks SET status = 'CANCELLED' WHERE status IN ('QUEUED', 'ASSIGNED')").catch(() => {});
   });
 
   afterAll(async () => {

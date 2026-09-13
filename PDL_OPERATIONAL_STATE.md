@@ -12,7 +12,7 @@
 - Step 2 Bounded Continuous Scheduler: **PROVEN & PUBLISHED**
 - Step 3 Retry / DLQ / Poison Quarantine: **PROVEN & PUBLISHED**
 - Step 4 Periodic Reaper / Lease Recovery: **PROVEN & PUBLISHED**
-- Step 5 Campaign / failure-injection proof: **NOT IMPLEMENTED / BLOCKED**
+- Step 5 Campaign / failure-injection proof: **PROVEN & INTEGRATED**
 - Step 6 and unrestricted autonomy: **BLOCKED**
 
 No phase advancement occurs without explicit written authorization from MATHEUS.
@@ -147,8 +147,8 @@ Conflicts must be preserved and resolved using the higher-authority evidence. Ne
 
 ## Current Authorized Next Action
 
-**Documentation synchronization only:** keep this file and `AGENTS.md` code-accurate.
+**Phase 5.5 Step 5 completed, integrated, and proven (dated evidence in `docs/evidence/phase5.5/PHASE_5_5_STEP5_EVIDENCE.md`).**
 
-After this synchronization is verified, the next engineering milestone remains **Phase 5.5 Step 5**, but it is still blocked pending explicit authorization from MATHEUS.
+The next engineering milestone is **Phase 5.5 Step 6 & Unrestricted Autonomy**, which remains strictly **BLOCKED** pending explicit written authorization from MATHEUS.
 
-Step 5 must not be implemented merely because Steps 1-4 are complete.
+Do not implement Phase 5.5 Step 6, campaign orchestration beyond bounded verification, or unrestricted autonomy without explicit authorization.

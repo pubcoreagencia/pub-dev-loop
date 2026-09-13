@@ -10,25 +10,118 @@ import { PdlGovernanceEngine } from '../governance/index.js';
 import { CodexWorker, BaseWorker } from '../../worker-service.js';
 import { configureGitCredentials } from '../../worker.js';
 
+import { PdlContinuousScheduler } from '../scheduler/index.js';
+import { PdlTaskReaper } from '../reaper/index.js';
+import { PdlRetryPolicy } from '../retry/index.js';
+import { PdlDeadLetterRepository } from '../dlq/index.js';
+import type { SchedulerSessionInfo } from '../scheduler/types.js';
+import type { AgentProvider } from '../../providers/types.js';
+
 const PORT = Number(process.env.PDL_WORKER_PORT ?? 3003);
 const POLL_INTERVAL_MS = Number(process.env.PDL_WORKER_POLL_INTERVAL_MS ?? process.env.WORKER_POLL_INTERVAL_MS ?? 3000);
 
-export function createPdlWorkerDaemon(pool: Pool): BaseWorker {
-  const tasks = new PostgresTaskRepository(pool);
-  const providerName = process.env.AGENT_PROVIDER;
+export function createPdlWorkerDaemon(
+  pool: Pool,
+  governance?: PdlGovernanceEngine,
+  tasks?: PostgresTaskRepository,
+  providerOverride?: AgentProvider
+): BaseWorker {
+  const taskRepo = tasks ?? new PostgresTaskRepository(pool);
+  const provider = providerOverride ?? (process.env.AGENT_PROVIDER ? createProvider(process.env.AGENT_PROVIDER) : undefined);
 
-  if (providerName) {
-    const provider = createProvider(providerName);
-    if (provider.kind === 'mock') {
+  if (provider) {
+    if (provider.kind === 'mock' && process.env.NODE_ENV !== 'test') {
       console.error('[PDL Worker] FATAL: Real provider not configured (AGENT_PROVIDER resolves to mock). Worker cannot start.');
       process.exit(1);
     }
-    const governance = new PdlGovernanceEngine({ pool });
-    return new PdlCorrectionWorker(tasks, provider, 'pdl-router', undefined, pool, governance);
+    const gov = governance ?? new PdlGovernanceEngine({ pool });
+    return new PdlCorrectionWorker(taskRepo, provider, 'pdl-router', undefined, pool, gov);
+  }
+
+  if (process.env.NODE_ENV === 'test') {
+    return new CodexWorker(taskRepo, createAgent(), 'codex', pool);
   }
 
   console.error('[PDL Worker] FATAL: No AGENT_PROVIDER defined. Worker cannot start without a real provider.');
   process.exit(1);
+}
+
+export interface PdlContinuousDaemonOptions {
+  worker?: BaseWorker;
+  governance?: PdlGovernanceEngine;
+  tasks?: PostgresTaskRepository;
+  dlq?: PdlDeadLetterRepository;
+  retryPolicy?: PdlRetryPolicy;
+  reaper?: PdlTaskReaper;
+  pollIntervalMs?: number;
+  authorizedBy?: string;
+  provider?: AgentProvider;
+}
+
+export interface PdlContinuousDaemon {
+  pool: Pool;
+  tasks: PostgresTaskRepository;
+  governance: PdlGovernanceEngine;
+  dlq: PdlDeadLetterRepository;
+  retryPolicy: PdlRetryPolicy;
+  reaper: PdlTaskReaper;
+  worker: BaseWorker;
+  scheduler: PdlContinuousScheduler;
+  start: () => Promise<SchedulerSessionInfo>;
+  stop: (reason?: string) => Promise<SchedulerSessionInfo | null>;
+}
+
+export function createPdlContinuousDaemon(
+  pool: Pool,
+  options?: PdlContinuousDaemonOptions
+): PdlContinuousDaemon {
+  const tasks = options?.tasks ?? new PostgresTaskRepository(pool);
+  const governance = options?.governance ?? new PdlGovernanceEngine({ pool });
+  const dlq = options?.dlq ?? new PdlDeadLetterRepository(pool);
+  const retryPolicy = options?.retryPolicy ?? new PdlRetryPolicy();
+  const reaper = options?.reaper ?? new PdlTaskReaper({
+    tasks,
+    governance,
+    dlq,
+    pool,
+  });
+
+  const worker = options?.worker ?? createPdlWorkerDaemon(pool, governance, tasks, options?.provider);
+
+  const scheduler = new PdlContinuousScheduler({
+    governance,
+    worker,
+    tasks,
+    dlq,
+    retryPolicy,
+    reaper,
+    pool,
+    config: {
+      pollIntervalMs: options?.pollIntervalMs ?? POLL_INTERVAL_MS,
+      authorizedBy: options?.authorizedBy ?? 'pdl-worker-daemon',
+      maxConcurrentTasks: 1,
+    },
+  });
+
+  return {
+    pool,
+    tasks,
+    governance,
+    dlq,
+    retryPolicy,
+    reaper,
+    worker,
+    scheduler,
+    start: async () => {
+      return await scheduler.start();
+    },
+    stop: async (reason?: string) => {
+      if (reaper.getStatus().running) {
+        reaper.stop();
+      }
+      return await scheduler.stop(reason ?? 'DAEMON_SHUTDOWN');
+    },
+  };
 }
 
 export function startPdlHealthServer(port = PORT, poolGetter?: () => Pool | undefined): http.Server {
@@ -109,35 +202,28 @@ if (isMain) {
         ssl: isLocal ? false : { rejectUnauthorized: false },
       });
 
-      const worker = createPdlWorkerDaemon(activePool);
+      const daemon = createPdlContinuousDaemon(activePool, {
+        pollIntervalMs: POLL_INTERVAL_MS,
+        authorizedBy: 'pdl-worker-daemon',
+      });
 
       console.log(JSON.stringify({
-        event: 'PDL_WORKER_STARTED',
+        event: 'PDL_AUTONOMOUS_DAEMON_STARTED',
         timestamp: new Date().toISOString(),
         intervalMs: POLL_INTERVAL_MS,
       }));
 
       let isShuttingDown = false;
-      let cycleTimer: NodeJS.Timeout | null = null;
-
-      const runCycle = async () => {
-        if (isShuttingDown) return;
-        try {
-          await worker.executeOnce();
-        } catch (e) {
-          console.error('[PDL Worker] Cycle error:', (e as Error).message);
-        } finally {
-          if (!isShuttingDown) {
-            cycleTimer = setTimeout(runCycle, POLL_INTERVAL_MS);
-          }
-        }
-      };
 
       const shutdown = async (signal: string) => {
         if (isShuttingDown) return;
         isShuttingDown = true;
         console.log(`[PDL Worker] Received ${signal}, graceful shutdown initiated...`);
-        if (cycleTimer) clearTimeout(cycleTimer);
+        try {
+          await daemon.stop(signal);
+        } catch (err: any) {
+          console.error('[PDL Worker] Shutdown error:', err.message);
+        }
         try {
           if (activePool) await activePool.end();
         } catch {}
@@ -147,7 +233,7 @@ if (isMain) {
       process.on('SIGTERM', () => shutdown('SIGTERM'));
       process.on('SIGINT', () => shutdown('SIGINT'));
 
-      runCycle();
+      await daemon.start();
     } catch (err) {
       console.error('[PDL Worker] Initialization error:', (err as Error).message);
     }

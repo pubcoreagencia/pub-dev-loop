@@ -19,6 +19,25 @@ import type { Task, TaskRepository } from '../src/domain.js';
 class TestTaskRepository implements TaskRepository {
   private tasks: Map<string, Task> = new Map();
   public createCallCount = 0;
+  public intakeService = {
+    processIntake: async (opts: any) => {
+      const task = await this.create({
+        project: opts.project || 'pub-dev-loop',
+        repository: opts.repository || 'https://github.com/pubcoreagencia/pub-dev-loop.git',
+        objective: opts.objective || 'Default objective',
+        prompt: opts.prompt || opts.rawRequest || 'Default prompt',
+        priority: opts.priority ?? 1,
+      });
+      return {
+        task,
+        executionSpec: {
+          id: 'spec-test-' + task.id,
+          status: 'SEALED',
+          spec_hash: 'pdl-v1:12345678',
+        },
+      };
+    },
+  };
 
   async create(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'status'> & { id?: string }): Promise<Task> {
     this.createCallCount++;

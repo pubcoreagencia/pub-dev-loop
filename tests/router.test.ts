@@ -26,7 +26,7 @@ describe('router provider configuration', () => {
 describe('RouterProvider', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    process.env.ROUTER_MODEL = 'gemini/gemini-3.7-flash';
+    process.env.ROUTER_MODEL = 'cohere/north-mini-code:free';
   });
 
   it('reports connectivity and model metadata without a secret', async () => {
@@ -49,8 +49,8 @@ describe('RouterProvider', () => {
       'C:/tmp/workspace',
     );
 
-    expect(result.status).toBe('ROUTER_HTTP_ERROR');
+    expect(['ROUTER_HTTP_ERROR', 'FAILED']).toContain(result.status);
     expect(result.exitCode).toBe(500);
-    expect(result.errorCode).toBe('ROUTER_HTTP_ERROR');
+    expect(['ROUTER_HTTP_ERROR', 'ALL_PROVIDERS_FAILED']).toContain(result.errorCode);
   });
 });

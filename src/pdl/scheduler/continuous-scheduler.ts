@@ -56,8 +56,8 @@ export interface CrashRecoveryResult {
 
 export class PdlContinuousScheduler {
   public readonly governance: PdlGovernanceEngine;
-  public readonly worker?: BaseWorker;
-  public readonly tasks?: TaskRepository;
+  public worker?: BaseWorker;
+  public tasks?: TaskRepository;
   public readonly repository: ISchedulerSessionRepository;
   public readonly retryPolicy: PdlRetryPolicy;
   public readonly dlq: IPdlDeadLetterRepository;
@@ -98,6 +98,20 @@ export class PdlContinuousScheduler {
     this.retryPolicy = options.retryPolicy || new PdlRetryPolicy();
     this.dlq = options.dlq || new PdlDeadLetterRepository(options.pool);
     this.reaper = options.reaper;
+  }
+
+  /**
+   * Dynamically sets or replaces the active worker for task execution.
+   */
+  public setWorker(worker: BaseWorker): void {
+    this.worker = worker;
+  }
+
+  /**
+   * Dynamically sets or replaces the task repository.
+   */
+  public setTasks(tasks: TaskRepository): void {
+    this.tasks = tasks;
   }
 
   /**

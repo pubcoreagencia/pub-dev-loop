@@ -102,7 +102,7 @@ function createMockTransactionalPool(initialState?: Partial<MockDbState>): {
             if (state.failAtTaskInsert) {
               throw new Error('Simulated tasks table INSERT failure');
             }
-            const [project, repository, objective, prompt, priority, status] = (params || []) as any[];
+            const [project, repository, objective, prompt, priority, branch] = (params || []) as any[];
             const id = 'task-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
             const row = {
               id,
@@ -111,7 +111,7 @@ function createMockTransactionalPool(initialState?: Partial<MockDbState>): {
               objective,
               prompt,
               priority: priority ?? 0,
-              status: status ?? 'QUEUED',
+              status: 'QUEUED',
               worker: null,
               result: null,
               error: null,
@@ -365,7 +365,7 @@ describe('Phase 3C: Single Intake Authority and Boundary Hardening', () => {
         prototypeSessionId: 'proto-session-1',
         project: 'pub-food',
         repository: 'https://github.com/pubcoreagencia/pub-food.git',
-        branch: 'promo-branch',
+        branch: 'feature/promo-branch',
         checkpointSha: 'abc123sha',
         objective: 'Prototype promotion objective',
         prompt: 'Promote prototype to production PDL',

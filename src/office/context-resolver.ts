@@ -315,17 +315,15 @@ export function resolveContext(
   let targetRepoUrl = 'https://github.com/pubcoreagencia/' + (task.project || 'pub-dev-loop') + '.git';
   if (task.project) {
     if (
-      existsSync(task.project) ||
       task.project.startsWith('http://') ||
       task.project.startsWith('https://') ||
-      task.project.startsWith('git@') ||
-      task.project.endsWith('.git')
+      task.project.startsWith('git@')
     ) {
       targetRepoUrl = task.project;
       provenances.push({
         source: 'REPOSITORY_FILE',
         path: task.project,
-        detail: 'Direct repository workspace path matched',
+        detail: 'Direct repository URL matched',
       });
     } else {
       for (const sector of PUB_HOLDING_SECTORS) {
