@@ -831,4 +831,66 @@ describe('PDL Trust Boundary & Protected Paths Enforcement (Phase 5.5)', () => {
       expect(res.errorMessage).toContain('src/pdl/governance/policy-engine.ts');
     });
   });
+
+  describe('P0.4.1-F: TrustBoundary.normalizePath Fail-Closed Boundary', () => {
+    it('1. throws GovernanceProtectedPathViolationError on ../outside.txt', () => {
+      expect(() => {
+        TrustBoundary.normalizePath('../outside.txt', tempDir);
+      }).toThrow(GovernanceProtectedPathViolationError);
+    });
+
+    it('2. throws GovernanceProtectedPathViolationError on ../../outside.txt', () => {
+      expect(() => {
+        TrustBoundary.normalizePath('../../outside.txt', tempDir);
+      }).toThrow(GovernanceProtectedPathViolationError);
+    });
+
+    it('3. throws GovernanceProtectedPathViolationError on absolute path outside workspace', () => {
+      const outsidePath = process.platform === 'win32' ? 'C:\\Windows\\cmd.exe' : '/etc/shadow';
+      expect(() => {
+        TrustBoundary.normalizePath(outsidePath, tempDir);
+      }).toThrow(GovernanceProtectedPathViolationError);
+    });
+
+    it('4. throws GovernanceProtectedPathViolationError on UNC paths outside workspace', () => {
+      expect(() => {
+        TrustBoundary.normalizePath('\\\\server\\share\\evil.txt', tempDir);
+      }).toThrow(GovernanceProtectedPathViolationError);
+    });
+
+    it('5. classifyPath fails closed on outside-workspace path (never returns NORMAL_CONFIG)', () => {
+      expect(() => {
+        TrustBoundary.classifyPath('../outside.txt', tempDir);
+      }).toThrow(GovernanceProtectedPathViolationError);
+
+      expect(() => {
+        TrustBoundary.classifyPath('..\\outside.json', tempDir);
+      }).toThrow(GovernanceProtectedPathViolationError);
+    });
+
+    it('6. validateChangesetAgainstTrustBoundary fails closed on out-of-workspace paths', () => {
+      const res = TrustBoundary.validateChangesetAgainstTrustBoundary(
+        ['../outside.txt', 'src/providers/router.ts'],
+        tempDir
+      );
+      expect(res.allowed).toBe(false);
+      expect(res.violatedPaths).toContain('../outside.txt');
+    });
+
+    it('7. validateConfigurationIntegrity fails closed on out-of-workspace paths', () => {
+      const res = TrustBoundary.validateConfigurationIntegrity(
+        ['../../package.json'],
+        tempDir
+      );
+      expect(res.allowed).toBe(false);
+      expect(res.reason).toContain('resolves outside workspace root');
+    });
+
+    it('8. preserves normal resolution for valid in-workspace paths', () => {
+      expect(TrustBoundary.normalizePath('src/providers/router.ts', tempDir)).toBe('src/providers/router.ts');
+      expect(TrustBoundary.classifyPath('src/providers/router.ts', tempDir)).toBe('EXECUTION_ENGINE');
+      expect(TrustBoundary.normalizePath('package.json', tempDir)).toBe('package.json');
+      expect(TrustBoundary.classifyPath('package.json', tempDir)).toBe('NORMAL_CONFIG');
+    });
+  });
 });

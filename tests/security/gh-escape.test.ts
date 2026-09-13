@@ -306,4 +306,107 @@ describe('P0.3.1: Host GitHub CLI (gh) & Governance Escape Neutralization', () =
       expect(remoteSha).toBe(localSha);
     });
   });
+
+  describe('P0.4.1-A / B: Invariant Defense-in-Depth & Credential Neutralization', () => {
+    it('17. sanitizeWorkspaceEnv completely strips GitHub CLI from PATH', () => {
+      const mockPath = [
+        'C:\\Windows\\system32',
+        'C:\\Program Files\\GitHub CLI',
+        'C:\\Users\\Operator\\AppData\\Local\\Programs\\GitHub-CLI',
+        'C:\\Program Files\\nodejs',
+      ].join(';');
+
+      const sanitized = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv({
+        PATH: mockPath,
+      });
+
+      const pathVal = sanitized.PATH || '';
+      expect(pathVal).not.toContain('GitHub CLI');
+      expect(pathVal).not.toContain('GitHub-CLI');
+      expect(pathVal).toContain('system32');
+      expect(pathVal).toContain('nodejs');
+    });
+
+    it('18. getIsolatedGhConfigDir populates inert hosts.yml and config.yml with dummy tokens', () => {
+      const dir = WorkspaceEnvironmentSecurity.getIsolatedGhConfigDir();
+      const fs = require('node:fs');
+      const hostsPath = join(dir, 'hosts.yml');
+      const configPath = join(dir, 'config.yml');
+
+      expect(fs.existsSync(hostsPath)).toBe(true);
+      expect(fs.existsSync(configPath)).toBe(true);
+
+      const hostsContent = fs.readFileSync(hostsPath, 'utf8');
+      expect(hostsContent).toContain('pdl-unauthenticated-sandbox');
+      expect(hostsContent).toContain('pdl-invalid-dummy-token');
+
+      const configContent = fs.readFileSync(configPath, 'utf8');
+      expect(configContent).toContain('git_protocol: https');
+    });
+
+    it('19. sanitizeWorkspaceEnv strips real tokens and isolates GH_CONFIG_DIR', () => {
+      const sanitized = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv({
+        ...process.env,
+        GITHUB_TOKEN: 'ghp_secret_real_token',
+        GH_TOKEN: 'ghp_secret_real_token_2',
+      });
+      expect(sanitized.GITHUB_TOKEN).toBeUndefined();
+      expect(sanitized.GH_TOKEN).toBeUndefined();
+      expect(sanitized.PDL_GITHUB_TOKEN).toBeUndefined();
+      expect(sanitized.GH_CONFIG_DIR).toBeDefined();
+    });
+
+    it('20. assertNoGovernanceCredentials permits dummy sandbox tokens but rejects real tokens', () => {
+      // Dummy token is allowed
+      expect(() => {
+        WorkspaceEnvironmentSecurity.assertNoGovernanceCredentials({
+          GH_TOKEN: 'pdl-invalid-dummy-token',
+          GITHUB_TOKEN: 'pdl-invalid-dummy-token',
+          GH_CONFIG_DIR: WorkspaceEnvironmentSecurity.getIsolatedGhConfigDir(),
+        });
+      }).not.toThrow();
+
+      // Real or unknown token is strictly rejected
+      expect(() => {
+        WorkspaceEnvironmentSecurity.assertNoGovernanceCredentials({
+          GH_TOKEN: 'ghp_real_secret_token_1234567890',
+          GH_CONFIG_DIR: WorkspaceEnvironmentSecurity.getIsolatedGhConfigDir(),
+        });
+      }).toThrow(GovernanceSelfElevationViolationError);
+    });
+
+    it('21. blocks direct cmdkey and cmdkey.exe execution', () => {
+      expect(WorkspaceCommandSecurity.validateCommand('cmdkey /list').allowed).toBe(false);
+      expect(WorkspaceCommandSecurity.validateCommand('cmdkey.exe /list').allowed).toBe(false);
+      expect(WorkspaceCommandSecurity.validateCommand('cmd.exe', ['/c', 'cmdkey /list']).allowed).toBe(false);
+      expect(WorkspaceCommandSecurity.validateCommand('powershell', ['-c', 'cmdkey /list']).allowed).toBe(false);
+    });
+
+    it('22. child node process attempting "gh auth token" fails because gh is stripped from PATH', async () => {
+      const rt = new ToolRuntime({
+        workspaceRoot: tempDir,
+        commandTimeoutMs: 10000,
+        redactSecrets: false,
+      });
+
+      const script = `
+        const { execSync } = require('child_process');
+        try {
+          execSync('gh auth token');
+          console.log('UNEXPECTED_SUCCESS');
+        } catch (err) {
+          console.log('EXPECTED_NOT_FOUND: ' + err.message);
+        }
+      `;
+      writeFileSync(join(tempDir, 'test-gh-path.js'), script);
+
+      const res = await (rt as any).runCommand('test-node-gh', {
+        command: 'node test-gh-path.js',
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.content).toContain('EXPECTED_NOT_FOUND');
+      expect(res.content).not.toContain('UNEXPECTED_SUCCESS');
+    });
+  });
 });

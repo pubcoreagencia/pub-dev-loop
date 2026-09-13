@@ -119,10 +119,11 @@ export class TrustBoundary {
 
     // Traversal check: target must be inside workspace root or match workspace root
     const rel = relative(resolvedRoot, resolvedTarget);
-    if (rel.startsWith('..') && !rel.startsWith(`..${sep}..`)) {
-      // Relative points outside workspace root
-      const forwardRel = rel.replace(/\\/g, '/');
-      return forwardRel;
+    if (rel.startsWith('..') || isAbsolute(rel)) {
+      throw new GovernanceProtectedPathViolationError(
+        `Path traversal detected: '${filePath}' resolves outside workspace root '${workspaceRoot}'. Paths outside workspace root are strictly prohibited from classification as permissive paths.`,
+        filePath
+      );
     }
 
     const normalized = rel.replace(/\\/g, '/').replace(/^\.\//, '');
@@ -220,9 +221,14 @@ export class TrustBoundary {
     for (const f of changedFiles) {
       if (!f || typeof f !== 'string') continue;
 
-      const norm = this.normalizePath(f, workspaceRoot);
-      if (this.isZoneAPath(norm, workspaceRoot)) {
-        violatedPaths.push(norm);
+      try {
+        const norm = this.normalizePath(f, workspaceRoot);
+        if (this.isZoneAPath(norm, workspaceRoot)) {
+          violatedPaths.push(norm);
+        }
+      } catch (err: any) {
+        // Fail-closed: any path that cannot be resolved within workspace is treated as a security violation
+        violatedPaths.push(f);
       }
     }
 
@@ -244,7 +250,15 @@ export class TrustBoundary {
     workspaceRoot: string = process.cwd()
   ): { allowed: boolean; reason?: string } {
     for (const f of changedFiles) {
-      const norm = this.normalizePath(f, workspaceRoot).toLowerCase();
+      let norm: string;
+      try {
+        norm = this.normalizePath(f, workspaceRoot).toLowerCase();
+      } catch (err: any) {
+        return {
+          allowed: false,
+          reason: `Configuration integrity violation: changed file '${f}' resolves outside workspace root.`,
+        };
+      }
 
       // Inspect tsconfig for path alias remappings targeting Zone A
       if (norm === 'tsconfig.json' || norm.startsWith('tsconfig.')) {

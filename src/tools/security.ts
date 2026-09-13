@@ -1,5 +1,5 @@
 import { resolve, isAbsolute, relative, sep } from 'node:path';
-import { realpathSync, existsSync, mkdirSync } from 'node:fs';
+import { realpathSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 /**
@@ -200,7 +200,8 @@ export class WorkspaceEnvironmentSecurity {
 
   /**
    * Provides a clean, isolated directory for GitHub CLI configuration.
-   * Completely neutralizes the host keyring and Windows Credential Manager.
+   * Completely neutralizes the host keyring and Windows Credential Manager
+   * by providing an explicit inert hosts.yml and config.yml.
    */
   public static getIsolatedGhConfigDir(): string {
     if (!this.isolatedGhConfigDir) {
@@ -209,6 +210,17 @@ export class WorkspaceEnvironmentSecurity {
         if (!existsSync(dir)) {
           mkdirSync(dir, { recursive: true });
         }
+        const hostsFile = resolve(dir, 'hosts.yml');
+        const inertHosts =
+          'github.com:\n' +
+          '    user: pdl-unauthenticated-sandbox\n' +
+          '    oauth_token: pdl-invalid-dummy-token\n' +
+          '    git_protocol: https\n';
+        writeFileSync(hostsFile, inertHosts, 'utf8');
+
+        const configFile = resolve(dir, 'config.yml');
+        const inertConfig = 'git_protocol: https\neditor: \nprompt: disabled\n';
+        writeFileSync(configFile, inertConfig, 'utf8');
       } catch {}
       this.isolatedGhConfigDir = dir;
     }
@@ -218,7 +230,7 @@ export class WorkspaceEnvironmentSecurity {
   /**
    * Sanitizes environment for workspace subprocesses:
    * Completely strips database credentials, governance keys, provider tokens, and cloud secrets.
-   * Enforces an isolated GH_CONFIG_DIR to prevent host keyring / Windows Credential Manager elevation.
+   * Enforces an isolated GH_CONFIG_DIR with inert dummy tokens and sanitizes PATH to eliminate gh/gh.exe.
    */
   public static sanitizeWorkspaceEnv(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
     const safeEnv: NodeJS.ProcessEnv = {};
@@ -251,7 +263,33 @@ export class WorkspaceEnvironmentSecurity {
       safeEnv[key] = val;
     }
 
-    // Force isolated GitHub CLI configuration directory to neutralize host credential store
+    // P0.4.1-A1: Sanitize PATH to remove directories exposing gh, gh.exe, or credential tools
+    const pathKey = Object.keys(safeEnv).find(k => k.toUpperCase() === 'PATH') || 'PATH';
+    const rawPath = safeEnv[pathKey] || '';
+    if (rawPath) {
+      const pathSep = process.platform === 'win32' ? ';' : ':';
+      const cleanParts = rawPath
+        .split(pathSep)
+        .filter(part => {
+          const trimmed = part.trim();
+          if (!trimmed) return false;
+          const lower = trimmed.toLowerCase();
+          // Exclude GitHub CLI directories
+          if (lower.includes('github cli') || lower.includes('github-cli')) {
+            return false;
+          }
+          // Exclude any directory containing gh.exe or gh
+          try {
+            if (existsSync(resolve(trimmed, 'gh.exe')) || existsSync(resolve(trimmed, 'gh'))) {
+              return false;
+            }
+          } catch {}
+          return true;
+        });
+      safeEnv[pathKey] = cleanParts.join(pathSep);
+    }
+
+    // P0.4.1-A2 & A3: Force isolated GitHub CLI configuration with inert dummy credentials
     safeEnv['GH_CONFIG_DIR'] = this.getIsolatedGhConfigDir();
 
     return safeEnv;
@@ -280,6 +318,17 @@ export class WorkspaceEnvironmentSecurity {
           );
         }
         continue;
+      }
+
+      // Permitted ONLY if strictly containing the inert sandbox dummy token
+      if (upperKey === 'GH_TOKEN' || upperKey === 'GITHUB_TOKEN' || upperKey === 'PDL_GITHUB_TOKEN') {
+        if (val === 'pdl-invalid-dummy-token') {
+          continue;
+        }
+        throw new GovernanceSelfElevationViolationError(
+          `Subprocess environment contains unauthorized or real GitHub token in "${key}". Agent-executed workspace processes cannot modify PDL governance or access host credentials.`,
+          key
+        );
       }
 
       if (this.BLOCKED_KEY_EXACT.has(upperKey)) {
@@ -325,6 +374,8 @@ export class WorkspaceCommandSecurity {
   public static readonly PROHIBITED_EXECUTABLE_NAMES = new Set([
     'gh',
     'gh.exe',
+    'cmdkey',
+    'cmdkey.exe',
   ]);
 
   public static readonly SHELL_NAMES = new Set([
@@ -370,11 +421,11 @@ export class WorkspaceCommandSecurity {
     const trimmed = command.trim();
     const baseExe = this.extractBasename(trimmed);
 
-    // 1. Direct executable check (gh, gh.exe, or path ending in gh/gh.exe)
-    if (this.PROHIBITED_EXECUTABLE_NAMES.has(baseExe) || /(?:^|[\\/])gh(?:\.exe)?$/i.test(trimmed.replace(/^['"]|['"]$/g, ''))) {
+    // 1. Direct executable check (gh, gh.exe, cmdkey, cmdkey.exe, or paths ending in them)
+    if (this.PROHIBITED_EXECUTABLE_NAMES.has(baseExe) || /(?:^|[\\/])(gh|cmdkey)(?:\.exe)?$/i.test(trimmed.replace(/^['"]|['"]$/g, ''))) {
       return {
         allowed: false,
-        reason: `[SECURITY_VIOLATION] Direct execution of GitHub CLI ('gh' / 'gh.exe') is strictly prohibited in autonomous workspace to prevent host credential escape.`,
+        reason: `[SECURITY_VIOLATION] Direct execution of prohibited tool ('${baseExe}') is strictly prohibited in autonomous workspace to prevent host credential escape.`,
       };
     }
 
@@ -391,6 +442,15 @@ export class WorkspaceCommandSecurity {
       };
     }
 
+    // 3.1 Detect any invocation of cmdkey as a command or token
+    const cmdkeyPattern = /(?:^|[;&|`\s("'])(?:[\w:.-]*[\\/])?cmdkey(?:\.exe)?(?:$|[;&|`\s)"'])/i;
+    if (cmdkeyPattern.test(fullCommandLine)) {
+      return {
+        allowed: false,
+        reason: `[SECURITY_VIOLATION] Execution of credential management tool ('cmdkey') is strictly prohibited in autonomous workspace.`,
+      };
+    }
+
     // 4. Detect shell wrapper escapes targeting gh subcommands or APIs
     if (this.SHELL_NAMES.has(baseExe)) {
       const shellSubcommand = args.join(' ');
@@ -398,6 +458,12 @@ export class WorkspaceCommandSecurity {
         return {
           allowed: false,
           reason: `[SECURITY_VIOLATION] Shell invocation of GitHub CLI ('gh') is strictly prohibited.`,
+        };
+      }
+      if (cmdkeyPattern.test(shellSubcommand)) {
+        return {
+          allowed: false,
+          reason: `[SECURITY_VIOLATION] Shell invocation of credential tool ('cmdkey') is strictly prohibited.`,
         };
       }
     }
