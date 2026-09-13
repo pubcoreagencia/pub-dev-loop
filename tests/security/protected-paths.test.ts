@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
@@ -359,6 +359,8 @@ describe('PDL Trust Boundary & Protected Paths Enforcement (Phase 5.5)', () => {
     });
 
     it('blocks push when changeset touches Zone A protected paths', async () => {
+      execSync('git checkout -b feat/autonomous-pdl-feature', { cwd: tempDir, stdio: 'ignore' });
+
       // Commit a Zone B file normally
       writeFileSync(join(tempDir, 'src/providers/router.ts'), '// Safe commit\n');
       execSync('git add -A && git commit -m "feat: safe commit"', { cwd: tempDir, stdio: 'ignore' });
@@ -381,6 +383,208 @@ describe('PDL Trust Boundary & Protected Paths Enforcement (Phase 5.5)', () => {
       expect(res.status).toBe('FAILED');
       expect(res.errorCode).toBe('PROTECTED_PATH_VIOLATION');
       expect(res.errorMessage).toContain('Zone A protected paths');
+    });
+
+    it('Scenario A: blocks push when historical Commit A touches Zone A even though HEAD (Commit B) touches only Zone B', async () => {
+      execSync('git checkout main', { cwd: tempDir, stdio: 'ignore' });
+      execSync('git checkout -b feat/multi-commit-attack', { cwd: tempDir, stdio: 'ignore' });
+
+      // Base is already clean
+      // Commit A: touches Zone A
+      writeFileSync(join(tempDir, 'src/pdl/governance/policy-engine.ts'), '// Tampered in commit A\n');
+      execSync('git add -A && git commit -m "feat: commit A tampering"', { cwd: tempDir, stdio: 'ignore' });
+
+      // Commit B: touches only Zone B
+      writeFileSync(join(tempDir, 'src/providers/router.ts'), '// Benign router feature in commit B\n');
+      execSync('git add -A && git commit -m "feat: commit B benign"', { cwd: tempDir, stdio: 'ignore' });
+      const headB = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf8' }).trim();
+
+      const catalog = new ProductCatalog([mockProduct]);
+      const persistence = new PdlRemotePersistence(catalog);
+
+      const res = await persistence.persist({
+        product: mockProduct,
+        workspace: tempDir,
+        branch: 'feat/multi-commit-attack',
+        localSha: headB,
+      });
+
+      expect(res.status).toBe('FAILED');
+      expect(res.errorCode).toBe('PROTECTED_PATH_VIOLATION');
+      expect(res.errorMessage).toContain('Zone A protected paths');
+    });
+
+    it('Scenario C: blocks push in 3-commit chain when Commit A touches Zone A', async () => {
+      execSync('git checkout main', { cwd: tempDir, stdio: 'ignore' });
+      execSync('git checkout -b feat/three-commit-attack', { cwd: tempDir, stdio: 'ignore' });
+
+      // Commit A: Zone A
+      writeFileSync(join(tempDir, 'src/pdl/governance/policy-engine.ts'), '// Tampered A\n');
+      execSync('git add -A && git commit -m "feat: commit A"', { cwd: tempDir, stdio: 'ignore' });
+
+      // Commit B: Zone B
+      writeFileSync(join(tempDir, 'src/providers/router.ts'), '// Router B\n');
+      execSync('git add -A && git commit -m "feat: commit B"', { cwd: tempDir, stdio: 'ignore' });
+
+      // Commit C: Zone B
+      writeFileSync(join(tempDir, 'src/providers/worker.ts'), '// Worker C\n');
+      execSync('git add -A && git commit -m "feat: commit C"', { cwd: tempDir, stdio: 'ignore' });
+      const headC = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf8' }).trim();
+
+      const catalog = new ProductCatalog([mockProduct]);
+      const persistence = new PdlRemotePersistence(catalog);
+
+      const res = await persistence.persist({
+        product: mockProduct,
+        workspace: tempDir,
+        branch: 'feat/three-commit-attack',
+        localSha: headC,
+      });
+
+      expect(res.status).toBe('FAILED');
+      expect(res.errorCode).toBe('PROTECTED_PATH_VIOLATION');
+    });
+
+    it('Scenario D: blocks push when Commit A touches Zone A and Commit B reverts it (tampering in history)', async () => {
+      execSync('git checkout main', { cwd: tempDir, stdio: 'ignore' });
+      execSync('git checkout -b feat/revert-tampering', { cwd: tempDir, stdio: 'ignore' });
+
+      const originalGov = '// Original policy engine\n';
+      writeFileSync(join(tempDir, 'src/pdl/governance/policy-engine.ts'), originalGov);
+      execSync('git add -A && git commit -m "feat: setup clean gov"', { cwd: tempDir, stdio: 'ignore' });
+
+      // Commit A: touches Zone A
+      writeFileSync(join(tempDir, 'src/pdl/governance/policy-engine.ts'), '// Injected backdoor\n');
+      execSync('git add -A && git commit -m "feat: malicious gov touch"', { cwd: tempDir, stdio: 'ignore' });
+
+      // Commit B: reverts back to original
+      writeFileSync(join(tempDir, 'src/pdl/governance/policy-engine.ts'), originalGov);
+      writeFileSync(join(tempDir, 'src/providers/router.ts'), '// Safe router change\n');
+      execSync('git add -A && git commit -m "feat: revert backdoor and change router"', { cwd: tempDir, stdio: 'ignore' });
+      const headRevert = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf8' }).trim();
+
+      const catalog = new ProductCatalog([mockProduct]);
+      const persistence = new PdlRemotePersistence(catalog);
+
+      const res = await persistence.persist({
+        product: mockProduct,
+        workspace: tempDir,
+        branch: 'feat/revert-tampering',
+        localSha: headRevert,
+      });
+
+      expect(res.status).toBe('FAILED');
+      expect(res.errorCode).toBe('PROTECTED_PATH_VIOLATION');
+    });
+
+    it('Scenario E: blocks push when merge commit includes a diverged branch touching Zone A', async () => {
+      // Branch 1: touches Zone A
+      execSync('git checkout -b feat/side-tamper', { cwd: tempDir, stdio: 'ignore' });
+      writeFileSync(join(tempDir, 'src/pdl/governance/policy-engine.ts'), '// Side branch backdoor\n');
+      execSync('git add -A && git commit -m "feat: side tamper"', { cwd: tempDir, stdio: 'ignore' });
+
+      // Branch 2: touches Zone B
+      execSync('git checkout main', { cwd: tempDir, stdio: 'ignore' });
+      execSync('git checkout -b feat/merge-target', { cwd: tempDir, stdio: 'ignore' });
+      writeFileSync(join(tempDir, 'src/providers/router.ts'), '// Benign target router\n');
+      execSync('git add -A && git commit -m "feat: benign router"', { cwd: tempDir, stdio: 'ignore' });
+
+      // Merge Branch 1 into Branch 2
+      execSync('git merge feat/side-tamper -m "merge side tamper"', { cwd: tempDir, stdio: 'ignore' });
+      const mergeHead = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf8' }).trim();
+
+      const catalog = new ProductCatalog([mockProduct]);
+      const persistence = new PdlRemotePersistence(catalog);
+
+      const res = await persistence.persist({
+        product: mockProduct,
+        workspace: tempDir,
+        branch: 'feat/merge-target',
+        localSha: mergeHead,
+      });
+
+      expect(res.status).toBe('FAILED');
+      expect(res.errorCode).toBe('PROTECTED_PATH_VIOLATION');
+    });
+
+    it('Scenario F: blocks push when historical Commit A renames a Zone A path', async () => {
+      // Commit A: rename Zone A
+      execSync('git checkout main', { cwd: tempDir, stdio: 'ignore' });
+      execSync('git checkout -b feat/rename-attack', { cwd: tempDir, stdio: 'ignore' });
+      execSync('git mv src/pdl/governance/policy-engine.ts src/pdl/governance/evaded.ts', { cwd: tempDir, stdio: 'ignore' });
+      execSync('git commit -m "feat: rename gov"', { cwd: tempDir, stdio: 'ignore' });
+
+      // Commit B: Zone B change
+      writeFileSync(join(tempDir, 'src/providers/router.ts'), '// Router benign\n');
+      execSync('git add -A && git commit -m "feat: commit B router"', { cwd: tempDir, stdio: 'ignore' });
+      const renameHead = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf8' }).trim();
+
+      const catalog = new ProductCatalog([mockProduct]);
+      const persistence = new PdlRemotePersistence(catalog);
+
+      const res = await persistence.persist({
+        product: mockProduct,
+        workspace: tempDir,
+        branch: 'feat/rename-attack',
+        localSha: renameHead,
+      });
+
+      expect(res.status).toBe('FAILED');
+      expect(res.errorCode).toBe('PROTECTED_PATH_VIOLATION');
+    });
+
+    it('Scenario G: blocks push when historical Commit A deletes a Zone A path', async () => {
+      // Commit A: delete Zone A
+      execSync('git checkout main', { cwd: tempDir, stdio: 'ignore' });
+      execSync('git checkout -b feat/delete-attack', { cwd: tempDir, stdio: 'ignore' });
+      unlinkSync(join(tempDir, 'src/pdl/governance/policy-engine.ts'));
+      execSync('git add -A && git commit -m "feat: delete gov"', { cwd: tempDir, stdio: 'ignore' });
+
+      // Commit B: Zone B change
+      writeFileSync(join(tempDir, 'src/providers/router.ts'), '// Router benign\n');
+      execSync('git add -A && git commit -m "feat: commit B router"', { cwd: tempDir, stdio: 'ignore' });
+      const deleteHead = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf8' }).trim();
+
+      const catalog = new ProductCatalog([mockProduct]);
+      const persistence = new PdlRemotePersistence(catalog);
+
+      const res = await persistence.persist({
+        product: mockProduct,
+        workspace: tempDir,
+        branch: 'feat/delete-attack',
+        localSha: deleteHead,
+      });
+
+      expect(res.status).toBe('FAILED');
+      expect(res.errorCode).toBe('PROTECTED_PATH_VIOLATION');
+    });
+
+    it('Scenario H: allows push when multiple commits touch only Zone B files', async () => {
+      execSync('git checkout main', { cwd: tempDir, stdio: 'ignore' });
+      execSync('git checkout -b feat/clean-multi-commit', { cwd: tempDir, stdio: 'ignore' });
+
+      // Commit 1: Zone B
+      writeFileSync(join(tempDir, 'src/providers/router.ts'), '// Router benign 1\n');
+      execSync('git add -A && git commit -m "feat: commit 1 router"', { cwd: tempDir, stdio: 'ignore' });
+
+      // Commit 2: Zone B
+      writeFileSync(join(tempDir, 'src/providers/router.ts'), '// Router benign 2\n');
+      execSync('git add -A && git commit -m "feat: commit 2 router"', { cwd: tempDir, stdio: 'ignore' });
+
+      const cleanHead = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf8' }).trim();
+
+      const catalog = new ProductCatalog([mockProduct]);
+      const persistence = new PdlRemotePersistence(catalog);
+
+      const res = await persistence.persist({
+        product: mockProduct,
+        workspace: tempDir,
+        branch: 'feat/clean-multi-commit',
+        localSha: cleanHead,
+      });
+
+      // Must NOT fail with PROTECTED_PATH_VIOLATION
+      expect(res.errorCode).not.toBe('PROTECTED_PATH_VIOLATION');
     });
   });
 });

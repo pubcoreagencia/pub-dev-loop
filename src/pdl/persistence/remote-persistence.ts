@@ -280,21 +280,14 @@ export class PdlRemotePersistence {
       };
     }
 
-    // 6.5 Pre-Push Security Gate: Inspect Changeset for Zone A Protected Paths
+    // 6.5 Pre-Push Security Gate: Inspect Historical Changeset for Zone A Protected Paths
     if (options.localSha) {
       try {
-        const diffOutput = this.executor(
-          'git',
-          ['diff-tree', '--no-commit-id', '--name-only', '-r', options.localSha],
-          options.workspace,
-        ).trim();
-        const touchedFiles = diffOutput.split(/\r?\n/).map(f => f.trim()).filter(Boolean);
+        const baseCommit = this.resolveBaseCommit(options, manifest);
+        const touchedFiles = this.collectRangeTouchedFiles(options.workspace, options.localSha, baseCommit);
 
-        const boundaryCheck = TrustBoundary.validateChangesetAgainstTrustBoundary(
-          touchedFiles,
-          options.workspace
-        );
-        if (!boundaryCheck.allowed) {
+        const check = this.validateChangesetSecurity(touchedFiles, options.workspace);
+        if (!check.allowed) {
           return {
             status: 'FAILED',
             repository: manifest.repository,
@@ -305,26 +298,7 @@ export class PdlRemotePersistence {
             remoteSha: null,
             remoteVerified: false,
             errorCode: 'PROTECTED_PATH_VIOLATION',
-            errorMessage: boundaryCheck.reason || 'Remote persistence blocked: changeset touches Zone A protected paths',
-          };
-        }
-
-        const configCheck = TrustBoundary.validateConfigurationIntegrity(
-          touchedFiles,
-          options.workspace
-        );
-        if (!configCheck.allowed) {
-          return {
-            status: 'FAILED',
-            repository: manifest.repository,
-            branch: options.branch,
-            pushAttempted: false,
-            pushSucceeded: false,
-            localSha: options.localSha,
-            remoteSha: null,
-            remoteVerified: false,
-            errorCode: 'PROTECTED_PATH_VIOLATION',
-            errorMessage: configCheck.reason || 'Remote persistence blocked: configuration integrity violation',
+            errorMessage: check.reason || 'Remote persistence blocked: push range touches Zone A protected paths',
           };
         }
       } catch (diffErr: any) {
@@ -445,6 +419,41 @@ export class PdlRemotePersistence {
       }
     }
 
+    // 8.5 Post-Remote Inspection: If existing remote SHA differs, verify exact delta range
+    if (existingRemoteSha && existingRemoteSha !== options.localSha) {
+      try {
+        const remoteRangeFiles = this.collectRangeTouchedFiles(options.workspace, options.localSha, existingRemoteSha);
+        const check = this.validateChangesetSecurity(remoteRangeFiles, options.workspace);
+        if (!check.allowed) {
+          return {
+            status: 'FAILED',
+            repository: manifest.repository,
+            branch: options.branch,
+            pushAttempted: false,
+            pushSucceeded: false,
+            localSha: options.localSha,
+            remoteSha: existingRemoteSha,
+            remoteVerified: false,
+            errorCode: 'PROTECTED_PATH_VIOLATION',
+            errorMessage: check.reason || 'Remote persistence blocked: remote-relative range touches Zone A protected paths',
+          };
+        }
+      } catch (remoteRangeErr: any) {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch: options.branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha: options.localSha,
+          remoteSha: existingRemoteSha,
+          remoteVerified: false,
+          errorCode: 'CHANGESET_INSPECTION_FAILED',
+          errorMessage: `Failed to inspect remote-relative push range: ${remoteRangeErr.message}`,
+        };
+      }
+    }
+
     // 9. Execute Safe Push (Strictly Fast-Forward, NEVER --force)
     try {
       this.executor(
@@ -522,6 +531,168 @@ export class PdlRemotePersistence {
       remoteSha: verifiedRemoteSha,
       remoteVerified: true,
     };
+  }
+
+  /**
+   * Parse git --name-status output into a unique list of paths.
+   * Handles renames (R<score> old new) and copies (C<score> old new) by extracting both paths.
+   */
+  private parseNameStatusOutput(output: string): string[] {
+    const files = new Set<string>();
+    const lines = output.split(/\r?\n/);
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      const parts = line.split(/\t+/);
+      if (parts.length >= 2) {
+        for (let i = 1; i < parts.length; i++) {
+          let f = parts[i].trim();
+          if (f.startsWith('"') && f.endsWith('"')) {
+            f = f.slice(1, -1);
+          }
+          if (f) files.add(f);
+        }
+      } else {
+        const spaceParts = line.split(/\s+/);
+        if (spaceParts.length >= 2) {
+          for (let i = 1; i < spaceParts.length; i++) {
+            let f = spaceParts[i].trim();
+            if (f.startsWith('"') && f.endsWith('"')) {
+              f = f.slice(1, -1);
+            }
+            if (f) files.add(f);
+          }
+        }
+      }
+    }
+    return Array.from(files);
+  }
+
+  /**
+   * Determine the base commit against which the push changeset should be evaluated.
+   * Tries candidate branches (tracking, default, master) to find the common ancestor.
+   */
+  private resolveBaseCommit(
+    options: RemotePersistenceOptions,
+    manifest: ProductManifest,
+    existingRemoteSha?: string | null,
+  ): string | null {
+    if (options.baseSha && typeof options.baseSha === 'string') {
+      try {
+        this.executor('git', ['merge-base', '--is-ancestor', options.baseSha, options.localSha], options.workspace);
+        return options.baseSha;
+      } catch {
+        // Provided baseSha is not an ancestor of localSha
+      }
+    }
+
+    if (existingRemoteSha) {
+      return existingRemoteSha;
+    }
+
+    const candidates = [
+      `refs/remotes/origin/${options.branch}`,
+      `refs/remotes/origin/${manifest.defaultBranch || 'main'}`,
+      manifest.defaultBranch || 'main',
+      'refs/remotes/origin/master',
+      'master',
+    ];
+
+    for (const candidate of candidates) {
+      try {
+        const base = this.executor('git', ['merge-base', candidate, options.localSha], options.workspace).trim();
+        if (base && base.length >= 7 && base !== options.localSha) {
+          return base;
+        }
+      } catch {
+        // Candidate not found or no common ancestor
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Collect all files touched in the push range (historical commits, net diff, and HEAD commit).
+   * Incorporates -m (merges), -M (renames), -C (copies), and --name-status.
+   */
+  private collectRangeTouchedFiles(workspace: string, localSha: string, baseCommit: string | null): string[] {
+    const fileSet = new Set<string>();
+
+    if (baseCommit) {
+      // 1. All files touched in ANY commit in baseCommit..localSha
+      try {
+        const logOutput = this.executor(
+          'git',
+          ['log', `${baseCommit}..${localSha}`, '-m', '-M', '-C', '--name-status', '--format='],
+          workspace,
+        );
+        for (const f of this.parseNameStatusOutput(logOutput)) {
+          fileSet.add(f);
+        }
+      } catch {}
+
+      // 2. Net diff between baseCommit and localSha
+      try {
+        const diffOutput = this.executor(
+          'git',
+          ['diff', baseCommit, localSha, '-M', '-C', '--name-status'],
+          workspace,
+        );
+        for (const f of this.parseNameStatusOutput(diffOutput)) {
+          fileSet.add(f);
+        }
+      } catch {}
+    } else {
+      // No base commit found — inspect all commits reachable from localSha up to root
+      try {
+        const logOutput = this.executor(
+          'git',
+          ['log', localSha, '-m', '-M', '-C', '--name-status', '--format='],
+          workspace,
+        );
+        for (const f of this.parseNameStatusOutput(logOutput)) {
+          fileSet.add(f);
+        }
+      } catch {}
+    }
+
+    // 3. Always inspect HEAD commit itself
+    try {
+      const headOutput = this.executor(
+        'git',
+        ['diff-tree', '--no-commit-id', '-m', '-M', '-C', '--name-status', '-r', localSha],
+        workspace,
+      );
+      for (const f of this.parseNameStatusOutput(headOutput)) {
+        fileSet.add(f);
+      }
+    } catch {}
+
+    return Array.from(fileSet);
+  }
+
+  /**
+   * Validate a list of touched files against TrustBoundary Zone A and configuration integrity gates.
+   */
+  private validateChangesetSecurity(touchedFiles: string[], workspace: string): { allowed: boolean; reason?: string } {
+    const boundaryCheck = TrustBoundary.validateChangesetAgainstTrustBoundary(
+      touchedFiles,
+      workspace
+    );
+    if (!boundaryCheck.allowed) {
+      return boundaryCheck;
+    }
+
+    const configCheck = TrustBoundary.validateConfigurationIntegrity(
+      touchedFiles,
+      workspace
+    );
+    if (!configCheck.allowed) {
+      return configCheck;
+    }
+
+    return { allowed: true };
   }
 }
 

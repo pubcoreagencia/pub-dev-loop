@@ -27,4 +27,5 @@ export interface RemotePersistenceOptions {
   targetRepository?: string;
   requested?: boolean;
   gitToken?: string;
+  baseSha?: string;
 }
