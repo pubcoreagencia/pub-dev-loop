@@ -1,5 +1,6 @@
 import { resolve, isAbsolute, relative, sep } from 'node:path';
-import { realpathSync } from 'node:fs';
+import { realpathSync, existsSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 /**
  * WorkspaceSecurity: validates and resolves file paths within a workspace root.
@@ -178,6 +179,8 @@ export class WorkspaceEnvironmentSecurity {
     'GITHUB_TOKEN',
     'GH_TOKEN',
     'PDL_GITHUB_TOKEN',
+    'GH_ENTERPRISE_TOKEN',
+    'GITHUB_ENTERPRISE_TOKEN',
     'ROUTER_API_KEY',
     'ROUTER_BASE_URL',
     'OPENROUTER_API_KEY',
@@ -193,9 +196,29 @@ export class WorkspaceEnvironmentSecurity {
   public static readonly SENSITIVE_VALUE_PATTERN =
     /(?:postgres(?:ql)?:\/\/|mysql:\/\/|redis:\/\/|mongodb:\/\/|ghp_[A-Za-z0-9_]{10,}|github_pat_[A-Za-z0-9_]{10,}|Bearer\s+[A-Za-z0-9._-]{10,})/i;
 
+  private static isolatedGhConfigDir: string | null = null;
+
+  /**
+   * Provides a clean, isolated directory for GitHub CLI configuration.
+   * Completely neutralizes the host keyring and Windows Credential Manager.
+   */
+  public static getIsolatedGhConfigDir(): string {
+    if (!this.isolatedGhConfigDir) {
+      const dir = resolve(tmpdir(), 'pdl-sandbox-gh-isolated');
+      try {
+        if (!existsSync(dir)) {
+          mkdirSync(dir, { recursive: true });
+        }
+      } catch {}
+      this.isolatedGhConfigDir = dir;
+    }
+    return this.isolatedGhConfigDir;
+  }
+
   /**
    * Sanitizes environment for workspace subprocesses:
    * Completely strips database credentials, governance keys, provider tokens, and cloud secrets.
+   * Enforces an isolated GH_CONFIG_DIR to prevent host keyring / Windows Credential Manager elevation.
    */
   public static sanitizeWorkspaceEnv(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
     const safeEnv: NodeJS.ProcessEnv = {};
@@ -228,6 +251,9 @@ export class WorkspaceEnvironmentSecurity {
       safeEnv[key] = val;
     }
 
+    // Force isolated GitHub CLI configuration directory to neutralize host credential store
+    safeEnv['GH_CONFIG_DIR'] = this.getIsolatedGhConfigDir();
+
     return safeEnv;
   }
 
@@ -241,6 +267,20 @@ export class WorkspaceEnvironmentSecurity {
       if (val === undefined) continue;
 
       const upperKey = key.toUpperCase();
+
+      // GH_CONFIG_DIR is permitted ONLY when pointing to the isolated sandbox;
+      // if it points to host user profiles or credential stores, it fails closed.
+      if (upperKey === 'GH_CONFIG_DIR') {
+        const isolatedDir = resolve(this.getIsolatedGhConfigDir()).toLowerCase();
+        const incomingDir = resolve(String(val)).toLowerCase();
+        if (incomingDir !== isolatedDir) {
+          throw new GovernanceSelfElevationViolationError(
+            `Subprocess environment points GH_CONFIG_DIR to unapproved directory: "${val}". Agent-executed workspace processes cannot access host GitHub credentials.`,
+            'GH_CONFIG_DIR'
+          );
+        }
+        continue;
+      }
 
       if (this.BLOCKED_KEY_EXACT.has(upperKey)) {
         throw new GovernanceSelfElevationViolationError(
@@ -270,5 +310,106 @@ export class WorkspaceEnvironmentSecurity {
         );
       }
     }
+  }
+}
+
+/**
+ * Phase 5.5 / P0.3.1: Workspace Command & Host Credential Escape Security Gate.
+ *
+ * Enforces executable boundaries preventing autonomous workspace agents from invoking:
+ * - GitHub CLI (`gh`, `gh.exe`) directly, via relative/absolute paths, or wrapped in quotes.
+ * - Shell wrappers (`cmd`, `powershell`, `pwsh`, `bash`, `sh`) that execute `gh` or invoke GitHub administration.
+ * - Direct HTTP/CLI attacks against GitHub repository governance (protection, rulesets).
+ */
+export class WorkspaceCommandSecurity {
+  public static readonly PROHIBITED_EXECUTABLE_NAMES = new Set([
+    'gh',
+    'gh.exe',
+  ]);
+
+  public static readonly SHELL_NAMES = new Set([
+    'cmd',
+    'cmd.exe',
+    'powershell',
+    'powershell.exe',
+    'pwsh',
+    'pwsh.exe',
+    'bash',
+    'bash.exe',
+    'sh',
+    'sh.exe',
+    'zsh',
+    'wscript',
+    'wscript.exe',
+    'cscript',
+    'cscript.exe',
+  ]);
+
+  /**
+   * Normalize an executable name or path to its bare command name (lowercased, no quotes, no path, no extension).
+   */
+  public static extractBasename(cmd: string): string {
+    if (!cmd) return '';
+    let clean = cmd.trim();
+    if ((clean.startsWith('"') && clean.endsWith('"')) || (clean.startsWith("'") && clean.endsWith("'"))) {
+      clean = clean.slice(1, -1).trim();
+    }
+    const parts = clean.split(/[\\/]/);
+    const filename = parts[parts.length - 1].toLowerCase();
+    return filename.replace(/\.(exe|cmd|bat|ps1|sh)$/i, '');
+  }
+
+  /**
+   * Check if a command string or executable + args represents a prohibited GitHub CLI execution or governance bypass.
+   */
+  public static validateCommand(command: string, args: string[] = []): { allowed: boolean; reason?: string } {
+    if (!command || typeof command !== 'string') {
+      return { allowed: true };
+    }
+
+    const trimmed = command.trim();
+    const baseExe = this.extractBasename(trimmed);
+
+    // 1. Direct executable check (gh, gh.exe, or path ending in gh/gh.exe)
+    if (this.PROHIBITED_EXECUTABLE_NAMES.has(baseExe) || /(?:^|[\\/])gh(?:\.exe)?$/i.test(trimmed.replace(/^['"]|['"]$/g, ''))) {
+      return {
+        allowed: false,
+        reason: `[SECURITY_VIOLATION] Direct execution of GitHub CLI ('gh' / 'gh.exe') is strictly prohibited in autonomous workspace to prevent host credential escape.`,
+      };
+    }
+
+    // 2. Full command line text inspection
+    const fullCommandLine = [trimmed, ...args.map(a => String(a))].join(' ');
+
+    // 3. Detect any invocation of gh or gh.exe as a command or token
+    // Matches: gh, gh.exe, .\gh, "gh", 'gh', C:\...\gh.exe, & gh, Start-Process gh, etc.
+    const ghPattern = /(?:^|[;&|`\s("'])(?:[\w:.-]*[\\/])?gh(?:\.exe)?(?:$|[;&|`\s)"'])/i;
+    if (ghPattern.test(fullCommandLine)) {
+      return {
+        allowed: false,
+        reason: `[SECURITY_VIOLATION] Execution of GitHub CLI ('gh' / 'gh.exe') is strictly prohibited across all workspace execution surfaces.`,
+      };
+    }
+
+    // 4. Detect shell wrapper escapes targeting gh subcommands or APIs
+    if (this.SHELL_NAMES.has(baseExe)) {
+      const shellSubcommand = args.join(' ');
+      if (ghPattern.test(shellSubcommand) || /\bgh\s+(?:api|auth|repo|ruleset|rulesets|pr|workflow|secret|variable|release)\b/i.test(shellSubcommand)) {
+        return {
+          allowed: false,
+          reason: `[SECURITY_VIOLATION] Shell invocation of GitHub CLI ('gh') is strictly prohibited.`,
+        };
+      }
+    }
+
+    // 5. Detect direct curl/web requests attempting to access or manipulate GitHub governance endpoints
+    if (/(?:curl|invoke-webrequest|invoke-restmethod|wget)\s+[^\n\r]*?(?:api\.github\.com[^\n\r]*?(?:protection|rulesets|collaborators|hooks))/i.test(fullCommandLine)) {
+      return {
+        allowed: false,
+        reason: `[SECURITY_VIOLATION] Direct API invocation targeting GitHub governance endpoints (protection/rulesets) is strictly prohibited.`,
+      };
+    }
+
+    return { allowed: true };
   }
 }

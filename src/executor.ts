@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { WorkspaceEnvironmentSecurity } from './tools/security.js';
+import { WorkspaceEnvironmentSecurity, WorkspaceCommandSecurity } from './tools/security.js';
 
 export type ExecutionStatus = 'COMPLETED' | 'FAILED' | 'TIMED_OUT' | 'START_ERROR';
 
@@ -45,6 +45,19 @@ export const redact = (value: string, environment: NodeJS.ProcessEnv = process.e
 export class AgentExecutor {
   async execute(request: ExecutionRequest): Promise<ExecutionResult> {
     const started = Date.now();
+
+    // Validate command security at executable boundary before spawning
+    const cmdSecurity = WorkspaceCommandSecurity.validateCommand(request.command, request.args);
+    if (!cmdSecurity.allowed) {
+      return {
+        exitCode: 1,
+        stdout: '',
+        stderr: cmdSecurity.reason || '[SECURITY_VIOLATION] Execution blocked by workspace security policy.',
+        durationMs: 0,
+        status: 'FAILED',
+      };
+    }
+
     const rawEnv = request.environment ?? process.env;
     const environment = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(rawEnv);
     WorkspaceEnvironmentSecurity.assertNoGovernanceCredentials(environment);

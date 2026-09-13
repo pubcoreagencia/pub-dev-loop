@@ -1,7 +1,7 @@
 import { promises as fs, constants as fsConstants } from 'node:fs';
 import { join, relative, sep, parse } from 'node:path';
 import { AgentExecutor, type ExecutionResult, type ExecutionRequest } from '../executor.js';
-import { WorkspaceSecurity, WorkspaceEnvironmentSecurity } from './security.js';
+import { WorkspaceSecurity, WorkspaceEnvironmentSecurity, WorkspaceCommandSecurity } from './security.js';
 import { TrustBoundary } from '../pdl/security/trust-boundary.js';
 import type { ToolResult, ToolExecutionContext, ToolDefinition } from './types.js';
 
@@ -598,6 +598,18 @@ export class ToolRuntime {
       };
     }
 
+    // Validate command security: block gh, gh.exe, shell escapes, and GitHub governance manipulation
+    const cmdSecurity = WorkspaceCommandSecurity.validateCommand(command);
+    if (!cmdSecurity.allowed) {
+      return {
+        toolCallId,
+        toolName: 'run_command',
+        success: false,
+        content: '',
+        error: cmdSecurity.reason || '[SECURITY_VIOLATION] Command blocked by workspace security policy.',
+      };
+    }
+
     // Block dangerous git operations in run_command too
     const blocked = checkBlockedGit(command);
     if (blocked) {
@@ -623,6 +635,18 @@ export class ToolRuntime {
 
     // Parse command into parts (simple split — no shell expansion)
     const parts = this.parseCommand(command);
+
+    // Validate parsed command and arguments as well
+    const partsSecurity = WorkspaceCommandSecurity.validateCommand(parts[0], parts.slice(1));
+    if (!partsSecurity.allowed) {
+      return {
+        toolCallId,
+        toolName: 'run_command',
+        success: false,
+        content: '',
+        error: partsSecurity.reason || '[SECURITY_VIOLATION] Command blocked by workspace security policy.',
+      };
+    }
 
     const safeEnvironment = this.getSafeEnvironment(
       this.ctx.redactSecrets ? this.redactEnv(process.env) : process.env
