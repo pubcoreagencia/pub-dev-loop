@@ -30,10 +30,14 @@ import {
 } from '../../execution/finalization-bridge.js';
 import type { FinalizeResult } from '../../finalizer.js';
 import { PdlCorrectionLoop, type CorrectionLoopResult } from '../correction/index.js';
-import { defaultProductCatalog } from '../products/catalog.js';
+import { defaultProductCatalog, type ProductCatalog } from '../products/catalog.js';
 import { defaultRepositoryAuthorizationPolicy } from '../security/repo-authorization.js';
-import { defaultRemotePersistence } from '../persistence/remote-persistence.js';
+import { defaultRemotePersistence, type PdlRemotePersistence } from '../persistence/remote-persistence.js';
 import { PdlGovernanceEngine, defaultGovernanceEngine } from '../governance/index.js';
+import { evaluatePersistenceGate } from '../persistence/persistence-gate.js';
+import { defaultCodeReviewManager, CodeReviewManager, type CodeReviewEvaluationInput, type CodeReviewResult } from '../../office/review.js';
+import { defaultCeoConversationStore, CeoConversationStore } from '../../office/ceo-conversation-store.js';
+import type { PubNeuralBridge } from '../neural/types.js';
 
 const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
 const HEARTBEAT_INTERVAL_MS = Number(process.env.WORKER_HEARTBEAT_MS ?? 10000);
@@ -54,7 +58,11 @@ function run(cmd: string, args: string[], cwd?: string): Promise<string> {
   });
 }
 
+// Dependency‑injected CeoConversationStore to enable mocking in tests and avoid hard‑coded singleton usage
 export class PdlCorrectionWorker extends RouterWorker {
+  public readonly reviewManager: CodeReviewManager;
+  public readonly conversationStore: CeoConversationStore;
+
   constructor(
     tasks?: TaskRepository,
     provider?: AgentProvider,
@@ -62,8 +70,15 @@ export class PdlCorrectionWorker extends RouterWorker {
     onStreamEvent?: TaskStreamEventCallback,
     executionSpecDb?: ExecutionSpecDatabase,
     governance?: PdlGovernanceEngine,
+    catalog?: ProductCatalog,
+    remotePersistence?: PdlRemotePersistence,
+    neuralBridge?: PubNeuralBridge,
+    reviewManager?: CodeReviewManager,
+    conversationStore?: CeoConversationStore,
   ) {
-    super(tasks, provider, name, onStreamEvent, executionSpecDb, governance);
+    super(tasks, provider, name, onStreamEvent, executionSpecDb, governance, catalog, remotePersistence, neuralBridge);
+    this.reviewManager = reviewManager ?? defaultCodeReviewManager;
+    this.conversationStore = conversationStore ?? defaultCeoConversationStore;
   }
 
   /**
@@ -134,6 +149,12 @@ export class PdlCorrectionWorker extends RouterWorker {
       leaseDeadline,
     });
     startHeartbeat(task.id);
+    this.conversationStore.recordTaskLifecycleEvent(
+      task.id,
+      'EXECUTING',
+      `Tarefa [${task.id}] despachada para o worker do PDL. Iniciando execução do especialista @${task.agentId || 'specialist'}.`,
+      { taskId: task.id, specialistId: task.agentId }
+    );
 
     try {
       // 1. Authoritative read & assertion of SEALED ExecutionSpec
@@ -203,6 +224,12 @@ export class PdlCorrectionWorker extends RouterWorker {
           leaseDeadline: null,
           workspacePath: null,
         });
+        
+        this.conversationStore.recordTaskFailure(
+          { id: task.id, agentId: task.agentId },
+          winningAttempt.errorMessage || 'Agent returned FAILED status. No finalization or commit was performed.'
+        );
+
         return true;
       }
 
@@ -215,6 +242,12 @@ export class PdlCorrectionWorker extends RouterWorker {
         leaseDeadline: new Date(Date.now() + LEASE_TIMEOUT_MS),
         workspacePath: winningAttempt.workspace,
       });
+      this.conversationStore.recordTaskLifecycleEvent(
+        task.id,
+        'TESTING',
+        `Execução do especialista concluída. Executando testes automatizados para tarefa [${task.id}].`,
+        { taskId: task.id }
+      );
 
       if (!winningAttempt.executionResult) {
         throw new Error('Winning attempt missing authoritative ExecutionResult');
@@ -299,6 +332,68 @@ export class PdlCorrectionWorker extends RouterWorker {
         }
       }
 
+      // 6.5 Real Code Review & QA Governance Check (CodeReviewManager)
+      let reviewResult: CodeReviewResult | undefined;
+      if (finalizeResult.status === 'COMPLETED') {
+        this.conversationStore.recordTaskLifecycleEvent(
+          task.id,
+          'REVIEWING',
+          `Avaliando qualidade e conformidade de código via CodeReviewManager para tarefa [${task.id}].`,
+          { taskId: task.id, changedFiles: finalizeResult.changedFiles }
+        );
+
+        const reviewInput: CodeReviewEvaluationInput = {
+          taskId: task.id,
+          project: task.project || task.repository || 'pub-dev-loop',
+          developerAgentId: task.agentId || 'developer',
+          reviewerAgentId: 'reviewer',
+          changedFiles: finalizeResult.changedFiles,
+          testPassed: finalizeResult.testsPassed === true || (finalizeResult.status === 'COMPLETED' && !finalizeResult.errorMessage),
+          typecheckPassed: !finalizeResult.testOutput?.includes('error TS'),
+          buildPassed: finalizeResult.status === 'COMPLETED',
+        };
+
+        reviewResult = this.reviewManager.evaluateReview(reviewInput);
+
+        // If review requested changes and correction is allowed, trigger correction loop
+        if (reviewResult.status !== 'APPROVED' && finalizeResult.errorCode !== 'SECURITY_VIOLATION') {
+          const correctionDecision = this.governance
+            ? await this.governance.evaluateCorrection(task, { attemptNumber: 2 })
+            : { allowed: true };
+          if (correctionDecision.allowed) {
+            const reviewCorrection = await PdlCorrectionLoop.runCorrectionLoop({
+              task,
+              executionSpec: prepared.executionSpec,
+              workspace: winningAttempt.workspace,
+              provider: this.provider,
+              baselineSnapshot: winningAttempt.baselineSnapshot,
+              initialFinalizeResult: finalizeResult,
+              declaredChangedFiles: winningAttempt.declaredChangedFiles,
+              commandTimeoutMs: 60000,
+              testCommand: effectiveTestCommand,
+              commitMessage: process.env.TASK_COMMIT_MESSAGE || null,
+            });
+            if (reviewCorrection.recovered && reviewCorrection.finalization.status === 'COMPLETED') {
+              finalizeResult = reviewCorrection.finalization;
+              bridgeResult.finalization = finalizeResult;
+              reviewResult = this.reviewManager.evaluateReview({
+                ...reviewInput,
+                changedFiles: finalizeResult.changedFiles,
+                testPassed: finalizeResult.testsPassed === true,
+              });
+            }
+          }
+        }
+
+        if (reviewResult.status !== 'APPROVED') {
+          console.warn(`[PDL Worker] Task ${task.id} blocked by CodeReviewManager (${reviewResult.status}): ${reviewResult.summary}`);
+          finalizeResult.status = 'FAILED';
+          finalizeResult.errorCode = reviewResult.status === 'BLOCKED' ? 'REVIEW_BLOCKED' : 'REVIEW_CHANGES_REQUESTED';
+          finalizeResult.errorMessage = `Code review rejected (${reviewResult.status}): ${reviewResult.summary}`;
+          this.lastFinalizeStatus = 'FAILED';
+        }
+      }
+
       this.lastFinalizeStatus = finalizeResult.status;
 
       // 7. Canonical PDL Remote Persistence if COMPLETED and Autonomy Level >= 5 + Governance Gate D
@@ -306,6 +401,13 @@ export class PdlCorrectionWorker extends RouterWorker {
       const autonomyCheck = defaultRepositoryAuthorizationPolicy.authorizeAutonomy(maxAutonomy, 'PUSH');
 
       if (finalizeResult.status === 'COMPLETED' && finalizeResult.commitSha) {
+        this.conversationStore.recordTaskLifecycleEvent(
+          task.id,
+          'PERSISTING',
+          `Revisão técnica aprovada. Iniciando persistência remota e verificação de SHA.`,
+          { taskId: task.id, commitSha: finalizeResult.commitSha }
+        );
+
         const finalizationDecision = this.governance
           ? await this.governance.evaluateFinalization(task)
           : { allowed: true };
@@ -349,6 +451,81 @@ export class PdlCorrectionWorker extends RouterWorker {
         }
       }
 
+      // 7.5 Authoritative Persistence Gate Evaluation (Invariant 6) & PUB Neural Ingestion
+      const hasMaterialChanges = finalizeResult.changedFiles.length > 0;
+      const worktreeClean = finalizeResult.gitStatus === 'clean';
+
+      const gateDecision = evaluatePersistenceGate({
+        task,
+        hasMaterialChanges,
+        validationPassed: finalizeResult.status === 'COMPLETED' && (finalizeResult.testsPassed === true || finalizeResult.testsPassed === null),
+        commitSha: finalizeResult.commitSha,
+        worktreeClean,
+        remotePersistence: finalizeResult.remotePersistence,
+      });
+
+      let neuralStatus: string = 'UNAVAILABLE';
+
+      if (!gateDecision.passed) {
+        console.error(`[PDL Worker] Persistence Gate blocked task completion (${gateDecision.reasonCode}): ${gateDecision.reason}`);
+        if (finalizeResult.status === 'COMPLETED') {
+          finalizeResult.status = 'FAILED';
+          finalizeResult.errorCode = gateDecision.reasonCode || 'PERSISTENCE_GATE_BLOCKED';
+          finalizeResult.errorMessage = `Persistence Gate denied completion: ${gateDecision.reason}`;
+        }
+        this.lastFinalizeStatus = 'FAILED';
+      } else if (finalizeResult.status === 'COMPLETED') {
+        finalizeResult.status = 'COMPLETED';
+        this.lastFinalizeStatus = 'COMPLETED';
+
+        // 7.6 PUB Neural Ingestion Point
+        this.conversationStore.recordTaskLifecycleEvent(
+          task.id,
+          'FINALIZING',
+          `Persistência remota verificada. Despachando estado da tarefa [${task.id}] para PUB Neural.`,
+          { taskId: task.id, commitSha: finalizeResult.commitSha }
+        );
+
+        try {
+          const neuralResult = await this.neuralBridge.ingestTaskCompleted({
+            task,
+            commitSha: finalizeResult.commitSha,
+            remoteSha: finalizeResult.remotePersistence?.remoteSha ?? finalizeResult.commitSha,
+            branch: branch || 'main',
+            hasMaterialChanges,
+            remotePersistence: finalizeResult.remotePersistence,
+            gateDecision,
+          });
+          neuralStatus = neuralResult?.status || 'PERSISTED';
+          console.log(`[PDL Worker] Successfully dispatched state to PUB Neural bridge for task ${task.id} (Status: ${neuralStatus}).`);
+        } catch (neuralErr: any) {
+          console.warn(`[PDL Worker] Neural ingestion warning: ${neuralErr.message}`);
+          neuralStatus = 'FAILED';
+        }
+
+        // Terminal notification to CEO Conversation Store
+        this.conversationStore.recordTaskCompletion(
+          {
+            id: task.id,
+            agentId: task.agentId,
+            commitSha: finalizeResult.commitSha,
+            status: 'COMPLETED' as any,
+          },
+          {
+            finalizeResult,
+            reviewResult,
+            neuralStatus,
+          }
+        );
+      }
+
+      if (finalizeResult.status === 'FAILED') {
+        this.conversationStore.recordTaskFailure(
+          { id: task.id, agentId: task.agentId },
+          finalizeResult.errorMessage || 'Execution failed'
+        );
+      }
+
       // Enrich trace
       if (winningAttempt.trace) {
         winningAttempt.trace.finalizeWasCalled = this.finalizeWasCalled;
@@ -385,6 +562,9 @@ export class PdlCorrectionWorker extends RouterWorker {
           executionResult: bridgeResult,
           corrections: correctionResult?.correctionHistory ?? [],
           recoveredViaCorrection: correctionResult?.recovered ?? false,
+          review: reviewResult,
+          persistenceGate: gateDecision,
+          remotePersistence: finalizeResult.remotePersistence,
         },
         leaseOwner: null,
         leaseDeadline: null,
@@ -396,6 +576,11 @@ export class PdlCorrectionWorker extends RouterWorker {
       const details = error instanceof AgentExecutionError
         ? { code: error.message, execution: error.execution }
         : undefined;
+
+      this.conversationStore.recordTaskFailure(
+        { id: task.id, agentId: task.agentId },
+        error instanceof Error ? error.message : String(error)
+      );
 
       this.lastExecutedTask = {
         ...task,

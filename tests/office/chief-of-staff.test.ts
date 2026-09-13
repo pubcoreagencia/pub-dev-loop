@@ -114,7 +114,7 @@ describe('ChiefOfStaffAgent (CEO_COMMAND_02, 03, 04, 05, 06, 07, 08, 09, 10, 11)
 
       expect(res.type).toBe('ACTION');
       expect(res.task).toBeDefined();
-      expect(res.task?.id).toMatch(/^TASK-CEO-/);
+      expect(res.task?.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
       expect(res.executionSpec).toBeDefined();
       expect(res.executionSpec?.metadata.specHash).toBeDefined();
 

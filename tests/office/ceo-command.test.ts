@@ -80,7 +80,7 @@ describe('CEO Command Endpoints (POST /office/ceo/command, GET /office/ceo/conve
       expect(data.assignedSpecialist?.id).toBe('developer');
       expect(data.assignedSpecialist?.name).toBe('Lucas Silveira');
       expect(data.task).toBeDefined();
-      expect(data.task.id).toMatch(/^TASK-CEO-/);
+      expect(data.task.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
       expect(data.executionSpec).toBeDefined();
       expect(data.events).toBeDefined();
       expect(data.events.length).toBe(6);

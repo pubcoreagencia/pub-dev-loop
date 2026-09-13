@@ -5,7 +5,7 @@ import { CeoConversationStore, defaultCeoConversationStore, type CeoOperationalE
 import { resolveContext } from './context-resolver.js';
 import { classifyTaskType, type TaskType, type EngineeringTask } from './intent.js';
 import { normalizeTaskIntake } from '../task/intake.js';
-import { buildCanonicalExecutionSpec } from '../pdl/service/task-intake-service.js';
+import { TaskIntakeService, buildCanonicalExecutionSpec } from '../pdl/service/task-intake-service.js';
 import { computeSpecHash, createExecutionSpec, sealExecutionSpec, type ExecutionSpecDatabase } from '../execution/execution-spec-persistence.js';
 import type { ExecutionSpec } from '../task/execution-spec.js';
 import { CodeReviewManager, defaultCodeReviewManager, extractReviewContextFromTask, type CodeReviewResult } from './review.js';
@@ -62,7 +62,8 @@ export class ChiefOfStaffAgent {
     private readonly reviewManager: CodeReviewManager = defaultCodeReviewManager,
     private readonly taskRepo?: TaskRepository,
     private readonly worker?: Worker,
-    private readonly executionSpecDb?: ExecutionSpecDatabase
+    private readonly executionSpecDb?: ExecutionSpecDatabase,
+    private readonly intakeService?: TaskIntakeService
   ) {}
 
   async handleCommand(input: CeoCommandInput): Promise<CeoCommandResponse> {
@@ -242,77 +243,129 @@ export class ChiefOfStaffAgent {
       specialistName: specialist.name,
     }, specialist.id, specialist.name);
 
-    // 4.3 Create Canonical ExecutionSpec and Task (CEO_COMMAND_07)
-    const taskId = `TASK-CEO-${Date.now().toString(36).toUpperCase()}`;
-    const intake = normalizeTaskIntake({
-      rawRequest: rawMessage,
-      source: 'ceo-command',
-      createdAt: new Date().toISOString(),
-    });
-
+    // 4.3 Create Canonical ExecutionSpec and Task via TaskIntakeService or In-Memory Seam
     const currentBranch = resolvedCtx.git_state.branch;
     const isProtectedDefault = !currentBranch || currentBranch === 'main' || currentBranch === 'master';
     const taskBranch = isProtectedDefault
       ? `feat/${project}-v1`
       : currentBranch;
 
-    const executionSpec = buildCanonicalExecutionSpec(intake, {
-      project,
-      repository,
-      branch: taskBranch,
-      agentId: specialist.id,
-      constraints: engTask.constraints,
-      acceptanceCriteria: engTask.acceptance_criteria,
-      executionInstructions: [
-        `Execute directive: "${rawMessage}" on repository ${project}`,
-        `Preserve institutional Git cleanliness and execute rigorous tests before completing.`,
-      ],
-    });
+    const intakeEngine = this.intakeService
+      ?? (this.taskRepo as any)?.intakeService
+      ?? ((this.taskRepo as any)?.pool ? new TaskIntakeService((this.taskRepo as any).pool) : undefined)
+      ?? (this.executionSpecDb && typeof (this.executionSpecDb as any).query === 'function' ? new TaskIntakeService(this.executionSpecDb as any) : undefined);
 
-    const specHash = computeSpecHash(executionSpec);
-    executionSpec.metadata = {
-      generatedAt: new Date().toISOString(),
-      specHash,
-    };
+    let taskId: string;
+    let pdlTask: Task;
+    let executionSpec: ExecutionSpec;
+    let specHash: string;
 
-    const pdlTask: Task = {
-      id: taskId,
-      project,
-      repository,
-      objective: rawMessage,
-      prompt: rawMessage,
-      status: 'QUEUED',
-      priority: 1,
-      worker: 'chief-of-staff-orchestrator',
-      agentId: specialist.id,
-      branch: taskBranch,
-      result: null,
-      error: null,
-      gitStatus: resolvedCtx.git_state.isClean ? 'clean' : 'dirty',
-      commitSha: resolvedCtx.git_state.headSha,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      leaseOwner: null,
-      leaseDeadline: null,
-      heartbeatAt: null,
-      workspacePath: workspaceDir,
-      prototypeSessionId: null,
-    };
+    if (intakeEngine) {
+      const intakeRes = await intakeEngine.processIntake({
+        rawRequest: rawMessage,
+        objective: rawMessage,
+        prompt: rawMessage,
+        source: 'ceo-command',
+        project,
+        repository,
+        priority: 1,
+        agentId: specialist.id,
+        branch: taskBranch,
+        constraints: engTask.constraints,
+        acceptanceCriteria: engTask.acceptance_criteria,
+        executionInstructions: [
+          `Execute directive: "${rawMessage}" on repository ${project}`,
+          `Preserve institutional Git cleanliness and execute rigorous tests before completing.`,
+        ],
+      });
 
-    if (this.taskRepo) {
-      await this.taskRepo.create(pdlTask);
-    }
+      pdlTask = intakeRes.task;
+      taskId = pdlTask.id;
+      const specJson = (intakeRes.executionSpec as any)?.spec_content_json;
+      executionSpec = specJson
+        ? (typeof specJson === 'string' ? JSON.parse(specJson) : specJson)
+        : buildCanonicalExecutionSpec(normalizeTaskIntake({ rawRequest: rawMessage, source: 'ceo-command', createdAt: new Date().toISOString() }), {
+            project,
+            repository,
+            branch: taskBranch,
+            agentId: specialist.id,
+            constraints: engTask.constraints,
+            acceptanceCriteria: engTask.acceptance_criteria,
+          });
+      specHash = intakeRes.executionSpec.spec_hash || computeSpecHash(executionSpec);
+    } else {
+      // In-Memory / Fallback path without database intake engine (ALWAYS uses valid UUID, NEVER string prefix)
+      taskId = randomUUID();
+      const intake = normalizeTaskIntake({
+        rawRequest: rawMessage,
+        source: 'ceo-command',
+        createdAt: new Date().toISOString(),
+      });
 
-    if (this.executionSpecDb) {
-      try {
-        await createExecutionSpec(this.executionSpecDb, taskId, executionSpec);
-        await sealExecutionSpec(this.executionSpecDb, taskId, executionSpec);
-      } catch {
-        // Preserved or fail-closed
+      executionSpec = buildCanonicalExecutionSpec(intake, {
+        project,
+        repository,
+        branch: taskBranch,
+        agentId: specialist.id,
+        constraints: engTask.constraints,
+        acceptanceCriteria: engTask.acceptance_criteria,
+        executionInstructions: [
+          `Execute directive: "${rawMessage}" on repository ${project}`,
+          `Preserve institutional Git cleanliness and execute rigorous tests before completing.`,
+        ],
+      });
+
+      specHash = computeSpecHash(executionSpec);
+      executionSpec.metadata = {
+        generatedAt: new Date().toISOString(),
+        specHash,
+      };
+
+      pdlTask = {
+        id: taskId,
+        project,
+        repository,
+        objective: rawMessage,
+        prompt: rawMessage,
+        status: 'QUEUED',
+        priority: 1,
+        worker: 'chief-of-staff-orchestrator',
+        agentId: specialist.id,
+        branch: taskBranch,
+        result: null,
+        error: null,
+        gitStatus: resolvedCtx.git_state.isClean ? 'clean' : 'dirty',
+        commitSha: resolvedCtx.git_state.headSha,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        leaseOwner: null,
+        leaseDeadline: null,
+        heartbeatAt: null,
+        workspacePath: workspaceDir,
+        prototypeSessionId: null,
+      };
+
+      if (this.taskRepo) {
+        await this.taskRepo.create(pdlTask);
+      }
+
+      if (this.executionSpecDb) {
+        try {
+          await createExecutionSpec(this.executionSpecDb, taskId, executionSpec);
+          await sealExecutionSpec(this.executionSpecDb, taskId, executionSpec);
+        } catch {
+          // Preserved or fail-closed
+        }
       }
     }
 
-    const shouldExecute = Boolean(input.executeSynchronously || (this.worker && input.executeSynchronously !== false));
+    // Link task to active CEO session in CeoConversationStore
+    session.activeTaskId = taskId;
+    session.activeSpecialistId = specialist.id;
+    this.conversationStore.linkTaskToConversation(taskId, session.id);
+
+    // As per CEO rule: API must NOT execute synchronously by default
+    const shouldExecute = Boolean(input.executeSynchronously === true && this.worker);
 
     // REALITY GATE: If task is only enqueued without worker execution, STOP AT QUEUED.
     // Zero fake EXECUTING, REVIEWING, VALIDATING, FINALIZING, or COMPLETED!
@@ -665,6 +718,9 @@ export class ChiefOfStaffAgent {
     if (p.includes('segurança') || p.includes('vulnerabilidade') || p.includes('auditoria') || p.includes('code review')) {
       return 'SECURITY';
     }
+    if ((p.includes('implemente') || p.includes('crie') || p.includes('adicione')) && !p.startsWith('teste')) {
+      return 'FEATURE';
+    }
     if (p.includes('teste') || p.includes('qa') || p.includes('vitest') || p.includes('cobertura')) {
       return 'TEST' as any;
     }
@@ -738,14 +794,15 @@ export class ChiefOfStaffAgent {
     ) {
       requiredCaps.push('code_review', 'security_audit', 'compliance_check');
     } else if (
-      p.includes('suíte de teste') ||
+      (p.includes('suíte de teste') ||
       p.includes('suíte de testes') ||
       p.includes('testes unitários') ||
       p.includes('escreva a suíte') ||
       p.includes('vitest') ||
       p.includes('cobertura de teste') ||
       p.includes('test automation') ||
-      (taskType as any) === 'TEST'
+      (taskType as any) === 'TEST') &&
+      !p.includes('implemente') && !p.includes('crie')
     ) {
       requiredCaps.push('test_automation', 'edge_case_analysis', 'quality_validation');
     } else {

@@ -35,8 +35,9 @@ import { defaultMemoryStore, defaultMemoryRetrievalEngine, defaultOrganizational
 import { PUB_HOLDING_SECTORS, buildProjectSquad, getSectorForRepo } from './office/squads.js';
 import { parseEngineeringTask, validateEngineeringTask, createEngineeringPlan, engineeringTaskToTask } from './office/intent.js';
 import { resolveContext } from './office/context-resolver.js';
-import { defaultChiefOfStaffAgent } from './office/chief-of-staff-agent.js';
+import { ChiefOfStaffAgent, defaultChiefOfStaffAgent } from './office/chief-of-staff-agent.js';
 import { defaultCeoConversationStore } from './office/ceo-conversation-store.js';
+import { defaultPubNeuralBridge } from './pdl/neural/neural-bridge.js';
 
 export interface HyperdriveBinding {
   connectionString: string;
@@ -2567,18 +2568,46 @@ ${d.commits.slice(0, 3).join('\n') || '- Repositório sincronizado na branch pri
       if (method === 'POST' && path === '/office/ceo/command') {
         try {
           const body = (await request.json().catch(() => ({}))) as any;
-          const { message, conversationId, project, repository, workspaceDir } = body;
+          const { message, conversationId, project, repository, workspaceDir, executeSynchronously } = body;
 
           if (!message || typeof message !== 'string' || !message.trim()) {
             return jsonResponse({ error: 'message is required' }, 400);
           }
 
-          const result = await defaultChiefOfStaffAgent.handleCommand({
+          const connectionString = (env as any)?.DATABASE_URL || (env as any)?.HYPERDRIVE?.connectionString || process.env.DATABASE_URL;
+          let agentToUse = defaultChiefOfStaffAgent;
+
+          if (connectionString) {
+            try {
+              const isLocal = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
+              const pool = new Pool({
+                connectionString,
+                ssl: isLocal ? false : { rejectUnauthorized: false },
+              });
+              const taskRepo = new PostgresTaskRepository(pool);
+              const intakeService = new TaskIntakeService(pool);
+              agentToUse = new ChiefOfStaffAgent(
+                defaultCeoConversationStore,
+                defaultAgentRegistry,
+                defaultPubNeuralBridge,
+                defaultCodeReviewManager,
+                taskRepo,
+                undefined,
+                pool,
+                intakeService
+              );
+            } catch (initErr: any) {
+              console.warn('[API Worker] Could not initialize Postgres pool for ChiefOfStaffAgent, using default:', initErr.message);
+            }
+          }
+
+          const result = await agentToUse.handleCommand({
             message: message.trim(),
             conversationId,
             project,
             repository,
             workspaceDir,
+            executeSynchronously: Boolean(executeSynchronously),
           });
 
           return jsonResponse(result, 200);

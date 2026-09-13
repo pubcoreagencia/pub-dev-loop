@@ -61,12 +61,15 @@ export function extractReviewContextFromTask(
     };
   }
 
-  const stdout = result?.stdout || '';
-  const stderr = result?.stderr || '';
+  const finalize = (result as any)?.finalize;
+  const stdout = (result?.stdout || (result as any)?.summary || '') as string;
+  const stderr = (result?.stderr || finalize?.testOutput || '') as string;
   const exitCode = result?.exitCode ?? (task.status === 'COMPLETED' ? 0 : 1);
 
   const testPassed = overrides?.testPassed ?? (
-    exitCode === 0 && !stderr.includes('FAIL') && !stdout.includes('Tests:       failed')
+    finalize?.testsPassed !== undefined
+      ? Boolean(finalize.testsPassed)
+      : (exitCode === 0 && !stderr.includes('FAIL') && !stdout.includes('Tests:       failed'))
   );
 
   const typecheckPassed = overrides?.typecheckPassed ?? (
@@ -77,6 +80,10 @@ export function extractReviewContextFromTask(
     exitCode === 0 && !stderr.includes('build failed')
   );
 
+  const changedFiles = overrides?.changedFiles ?? (
+    finalize?.changedFiles || (result as any)?.changedFiles || []
+  );
+
   return {
     taskId: task.id,
     planId: overrides?.planId,
@@ -84,7 +91,7 @@ export function extractReviewContextFromTask(
     reviewerAgentId: 'reviewer',
     project: task.project || 'pub-dev-loop',
     diff: overrides?.diff,
-    changedFiles: overrides?.changedFiles,
+    changedFiles: changedFiles.length > 0 ? changedFiles : undefined,
     testPassed,
     typecheckPassed,
     buildPassed,

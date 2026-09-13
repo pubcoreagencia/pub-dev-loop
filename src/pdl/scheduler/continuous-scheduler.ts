@@ -34,8 +34,9 @@ import { PdlRetryPolicy } from '../retry/policy.js';
 import {
   PdlDeadLetterRepository,
   type IPdlDeadLetterRepository,
-} from '../dlq/index.js';
+} from '../dlq/repository.js';
 import type { PdlTaskReaper } from '../reaper/reaper.js';
+import { defaultCeoConversationStore } from '../../office/ceo-conversation-store.js';
 
 export interface ContinuousSchedulerOptions {
   governance?: PdlGovernanceEngine;
@@ -409,6 +410,23 @@ export class PdlContinuousScheduler {
           product: lastTask?.project || lastTask?.repository,
           consecutiveTasks: this.activeSession.consecutiveTasks,
         });
+
+        if (lastTask) {
+          defaultCeoConversationStore.recordTaskCompletion(
+            {
+              id: lastTask.id,
+              agentId: lastTask.agentId,
+              commitSha: lastTask.commitSha,
+              status: 'COMPLETED' as any,
+              result: lastTask.result,
+            },
+            {
+              finalizeResult: (lastTask.result as any)?.finalize,
+              reviewResult: (lastTask.result as any)?.review,
+              neuralStatus: (lastTask.result as any)?.neuralStatus || 'PERSISTED',
+            }
+          );
+        }
       } else {
         this.activeSession.consecutiveFailures++;
         cycleRecord.status = 'FAILED';
@@ -427,6 +445,13 @@ export class PdlContinuousScheduler {
           consecutiveFailures: this.activeSession.consecutiveFailures,
           details: { error: cycleRecord.error },
         });
+
+        if (lastTask) {
+          defaultCeoConversationStore.recordTaskFailure(
+            { id: lastTask.id, agentId: lastTask.agentId, error: cycleRecord.error },
+            cycleRecord.error
+          );
+        }
 
         if (lastTask && this.tasks) {
           try {
