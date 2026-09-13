@@ -5,17 +5,104 @@ import type {
   NeuralIngestionResult,
   NeuralTaskStatePayload,
   PubNeuralBridge,
+  PubNeuralClient,
+  PubNeuralAck,
 } from './types.js';
 import {
   LearningFeedbackEngine,
   type LearningFeedbackInput,
 } from '../../office/learning-feedback.js';
 
+export class HttpPubNeuralClient implements PubNeuralClient {
+  readonly endpoint?: string;
+  private readonly token?: string;
+  private readonly timeoutMs: number;
+
+  constructor(options?: { endpoint?: string; token?: string; timeoutMs?: number }) {
+    this.endpoint = options?.endpoint || process.env.PUB_NEURAL_ENDPOINT;
+    this.token = options?.token || process.env.PUB_NEURAL_TOKEN;
+    this.timeoutMs = options?.timeoutMs || 5000;
+  }
+
+  async isAvailable(): Promise<boolean> {
+    return Boolean(this.endpoint && this.endpoint.trim().length > 0);
+  }
+
+  async submit(payload: NeuralTaskStatePayload): Promise<PubNeuralAck> {
+    if (!this.endpoint) {
+      return {
+        acknowledged: false,
+        persisted: false,
+        status: 'UNAVAILABLE',
+        targetSystem: 'pubcoreagencia/pub-neural',
+        error: 'PUB Neural endpoint not configured (PUB_NEURAL_ENDPOINT missing)',
+      };
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+
+      const response = await fetch(this.endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => '');
+        return {
+          acknowledged: false,
+          persisted: false,
+          status: 'FAILED',
+          targetSystem: 'pubcoreagencia/pub-neural',
+          error: `PUB Neural rejected ingestion (HTTP ${response.status}): ${errorBody || response.statusText}`,
+        };
+      }
+
+      const resData = (await response.json().catch(() => ({}))) as any;
+      const eventId = resData.eventId || resData.id || resData.ackId;
+      const memoryId = resData.memoryId || resData.memory_id;
+      const isPersisted = resData.persisted === true;
+
+      return {
+        acknowledged: true,
+        persisted: isPersisted,
+        status: isPersisted ? 'PERSISTED' : 'ACKNOWLEDGED',
+        eventId,
+        memoryId,
+        remoteTimestamp: resData.timestamp || new Date().toISOString(),
+        targetSystem: 'pubcoreagencia/pub-neural',
+        details: resData,
+      };
+    } catch (err: any) {
+      return {
+        acknowledged: false,
+        persisted: false,
+        status: 'FAILED',
+        targetSystem: 'pubcoreagencia/pub-neural',
+        error: `PUB Neural connection failure: ${err.message}`,
+      };
+    }
+  }
+}
+
 export class DefaultPubNeuralBridge implements PubNeuralBridge {
   private readonly feedbackEngine: LearningFeedbackEngine;
+  private readonly client: PubNeuralClient;
 
-  constructor(feedbackEngine?: LearningFeedbackEngine) {
+  constructor(feedbackEngine?: LearningFeedbackEngine, client?: PubNeuralClient) {
     this.feedbackEngine = feedbackEngine ?? new LearningFeedbackEngine();
+    this.client = client ?? new HttpPubNeuralClient();
+  }
+
+  getClient(): PubNeuralClient {
+    return this.client;
   }
 
   /**
@@ -61,6 +148,8 @@ export class DefaultPubNeuralBridge implements PubNeuralBridge {
 
   /**
    * Ingest a completed, verified task state into PUB Neural.
+   * Enforces explicit lifecycle states: PREPARED -> SUBMITTED -> ACKNOWLEDGED -> PERSISTED | FAILED | UNAVAILABLE.
+   * Never reports ingested: true without real external proof.
    */
   async ingestTaskCompleted(input: {
     task: Task;
@@ -74,9 +163,8 @@ export class DefaultPubNeuralBridge implements PubNeuralBridge {
     const payload = this.buildPayload(input);
     const timestamp = new Date().toISOString();
 
-    // 1. Ingest into PDL Institutional Learning Pipeline (The Office Memory / Feedback)
+    // 1. Ingest into internal PDL Institutional Learning Pipeline (The Office Memory / Feedback)
     let memoryId: string | undefined;
-    let eventId: string | undefined;
 
     try {
       const feedbackInput: LearningFeedbackInput = {
@@ -110,31 +198,40 @@ export class DefaultPubNeuralBridge implements PubNeuralBridge {
 
       const fbResult = await this.feedbackEngine.processFeedback(feedbackInput);
       memoryId = fbResult.memoryId;
-      eventId = fbResult.emittedEventId;
     } catch (err: any) {
       console.warn(`[PubNeuralBridge] Warning during local memory feedback ingestion: ${err.message}`);
     }
 
-    // 2. If external neural service endpoint is defined, post to external pub-neural API
-    if (process.env.PUB_NEURAL_ENDPOINT) {
-      try {
-        await fetch(process.env.PUB_NEURAL_ENDPOINT, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${process.env.PUB_NEURAL_TOKEN || ''}`,
-          },
-          body: JSON.stringify(payload),
-        });
-      } catch (externalErr: any) {
-        console.warn(`[PubNeuralBridge] External pub-neural webhook error: ${externalErr.message}`);
-      }
+    // 2. Delegate to real PubNeuralClient for external pub-neural ingestion
+    const ack = await this.client.submit(payload);
+    const finalMemoryId = ack.memoryId || memoryId;
+
+    if (ack.status === 'ACKNOWLEDGED' || ack.status === 'PERSISTED') {
+      return {
+        ingested: true,
+        status: ack.status,
+        eventId: ack.eventId,
+        memoryId: finalMemoryId,
+        contractVersion: '1.0.0',
+        targetSystem: 'pubcoreagencia/pub-neural',
+        timestamp,
+        details: {
+          taskId: input.task.id,
+          commitSha: input.commitSha,
+          remoteSha: input.remoteSha,
+          gatePassed: input.gateDecision.passed,
+          ackDetails: ack.details,
+        },
+      };
     }
 
+    // External neural is UNAVAILABLE or FAILED — fail closed, do NOT pretend ingested: true
     return {
-      ingested: true,
-      eventId: eventId || `evt-neural-${input.task.id}`,
-      memoryId: memoryId || `mem-neural-${input.task.id}`,
+      ingested: false,
+      status: ack.status,
+      error: ack.error,
+      eventId: ack.eventId,
+      memoryId: finalMemoryId,
       contractVersion: '1.0.0',
       targetSystem: 'pubcoreagencia/pub-neural',
       timestamp,

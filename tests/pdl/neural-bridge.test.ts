@@ -96,7 +96,7 @@ describe('PUB Neural Bridge & Ingestion Contract (DefaultPubNeuralBridge)', () =
     expect(payload.evidence.remoteVerified).toBe(true);
   });
 
-  it('ingestTaskCompleted processa com êxito e retorna confirmação institucional', async () => {
+  it('ingestTaskCompleted sem endpoint retorna status UNAVAILABLE e ingested false sem inventar sucesso', async () => {
     const result = await bridge.ingestTaskCompleted({
       task: sampleTask,
       commitSha,
@@ -107,12 +107,46 @@ describe('PUB Neural Bridge & Ingestion Contract (DefaultPubNeuralBridge)', () =
       gateDecision,
     });
 
+    expect(result.ingested).toBe(false);
+    expect(result.status).toBe('UNAVAILABLE');
+    expect(result.targetSystem).toBe('pubcoreagencia/pub-neural');
+    expect(result.error).toContain('PUB_NEURAL_ENDPOINT missing');
+  });
+
+  it('ingestTaskCompleted com cliente e ack institucional retorna confirmação real', async () => {
+    const mockClient = {
+      isAvailable: async () => true,
+      submit: vi.fn().mockResolvedValue({
+        acknowledged: true,
+        persisted: true,
+        status: 'PERSISTED',
+        targetSystem: 'pubcoreagencia/pub-neural',
+        eventId: 'evt-test-123',
+        memoryId: 'mem-test-456',
+        details: { taskId: 'TASK-NEURAL-001', commitSha },
+      }),
+    };
+
+    const bridgeWithClient = new DefaultPubNeuralBridge(undefined, mockClient);
+
+    const result = await bridgeWithClient.ingestTaskCompleted({
+      task: sampleTask,
+      commitSha,
+      remoteSha: commitSha,
+      branch: 'feat/rate-calc-v1',
+      hasMaterialChanges: true,
+      remotePersistence: remoteResult,
+      gateDecision,
+    });
+
     expect(result.ingested).toBe(true);
+    expect(result.status).toBe('PERSISTED');
     expect(result.contractVersion).toBe('1.0.0');
     expect(result.targetSystem).toBe('pubcoreagencia/pub-neural');
-    expect(result.eventId).toBeDefined();
-    expect(result.memoryId).toBeDefined();
+    expect(result.eventId).toBe('evt-test-123');
+    expect(result.memoryId).toBe('mem-test-456');
     expect(result.details?.taskId).toBe('TASK-NEURAL-001');
     expect(result.details?.commitSha).toBe(commitSha);
+    expect(mockClient.submit).toHaveBeenCalledTimes(1);
   });
 });

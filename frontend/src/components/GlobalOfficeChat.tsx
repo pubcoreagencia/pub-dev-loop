@@ -130,8 +130,8 @@ export const GlobalOfficeChat: React.FC = () => {
       // Conversa Livre do Watercooler / Relação com os Funcionários (Canal RESENHOLA)
       addMessage({
         sender: 'CEO',
-        senderName: 'Matheus Paes (CEO)',
-        senderRole: 'Comandante',
+        senderName: 'MATHEUS (CEO)',
+        senderRole: 'Comandante & Operador Humano',
         content: text,
         type: 'TEXT',
         channel: 'RESENHOLA',

@@ -36,6 +36,7 @@ import {
   fetchProjects,
   createProject,
   fetchRealGitHubEvents,
+  sendCeoCommand,
   type GitProject,
 } from '../services/api';
 import {
@@ -1523,385 +1524,98 @@ export const useStore = create<OfficeState>((set, get) => ({
 
     state.addMessage({
       sender: 'CEO',
-      senderName: 'CEO (Você)',
+      senderName: 'MATHEUS (CEO)',
+      senderRole: 'Comandante & Operador Humano',
       content: objectiveText,
       type: 'TEXT',
       channel: 'COMMAND',
     });
 
-    // Invariante The Office: Especialistas trabalham diretamente em suas mesas. 
-    // Conferência no auditório é desativada por padrão para não travar a equipe.
-    set({
-      isConferenceActive: false,
-    });
-
-    const currentAgents = state.agents.length > 0
-      ? state.agents
-      : [
-          { id: 'chief-of-staff', name: 'Dr. Arthur Vance', role: 'Chief of Staff', operationalState: 'working' as const },
-          { id: 'architect', name: 'Helena Rostova', role: 'Principal Architect', operationalState: 'working' as const },
-          { id: 'developer', name: 'Lucas Silveira', role: 'Senior Developer', operationalState: 'working' as const },
-          { id: 'reviewer', name: 'Beatriz Mendes', role: 'Staff Security & Reviewer', operationalState: 'working' as const },
-          { id: 'qa-engineer', name: 'Tiago Rocha', role: 'Chaos QA Engineer', operationalState: 'working' as const },
-        ];
-
-    const updatedAgents = currentAgents.map((ag: any) => ({
-      ...ag,
-      status: 'ACTIVE' as const,
-      operationalState: 'working' as const,
-      spatialState: 'idle' as const,
-      currentTask: `${objectiveText.slice(0, 36)}...`,
-    }));
-    set({ agents: updatedAgents as any });
-
     state.triggerSpeechBubble({
       senderId: 'chief-of-staff',
       senderName: 'Dr. Arthur Vance',
-      content: `⚡ Diretriz recebida do CEO! Processando no projeto [${state.activeProject}] com a bancada nas suas mesas.`,
+      content: `⚡ Diretriz acolhida, Comandante MATHEUS! Resolvendo contexto e delegando no projeto [${state.activeProject}]...`,
       durationMs: 4000,
       type: 'TASK',
     });
 
-    // Padrão Google Antigravity: Foco total na solução técnica direta, execução autônoma de ferramentas
     try {
-      let reply = '';
-      const lowerObj = objectiveText.toLowerCase();
+      const result = await sendCeoCommand({
+        message: objectiveText,
+        project: state.activeProject,
+        repository: state.activeRepo,
+      });
 
-      // Check if CEO requested Dashboard view, creation, or status
-      if (
-        lowerObj.includes('dashboard') ||
-        lowerObj.includes('dash') ||
-        lowerObj.includes('painel')
-      ) {
-        // Encerra imediatamente qualquer conferência
-        set({ isConferenceActive: false });
-
-        // Abre o Dashboard Interativo Real do Projeto
-        get().setActiveLiveDashboard({
-          project: state.activeProject,
-          title: `Executive Dashboard • ${state.activeProject}`,
-          open: true,
-        });
-
-        if (
-          lowerObj.includes('esta pronto') ||
-          lowerObj.includes('está pronto') ||
-          lowerObj.includes('como esta') ||
-          lowerObj.includes('como está') ||
-          lowerObj.includes('status') ||
-          lowerObj.includes('mostre') ||
-          lowerObj.includes('ver')
-        ) {
-          reply = `## 📊 Dashboard do Projeto \`pubcoreagencia/${state.activeProject}\` Aberto em Tempo Real!
-
-Comandante Matheus Paes: O dashboard executivo foi carregado e exibido na sua tela agora mesmo.
-
-### ⚡ Status Operacional Atual:
-- **Repositório:** \`pubcoreagencia/${state.activeProject}\`
-- **Ambiente:** Produção (Cloudflare Workers + GitHub)
-- **Topologia:** 1.024 nós neurais sincronizados, inferência a 42ms no edge
-- **Ações Disponíveis:** Você pode alternar as abas de métricas, topologia e auditoria de snapshots diretamente na janela aberta.
-
-Para fechar o painel ou ajustar hiperparâmetros, utilize os controles no topo do modal.`;
-        } else {
-          reply = `## 🚀 Novo Dashboard Interativo Criado e Publicado para \`${state.activeProject}\`!
-
-Comandante Matheus Paes: O dashboard do ecossistema foi gerado e integrado diretamente à interface com métricas de telemetria, nós de processamento e auditoria ao vivo.
-
-O visualizador já está ativo na sua tela. Os especialistas retornaram às suas mesas de trabalho para manter a rotação contínua.`;
-        }
-
-        // Retorna agentes para as mesas trabalhando
+      // Se um especialista singular foi alocado, atualiza apenas o estado dele para 'working'
+      if (result.assignedSpecialist) {
         set((prev) => ({
-          actionLoading: false,
-          isConferenceActive: false,
-          agents: prev.agents.map((a) => ({
-            ...a,
-            status: 'IDLE' as const,
-            operationalState: 'idle' as const,
-            spatialState: 'idle' as const,
-          })),
+          agents: prev.agents.map((ag) => {
+            if (ag.id === result.assignedSpecialist?.id) {
+              return {
+                ...ag,
+                status: 'ACTIVE' as const,
+                operationalState: 'working' as const,
+                currentTask: objectiveText.slice(0, 48),
+              };
+            }
+            return ag;
+          }),
         }));
 
-        state.addMessage({
-          sender: 'CHIEF_OF_STAFF',
-          senderName: 'Dr. Arthur Vance',
-          senderRole: 'Chief of Staff & Orquestrador',
-          content: reply,
-          type: 'TEXT',
-          channel: 'COMMAND',
+        state.triggerSpeechBubble({
+          senderId: result.assignedSpecialist.id,
+          senderName: result.assignedSpecialist.name,
+          content: `💼 Tarefa atribuída com exclusividade a mim (${result.assignedSpecialist.role}). Iniciando execução técnica.`,
+          durationMs: 6000,
+          type: 'TASK',
         });
-
-        return null as any;
       }
 
-      // Check if CEO requested Rollback / Reversion
-      if (lowerObj.includes('reverter') || lowerObj.includes('rollback') || lowerObj.includes('desfazer') || lowerObj.includes('declinar')) {
-        try {
-          const matchId = objectiveText.match(/(snap-[a-zA-Z0-9_\-]+)/i);
-          let backupId = matchId ? matchId[1] : '';
-
-          if (!backupId) {
-            // Find most recent backup
-            const backups = await defaultAgentAutonomousEngine.listBackups(state.activeProject);
-            if (backups.length > 0) {
-              backupId = backups[0].id;
-            }
-          }
-
-          if (backupId) {
-            const rbResult = await defaultAgentAutonomousEngine.rollbackBackup(backupId);
-            reply = `## ⏪ Rollback Executado com Sucesso!
-
-- **Snapshot Restaurado:** \`${backupId}\`
-- **Repositório:** \`pubcoreagencia/${state.activeProject}\`
-- **Resultado:** ${rbResult.message}
-${rbResult.commitSha ? `- **Commit de Reversão:** \`${rbResult.commitSha}\`` : ''}
-
-A versão anterior foi restaurada no GitHub com total integridade e segurança.`;
-          } else {
-            reply = `## ⚠️ Nenhum Snapshot de Rollback Encontrado
-
-Não foi possível identificar um snapshot anterior para reverter no projeto \`${state.activeProject}\`.
-Envie a diretriz indicando o ID do snapshot (ex: \`reverter snap-...\`).`;
-          }
-        } catch (rbErr: any) {
-          reply = `## ⚠️ Falha ao Executar Rollback: ${rbErr.message}`;
-        }
-      }
-      // Check if CEO requested Daily Audit / Summary
-      else if (lowerObj.includes('resumo do dia') || lowerObj.includes('auditoria') || lowerObj.includes('o que foi feito') || lowerObj.includes('o que você fez') || lowerObj.includes('oq eles já fizeram') || lowerObj.includes('oq eles ja fizeram') || lowerObj.includes('oq ja fizeram')) {
-        try {
-          const [audit, backups, ghEvents] = await Promise.all([
-            defaultAgentAutonomousEngine.fetchDailyAudit().catch(() => ({ logs: [], totalProjects: 52, kernel: 'pubcoreagencia/neural-os' })),
-            defaultAgentAutonomousEngine.listBackups().catch(() => []),
-            fetchRealGitHubEvents().catch(() => []),
-          ]);
-
-          let logLines = '';
-          if (ghEvents.length > 0) {
-            logLines = ghEvents.slice(0, 10).map((e) => {
-              const timeStr = new Date(e.createdAt).toLocaleTimeString('pt-BR');
-              return `- \`[${timeStr}]\` **pubcoreagencia/${e.repo}**: ${e.actionMessage}${e.commitSha ? ` (Commit: \`${e.commitSha}\`)` : ''} — _via @${e.author}_`;
-            }).join('\n');
-          } else if (audit.logs && audit.logs.length > 0) {
-            logLines = audit.logs.slice(0, 10).map((l: any) => 
-              `- \`[${new Date(l.createdAt).toLocaleTimeString('pt-BR')}]\` **pubcoreagencia/${l.repo}**: ${l.directive} (Commit: \`${l.commitSha || 'git-main'}\` | Snapshot: \`${l.backupId || 'N/A'}\`)`
-            ).join('\n');
-          } else {
-            logLines = `- \`[${new Date().toLocaleTimeString('pt-BR')}]\` **pubcoreagencia/${state.activeProject}**: Operando em regime de prontidão contínua nos Cloudflare Workers.`;
-          }
-
-          const backupLines = (backups || []).slice(0, 6).map((b: any) => 
-            `- \`${b.id}\` • \`${b.repo}/${b.filePath}\` (${b.status}) - ${new Date(b.createdAt).toLocaleTimeString('pt-BR')}`
-          ).join('\n') || '- Nenhum ponto de restauração pendente.';
-
-          reply = `## 📋 Resumo Executivo das Operações Reais (52 Repositórios Sob Gestão)
-
-**Comandante Matheus Paes:** Aqui está o relatório das ações operacionais e commits **verificados diretamente no GitHub** da holding Pub Core:
-
-### 🌐 Ecossistema Pub Core
-- **Total de Repositórios Sob Gestão:** 52 projetos
-- **Cérebro / Kernel Central:** \`pubcoreagencia/neural-os\`
-- **Infraestrutura Cloudflare:** Operando 24 horas por dia em rotação contínua (Cron Trigger ativo).
-
-### ⚡ Linha do Tempo de Ações Reais no GitHub (Eventos & Commits Verificados):
-${logLines}
-
-### 🛡️ Pontos de Restauração Ativos (Snapshots para Rollback Instantâneo):
-${backupLines}
-
-_Para reverter qualquer alteração sensível, digite:_ \`reverter [ID do snapshot]\``;
-        } catch (audErr: any) {
-          reply = formatAntigravityAudit(state.activeProject, null, objectiveText);
-        }
-      }
-      // Check if CEO requested 24/7 autonomous departure or scheduled cycle
-      else if (
-        lowerObj.includes('24/7') ||
-        lowerObj.includes('24h') ||
-        lowerObj.includes('24 horas') ||
-        lowerObj.includes('vou sair') ||
-        lowerObj.includes('horas') ||
-        lowerObj.includes('sem parar') ||
-        lowerObj.includes('autonomamente') ||
-        lowerObj.includes('ciclo autônomo') ||
-        lowerObj.includes('ciclo autonomo') ||
-        lowerObj.includes('agendamento') ||
-        lowerObj.includes('todas as tarefas')
-      ) {
-        try {
-          // Trigger immediate server cycle across the holding
-          const cycleRes = await defaultAgentAutonomousEngine.trigger247Cycle(objectiveText, state.activeProject);
-          const audit = await defaultAgentAutonomousEngine.fetchDailyAudit();
-          const backups = await defaultAgentAutonomousEngine.listBackups();
-
-          const logItems = (audit.logs || []).slice(0, 5);
-          const logLines = logItems.length > 0
-            ? logItems.map((l: any) => `- \`[${new Date(l.createdAt).toLocaleTimeString()}]\` **pubcoreagencia/${l.repo}**: ${l.directive} (Commit: \`${l.commitSha || 'git-main'}\` | Snapshot: \`${l.backupId || 'N/A'}\`)`).join('\n')
-            : `- \`[${new Date().toLocaleTimeString()}]\` **pubcoreagencia/${cycleRes.repo}**: ${cycleRes.summary}`;
-
-          const backupLines = (backups || []).slice(0, 4).map((b: any) => `- \`${b.id}\` • \`${b.repo}/${b.filePath}\` (${b.status})`).join('\n') || `- \`${cycleRes.backupId || 'snap-active'}\` • \`${cycleRes.repo}/AUTONOMOUS_CYCLE.md\` (ACTIVE)`;
-
-          reply = `## 🌐 Modo 24/7 Autônomo Ativado & Agendado com Sucesso!
-
-**Diretriz Executiva:** \`${objectiveText}\`
-
-### 🚀 Status da Holding Pub Core
-- **Autonomia Contínua 24/7:** ATIVADA na nuvem Cloudflare Workers (Cron Trigger \`*/15 * * * *\` ativo 24h sem interrupção).
-- **Kernel Neural:** \`pubcoreagencia/neural-os\` assumiu a governança e orquestração de rotação contínua.
-- **Total de Projetos na Esteira 24h:** **52 repositórios** mapeados.
-- **Primeiro Ciclo Disparado:** Repositório \`${cycleRes.repo}\` (${cycleRes.action})
-- **Snapshot de Segurança Criado:** \`${cycleRes.backupId || 'N/A'}\` (permite reversão instantânea)
-- **Commit:** \`${cycleRes.commitSha || 'auto-staged'}\`
-
----
-
-### 📅 Grade de Agendamento Autônomo 24h (21 Repositórios Sob Gestão)
-1. 🛍️ **E-commerce & Retail Core:** \`pubecomhub\`, \`pub-ecom\`, \`pub-ecom-catalog-worker\`, \`pub-shopee-scraper\` (Sincronização de catálogo, testes de checkout e scraping).
-2. 🧠 **Inteligência Central & Roteamento:** \`neural-os\`, \`pub-9router-cloud\`, \`pub-dev-loop\`, \`pub-github-mcp\` (Otimização de latência, balanceamento de tokens free e auditoria de código).
-3. 🎵 **Mídia, Entretenimento & Audio:** \`PUB-BEATS\`, \`PUB-CARDS\` (Catálogo de beats, streaming e geração de cards).
-4. ⚙️ **Infraestrutura, Workers & SDKs:** Repositórios satélites da holding (Verificação de tipagem estrita, OWASP, anti-regressão e deploys).
-
----
-
-### ⚡ Linha do Tempo de Atividades em Tempo Real:
-${logLines}
-
-### 🛡️ Snapshots de Segurança Criados (Rollback Instantâneo):
-${backupLines}
-
-### 🛡️ Governança & Segurança
-Pode viajar com tranquilidade, Comandante Matheus Paes! A esteira executará todos os ciclos de evolução a cada 15 minutos. Quando você voltar pelo Mac ou celular:
-1. **"Resumo do dia"** ou **"Auditoria"** para ver a evolução completa e commits.
-2. **"Reverter [ID do snapshot]"** ou **"Desfazer"** caso deseje declinar qualquer alteração.`;
-        } catch (cycleErr) {
-          // Fallback to in-browser loop
-          const autoResult = await defaultAgentAutonomousEngine.executeAutonomousGoal(
-            objectiveText,
-            state.activeProject
-          );
-          reply = autoResult.finalResponse;
-        }
-      }
-      else {
-        // Padrão Zero Fake Activity (Master Context): Resposta direta, inteligente e executiva do Chief of Staff.
-        // Não gera mais relatórios cosméticos teatrais que simulam trabalho sem tocar em código.
-        const isQuestionOrCheck = 
-          lowerObj.includes('?') ||
-          lowerObj.includes('foi mudado') ||
-          lowerObj.includes('mudou') ||
-          lowerObj.includes('o que') ||
-          lowerObj.includes('oq') ||
-          lowerObj.includes('como') ||
-          lowerObj.includes('status') ||
-          lowerObj.includes('qual');
-
-        // Roteamento inteligente para especialistas: Maya Lin (Arte / Imagem / 3D)
-        const isImageOrVisual = 
-          lowerObj.includes('imagem') || 
-          lowerObj.includes('arte') || 
-          lowerObj.includes('render') || 
-          lowerObj.includes('desenho') || 
-          lowerObj.includes('ilustra') || 
-          lowerObj.includes('pinscher') || 
-          lowerObj.includes('logo') || 
-          lowerObj.includes('3d') ||
-          lowerObj.includes('maya lin');
-
-        if (isImageOrVisual) {
-          try {
-            const mayaReply = await defaultAiChatService.callLlmForAgent('image-designer', objectiveText);
-            reply = `## 🎨 Bancada Visual & Render 3D Acionada!\n\n**Maya Lin (3D Artist & Visual Specialist):**\n${mayaReply}\n\n- **Projeto:** \`pubcoreagencia/${state.activeProject}\`\n- **Status:** Briefing visual recebido e processando assets em alta resolução para a marca.`;
-            state.triggerSpeechBubble({
-              senderId: 'image-designer',
-              senderName: 'Maya Lin',
-              content: '🎨 Recebi o briefing visual, CEO! Já estou modelando os detalhes na bancada.',
-              durationMs: 6000,
-              type: 'TASK',
-            });
-          } catch {
-            reply = `## 🎨 Bancada Visual & Render 3D Acionada!\n\n**Maya Lin (3D Artist & Visual Specialist):**\nBriefing acolhido, Comandante Matheus Paes! A composição visual para "${objectiveText}" foi encaminhada para a esteira gráfica e geração de assets do projeto \`${state.activeProject}\`.`;
-          }
-        } else {
-          try {
-            const directReply = await defaultAiChatService.callLlmForAgent('chief-of-staff', objectiveText);
-            if (directReply && directReply.trim().length > 0) {
-              reply = directReply;
-            }
-          } catch {
-            if (isQuestionOrCheck) {
-              reply = `Comandante Matheus Paes: Analisando o estado atual de \`pubcoreagencia/${state.activeProject}\`, nenhuma alteração física foi aplicada em código ainda para esta diretriz. Os arquivos permanecem na versão canônica ativa do repositório.`;
-            } else {
-              reply = `Diretriz acolhida, Comandante Matheus Paes! Demanda registrada para \`pubcoreagencia/${state.activeProject}\`: "${objectiveText}". Para aplicar alterações de código em tempo real diretamente neste repositório, confirme a execução.`;
-            }
-          }
-        }
-      }
-
-      if (!reply || reply.trim().length < 80) {
-        reply = formatAntigravityAudit(state.activeProject, null, objectiveText);
-      }
-
-      // Adiciona resposta executiva final do Chief of Staff no chat
+      // Adiciona a resposta factual e auditada do Chief of Staff ao canal de Comando
       state.addMessage({
         sender: 'CHIEF_OF_STAFF',
         senderName: 'Dr. Arthur Vance',
         senderRole: 'Chief of Staff & Orquestrador',
-        content: reply,
+        content: result.response,
         type: 'TEXT',
         channel: 'COMMAND',
       });
 
-      // Registra a tarefa geral concluída no estado interno
-      const completedTask: Task = {
-        id: `task-${Date.now()}`,
-        project: state.activeProject,
-        repository: `pubcoreagencia/${state.activeProject}`,
-        objective: objectiveText,
-        prompt: objectiveText,
-        status: 'COMPLETED',
-        priority: 1,
-        worker: 'Dr. Arthur Vance & Bancada PUB DEV LOOP',
-        agentId: 'chief-of-staff',
-        result: {
-          summary: `Execução completa multiagente homologada para: ${objectiveText.slice(0, 50)}`,
-          stdout: reply,
-          exitCode: 0,
-        },
-        error: null,
-        branch: 'main',
-        commitSha: null,
-        gitStatus: 'clean',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      // Se uma tarefa real foi criada, registra no repositório de tarefas do estado
+      if (result.task) {
+        const newTask: Task = {
+          id: result.task.id,
+          project: result.task.project,
+          repository: state.activeRepo,
+          objective: result.task.objective,
+          prompt: objectiveText,
+          status: (result.task.status as any) || 'QUEUED',
+          priority: 1,
+          worker: result.assignedSpecialist?.name || 'Dr. Arthur Vance',
+          agentId: result.assignedSpecialist?.id || 'chief-of-staff',
+          result: null,
+          error: null,
+          branch: result.gitState?.branch || 'main',
+          commitSha: result.gitState?.headSha || null,
+          gitStatus: result.gitState?.isClean ? 'clean' : 'dirty',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
 
-      set((prev) => ({
-        tasks: [completedTask, ...prev.tasks.filter((t) => t.id !== completedTask.id)],
-        actionLoading: false,
-        agents: prev.agents.map((a) => ({
-          ...a,
-          status: 'IDLE' as const,
-          operationalState: 'idle' as const,
-          spatialState: 'idle' as const,
-        })),
-      }));
+        set((prev) => ({
+          tasks: [newTask, ...prev.tasks.filter((t) => t.id !== newTask.id)],
+        }));
+      }
 
-      state.triggerSpeechBubble({
-        senderId: 'chief-of-staff',
-        senderName: 'Dr. Arthur Vance',
-        content: `🎯 Projeto [${state.activeProject}] homologado com louvor por todos os especialistas!`,
-        durationMs: 7000,
-        type: 'TASK',
-      });
-
+      set({ actionLoading: false });
       return null as any;
     } catch (err: any) {
+      console.error('[CEO Command] Execution error:', err);
       state.addMessage({
-        sender: 'SYSTEM',
-        senderName: 'Despachante do Escritório',
-        content: `Erro ao processar demanda: ${err.message}`,
+        sender: 'CHIEF_OF_STAFF',
+        senderName: 'Dr. Arthur Vance',
+        senderRole: 'Chief of Staff & Orquestrador',
+        content: `❌ **Falha ao processar comando executivo**: ${err.message}\n\nO PDL opera em regime *Fail-Closed*. Nenhuma alteração fictícia foi simulada.`,
         type: 'ERROR',
         channel: 'COMMAND',
       });

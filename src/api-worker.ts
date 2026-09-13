@@ -35,6 +35,8 @@ import { defaultMemoryStore, defaultMemoryRetrievalEngine, defaultOrganizational
 import { PUB_HOLDING_SECTORS, buildProjectSquad, getSectorForRepo } from './office/squads.js';
 import { parseEngineeringTask, validateEngineeringTask, createEngineeringPlan, engineeringTaskToTask } from './office/intent.js';
 import { resolveContext } from './office/context-resolver.js';
+import { defaultChiefOfStaffAgent } from './office/chief-of-staff-agent.js';
+import { defaultCeoConversationStore } from './office/ceo-conversation-store.js';
 
 export interface HyperdriveBinding {
   connectionString: string;
@@ -2555,6 +2557,52 @@ ${d.commits.slice(0, 3).join('\n') || '- Repositório sincronizado na branch pri
         } catch (err: any) {
           return jsonResponse({ error: err.message }, 400);
         }
+      }
+
+      // =========================================================================
+      // CEO COMMAND & CHIEF OF STAFF ORCHESTRATION ROUTES (CEO_COMMAND_01, 02, 03, 08, 09)
+      // =========================================================================
+
+      // POST /office/ceo/command (Direct CEO Command to Chief of Staff)
+      if (method === 'POST' && path === '/office/ceo/command') {
+        try {
+          const body = (await request.json().catch(() => ({}))) as any;
+          const { message, conversationId, project, repository, workspaceDir } = body;
+
+          if (!message || typeof message !== 'string' || !message.trim()) {
+            return jsonResponse({ error: 'message is required' }, 400);
+          }
+
+          const result = await defaultChiefOfStaffAgent.handleCommand({
+            message: message.trim(),
+            conversationId,
+            project,
+            repository,
+            workspaceDir,
+          });
+
+          return jsonResponse(result, 200);
+        } catch (err: any) {
+          console.error('[API Worker] CEO Command error:', err);
+          return jsonResponse({ error: err.message }, 500);
+        }
+      }
+
+      // GET /office/ceo/conversation/:id (Retrieve CEO Conversation Session)
+      if (method === 'GET' && path.startsWith('/office/ceo/conversation/')) {
+        const convId = path.replace('/office/ceo/conversation/', '').trim();
+        const session = defaultCeoConversationStore.getSession(convId);
+        if (!session) {
+          return jsonResponse({ error: 'Conversation session not found' }, 404);
+        }
+        return jsonResponse({ session }, 200);
+      }
+
+      // GET /office/ceo/events/:id (Retrieve Real Stream/Operational Events for CEO Session)
+      if (method === 'GET' && path.startsWith('/office/ceo/events/')) {
+        const convId = path.replace('/office/ceo/events/', '').trim();
+        const session = defaultCeoConversationStore.getSession(convId);
+        return jsonResponse({ events: session?.events || [] }, 200);
       }
 
       // =========================================================================

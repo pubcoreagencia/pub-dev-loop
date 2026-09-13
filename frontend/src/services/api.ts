@@ -395,4 +395,47 @@ export async function fetchRealGitHubEvents(): Promise<RealGitHubEvent[]> {
   }
 }
 
+export async function sendCeoCommand(input: {
+  message: string;
+  conversationId?: string;
+  project?: string;
+  repository?: string;
+}): Promise<{
+  conversationId: string;
+  response: string;
+  type: 'INQUIRY' | 'ACTION' | 'CLARIFICATION';
+  assignedSpecialist?: { id: string; name: string; role: string };
+  task?: { id: string; project: string; objective: string; status: string; agentId?: string | null };
+  executionSpec?: any;
+  review?: any;
+  gitState?: { branch: string; headSha: string; isClean: boolean };
+  neuralStatus?: { status: string; endpointConfigured: boolean; error?: string };
+  events: any[];
+}> {
+  const res = await fetch(`${API_BASE}office/ceo/command`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `CEO command failed with HTTP ${res.status}`);
+  }
+  return await res.json();
+}
 
+export async function fetchCeoConversation(conversationId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}office/ceo/conversation/${encodeURIComponent(conversationId)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to fetch CEO conversation: ${res.status}`);
+  }
+  return await res.json();
+}
+
+export async function fetchCeoEvents(conversationId: string): Promise<any[]> {
+  const res = await fetch(`${API_BASE}office/ceo/events/${encodeURIComponent(conversationId)}`);
+  if (!res.ok) return [];
+  const data = await res.json().catch(() => ({ events: [] }));
+  return data.events || [];
+}

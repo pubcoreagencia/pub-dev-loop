@@ -14,6 +14,8 @@
 - Step 4 Periodic Reaper / Lease Recovery: **PROVEN & PUBLISHED**
 - Step 5 Campaign / failure-injection proof: **PROVEN & INTEGRATED**
 - Issue #11 / P0 E2E-01 Closed Loop Lifecycle: **PROVEN & INTEGRATED**
+- CEO Command & Chief of Staff Orchestration: **PROVEN & INTEGRATED**
+- Governed PUB Neural Bridge: **PROVEN & INTEGRATED**
 - Step 6 and unrestricted autonomy: **BLOCKED**
 
 No phase advancement occurs without explicit written authorization from MATHEUS.
@@ -44,6 +46,8 @@ PDL is a governed, fail-closed software-delivery engine. Product repositories re
 - Reaper: `src/pdl/reaper/`
 - Persistence Gate: `src/pdl/persistence/persistence-gate.ts`
 - Remote Persistence: `src/pdl/persistence/remote-persistence.ts`
+- Chief of Staff Orchestrator: `src/office/chief-of-staff-agent.ts`
+- CEO Conversation Store: `src/office/ceo-conversation-store.ts`
 - Neural Bridge: `src/pdl/neural/neural-bridge.ts`
 - Provider registry: `src/providers/model-registry.ts`
 - Provider routing: `src/providers/model-routing-policy.ts`
