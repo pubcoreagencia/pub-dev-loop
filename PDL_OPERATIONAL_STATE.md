@@ -13,6 +13,7 @@
 - Step 3 Retry / DLQ / Poison Quarantine: **PROVEN & PUBLISHED**
 - Step 4 Periodic Reaper / Lease Recovery: **PROVEN & PUBLISHED**
 - Step 5 Campaign / failure-injection proof: **PROVEN & INTEGRATED**
+- Issue #11 / P0 E2E-01 Closed Loop Lifecycle: **PROVEN & INTEGRATED**
 - Step 6 and unrestricted autonomy: **BLOCKED**
 
 No phase advancement occurs without explicit written authorization from MATHEUS.
@@ -41,9 +42,11 @@ PDL is a governed, fail-closed software-delivery engine. Product repositories re
 - Retry policy: `src/pdl/retry/`
 - DLQ: `src/pdl/dlq/`
 - Reaper: `src/pdl/reaper/`
-- Persistence: `src/pdl/persistence/`
+- Persistence Gate: `src/pdl/persistence/persistence-gate.ts`
+- Remote Persistence: `src/pdl/persistence/remote-persistence.ts`
+- Neural Bridge: `src/pdl/neural/neural-bridge.ts`
 - Provider registry: `src/providers/model-registry.ts`
-- Remote finalization: `src/pdl/persistence/remote-persistence.ts`
+- Provider routing: `src/providers/model-routing-policy.ts`
 
 Historical documents may contain older paths. Current code wins.
 
@@ -103,6 +106,25 @@ Default configuration in `src/pdl/reaper/types.ts`:
 
 The reaper tracks stale detection, recovery, DLQ, quarantine, blocked cycles, and structured recovery events. Recovery is governance-aware and integrates with retry/DLQ decisions.
 
+## Persistence Gate & Remote Verification: Verified Contract
+
+Implementation lives under `src/pdl/persistence/`.
+
+`evaluatePersistenceGate()` strictly enforces fail-closed persistence:
+- `PERSISTENCE_01`: validation must pass before completion.
+- `PERSISTENCE_02`: material changes require a valid local commit SHA.
+- `PERSISTENCE_03`: working tree must be clean (`worktreeClean === true`).
+- `PERSISTENCE_04`: remote persistence status must be `VERIFIED`.
+- `PERSISTENCE_05`: remote verified flag must be `true`.
+- `PERSISTENCE_06`: remote SHA must exactly match local commit SHA (`remoteSha === commitSha`).
+- `PERSISTENCE_07`: runtime verification required must be verified.
+- `PERSISTENCE_08`: tasks with zero material changes complete without push.
+- `PP Isolation`: tasks with `prototypeSessionId` bypass remote push and complete locally.
+
+Workers delegate remote push exclusively to `PdlRemotePersistence.persist()`, validating Product Catalog eligibility, branch policies (`feat/*`, `worker/*`), protected paths, and fast-forward remote git push with `ls-remote` reconciliation.
+
+Completed task states, gate decisions, and learning payloads are dispatched to `PubNeuralBridge` (`src/pdl/neural/neural-bridge.ts`).
+
 ## FREE MODELS ONLY
 
 This is an implementation gate, not a provider-name whitelist.
@@ -147,7 +169,7 @@ Conflicts must be preserved and resolved using the higher-authority evidence. Ne
 
 ## Current Authorized Next Action
 
-**Phase 5.5 Step 5 completed, integrated, and proven (dated evidence in `docs/evidence/phase5.5/PHASE_5_5_STEP5_EVIDENCE.md`).**
+**Issue #11 / P0 E2E-01 closed-loop delivery lifecycle completed, integrated, and proven (dated evidence in `docs/evidence/phase5.5/PHASE_5_5_E2E_01_EVIDENCE.md`).**
 
 The next engineering milestone is **Phase 5.5 Step 6 & Unrestricted Autonomy**, which remains strictly **BLOCKED** pending explicit written authorization from MATHEUS.
 

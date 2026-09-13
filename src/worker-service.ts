@@ -1,4 +1,5 @@
 import { mkdtemp, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
@@ -25,6 +26,15 @@ import { DefaultExecutionEngine } from './execution/default-execution-engine.js'
 import type { AgentProvider, ProviderTaskInput } from './providers/types.js';
 import { PdlGovernanceEngine } from './pdl/governance/index.js';
 import { verifyRepositoryIdentity } from './pdl/security/repository-identity.js';
+import {
+  PdlRemotePersistence,
+  defaultRemotePersistence,
+  evaluatePersistenceGate,
+  type RemotePersistenceResult,
+} from './pdl/persistence/index.js';
+import { ProductCatalog, defaultProductCatalog } from './pdl/products/catalog.js';
+import { DefaultPubNeuralBridge, type PubNeuralBridge } from './pdl/neural/index.js';
+
 
 const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
 const HEARTBEAT_INTERVAL_MS = Number(process.env.WORKER_HEARTBEAT_MS ?? 10000);
@@ -282,13 +292,22 @@ export abstract class BaseWorker implements Worker {
   public lastExecutedTask: Task | null = null;
 
   public readonly governance?: PdlGovernanceEngine;
+  public readonly catalog: ProductCatalog;
+  public readonly remotePersistence: PdlRemotePersistence;
+  public readonly neuralBridge: PubNeuralBridge;
 
   constructor(
     protected readonly tasks: TaskRepository,
     protected readonly name: string,
     protected readonly executionSpecDb?: ExecutionSpecDatabase,
     governance?: PdlGovernanceEngine,
+    catalog: ProductCatalog = defaultProductCatalog,
+    remotePersistence?: PdlRemotePersistence,
+    neuralBridge?: PubNeuralBridge,
   ) {
+    this.catalog = catalog;
+    this.remotePersistence = remotePersistence ?? new PdlRemotePersistence(this.catalog);
+    this.neuralBridge = neuralBridge ?? new DefaultPubNeuralBridge();
     if (governance) {
       this.governance = governance;
     } else if (executionSpecDb && typeof (executionSpecDb as any).query === 'function') {
@@ -382,7 +401,7 @@ export abstract class BaseWorker implements Worker {
     this.active = true;
 
     let winningAttempt: AttemptResult | undefined;
-    let branch: string | undefined;
+    let branch: string = task.branch ?? `worker/${this.name}/${task.id}`;
     // TASK-000032: Heartbeat for crash recovery / lease management
     let heartbeat: NodeJS.Timeout | undefined;
 
@@ -524,11 +543,15 @@ export abstract class BaseWorker implements Worker {
       };
       this.lastFinalizeStatus = finalizeResult.status;
 
-      if (finalizeResult.status === 'COMPLETED' && !task.prototypeSessionId && finalizeResult.commitSha) {
+      const hasMaterialChanges = (finalizeResult.changedFiles && finalizeResult.changedFiles.length > 0) || Boolean(finalizeResult.commitSha);
+      let remotePersistenceResult: RemotePersistenceResult | null = null;
+
+      // 1. Governed Remote Persistence delegation
+      if (finalizeResult.status === 'COMPLETED' && hasMaterialChanges && !task.prototypeSessionId && finalizeResult.commitSha) {
         if (this.governance) {
           const finalizationDecision = await this.governance.evaluateFinalization(task);
           if (!finalizationDecision.allowed) {
-            console.log(`[BaseWorker] Remote push blocked by governance (${finalizationDecision.reasonCode}): ${finalizationDecision.reason}`);
+            console.log(`[BaseWorker] Remote persistence blocked by governance (${finalizationDecision.reasonCode}): ${finalizationDecision.reason}`);
             finalizeResult.status = 'FAILED';
             finalizeResult.errorCode = finalizationDecision.reasonCode;
             finalizeResult.errorMessage = `Remote finalization blocked by governance: ${finalizationDecision.reason}`;
@@ -537,17 +560,82 @@ export abstract class BaseWorker implements Worker {
         }
 
         if (finalizeResult.status === 'COMPLETED') {
-          try {
-            console.log(`[Worker] Pushing branch ${branch} to remote...`);
-            await run('git', ['push', 'origin', `HEAD:${branch}`], winningAttempt.workspace);
-            console.log(`[Worker] Successfully pushed branch ${branch} to remote.`);
-          } catch (pushError: any) {
-            console.error(`[Worker] GITHUB_PUSH_FAILED:`, pushError.message);
-            finalizeResult.status = 'FAILED';
-            finalizeResult.errorCode = 'GITHUB_PUSH_FAILED';
-            finalizeResult.errorMessage = `GitHub push failed: ${pushError.message}`;
-            this.lastFinalizeStatus = 'FAILED';
+          console.log(`[BaseWorker] Delegating remote persistence to PdlRemotePersistence for branch ${branch}...`);
+          remotePersistenceResult = await this.remotePersistence.persist({
+            workspace: winningAttempt.workspace,
+            product: task.project || task.repository,
+            branch,
+            localSha: finalizeResult.commitSha,
+            targetRepository: task.repository,
+            requested: !task.prototypeSessionId,
+            gitToken: process.env.PDL_GITHUB_TOKEN || process.env.GITHUB_TOKEN,
+          });
+
+          if (remotePersistenceResult.status !== 'VERIFIED') {
+            console.error(`[BaseWorker] Remote persistence not verified (${remotePersistenceResult.errorCode}): ${remotePersistenceResult.errorMessage}`);
+          } else {
+            console.log(`[BaseWorker] Remote persistence VERIFIED on remote repository: ${remotePersistenceResult.remoteSha}`);
           }
+        }
+      }
+
+      // 2. Check worktree cleanliness
+      let worktreeClean = finalizeResult.gitStatus === 'clean' || finalizeResult.gitStatus === '';
+      if (winningAttempt.workspace && existsSync(winningAttempt.workspace)) {
+        try {
+          const porcelain = await run('git', ['status', '--porcelain'], winningAttempt.workspace);
+          worktreeClean = porcelain.trim() === '';
+        } catch {
+          worktreeClean = false;
+        }
+      }
+
+      const runtimeVerificationRequired = Boolean(
+        (task as any).runtimeVerificationRequired ||
+        (task as any).requiresRuntimeVerification ||
+        (task.result as any)?.runtimeVerificationRequired
+      );
+      const runtimeVerified = Boolean(
+        (task as any).runtimeVerified ||
+        (task.result as any)?.runtimeVerified
+      );
+
+      // 3. Authoritative Persistence Gate Evaluation
+      const gateDecision = evaluatePersistenceGate({
+        task,
+        hasMaterialChanges,
+        validationPassed: finalizeResult.status === 'COMPLETED' && (finalizeResult.testsPassed === true || finalizeResult.testsPassed === null),
+        commitSha: finalizeResult.commitSha,
+        worktreeClean,
+        remotePersistence: remotePersistenceResult,
+        runtimeVerificationRequired,
+        runtimeVerified,
+      });
+
+      if (!gateDecision.passed) {
+        console.error(`[BaseWorker] Persistence Gate blocked task completion (${gateDecision.reasonCode}): ${gateDecision.reason}`);
+        finalizeResult.status = 'FAILED';
+        finalizeResult.errorCode = gateDecision.reasonCode || 'PERSISTENCE_GATE_BLOCKED';
+        finalizeResult.errorMessage = `Persistence Gate denied completion: ${gateDecision.reason}`;
+        this.lastFinalizeStatus = 'FAILED';
+      } else {
+        finalizeResult.status = 'COMPLETED';
+        this.lastFinalizeStatus = 'COMPLETED';
+
+        // 4. PUB Neural Ingestion Point
+        try {
+          await this.neuralBridge.ingestTaskCompleted({
+            task,
+            commitSha: finalizeResult.commitSha,
+            remoteSha: remotePersistenceResult?.remoteSha ?? finalizeResult.commitSha,
+            branch,
+            hasMaterialChanges,
+            remotePersistence: remotePersistenceResult,
+            gateDecision,
+          });
+          console.log(`[BaseWorker] Successfully dispatched state to PUB Neural bridge for task ${task.id}.`);
+        } catch (neuralErr: any) {
+          console.warn(`[BaseWorker] Neural ingestion warning: ${neuralErr.message}`);
         }
       }
 
@@ -573,6 +661,7 @@ export abstract class BaseWorker implements Worker {
         branch,
         commitSha: finalizeResult.commitSha,
         gitStatus: finalizeResult.gitStatus,
+        error: finalizeResult.status === 'FAILED' ? finalizeResult.errorMessage : null,
         result: {
           summary: winningAttempt.stdout.slice(-8000),
           execution: winningAttempt.execution,
@@ -584,6 +673,8 @@ export abstract class BaseWorker implements Worker {
           toolRounds: winningAttempt.toolRounds,
           durationMs: winningAttempt.durationMs,
           executionResult: bridgeResult,
+          remotePersistence: remotePersistenceResult,
+          persistenceGate: gateDecision,
         },
         // Clear lease — task is terminal
         leaseOwner: null,
@@ -831,8 +922,11 @@ export class CodexWorker extends BaseWorker {
     name = 'codex',
     executionSpecDb?: ExecutionSpecDatabase,
     governance?: PdlGovernanceEngine,
+    catalog?: ProductCatalog,
+    remotePersistence?: PdlRemotePersistence,
+    neuralBridge?: PubNeuralBridge,
   ) {
-    super(tasks, name, executionSpecDb, governance);
+    super(tasks, name, executionSpecDb, governance, catalog, remotePersistence, neuralBridge);
     this.agent = agent;
   }
 

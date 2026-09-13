@@ -48,6 +48,7 @@ import {
   computeSpecHash,
 } from '../../src/execution/execution-spec-persistence.js';
 import { EXECUTION_SPEC_VERSION, type ExecutionSpec } from '../../src/task/execution-spec.js';
+import { defaultProductCatalog } from '../../src/pdl/products/catalog.js';
 
 function initGitRepo(root: string): void {
   execSync('git init', { cwd: root, stdio: 'ignore' });
@@ -185,6 +186,19 @@ describe('Phase 3A.4 — Runtime Integration Verification', () => {
     initGitRepo(remoteRepoDir);
     await writeFile(join(remoteRepoDir, 'README.md'), '# Initial Repo\n', 'utf8');
     gitCommit(remoteRepoDir, 'Initial commit');
+
+    defaultProductCatalog.register({
+      productId: 'test',
+      repository: remoteRepoDir,
+      organization: 'test-org',
+      defaultBranch: 'main',
+      developmentBranchPolicy: ['*'],
+      testCommand: 'echo ok',
+      allowedPaths: ['*'],
+      protectedPaths: ['.github/**'],
+      maxAutonomyLevel: 5,
+      remotePersistenceEligible: true,
+    });
   });
 
   afterEach(async () => {

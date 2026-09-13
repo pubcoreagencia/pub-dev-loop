@@ -3,6 +3,9 @@ import type { Task, TaskRepository } from './domain.js';
 import { PDL_SYSTEM_INSTRUCTIONS } from './pdl/constants.js';
 import { BaseWorker, type AttemptResult, type AttemptTrace, type WorkerExecutionTrace } from './worker-service.js';
 import { PdlGovernanceEngine } from './pdl/governance/index.js';
+import type { ProductCatalog } from './pdl/products/catalog.js';
+import type { PdlRemotePersistence } from './pdl/persistence/index.js';
+import type { PubNeuralBridge } from './pdl/neural/index.js';
 import { DefaultExecutionEngine } from './execution/default-execution-engine.js';
 import type { ExecutionResult } from './execution/execution-engine.js';
 import type { PreparedExecution } from './execution/execution-seam.js';
@@ -140,8 +143,11 @@ export class RouterWorker extends BaseWorker {
     onStreamEvent?: TaskStreamEventCallback,
     executionSpecDb?: ExecutionSpecDatabase,
     governance?: PdlGovernanceEngine,
+    catalog?: ProductCatalog,
+    remotePersistence?: PdlRemotePersistence,
+    neuralBridge?: PubNeuralBridge,
   ) {
-    super(tasks ?? ({} as any), name, executionSpecDb, governance);
+    super(tasks ?? ({} as any), name, executionSpecDb, governance, catalog, remotePersistence, neuralBridge);
     this.provider = provider ?? ({} as any);
     this.onStreamEvent = onStreamEvent;
   }

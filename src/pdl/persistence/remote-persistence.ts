@@ -279,9 +279,10 @@ export class PdlRemotePersistence {
       };
     }
 
-    // 7. Resolve Authentication Token (PDL_GITHUB_TOKEN > GITHUB_TOKEN)
+    // 7. Resolve Authentication Token (PDL_GITHUB_TOKEN > GITHUB_TOKEN for GitHub remotes)
+    const isGitHub = manifest.repository.includes('github.com');
     const token = getGitHubToken(options.gitToken);
-    if (!token) {
+    if (isGitHub && !token) {
       return {
         status: 'FAILED',
         repository: manifest.repository,
@@ -297,7 +298,10 @@ export class PdlRemotePersistence {
     }
 
     const repoPath = normalizeRepoPath(manifest.repository);
-    const remoteUrl = `https://x-access-token:${token}@github.com/${repoPath}.git`;
+    const remoteUrl = isGitHub
+      ? `https://x-access-token:${token}@github.com/${repoPath}.git`
+      : manifest.repository;
+
 
     // 8. Inspect Remote State & Fast-Forward Guard
     let existingRemoteSha: string | null = null;
