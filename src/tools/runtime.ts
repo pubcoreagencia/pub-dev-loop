@@ -2,12 +2,13 @@ import { promises as fs, constants as fsConstants } from 'node:fs';
 import { join, relative, sep, parse } from 'node:path';
 import { AgentExecutor, type ExecutionResult, type ExecutionRequest } from '../executor.js';
 import { WorkspaceSecurity, WorkspaceEnvironmentSecurity } from './security.js';
+import { TrustBoundary } from '../pdl/security/trust-boundary.js';
 import type { ToolResult, ToolExecutionContext, ToolDefinition } from './types.js';
 
 // Git subcommands that are explicitly blocked for security
 const BLOCKED_GIT_COMMANDS = [
-  'push', 'remote', 'reset', 'clean', 'checkout --', 'restore .',
-  'branch -D', 'branch -d', 'fetch', 'pull', 'merge',
+  'push', 'remote', 'reset', 'clean', 'checkout', 'restore',
+  'branch -D', 'branch -d', 'fetch', 'pull', 'merge', 'apply', 'patch',
 ];
 
 /**
@@ -268,6 +269,23 @@ export class ToolRuntime {
     const content = String(args.content ?? '');
     const resolved = this.security.resolvePath(path);
 
+    // Layer 1: Runtime Write Gate (Zone A Protected Paths)
+    const normalizedPath = TrustBoundary.normalizePath(resolved, this.security.root);
+    try {
+      TrustBoundary.assertProtectedPathWriteAllowed(normalizedPath, {
+        isAutonomousAgent: true,
+        workspaceRoot: this.security.root,
+      });
+    } catch (err: any) {
+      return {
+        toolCallId,
+        toolName: 'write_file',
+        success: false,
+        content: '',
+        error: err.message,
+      };
+    }
+
     if (content.length > this.ctx.maxWriteBytes) {
       return {
         toolCallId,
@@ -435,14 +453,20 @@ export class ToolRuntime {
     });
 
     const gitStatus = statusResult.stdout || '';
-    const changedFiles = gitStatus.trim().split('\n').filter(Boolean).map(line => {
-      // git status --short format: "XY filename" or "XY filename -> newname"
-      // Extract filename (skip the 2-char status + space)
-      const filename = line.substring(3);
-      // Handle rename: "old -> new"
-      const arrowIdx = filename.indexOf(' -> ');
-      return arrowIdx >= 0 ? filename.substring(arrowIdx + 4) : filename;
-    });
+    const changedFiles = gitStatus
+      .split(/\r?\n/)
+      .filter(line => line.trim().length >= 4)
+      .map(line => {
+        let filename = line.length >= 4 && line[2] === ' '
+          ? line.substring(3).trim()
+          : line.trimStart().replace(/^[^\s]+\s+/, '').trim();
+        if (filename.startsWith('"') && filename.endsWith('"')) {
+          filename = filename.slice(1, -1);
+        }
+        const arrowIdx = filename.indexOf(' -> ');
+        return arrowIdx >= 0 ? filename.substring(arrowIdx + 4).trim() : filename;
+      })
+      .filter(Boolean);
 
     if (changedFiles.length === 0) {
       return {
@@ -451,6 +475,35 @@ export class ToolRuntime {
         success: false,
         content: '',
         error: 'No changes to commit — working tree is clean',
+      };
+    }
+
+    // Layer 2: Pre-Commit Security Gate (Zone A Protected Paths)
+    const boundaryCheck = TrustBoundary.validateChangesetAgainstTrustBoundary(
+      changedFiles,
+      this.security.root
+    );
+    if (!boundaryCheck.allowed) {
+      return {
+        toolCallId,
+        toolName: 'git_commit',
+        success: false,
+        content: '',
+        error: `[SECURITY_VIOLATION] ${boundaryCheck.reason}`,
+      };
+    }
+
+    const configCheck = TrustBoundary.validateConfigurationIntegrity(
+      changedFiles,
+      this.security.root
+    );
+    if (!configCheck.allowed) {
+      return {
+        toolCallId,
+        toolName: 'git_commit',
+        success: false,
+        content: '',
+        error: `[SECURITY_VIOLATION] ${configCheck.reason}`,
       };
     }
 
@@ -554,6 +607,17 @@ export class ToolRuntime {
         success: false,
         content: '',
         error: `Blocked git operation: '${blocked}' is not allowed via run_command`,
+      };
+    }
+
+    // Block shell operations directly targeting Zone A paths
+    if (/(?:rm|del|move|mv|rename)\s+[^\n\r]*?(?:governance|catalog|persistence|security|agents\.md|pdl_operational_state|review)/i.test(command)) {
+      return {
+        toolCallId,
+        toolName: 'run_command',
+        success: false,
+        content: '',
+        error: `[SECURITY_VIOLATION] Autonomous deletion, move, or rename targeting Zone A protected paths is strictly prohibited.`,
       };
     }
 

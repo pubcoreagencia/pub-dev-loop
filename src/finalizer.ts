@@ -1,13 +1,14 @@
 import { execSync, spawn } from 'node:child_process';
 import { WorkspaceSecurity, WorkspaceEnvironmentSecurity } from './tools/security.js';
+import { TrustBoundary } from './pdl/security/trust-boundary.js';
 import type { ToolExecutionContext } from './tools/types.js';
 import { sanitizeCommitMessage } from './tools/runtime.js';
 import type { RemotePersistenceResult } from './pdl/persistence/types.js';
 
 // Git subcommands that are explicitly blocked for security
 const BLOCKED_GIT_COMMANDS = [
-  'push', 'remote', 'reset', 'clean', 'checkout --', 'restore .',
-  'branch -D', 'branch -d', 'fetch', 'pull', 'merge',
+  'push', 'remote', 'reset', 'clean', 'checkout', 'restore',
+  'branch -D', 'branch -d', 'fetch', 'pull', 'merge', 'apply', 'patch',
 ];
 
 /**
@@ -226,14 +227,19 @@ export class TaskFinalizer {
     const gitStatus = gitStatusResult.stdout || '';
 
     const changedFiles = gitStatus
-      .trim()
-      .split('\n')
-      .filter(Boolean)
+      .split(/\r?\n/)
+      .filter(line => line.trim().length >= 4)
       .map(line => {
-        const filename = line.substring(3);
+        let filename = line.length >= 4 && line[2] === ' '
+          ? line.substring(3).trim()
+          : line.trimStart().replace(/^[^\s]+\s+/, '').trim();
+        if (filename.startsWith('"') && filename.endsWith('"')) {
+          filename = filename.slice(1, -1);
+        }
         const arrowIdx = filename.indexOf(' -> ');
-        return arrowIdx >= 0 ? filename.substring(arrowIdx + 4) : filename;
-      });
+        return arrowIdx >= 0 ? filename.substring(arrowIdx + 4).trim() : filename;
+      })
+      .filter(Boolean);
 
     // No changes — task is complete, no commit needed
     if (changedFiles.length === 0) {
@@ -247,6 +253,46 @@ export class TaskFinalizer {
         testOutput: '',
         errorCode: null,
         errorMessage: null,
+      };
+    }
+
+    // PRE-COMMIT TRUST BOUNDARY SECURITY GATE (Zone A Enforcement)
+    // Inspect all modified, added, deleted, renamed files in git status and diff.
+    const boundaryCheck = TrustBoundary.validateChangesetAgainstTrustBoundary(
+      changedFiles,
+      this.security.root
+    );
+    if (!boundaryCheck.allowed) {
+      console.error(`[TaskFinalizer] Commit blocked: ${boundaryCheck.reason}`);
+      return {
+        status: 'FAILED',
+        commitSha: null,
+        commitMessage: null,
+        changedFiles,
+        gitStatus,
+        testsPassed: null,
+        testOutput: '',
+        errorCode: 'SECURITY_VIOLATION',
+        errorMessage: boundaryCheck.reason || null,
+      };
+    }
+
+    const configCheck = TrustBoundary.validateConfigurationIntegrity(
+      changedFiles,
+      this.security.root
+    );
+    if (!configCheck.allowed) {
+      console.error(`[TaskFinalizer] Commit blocked: ${configCheck.reason}`);
+      return {
+        status: 'FAILED',
+        commitSha: null,
+        commitMessage: null,
+        changedFiles,
+        gitStatus,
+        testsPassed: null,
+        testOutput: '',
+        errorCode: 'SECURITY_VIOLATION',
+        errorMessage: configCheck.reason || null,
       };
     }
 

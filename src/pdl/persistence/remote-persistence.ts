@@ -4,6 +4,7 @@ import {
   type ProductCatalog,
   type ProductManifest,
 } from '../products/catalog.js';
+import { TrustBoundary } from '../security/trust-boundary.js';
 import type {
   RemotePersistenceOptions,
   RemotePersistenceResult,
@@ -277,6 +278,69 @@ export class PdlRemotePersistence {
         errorCode: 'WORKSPACE_INVALID',
         errorMessage: `Workspace validation failed: ${wsErr.message}`,
       };
+    }
+
+    // 6.5 Pre-Push Security Gate: Inspect Changeset for Zone A Protected Paths
+    if (options.localSha) {
+      try {
+        const diffOutput = this.executor(
+          'git',
+          ['diff-tree', '--no-commit-id', '--name-only', '-r', options.localSha],
+          options.workspace,
+        ).trim();
+        const touchedFiles = diffOutput.split(/\r?\n/).map(f => f.trim()).filter(Boolean);
+
+        const boundaryCheck = TrustBoundary.validateChangesetAgainstTrustBoundary(
+          touchedFiles,
+          options.workspace
+        );
+        if (!boundaryCheck.allowed) {
+          return {
+            status: 'FAILED',
+            repository: manifest.repository,
+            branch: options.branch,
+            pushAttempted: false,
+            pushSucceeded: false,
+            localSha: options.localSha,
+            remoteSha: null,
+            remoteVerified: false,
+            errorCode: 'PROTECTED_PATH_VIOLATION',
+            errorMessage: boundaryCheck.reason || 'Remote persistence blocked: changeset touches Zone A protected paths',
+          };
+        }
+
+        const configCheck = TrustBoundary.validateConfigurationIntegrity(
+          touchedFiles,
+          options.workspace
+        );
+        if (!configCheck.allowed) {
+          return {
+            status: 'FAILED',
+            repository: manifest.repository,
+            branch: options.branch,
+            pushAttempted: false,
+            pushSucceeded: false,
+            localSha: options.localSha,
+            remoteSha: null,
+            remoteVerified: false,
+            errorCode: 'PROTECTED_PATH_VIOLATION',
+            errorMessage: configCheck.reason || 'Remote persistence blocked: configuration integrity violation',
+          };
+        }
+      } catch (diffErr: any) {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch: options.branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha: options.localSha,
+          remoteSha: null,
+          remoteVerified: false,
+          errorCode: 'CHANGESET_INSPECTION_FAILED',
+          errorMessage: `Failed to inspect changeset for protected paths: ${diffErr.message}`,
+        };
+      }
     }
 
     // 7. Resolve Authentication Token (PDL_GITHUB_TOKEN > GITHUB_TOKEN for GitHub remotes)

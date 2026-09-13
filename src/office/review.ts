@@ -24,10 +24,24 @@ export interface CodeReviewEvaluationInput {
   iteration?: number;
 }
 
+export type CodeReviewStatus =
+  | 'APPROVED'
+  | 'AUTOMATED_REVIEW_APPROVED'
+  | 'CHANGES_REQUESTED'
+  | 'BLOCKED';
+
 export interface CodeReviewResult {
   reviewId: string;
   taskId: string;
-  status: 'APPROVED' | 'CHANGES_REQUESTED' | 'BLOCKED';
+  status: CodeReviewStatus;
+  /**
+   * Phase 5.5: Explicit separation between automated static/test review
+   * and human integration authorization.
+   * Automated review validates code and test passes, but NEVER represents
+   * human release or integration authority.
+   */
+  automatedReviewApproved: boolean;
+  humanIntegrationApproved: false;
   iteration: number;
   findings: CodeReviewFinding[];
   summary: string;
@@ -153,6 +167,8 @@ export class CodeReviewManager {
         reviewId: `rev-${Date.now()}`,
         taskId,
         status: 'BLOCKED',
+        automatedReviewApproved: false,
+        humanIntegrationApproved: false,
         iteration: currentIteration,
         findings: [evidenceFinding],
         summary: blockedSummary,
@@ -233,6 +249,8 @@ export class CodeReviewManager {
           reviewId: `rev-${Date.now()}`,
           taskId,
           status: 'BLOCKED',
+          automatedReviewApproved: false,
+          humanIntegrationApproved: false,
           iteration: currentIteration,
           findings,
           summary: blockedSummary,
@@ -276,6 +294,8 @@ export class CodeReviewManager {
         reviewId: `rev-${Date.now()}`,
         taskId,
         status: 'CHANGES_REQUESTED',
+        automatedReviewApproved: false,
+        humanIntegrationApproved: false,
         iteration: currentIteration,
         findings,
         summary,
@@ -315,6 +335,8 @@ export class CodeReviewManager {
       reviewId: `rev-${Date.now()}`,
       taskId,
       status: 'APPROVED',
+      automatedReviewApproved: true,
+      humanIntegrationApproved: false,
       iteration: currentIteration,
       findings,
       summary: approvedSummary,
