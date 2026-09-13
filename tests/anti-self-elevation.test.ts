@@ -120,7 +120,7 @@ describe('Anti-Self-Elevation Security Boundary (Phase 5.5 P0)', () => {
         maxFileBytes: 1024 * 1024,
         maxWriteBytes: 256 * 1024,
         redactSecrets: true,
-      }, new AgentExecutor());
+      }, new AgentExecutor(undefined, { allowHostExecution: true }));
 
       const result = await runtime.executeTool('test-call-1', 'run_command', {
         command: `"${process.execPath}" -e "console.log('DB_URL:' + process.env.DATABASE_URL)"`,
@@ -140,7 +140,7 @@ describe('Anti-Self-Elevation Security Boundary (Phase 5.5 P0)', () => {
         maxFileBytes: 1024 * 1024,
         maxWriteBytes: 256 * 1024,
         redactSecrets: true,
-      }, new AgentExecutor());
+      }, new AgentExecutor(undefined, { allowHostExecution: true }));
 
       const result = await runtime.executeTool('test-call-2', 'run_command', {
         command: `"${process.execPath}" -e "console.log('GOV_KEY:' + process.env.PDL_GOVERNANCE_ADMIN_KEY)"`,
@@ -160,7 +160,7 @@ describe('Anti-Self-Elevation Security Boundary (Phase 5.5 P0)', () => {
         maxFileBytes: 1024 * 1024,
         maxWriteBytes: 256 * 1024,
         redactSecrets: true,
-      }, new AgentExecutor());
+      }, new AgentExecutor(undefined, { allowHostExecution: true }));
 
       // Attempt to verify whether DATABASE_URL is accessible for DB connection
       const result = await runtime.executeTool('test-call-3', 'run_command', {
@@ -201,7 +201,7 @@ describe('Anti-Self-Elevation Security Boundary (Phase 5.5 P0)', () => {
 
   describe('AgentExecutor: Automatic Sanitization & Redaction', () => {
     it('automatically sanitizes raw process.env before spawning child processes', async () => {
-      const executor = new AgentExecutor();
+      const executor = new AgentExecutor(undefined, { allowHostExecution: true });
 
       const result = await executor.execute({
         command: process.execPath,
@@ -221,7 +221,7 @@ describe('Anti-Self-Elevation Security Boundary (Phase 5.5 P0)', () => {
     });
 
     it('redacts any postgresql connection strings from output', async () => {
-      const executor = new AgentExecutor();
+      const executor = new AgentExecutor(undefined, { allowHostExecution: true });
 
       const result = await executor.execute({
         command: process.execPath,
@@ -249,7 +249,7 @@ describe('Anti-Self-Elevation Security Boundary (Phase 5.5 P0)', () => {
         maxFileBytes: 1024 * 1024,
         maxWriteBytes: 256 * 1024,
         redactSecrets: true,
-      }, new AgentExecutor());
+      }, new AgentExecutor(undefined, { allowHostExecution: true }));
 
       writeFileSync(join(tempDir, 'README.md'), '# Sandbox updated for anti-self-elevation test\n');
 

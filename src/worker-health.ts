@@ -11,7 +11,8 @@ const validMode=[agentMode].every(m => ['mock','codex'].includes(m));
 const providerMode = Boolean(process.env.AGENT_PROVIDER);
 const validProviderMode = providerMode || validMode;
 const validTimeout=Number.isFinite(Number(process.env.AGENT_TIMEOUT_MS ?? 900000)) && Number(process.env.AGENT_TIMEOUT_MS ?? 900000)>0;
-const executor=new AgentExecutor();
+// Internal engine health check verifying host environment capabilities
+const executor=new AgentExecutor(undefined, { allowHostExecution: true });
 const [gitAvailable,codexAvailable,gitProbe,codexProbe]=await Promise.all([
   commandExists('git'), commandExists(process.env.CODEX_COMMAND ?? 'codex'),
   executor.execute({command:'git',args:['--version'],cwd:process.cwd(),timeoutMs}),

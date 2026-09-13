@@ -4,7 +4,13 @@ import { resolve } from 'node:path';
 import type { ExecutionRequest, ExecutionResult, ExecutionStatus } from '../../executor.js';
 import { redact } from '../../executor.js';
 import { WorkspaceEnvironmentSecurity } from '../../tools/security.js';
-import type { SandboxSecurityConfig, WorkerSandboxAdapter } from './types.js';
+import {
+  SandboxUnavailableError,
+  type SandboxSecurityConfig,
+  type WorkerSandboxAdapter,
+  type SandboxAvailabilityCheck,
+  type SandboxSpawner,
+} from './types.js';
 
 export const DEFAULT_SANDBOX_CONFIG: Required<SandboxSecurityConfig> = {
   image: 'pdl-sandbox:latest',
@@ -40,7 +46,7 @@ const FORBIDDEN_ENV_KEYS = new Set([
  * DockerWorkerSandboxAdapter: Executes arbitrary LLM-generated agent code
  * inside an ephemeral, strictly isolated Docker/OCI container.
  *
- * Implements P0.4.3 Capability Boundary:
+ * Implements P0.4.3 Capability Boundary & P0.4.4 Fail-Closed Availability:
  * - One ephemeral container per execution attempt (--rm)
  * - Non-root user (1000:1000)
  * - Container PID namespace & private IPC
@@ -52,34 +58,118 @@ const FORBIDDEN_ENV_KEYS = new Set([
  * - Only task workspace mounted (-v <workspace>:/workspace:rw)
  * - Zero governance credentials or host profile mounted
  * - Guaranteed container destruction on timeout or abort
+ * - Mandatory availability check: fails closed if Docker CLI, daemon, or image is unavailable
  */
 export class DockerWorkerSandboxAdapter implements WorkerSandboxAdapter {
   private readonly config: Required<SandboxSecurityConfig>;
-  private _isAvailable: boolean | null = null;
+  private readonly spawner: SandboxSpawner;
+  private _lastCheckResult: SandboxAvailabilityCheck | null = null;
   private _lastCheckTime: number = 0;
 
-  constructor(customConfig?: Partial<SandboxSecurityConfig>) {
+  constructor(customConfig?: Partial<SandboxSecurityConfig>, spawner?: Partial<SandboxSpawner>) {
     this.config = { ...DEFAULT_SANDBOX_CONFIG, ...customConfig };
+    this.spawner = {
+      spawnSync: spawner?.spawnSync ?? spawnSync,
+      spawn: spawner?.spawn ?? spawn,
+    };
   }
 
-  get isAvailable(): boolean {
+  checkAvailability(): SandboxAvailabilityCheck {
     const now = Date.now();
     // Cache availability check for 10 seconds
-    if (this._isAvailable !== null && now - this._lastCheckTime < 10000) {
-      return this._isAvailable;
+    if (this._lastCheckResult !== null && now - this._lastCheckTime < 10000) {
+      return this._lastCheckResult;
     }
     this._lastCheckTime = now;
+
+    // 1. Verify Docker CLI is installed and responsive
     try {
-      const res = spawnSync('docker', ['info', '--format', '{{.OSType}}'], {
+      const cliRes = this.spawner.spawnSync('docker', ['--version'], {
         encoding: 'utf8',
         timeout: 3000,
         shell: false,
       });
-      this._isAvailable = res.status === 0 && Boolean(res.stdout?.trim());
-    } catch {
-      this._isAvailable = false;
+      if (cliRes.status !== 0 || !cliRes.stdout?.trim()) {
+        this._lastCheckResult = {
+          available: false,
+          reasonCode: 'DOCKER_CLI_UNAVAILABLE',
+          error: 'Docker CLI returned non-zero exit status or empty output.',
+        };
+        return this._lastCheckResult;
+      }
+    } catch (err: any) {
+      this._lastCheckResult = {
+        available: false,
+        reasonCode: 'DOCKER_CLI_UNAVAILABLE',
+        error: `Docker CLI is unavailable: ${err?.message || err}`,
+      };
+      return this._lastCheckResult;
     }
-    return this._isAvailable;
+
+    // 2. Verify Docker daemon is responsive
+    try {
+      const daemonRes = this.spawner.spawnSync('docker', ['info', '--format', '{{.OSType}}'], {
+        encoding: 'utf8',
+        timeout: 3000,
+        shell: false,
+      });
+      if (daemonRes.status !== 0 || !daemonRes.stdout?.trim()) {
+        this._lastCheckResult = {
+          available: false,
+          reasonCode: 'DOCKER_DAEMON_UNAVAILABLE',
+          error: 'Docker daemon is not running or not responding to docker info.',
+        };
+        return this._lastCheckResult;
+      }
+    } catch (err: any) {
+      this._lastCheckResult = {
+        available: false,
+        reasonCode: 'DOCKER_DAEMON_UNAVAILABLE',
+        error: `Failed to connect to Docker daemon: ${err?.message || err}`,
+      };
+      return this._lastCheckResult;
+    }
+
+    // 3. Verify required sandbox image exists locally
+    try {
+      const imgRes = this.spawner.spawnSync('docker', ['image', 'inspect', this.config.image, '--format', '{{.Id}}'], {
+        encoding: 'utf8',
+        timeout: 3000,
+        shell: false,
+      });
+      if (imgRes.status !== 0 || !imgRes.stdout?.trim()) {
+        this._lastCheckResult = {
+          available: false,
+          reasonCode: 'DOCKER_IMAGE_UNAVAILABLE',
+          error: `Required sandbox image '${this.config.image}' is not found locally. Automatic fallback is prohibited.`,
+        };
+        return this._lastCheckResult;
+      }
+    } catch (err: any) {
+      this._lastCheckResult = {
+        available: false,
+        reasonCode: 'DOCKER_IMAGE_UNAVAILABLE',
+        error: `Failed to inspect sandbox image '${this.config.image}': ${err?.message || err}`,
+      };
+      return this._lastCheckResult;
+    }
+
+    this._lastCheckResult = { available: true };
+    return this._lastCheckResult;
+  }
+
+  get isAvailable(): boolean {
+    return this.checkAvailability().available;
+  }
+
+  assertAvailable(): void {
+    const check = this.checkAvailability();
+    if (!check.available) {
+      throw new SandboxUnavailableError(
+        check.error ?? 'Container sandbox is unavailable.',
+        check.reasonCode ?? 'SANDBOX_BOUNDARY_FAILED',
+      );
+    }
   }
 
   /**
@@ -103,6 +193,32 @@ export class DockerWorkerSandboxAdapter implements WorkerSandboxAdapter {
   ): Promise<ExecutionResult> {
     const started = Date.now();
     const effectiveConfig = { ...this.config, ...configOverride };
+
+    // 1. Invariant: assert sandbox availability before any execution
+    this.assertAvailable();
+
+    // If a custom image override was specified, verify it exists locally
+    if (effectiveConfig.image !== this.config.image) {
+      try {
+        const imgRes = this.spawner.spawnSync('docker', ['image', 'inspect', effectiveConfig.image, '--format', '{{.Id}}'], {
+          encoding: 'utf8',
+          timeout: 3000,
+          shell: false,
+        });
+        if (imgRes.status !== 0 || !imgRes.stdout?.trim()) {
+          throw new SandboxUnavailableError(
+            `Required sandbox image '${effectiveConfig.image}' is not found locally.`,
+            'DOCKER_IMAGE_UNAVAILABLE',
+          );
+        }
+      } catch (err: any) {
+        if (err instanceof SandboxUnavailableError) throw err;
+        throw new SandboxUnavailableError(
+          `Failed to inspect sandbox image '${effectiveConfig.image}': ${err?.message || err}`,
+          'DOCKER_IMAGE_UNAVAILABLE',
+        );
+      }
+    }
 
     // Build unique ephemeral container name
     const containerName = `pdl-sandbox-${Date.now()}-${randomUUID().slice(0, 8)}`;
@@ -166,7 +282,7 @@ export class DockerWorkerSandboxAdapter implements WorkerSandboxAdapter {
       dockerArgs.splice(1, 0, '--read-only', '--tmpfs', '/tmp:rw,noexec,nosuid,size=64m');
     }
 
-    return new Promise(resolvePromise => {
+    return new Promise((resolvePromise, rejectPromise) => {
       let stdout = '';
       let stderr = '';
       let settled = false;
@@ -187,20 +303,20 @@ export class DockerWorkerSandboxAdapter implements WorkerSandboxAdapter {
       let child: ReturnType<typeof spawn>;
 
       try {
-        child = spawn('docker', dockerArgs, {
+        child = this.spawner.spawn('docker', dockerArgs, {
           shell: false,
           stdio: ['ignore', 'pipe', 'pipe'],
         });
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Unable to start container sandbox process';
-        finish(null, 'START_ERROR');
+        rejectPromise(new SandboxUnavailableError(errorMsg, 'CONTAINER_CREATION_FAILED'));
         return;
       }
 
       // Cleanup function to guarantee container destruction
       const killContainer = () => {
         try {
-          spawnSync('docker', ['kill', containerName], { stdio: 'ignore', timeout: 5000 });
+          this.spawner.spawnSync('docker', ['kill', containerName], { stdio: 'ignore', timeout: 5000 });
         } catch {}
         try {
           child.kill('SIGKILL');
@@ -216,7 +332,7 @@ export class DockerWorkerSandboxAdapter implements WorkerSandboxAdapter {
       child.stderr?.on('data', data => (stderr += data.toString()));
 
       child.on('error', error => {
-        stderr += error.message;
+        stderr += `[SANDBOX_UNAVAILABLE] CONTAINER_CREATION_FAILED: ${error.message}`;
         clearTimeout(timer);
         killContainer();
         finish(null, 'START_ERROR');
@@ -224,6 +340,12 @@ export class DockerWorkerSandboxAdapter implements WorkerSandboxAdapter {
 
       child.on('close', code => {
         clearTimeout(timer);
+        // Docker run exit code 125 indicates daemon or container creation failure
+        if (code === 125 && !timedOut) {
+          stderr = `[SANDBOX_UNAVAILABLE] CONTAINER_STARTUP_FAILED: ${stderr || 'Docker daemon returned code 125'}`;
+          finish(code, 'FAILED');
+          return;
+        }
         // If timed out, ensure status is TIMED_OUT regardless of exit code
         finish(code, timedOut ? 'TIMED_OUT' : code === 0 ? 'COMPLETED' : 'FAILED');
       });

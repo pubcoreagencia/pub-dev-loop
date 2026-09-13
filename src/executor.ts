@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { WorkspaceEnvironmentSecurity, WorkspaceCommandSecurity } from './tools/security.js';
-import type { WorkerSandboxAdapter } from './pdl/sandbox/types.js';
+import { SandboxUnavailableError, type WorkerSandboxAdapter } from './pdl/sandbox/types.js';
+import { DockerWorkerSandboxAdapter } from './pdl/sandbox/docker-worker-sandbox-adapter.js';
 
 export type ExecutionStatus = 'COMPLETED' | 'FAILED' | 'TIMED_OUT' | 'START_ERROR';
 
@@ -34,16 +35,41 @@ export const redact = (value: string, environment: NodeJS.ProcessEnv = process.e
   return result;
 };
 
+export interface AgentExecutorOptions {
+  /**
+   * Internal security switch:
+   * When true, allows direct host spawn (strictly reserved for trusted internal engine operations or test harnesses).
+   * When false (default), arbitrary agent execution MUST run inside the container sandbox.
+   * If sandbox is unavailable and allowHostExecution is false, execution fails closed with SandboxUnavailableError.
+   */
+  allowHostExecution?: boolean;
+}
+
 /**
- * Agent executor: runs commands via spawn with shell: false or through an isolated container sandbox.
+ * Agent executor: runs commands through an isolated ephemeral container sandbox (P0.4.3/P0.4.4).
  *
- * When a WorkerSandboxAdapter is provided and available, execution is delegated
- * to an ephemeral, unprivileged container sandbox (P0.4.3 Capability Boundary).
+ * For arbitrary LLM-generated agent code, container execution is MANDATORY.
+ * If the container sandbox is unavailable, execution fails closed with SandboxUnavailableError.
+ * Host fallback is strictly prohibited.
  *
- * On Windows fallback (no container), spawn with shell: false executes locally.
+ * Direct host execution is strictly restricted to trusted internal engine operations
+ * where allowHostExecution is explicitly set to true.
  */
 export class AgentExecutor {
-  constructor(private readonly sandbox?: WorkerSandboxAdapter) {}
+  private readonly sandbox?: WorkerSandboxAdapter;
+  private readonly options: AgentExecutorOptions;
+
+  constructor(
+    sandbox?: WorkerSandboxAdapter,
+    options?: AgentExecutorOptions,
+  ) {
+    this.options = { allowHostExecution: false, ...options };
+    if (sandbox !== undefined) {
+      this.sandbox = sandbox ?? undefined;
+    } else if (!this.options.allowHostExecution) {
+      this.sandbox = new DockerWorkerSandboxAdapter();
+    }
+  }
 
   async execute(request: ExecutionRequest): Promise<ExecutionResult> {
     const started = Date.now();
@@ -64,11 +90,20 @@ export class AgentExecutor {
     const environment = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(rawEnv);
     WorkspaceEnvironmentSecurity.assertNoGovernanceCredentials(environment);
 
-    // If sandbox adapter is configured and active, execute within the container capability boundary
-    if (this.sandbox && this.sandbox.isAvailable) {
+    // P0.4.4 Invariant: Arbitrary agent code execution requires container sandbox.
+    // Host execution fallback is strictly prohibited.
+    if (!this.options.allowHostExecution) {
+      if (!this.sandbox) {
+        throw new SandboxUnavailableError(
+          'No sandbox adapter configured and host execution is disabled.',
+          'SANDBOX_ADAPTER_INIT_FAILED',
+        );
+      }
+      this.sandbox.assertAvailable();
       return this.sandbox.execute(request, environment);
     }
 
+    // Trusted host execution path (ONLY reachable when allowHostExecution is explicitly true)
     return new Promise(resolve => {
       let stdout = '';
       let stderr = '';

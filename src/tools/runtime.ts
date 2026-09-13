@@ -1,6 +1,7 @@
 import { promises as fs, constants as fsConstants } from 'node:fs';
 import { join, relative, sep, parse } from 'node:path';
 import { AgentExecutor, type ExecutionResult, type ExecutionRequest } from '../executor.js';
+import { SandboxUnavailableError } from '../pdl/sandbox/types.js';
 import { WorkspaceSecurity, WorkspaceEnvironmentSecurity, WorkspaceCommandSecurity } from './security.js';
 import { TrustBoundary } from '../pdl/security/trust-boundary.js';
 import type { ToolResult, ToolExecutionContext, ToolDefinition } from './types.js';
@@ -660,7 +661,21 @@ export class ToolRuntime {
       environment: safeEnvironment,
     };
 
-    const execResult = await this.executor.execute(request);
+    let execResult: ExecutionResult;
+    try {
+      execResult = await this.executor.execute(request);
+    } catch (err: any) {
+      if (err instanceof SandboxUnavailableError || err?.code === 'SANDBOX_UNAVAILABLE') {
+        return {
+          toolCallId,
+          toolName: 'run_command',
+          success: false,
+          content: '',
+          error: err.message || '[SANDBOX_UNAVAILABLE] Execution failed: Sandbox unavailable.',
+        };
+      }
+      throw err;
+    }
 
     if (execResult.status === 'COMPLETED') {
       return {
