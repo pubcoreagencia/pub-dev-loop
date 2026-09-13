@@ -7,6 +7,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Pre-configure git system-wide so it never fails on safe.directory ownership
+RUN mkdir -p /workspace /home/node && \
+    chmod 777 /workspace /home/node && \
+    git config --system --add safe.directory '*'
+
 # Non-root unprivileged sandbox user
 USER node
 WORKDIR /workspace

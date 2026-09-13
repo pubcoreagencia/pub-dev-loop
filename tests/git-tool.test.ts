@@ -42,7 +42,7 @@ describe('Git Tool — git_commit', () => {
   beforeEach(async () => {
     ctx = createContext();
     await initGitRepo(testRoot);
-    runtime = new ToolRuntime(ctx, new AgentExecutor());
+    runtime = new ToolRuntime(ctx, new AgentExecutor(undefined, { allowHostExecution: true }));
   });
 
   afterEach(async () => {
@@ -179,7 +179,7 @@ describe('Git Tool — WorkspaceSecurity integration', () => {
 
   it('git_commit uses workspace cwd only', () => {
     // The ToolRuntime always uses security.root as cwd for git operations
-    const runtime = new ToolRuntime(createContext(), new AgentExecutor());
+    const runtime = new ToolRuntime(createContext(), new AgentExecutor(undefined, { allowHostExecution: true }));
     // Verify root is set correctly
     expect(runtime.getChangedFiles()).toEqual([]);
   });

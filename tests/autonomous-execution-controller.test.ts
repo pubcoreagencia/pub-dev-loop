@@ -339,9 +339,24 @@ describe('PDL Autonomous Execution Controller — Continuity Loop', () => {
   });
 
   it('7. Real Worker Runtime Adapter: Integrates BaseWorker lifecycle (claim -> retry -> finalize -> state update)', async () => {
+    // Stub remotePersistence so the real PdlRemotePersistence doesn't reject
+    // 'pub-dev-loop' as UNAUTHORIZED_PRODUCT during the test.
+    const mockRemotePersistence = {
+      persist: async (opts: any) => ({
+        status: 'VERIFIED' as const,
+        repository: opts.product ?? 'pub-dev-loop',
+        branch: opts.branch ?? 'worker/test-worker-alpha/task-1',
+        pushAttempted: true,
+        pushSucceeded: true,
+        localSha: opts.localSha ?? 'a'.repeat(40),
+        remoteSha: opts.localSha ?? 'a'.repeat(40),
+        remoteVerified: true,
+      }),
+    } as any;
+
     class TestBaseWorker extends BaseWorker {
       constructor(tasks: TaskRepository, specDb?: any) {
-        super(tasks, 'test-worker-alpha', specDb);
+        super(tasks, 'test-worker-alpha', specDb, undefined, undefined, mockRemotePersistence);
       }
 
       protected async executeWithRetry(task: Task, repository: string): Promise<AttemptResult> {
@@ -403,10 +418,11 @@ describe('PDL Autonomous Execution Controller — Continuity Loop', () => {
       protected override async finalize(): Promise<FinalizeResult> {
         return {
           status: 'COMPLETED',
-          commitSha: null,
+          commitSha: 'a'.repeat(40),
           gitStatus: 'clean',
           validationErrors: [],
           testOutput: 'All tests passed',
+          testsPassed: true,
           changedFiles: ['src/office/research.ts'],
           declaredChangedFiles: ['src/office/research.ts'],
         } as any;
@@ -425,10 +441,11 @@ describe('PDL Autonomous Execution Controller — Continuity Loop', () => {
       execution: execResult.execution,
       finalization: {
         status: 'COMPLETED',
-        commitSha: null,
+        commitSha: 'a'.repeat(40),
         gitStatus: 'clean',
         validationErrors: [],
         testOutput: 'All tests passed',
+        testsPassed: true,
         changedFiles: ['src/office/research.ts'],
         declaredChangedFiles: ['src/office/research.ts'],
       } as any,

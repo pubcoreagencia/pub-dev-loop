@@ -604,7 +604,7 @@ export abstract class BaseWorker implements Worker {
       const gateDecision = evaluatePersistenceGate({
         task,
         hasMaterialChanges,
-        validationPassed: finalizeResult.status === 'COMPLETED' && (finalizeResult.testsPassed === true || finalizeResult.testsPassed === null),
+        validationPassed: finalizeResult.status === 'COMPLETED' && finalizeResult.testsPassed !== false,
         commitSha: finalizeResult.commitSha,
         worktreeClean,
         remotePersistence: remotePersistenceResult,

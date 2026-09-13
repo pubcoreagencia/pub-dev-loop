@@ -49,6 +49,19 @@ describe('P5.3 Operational Streaming & Worker Integration (Scenarios A through N
     updatedAt: new Date(),
   };
 
+  const dummyPrepared: any = {
+    task: dummyTask,
+    executionSpec: {
+      specVersion: '1.0.0',
+      objective: 'test',
+      context: { version: '1.0.0' },
+      instructions: [],
+      constraints: [],
+      acceptanceCriteria: [],
+      lineage: { intakeHash: 'hash-1' },
+    },
+  };
+
   const mockTasks: TaskRepository = {
     claim: vi.fn(),
     heartbeat: vi.fn(),
@@ -171,7 +184,7 @@ describe('P5.3 Operational Streaming & Worker Integration (Scenarios A through N
 
       const worker = new RouterWorker(mockTasks, mockProvider, 'router');
       // trigger execution in background and cancel immediately
-      const execPromise = (worker as any).executeWithRetry(dummyTask, testRepoDir);
+      const execPromise = (worker as any).executeWithRetry(dummyTask, testRepoDir, dummyPrepared);
       // Wait slightly for git clone to finish and provider execution to start
       await new Promise(r => setTimeout(r, 60));
       await worker.cancel();
@@ -214,7 +227,7 @@ describe('P5.3 Operational Streaming & Worker Integration (Scenarios A through N
       process.env.ROUTER_TIMEOUT_PER_ATTEMPT_MS = '50'; // 50ms quick timeout
       try {
         const worker = new RouterWorker(mockTasks, mockProvider, 'router');
-        const res = await (worker as any).executeWithRetry(dummyTask, testRepoDir);
+        const res = await (worker as any).executeWithRetry(dummyTask, testRepoDir, dummyPrepared);
         expect(res.status).toBe('FAILED');
         expect(signalAborted).toBe(true);
       } finally {
@@ -284,7 +297,7 @@ describe('P5.3 Operational Streaming & Worker Integration (Scenarios A through N
       try {
         const worker = new RouterWorker(mockTasks, mockProvider, 'router', callback);
         (worker as any).getProviderChain = () => [mockProvider, mockProvider];
-        const res = await (worker as any).executeWithRetry(dummyTask, testRepoDir);
+        const res = await (worker as any).executeWithRetry(dummyTask, testRepoDir, dummyPrepared);
 
         expect(res.status).toBe('COMPLETED');
         expect(res.stdout).toBe('Attempt 1 winning text.');

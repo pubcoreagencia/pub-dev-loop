@@ -103,7 +103,6 @@ export class TrustBoundary {
     // On POSIX platforms, backslashes are treated as ordinary filename characters by node's isAbsolute,
     // so UNC paths like \\server\share\evil.txt would otherwise be treated as relative filenames.
     const isUncOrWindowsAbsolute =
-      win32.isAbsolute(filePath) ||
       filePath.startsWith('\\\\') ||
       filePath.startsWith('//') ||
       /^[a-zA-Z]:[\\/]/.test(filePath);

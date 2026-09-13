@@ -245,10 +245,15 @@ export class ChiefOfStaffAgent {
 
     // 4.3 Create Canonical ExecutionSpec and Task via TaskIntakeService or In-Memory Seam
     const currentBranch = resolvedCtx.git_state.branch;
-    const isProtectedDefault = !currentBranch || currentBranch === 'main' || currentBranch === 'master';
-    const taskBranch = isProtectedDefault
-      ? `feat/${project}-v1`
-      : currentBranch;
+    const isDevelopmentBranch =
+      currentBranch &&
+      (currentBranch.startsWith('feat/') ||
+        currentBranch.startsWith('feature/') ||
+        currentBranch.startsWith('fix/') ||
+        currentBranch.startsWith('worker/'));
+    const taskBranch = isDevelopmentBranch
+      ? currentBranch
+      : `feat/${project}-v1`;
 
     const intakeEngine = this.intakeService
       ?? (this.taskRepo as any)?.intakeService

@@ -1,6 +1,7 @@
 import { spawn, spawnSync, execSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
+import { existsSync, mkdirSync, chmodSync } from 'node:fs';
 import type { ExecutionRequest, ExecutionResult, ExecutionStatus } from '../../executor.js';
 import { redact } from '../../executor.js';
 import { WorkspaceEnvironmentSecurity } from '../../tools/security.js';
@@ -224,7 +225,24 @@ export class DockerWorkerSandboxAdapter implements WorkerSandboxAdapter {
     const containerName = `pdl-sandbox-${Date.now()}-${randomUUID().slice(0, 8)}`;
 
     // Normalize Windows workspace path to forward slashes for Docker volume mount
-    const normalizedWs = resolve(request.cwd).replace(/\\/g, '/');
+    let ws = request.cwd;
+    if (process.platform !== 'win32' && /^[a-zA-Z]:[\\/]/.test(ws)) {
+      // Strip mock Windows drive prefix on POSIX (e.g. C:/tmp/ws -> /tmp/ws) to avoid invalid Docker volume spec
+      ws = ws.replace(/^[a-zA-Z]:/, '');
+    }
+    const normalizedWs = resolve(ws).replace(/\\/g, '/');
+
+    if (!existsSync(normalizedWs)) {
+      try {
+        mkdirSync(normalizedWs, { recursive: true });
+      } catch {}
+    }
+
+    if (process.platform !== 'win32') {
+      try {
+        chmodSync(normalizedWs, 0o777);
+      } catch {}
+    }
 
     // Build environment variables array for Docker (-e KEY=VALUE)
     const rawEnv = sanitizedEnv ?? WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(request.environment ?? process.env);

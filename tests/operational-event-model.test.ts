@@ -54,6 +54,19 @@ describe('P5.4 Operational Event Model & Envelope Standard (Scenarios 1 through 
     updatedAt: new Date(),
   };
 
+  const dummyPrepared: any = {
+    task: dummyTask,
+    executionSpec: {
+      specVersion: '1.0.0',
+      objective: 'test',
+      context: { version: '1.0.0' },
+      instructions: [],
+      constraints: [],
+      acceptanceCriteria: [],
+      lineage: { intakeHash: 'hash-1' },
+    },
+  };
+
   const mockTasks: TaskRepository = {
     claim: vi.fn(),
     heartbeat: vi.fn(),
@@ -153,7 +166,7 @@ describe('P5.4 Operational Event Model & Envelope Standard (Scenarios 1 through 
       const provider = new OpenRouterProvider('http://localhost:19999/v1', 'key', 5000, 'openrouter/free', true);
       const worker = new RouterWorker(mockTasks, provider, 'router', callback);
 
-      const result = await (worker as any).executeWithRetry(dummyTask, testRepoDir);
+      const result = await (worker as any).executeWithRetry(dummyTask, testRepoDir, dummyPrepared);
       expect(result.status).toBe('COMPLETED');
 
       const types = capturedEnvelopes.map(e => e.type);
@@ -222,7 +235,7 @@ describe('P5.4 Operational Event Model & Envelope Standard (Scenarios 1 through 
         const worker = new RouterWorker(mockTasks, mockProvider, 'router', callback);
         (worker as any).getProviderChain = () => [mockProvider, mockProvider];
 
-        const res = await (worker as any).executeWithRetry(dummyTask, testRepoDir);
+        const res = await (worker as any).executeWithRetry(dummyTask, testRepoDir, dummyPrepared);
         expect(res.status).toBe('COMPLETED');
 
         const attempt0Types = capturedEnvelopes.filter(e => e.attempt === 0).map(e => e.type);
@@ -276,7 +289,7 @@ describe('P5.4 Operational Event Model & Envelope Standard (Scenarios 1 through 
       };
 
       const worker = new RouterWorker(mockTasks, mockProvider, 'router', callback);
-      const execPromise = (worker as any).executeWithRetry(dummyTask, testRepoDir);
+      const execPromise = (worker as any).executeWithRetry(dummyTask, testRepoDir, dummyPrepared);
       // Wait for provider execution to begin and attemptSink to be created
       await new Promise(r => setTimeout(r, 150));
       await worker.cancel();
