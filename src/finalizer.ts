@@ -69,8 +69,8 @@ export class WorkspaceValidator {
       }
 
       return { trackedFiles, gitStatus, headSha };
-    } catch {
-      return { trackedFiles: [], gitStatus: '', headSha: null };
+    } catch (err: any) {
+      return { trackedFiles: [], gitStatus: 'GIT_ERROR: ' + (err?.message || 'Failed to capture git state'), headSha: null };
     }
   }
 
@@ -145,8 +145,8 @@ export class WorkspaceValidator {
           return arrowIdx >= 0 ? filename.substring(arrowIdx + 4).trim() : filename;
         })
         .filter(Boolean);
-    } catch {
-      return [];
+    } catch (err: any) {
+      throw new Error(`Git status inspection failed: ${err?.message || err}`);
     }
   }
 }
@@ -224,6 +224,20 @@ export class TaskFinalizer {
   ): Promise<FinalizeResult> {
     // Check git status
     const gitStatusResult = await this.exec('git', ['status', '--short']);
+    if (gitStatusResult.exitCode !== 0 || gitStatusResult.status !== 'COMPLETED') {
+      console.error(`[TaskFinalizer] Git status command failed (exitCode=${gitStatusResult.exitCode}): ${gitStatusResult.stderr}`);
+      return {
+        status: 'FAILED',
+        commitSha: null,
+        commitMessage: null,
+        changedFiles: [],
+        gitStatus: '',
+        testsPassed: null,
+        testOutput: '',
+        errorCode: 'GIT_EXECUTION_FAILED',
+        errorMessage: `Git status execution failed: ${gitStatusResult.stderr || 'Command exited with non-zero status'}`,
+      };
+    }
     const gitStatus = gitStatusResult.stdout || '';
 
     const changedFiles = gitStatus
@@ -241,8 +255,21 @@ export class TaskFinalizer {
       })
       .filter(Boolean);
 
-    // No changes — task is complete, no commit needed
+    // No changes — check if task expected changes
     if (changedFiles.length === 0) {
+      if (options.expectChanges) {
+        return {
+          status: 'FAILED',
+          commitSha: null,
+          commitMessage: null,
+          changedFiles: [],
+          gitStatus: 'clean',
+          testsPassed: null,
+          testOutput: '',
+          errorCode: 'NO_CHANGES',
+          errorMessage: 'Task expected changes, but working tree is clean.',
+        };
+      }
       return {
         status: 'COMPLETED',
         commitSha: null,
@@ -485,6 +512,19 @@ export class TaskFinalizer {
 
     // Verify working tree is clean after commit
     const finalStatusResult = await this.exec('git', ['status', '--short']);
+    if (finalStatusResult.exitCode !== 0 || finalStatusResult.status !== 'COMPLETED') {
+      return {
+        status: 'FAILED',
+        commitSha,
+        commitMessage,
+        changedFiles,
+        gitStatus: '',
+        testsPassed,
+        testOutput: this.redactSecrets(testOutput),
+        errorCode: 'GIT_EXECUTION_FAILED',
+        errorMessage: `Post-commit git status failed: ${finalStatusResult.stderr || 'Command failed'}`,
+      };
+    }
     const workingTreeClean = (finalStatusResult.stdout || '').trim() === '';
 
     return {

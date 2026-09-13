@@ -35,6 +35,24 @@ describe('P0.4.4 Fail-Closed Sandbox Availability (Adversarial Suite)', () => {
     timeoutMs: 5000,
   };
 
+  const createHealthyCapabilitySpawner = (extra?: Partial<SandboxSpawner>): SandboxSpawner => ({
+    spawnSync: (cmd, args, opts) => {
+      if (cmd === 'docker') {
+        if (Array.isArray(args) && args[0] === '--version') {
+          return { status: 0, stdout: 'Docker version 29.0.0', stderr: '', pid: 1, output: [], signal: null } as any;
+        }
+        if (Array.isArray(args) && args[0] === 'info') {
+          return { status: 0, stdout: 'Server Version: 29.0.0', stderr: '', pid: 1, output: [], signal: null } as any;
+        }
+        if (Array.isArray(args) && args[0] === 'image' && args[1] === 'inspect') {
+          return { status: 0, stdout: 'sha256:1234567890', stderr: '', pid: 1, output: [], signal: null } as any;
+        }
+      }
+      return spawnSync(cmd, args as any, opts);
+    },
+    ...extra,
+  });
+
   // --------------------------------------------------------------------------
   // 1. Docker daemon unavailable
   // --------------------------------------------------------------------------
@@ -104,7 +122,7 @@ describe('P0.4.4 Fail-Closed Sandbox Availability (Adversarial Suite)', () => {
             signal: null,
           } as any;
         }
-        return spawnSync(cmd, args as any, opts);
+        return createHealthyCapabilitySpawner().spawnSync(cmd, args as any, opts);
       },
     });
 
@@ -121,14 +139,14 @@ describe('P0.4.4 Fail-Closed Sandbox Availability (Adversarial Suite)', () => {
   // 4. Container creation failure
   // --------------------------------------------------------------------------
   it('4. Container creation failure: spawn rejection throws SandboxUnavailableError with CONTAINER_CREATION_FAILED', async () => {
-    const adapter = new DockerWorkerSandboxAdapter({}, {
+    const adapter = new DockerWorkerSandboxAdapter({}, createHealthyCapabilitySpawner({
       spawn: (cmd, args) => {
         if (cmd === 'docker' && Array.isArray(args) && args[0] === 'run') {
           throw new Error('Docker daemon failed to create container: out of memory');
         }
         throw new Error('Unexpected call');
       },
-    });
+    }));
 
     expect(adapter.isAvailable).toBe(true);
 
@@ -147,7 +165,7 @@ describe('P0.4.4 Fail-Closed Sandbox Availability (Adversarial Suite)', () => {
   // 5. Container startup failure (OCI / Daemon exit code 125)
   // --------------------------------------------------------------------------
   it('5. Container startup failure: Docker exit 125 fails closed with CONTAINER_STARTUP_FAILED', async () => {
-    const adapter = new DockerWorkerSandboxAdapter({}, {
+    const adapter = new DockerWorkerSandboxAdapter({}, createHealthyCapabilitySpawner({
       spawn: (cmd, args) => {
         if (cmd === 'docker' && Array.isArray(args) && args[0] === 'run') {
           const fakeChild = new EventEmitter() as any;
@@ -165,7 +183,7 @@ describe('P0.4.4 Fail-Closed Sandbox Availability (Adversarial Suite)', () => {
         }
         throw new Error('Unexpected call');
       },
-    });
+    }));
 
     const executor = new AgentExecutor(adapter);
     const result = await executor.execute({ ...sampleRequest, cwd: tempWorkspace });
@@ -192,7 +210,14 @@ describe('P0.4.4 Fail-Closed Sandbox Availability (Adversarial Suite)', () => {
   // 7. Sandbox execution failure before agent launch
   // --------------------------------------------------------------------------
   it('7. Execution failure before agent launch: custom missing image fails closed before spawn', async () => {
-    const adapter = new DockerWorkerSandboxAdapter();
+    const adapter = new DockerWorkerSandboxAdapter({}, createHealthyCapabilitySpawner({
+      spawnSync: (cmd, args, opts) => {
+        if (cmd === 'docker' && Array.isArray(args) && args[0] === 'image' && args[1] === 'inspect' && args[2] === 'nonexistent-agent-image:p044') {
+          return { status: 1, stdout: '', stderr: 'Error: No such image', pid: 1, output: [], signal: null } as any;
+        }
+        return createHealthyCapabilitySpawner().spawnSync(cmd, args as any, opts);
+      },
+    }));
     const executor = new AgentExecutor(adapter);
 
     // Specify a non-existent image in configOverride
@@ -209,28 +234,42 @@ describe('P0.4.4 Fail-Closed Sandbox Availability (Adversarial Suite)', () => {
   // 8. Sandbox execution timeout
   // --------------------------------------------------------------------------
   it('8. Sandbox execution timeout: enforces strict TIMED_OUT status and triggers container kill', async () => {
-    const adapter = new DockerWorkerSandboxAdapter();
+    let killed = false;
+    const adapter = new DockerWorkerSandboxAdapter({}, createHealthyCapabilitySpawner({
+      spawn: (cmd, args) => {
+        if (cmd === 'docker' && Array.isArray(args) && args[0] === 'run') {
+          const fakeChild = new EventEmitter() as any;
+          fakeChild.stdout = new EventEmitter();
+          fakeChild.stderr = new EventEmitter();
+          fakeChild.pid = 9999;
+          fakeChild.kill = vi.fn(() => {
+            killed = true;
+            fakeChild.emit('close', 137);
+          });
+          return fakeChild;
+        }
+        throw new Error('Unexpected call');
+      },
+    }));
     const executor = new AgentExecutor(adapter);
-
-    const timeoutScript = join(tempWorkspace, 'hang.js');
-    await fs.writeFile(timeoutScript, 'setInterval(() => {}, 1000);', 'utf8');
 
     const result = await executor.execute({
       command: 'node',
       args: ['hang.js'],
       cwd: tempWorkspace,
-      timeoutMs: 500, // Short timeout to test kill
+      timeoutMs: 100, // Short timeout to test kill
     });
 
     expect(result.status).toBe('TIMED_OUT');
     expect(result.status).not.toBe('COMPLETED');
-  }, 10000);
+    expect(killed).toBe(true);
+  });
 
   // --------------------------------------------------------------------------
   // 9. Container killed before completion (SIGKILL / 137)
   // --------------------------------------------------------------------------
   it('9. Container killed before completion: exit code 137 returns FAILED, never COMPLETED', async () => {
-    const adapter = new DockerWorkerSandboxAdapter({}, {
+    const adapter = new DockerWorkerSandboxAdapter({}, createHealthyCapabilitySpawner({
       spawn: (cmd, args) => {
         if (cmd === 'docker' && Array.isArray(args) && args[0] === 'run') {
           const fakeChild = new EventEmitter() as any;
@@ -247,7 +286,7 @@ describe('P0.4.4 Fail-Closed Sandbox Availability (Adversarial Suite)', () => {
         }
         throw new Error('Unexpected call');
       },
-    });
+    }));
 
     const executor = new AgentExecutor(adapter);
     const result = await executor.execute({ ...sampleRequest, cwd: tempWorkspace });
@@ -261,7 +300,7 @@ describe('P0.4.4 Fail-Closed Sandbox Availability (Adversarial Suite)', () => {
   // 10. Simulated Docker command failure
   // --------------------------------------------------------------------------
   it('10. Simulated Docker command failure: non-zero exit code preserves error, produces no fake COMPLETED', async () => {
-    const adapter = new DockerWorkerSandboxAdapter({}, {
+    const adapter = new DockerWorkerSandboxAdapter({}, createHealthyCapabilitySpawner({
       spawn: (cmd, args) => {
         if (cmd === 'docker' && Array.isArray(args) && args[0] === 'run') {
           const fakeChild = new EventEmitter() as any;
@@ -279,7 +318,7 @@ describe('P0.4.4 Fail-Closed Sandbox Availability (Adversarial Suite)', () => {
         }
         throw new Error('Unexpected call');
       },
-    });
+    }));
 
     const adapterExecutor = new AgentExecutor(adapter);
     const result = await adapterExecutor.execute({ ...sampleRequest, cwd: tempWorkspace });

@@ -852,9 +852,20 @@ describe('PDL Trust Boundary & Protected Paths Enforcement (Phase 5.5)', () => {
       }).toThrow(GovernanceProtectedPathViolationError);
     });
 
-    it('4. throws GovernanceProtectedPathViolationError on UNC paths outside workspace', () => {
+    it('4. throws GovernanceProtectedPathViolationError on UNC paths outside workspace (multiplatform)', () => {
+      // Windows backslash UNC
       expect(() => {
         TrustBoundary.normalizePath('\\\\server\\share\\evil.txt', tempDir);
+      }).toThrow(GovernanceProtectedPathViolationError);
+
+      // Network share forward slash UNC
+      expect(() => {
+        TrustBoundary.normalizePath('//server/share/evil.txt', tempDir);
+      }).toThrow(GovernanceProtectedPathViolationError);
+
+      // Drive path outside workspace
+      expect(() => {
+        TrustBoundary.normalizePath('C:\\Windows\\System32\\calc.exe', tempDir);
       }).toThrow(GovernanceProtectedPathViolationError);
     });
 

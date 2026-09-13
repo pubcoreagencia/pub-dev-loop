@@ -36,9 +36,10 @@ describe('P0.3.1: Host GitHub CLI (gh) & Governance Escape Neutralization', () =
     tempDir = mkdtempSync(join(tmpdir(), 'pdl-gh-escape-test-'));
     remoteDir = mkdtempSync(join(tmpdir(), 'pdl-gh-escape-remote-'));
 
-    execSync('git init --bare', { cwd: remoteDir, stdio: 'ignore' });
+    execSync('git init --bare -b main', { cwd: remoteDir, stdio: 'ignore' });
 
-    execSync('git init', { cwd: tempDir, stdio: 'ignore' });
+    execSync('git init -b main', { cwd: tempDir, stdio: 'ignore' });
+    execSync('git checkout -B main', { cwd: tempDir, stdio: 'ignore' });
     execSync('git config user.name "PDL Security Invariant"', { cwd: tempDir, stdio: 'ignore' });
     execSync('git config user.email "security@pdl.internal"', { cwd: tempDir, stdio: 'ignore' });
     writeFileSync(join(tempDir, 'README.md'), '# P0.3.1 GH Escape Test Sandbox\n');
@@ -272,7 +273,7 @@ describe('P0.3.1: Host GitHub CLI (gh) & Governance Escape Neutralization', () =
         workspaceRoot: tempDir,
         commandTimeoutMs: 10000,
         redactSecrets: true,
-      });
+      }, new AgentExecutor(undefined, { allowHostExecution: true }));
 
       const res = await (rt as any).runCommand('test-safe', {
         command: 'node -v',
@@ -387,7 +388,7 @@ describe('P0.3.1: Host GitHub CLI (gh) & Governance Escape Neutralization', () =
         workspaceRoot: tempDir,
         commandTimeoutMs: 10000,
         redactSecrets: false,
-      });
+      }, new AgentExecutor(undefined, { allowHostExecution: true }));
 
       const script = `
         const { execSync } = require('child_process');
@@ -407,6 +408,44 @@ describe('P0.3.1: Host GitHub CLI (gh) & Governance Escape Neutralization', () =
       expect(res.success).toBe(true);
       expect(res.content).toContain('EXPECTED_NOT_FOUND');
       expect(res.content).not.toContain('UNEXPECTED_SUCCESS');
+    });
+
+    it('23. gh in dedicated directory is stripped from PATH on Windows and POSIX', () => {
+      const sanitized = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv({
+        PATH: ['/opt/homebrew/Cellar/gh/bin', '/usr/bin', '/bin'].join(process.platform === 'win32' ? ';' : ':'),
+      });
+      const pathVal = sanitized.PATH || '';
+      expect(pathVal).not.toContain('Cellar/gh');
+    });
+
+    it('24. gh in /usr/bin does not strip /usr/bin on POSIX and injects shadow bin', () => {
+      const sanitized = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv({
+        PATH: '/usr/local/bin:/usr/bin:/bin',
+      });
+      const pathVal = sanitized.PATH || '';
+      expect(pathVal).toContain('/usr/bin');
+      expect(pathVal).toContain('/bin');
+      expect(pathVal).toContain('pdl-sandbox-gh-isolated');
+    });
+
+    it('25. git remains fully executable in sanitized environment', () => {
+      const safeEnv = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(process.env);
+      const res = execSync('git --version', { env: safeEnv, encoding: 'utf8' });
+      expect(res).toContain('git version');
+    });
+
+    it('26. node remains fully executable in sanitized environment', () => {
+      const safeEnv = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(process.env);
+      const res = execSync(`"${process.execPath}" -v`, { env: safeEnv, encoding: 'utf8' });
+      expect(res.trim()).toMatch(/^v\d+\./);
+    });
+
+    it('27. fail-closed invariant policy remains intact against gh execution', () => {
+      const safeEnv = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(process.env);
+      expect(safeEnv.GH_TOKEN).toBeUndefined();
+      expect(safeEnv.GITHUB_TOKEN).toBeUndefined();
+      expect(safeEnv.GH_CONFIG_DIR).toBeDefined();
+      expect(safeEnv.GH_CONFIG_DIR).toContain('pdl-sandbox-gh-isolated');
     });
   });
 });

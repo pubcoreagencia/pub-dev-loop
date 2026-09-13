@@ -199,9 +199,35 @@ export class WorkspaceEnvironmentSecurity {
   private static isolatedGhConfigDir: string | null = null;
 
   /**
+   * Identifies whether a directory is a protected core operating system bin directory
+   * (such as /usr/bin or System32) that must never be removed from PATH.
+   */
+  public static isSystemBinDirectory(dirPath: string): boolean {
+    try {
+      const norm = resolve(dirPath).toLowerCase().replace(/\\/g, '/');
+      if (process.platform === 'win32') {
+        const sysRoot = (process.env.SystemRoot || 'C:\\Windows').toLowerCase().replace(/\\/g, '/');
+        return norm === sysRoot || norm.startsWith(sysRoot + '/');
+      } else {
+        return (
+          norm === '/bin' ||
+          norm === '/usr/bin' ||
+          norm === '/usr/local/bin' ||
+          norm === '/sbin' ||
+          norm === '/usr/sbin' ||
+          norm === '/usr/local/sbin'
+        );
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Provides a clean, isolated directory for GitHub CLI configuration.
    * Completely neutralizes the host keyring and Windows Credential Manager
-   * by providing an explicit inert hosts.yml and config.yml.
+   * by providing an explicit inert hosts.yml and config.yml, and populates
+   * a shadow bin/ directory containing inert blocking shims.
    */
   public static getIsolatedGhConfigDir(): string {
     if (!this.isolatedGhConfigDir) {
@@ -221,6 +247,28 @@ export class WorkspaceEnvironmentSecurity {
         const configFile = resolve(dir, 'config.yml');
         const inertConfig = 'git_protocol: https\neditor: \nprompt: disabled\n';
         writeFileSync(configFile, inertConfig, 'utf8');
+
+        // Create inert blocking shims in bin/ to shadow any system-level gh
+        const binDir = resolve(dir, 'bin');
+        if (!existsSync(binDir)) {
+          mkdirSync(binDir, { recursive: true });
+        }
+        // POSIX shim
+        const posixShim = resolve(binDir, 'gh');
+        writeFileSync(
+          posixShim,
+          '#!/bin/sh\necho "[PDL Security:BLOCK] Execution of GitHub CLI (gh) is prohibited in sanitized workspace" >&2\nexit 127\n',
+          { mode: 0o755 }
+        );
+        // Windows shims
+        writeFileSync(
+          resolve(binDir, 'gh.cmd'),
+          '@echo [PDL Security:BLOCK] Execution of GitHub CLI (gh) is prohibited in sanitized workspace 1>&2\r\n@exit /b 127\r\n'
+        );
+        writeFileSync(
+          resolve(binDir, 'gh.bat'),
+          '@echo [PDL Security:BLOCK] Execution of GitHub CLI (gh) is prohibited in sanitized workspace 1>&2\r\n@exit /b 127\r\n'
+        );
       } catch {}
       this.isolatedGhConfigDir = dir;
     }
@@ -263,7 +311,7 @@ export class WorkspaceEnvironmentSecurity {
       safeEnv[key] = val;
     }
 
-    // P0.4.1-A1: Sanitize PATH to remove directories exposing gh, gh.exe, or credential tools
+    // P0.4.1-A1 & Cross-Platform: Sanitize PATH to neutralize GitHub CLI while preserving system utilities
     const pathKey = Object.keys(safeEnv).find(k => k.toUpperCase() === 'PATH') || 'PATH';
     const rawPath = safeEnv[pathKey] || '';
     if (rawPath) {
@@ -274,19 +322,31 @@ export class WorkspaceEnvironmentSecurity {
           const trimmed = part.trim();
           if (!trimmed) return false;
           const lower = trimmed.toLowerCase();
-          // Exclude GitHub CLI directories
-          if (lower.includes('github cli') || lower.includes('github-cli')) {
+          // Exclude dedicated GitHub CLI directories
+          if (
+            lower.includes('github cli') ||
+            lower.includes('github-cli') ||
+            lower.includes('cellar/gh') ||
+            lower.includes('/gh/bin') ||
+            lower.includes('\\gh\\bin')
+          ) {
             return false;
           }
-          // Exclude any directory containing gh.exe or gh
-          try {
-            if (existsSync(resolve(trimmed, 'gh.exe')) || existsSync(resolve(trimmed, 'gh'))) {
-              return false;
-            }
-          } catch {}
+          // Exclude any non-system directory containing gh.exe or gh
+          if (!this.isSystemBinDirectory(trimmed)) {
+            try {
+              if (existsSync(resolve(trimmed, 'gh.exe')) || existsSync(resolve(trimmed, 'gh'))) {
+                return false;
+              }
+            } catch {}
+          }
           return true;
         });
-      safeEnv[pathKey] = cleanParts.join(pathSep);
+
+      // Prepend isolated shadow bin directory to ensure system-level gh is blocked
+      const ghIsolatedDir = this.getIsolatedGhConfigDir();
+      const shadowBinDir = resolve(ghIsolatedDir, 'bin');
+      safeEnv[pathKey] = shadowBinDir + pathSep + cleanParts.join(pathSep);
     }
 
     // P0.4.1-A2 & A3: Force isolated GitHub CLI configuration with inert dummy credentials

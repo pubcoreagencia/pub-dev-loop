@@ -12,7 +12,7 @@
  * 3. Pre-Push Gate: inspects commit changesets before remote persistence
  */
 
-import { resolve, relative, isAbsolute, normalize, sep } from 'node:path';
+import { resolve, relative, isAbsolute, normalize, sep, win32 } from 'node:path';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 
 export type PathClassification =
@@ -98,6 +98,22 @@ export class TrustBoundary {
 
     // Clean UNC prefix if present
     let clean = filePath.replace(/^[\\/]{2}\?[\\/]/, '');
+
+    // Multiplatform check: Explicitly detect UNC paths (\\\\ or //) or Windows drive letters.
+    // On POSIX platforms, backslashes are treated as ordinary filename characters by node's isAbsolute,
+    // so UNC paths like \\server\share\evil.txt would otherwise be treated as relative filenames.
+    const isUncOrWindowsAbsolute =
+      win32.isAbsolute(filePath) ||
+      filePath.startsWith('\\\\') ||
+      filePath.startsWith('//') ||
+      /^[a-zA-Z]:[\\/]/.test(filePath);
+
+    if (isUncOrWindowsAbsolute && process.platform !== 'win32') {
+      throw new GovernanceProtectedPathViolationError(
+        `Path traversal detected: '${filePath}' resolves outside workspace root '${workspaceRoot}'. Paths outside workspace root are strictly prohibited from classification as permissive paths.`,
+        filePath
+      );
+    }
 
     const resolvedRoot = resolve(workspaceRoot);
     let resolvedTarget: string;
