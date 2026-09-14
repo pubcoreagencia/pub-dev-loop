@@ -34,6 +34,11 @@ import {
 } from './pdl/persistence/index.js';
 import { ProductCatalog, defaultProductCatalog } from './pdl/products/catalog.js';
 import { DefaultPubNeuralBridge, type PubNeuralBridge } from './pdl/neural/index.js';
+import {
+  RemoteDeliveryGate,
+  evaluateDeliveryGatePolicy,
+  GitHubClient,
+} from './pdl/delivery/index.js';
 
 
 const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
@@ -288,13 +293,14 @@ export abstract class BaseWorker implements Worker {
    * Tracks whether TaskFinalizer.finalize() was called for the last
    * executeOnce() cycle. Exposed for testing and scheduler observability.
    */
-  public lastFinalizeStatus: 'SKIPPED_AGENT_FAILED' | 'COMPLETED' | 'FAILED' | null = null;
+  public lastFinalizeStatus: 'SKIPPED_AGENT_FAILED' | 'COMPLETED' | 'FAILED' | 'BLOCKED' | null = null;
   public lastExecutedTask: Task | null = null;
 
   public readonly governance?: PdlGovernanceEngine;
   public readonly catalog: ProductCatalog;
   public readonly remotePersistence: PdlRemotePersistence;
   public readonly neuralBridge: PubNeuralBridge;
+  public readonly deliveryGate?: RemoteDeliveryGate;
 
   constructor(
     protected readonly tasks: TaskRepository,
@@ -304,10 +310,15 @@ export abstract class BaseWorker implements Worker {
     catalog: ProductCatalog = defaultProductCatalog,
     remotePersistence?: PdlRemotePersistence,
     neuralBridge?: PubNeuralBridge,
+    deliveryGate?: RemoteDeliveryGate,
   ) {
     this.catalog = catalog;
     this.remotePersistence = remotePersistence ?? new PdlRemotePersistence(this.catalog);
     this.neuralBridge = neuralBridge ?? new DefaultPubNeuralBridge();
+    this.deliveryGate = deliveryGate ?? new RemoteDeliveryGate({
+      client: new GitHubClient(),
+      catalog: this.catalog,
+    });
     if (governance) {
       this.governance = governance;
     } else if (executionSpecDb && typeof (executionSpecDb as any).query === 'function') {
@@ -325,7 +336,7 @@ export abstract class BaseWorker implements Worker {
   }
 
   /** The status of the last finalize() call, or 'SKIPPED_AGENT_FAILED' if agent failed. */
-  get lastFinalize(): 'SKIPPED_AGENT_FAILED' | 'COMPLETED' | 'FAILED' | null {
+  get lastFinalize(): 'SKIPPED_AGENT_FAILED' | 'COMPLETED' | 'FAILED' | 'BLOCKED' | null {
     return this.lastFinalizeStatus;
   }
 
@@ -646,27 +657,76 @@ export abstract class BaseWorker implements Worker {
         finalizeResult.status = 'COMPLETED';
         this.lastFinalizeStatus = 'COMPLETED';
 
-        // 4. PUB Neural Ingestion Point
-        try {
-          await this.neuralBridge.ingestTaskCompleted({
+        // Phase 4: Governed Remote Delivery Gate
+        const deliveryPolicy = evaluateDeliveryGatePolicy(
+          task.project || task.repository,
+          this.catalog
+        );
+
+        if (deliveryPolicy.allowed && this.deliveryGate) {
+          console.log(
+            `[BaseWorker] Autonomous delivery gate is ENABLED for product '${task.project || task.repository}'. Initiating remote delivery loop...`
+          );
+          const deliveryResult = await this.deliveryGate.deliver({
             task,
-            commitSha: finalizeResult.commitSha,
-            remoteSha: remotePersistenceResult?.remoteSha ?? finalizeResult.commitSha,
-            branch,
-            hasMaterialChanges,
-            remotePersistence: remotePersistenceResult,
-            gateDecision,
+            product: task.project || task.repository,
+            sourceBranch: branch,
+            targetBranch: this.catalog.resolve(task.project || task.repository)?.defaultBranch || 'main',
+            headSha: remotePersistenceResult?.remoteSha || finalizeResult.commitSha!,
+            priorDeliveryState: (task.result as any)?.delivery || null,
+            onHeartbeat: async () => {
+              await this.tasks.heartbeat(task.id, new Date(Date.now() + LEASE_TIMEOUT_MS)).catch(() => {});
+            },
           });
-          console.log(`[BaseWorker] Successfully dispatched state to PUB Neural bridge for task ${task.id}.`);
-        } catch (neuralErr: any) {
-          console.warn(`[BaseWorker] Neural ingestion warning: ${neuralErr.message}`);
+
+          (finalizeResult as any).delivery = deliveryResult.deliveryState;
+
+          if (deliveryResult.status === 'DELIVERY_COMPLETED') {
+            console.log(`[BaseWorker] Autonomous remote delivery COMPLETED for task ${task.id}.`);
+            finalizeResult.status = 'COMPLETED';
+            this.lastFinalizeStatus = 'COMPLETED';
+          } else if (deliveryResult.status === 'DELIVERY_BLOCKED') {
+            console.warn(
+              `[BaseWorker] Autonomous remote delivery BLOCKED for task ${task.id}: ${deliveryResult.deliveryState.reasons.join('; ')}`
+            );
+            finalizeResult.status = 'BLOCKED' as any;
+            finalizeResult.errorCode = deliveryResult.errorCode || 'DELIVERY_BLOCKED';
+            finalizeResult.errorMessage = `Remote delivery blocked: ${deliveryResult.deliveryState.reasons.join('; ')}`;
+            this.lastFinalizeStatus = 'BLOCKED' as any;
+          } else {
+            console.error(
+              `[BaseWorker] Autonomous remote delivery FAILED for task ${task.id}: ${deliveryResult.errorMessage}`
+            );
+            finalizeResult.status = 'FAILED';
+            finalizeResult.errorCode = deliveryResult.errorCode || 'DELIVERY_FAILED';
+            finalizeResult.errorMessage = `Remote delivery failed: ${deliveryResult.errorMessage}`;
+            this.lastFinalizeStatus = 'FAILED';
+          }
+        }
+
+        // 4. PUB Neural Ingestion Point
+        if (finalizeResult.status === 'COMPLETED') {
+          try {
+            await this.neuralBridge.ingestTaskCompleted({
+              task,
+              commitSha: finalizeResult.commitSha,
+              remoteSha: remotePersistenceResult?.remoteSha ?? finalizeResult.commitSha,
+              branch,
+              hasMaterialChanges,
+              remotePersistence: remotePersistenceResult,
+              gateDecision,
+            });
+            console.log(`[BaseWorker] Successfully dispatched state to PUB Neural bridge for task ${task.id}.`);
+          } catch (neuralErr: any) {
+            console.warn(`[BaseWorker] Neural ingestion warning: ${neuralErr.message}`);
+          }
         }
       }
 
       // Enrich trace with finalization outcome
       if (winningAttempt.trace) {
         winningAttempt.trace.finalizeWasCalled = this.finalizeWasCalled;
-        winningAttempt.trace.finalizeStatus = this.lastFinalize;
+        winningAttempt.trace.finalizeStatus = this.lastFinalize === 'BLOCKED' ? 'FAILED' : this.lastFinalize;
         winningAttempt.trace.commitSha = finalizeResult.commitSha;
         winningAttempt.trace.agentId = task.agentId ?? null;
       }
@@ -678,14 +738,14 @@ export abstract class BaseWorker implements Worker {
         branch,
         commitSha: finalizeResult.commitSha,
         gitStatus: finalizeResult.gitStatus,
-        error: finalizeResult.status === 'FAILED' ? finalizeResult.errorMessage : null,
+        error: finalizeResult.status === 'FAILED' || finalizeResult.status === 'BLOCKED' ? finalizeResult.errorMessage : null,
       };
       await this.tasks.update(task.id, {
         status: finalizeResult.status as Task['status'],
         branch,
         commitSha: finalizeResult.commitSha,
         gitStatus: finalizeResult.gitStatus,
-        error: finalizeResult.status === 'FAILED' ? finalizeResult.errorMessage : null,
+        error: finalizeResult.status === 'FAILED' || finalizeResult.status === 'BLOCKED' ? finalizeResult.errorMessage : null,
         result: {
           summary: winningAttempt.stdout.slice(-8000),
           execution: winningAttempt.execution,
@@ -699,6 +759,7 @@ export abstract class BaseWorker implements Worker {
           executionResult: bridgeResult,
           remotePersistence: remotePersistenceResult,
           persistenceGate: gateDecision,
+          delivery: (finalizeResult as any).delivery || null,
         },
         // Clear lease — task is terminal
         leaseOwner: null,

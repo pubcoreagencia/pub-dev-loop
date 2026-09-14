@@ -127,6 +127,10 @@ export class ProductCatalog {
     return this.products.get(productIdOrRepo) || this.products.get(this.normalizeRepoUrl(productIdOrRepo));
   }
 
+  resolve(productIdOrRepo: string): ProductManifest | undefined {
+    return this.get(productIdOrRepo);
+  }
+
   list(): ProductManifest[] {
     const seen = new Set<string>();
     const list: ProductManifest[] = [];
