@@ -72,6 +72,11 @@ export interface PubNeuralQueryClient {
 export class DefaultPubNeuralQueryAdapter implements PubNeuralQueryClient {
   private readonly transport: NeuralQueryTransport;
 
+  /**
+   * Initializes the PDL Neural Query Adapter.
+   * @param transport Pluggable transport boundary. Defaults to HttpNeuralQueryTransport,
+   * which in Phase C operates strictly offline (returning UNAVAILABLE) pending network transport activation.
+   */
   constructor(transport?: NeuralQueryTransport) {
     this.transport = transport ?? new HttpNeuralQueryTransport();
   }

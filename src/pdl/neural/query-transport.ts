@@ -45,6 +45,15 @@ export class StubNeuralQueryTransport implements NeuralQueryTransport {
   }
 }
 
+/**
+ * Preparatory HTTP transport boundary scaffold for PUB Neural Query.
+ *
+ * PHASE C CONFORMANCE STATUS: PREPARATORY ONLY (NON-OPERATIONAL).
+ * - PUB Neural has NO active HTTP server, REST API, or MCP endpoint in Phase C.
+ * - This class provides an offline-safe transport client scaffold that fails closed
+ *   with { status: 'UNAVAILABLE' } when unconfigured or unreachable.
+ * - It does NOT provide or claim active end-to-end network integration.
+ */
 export class HttpNeuralQueryTransport implements NeuralQueryTransport {
   readonly endpoint?: string;
   private readonly token?: string;
