@@ -33,7 +33,7 @@ import {
   type RemotePersistenceResult,
 } from './pdl/persistence/index.js';
 import { ProductCatalog, defaultProductCatalog } from './pdl/products/catalog.js';
-import { DefaultPubNeuralBridge, type PubNeuralBridge } from './pdl/neural/index.js';
+import { DefaultPubNeuralBridge, type PubNeuralBridge, PostTaskExperienceGate } from './pdl/neural/index.js';
 import {
   RemoteDeliveryGate,
   evaluateDeliveryGatePolicy,
@@ -301,6 +301,7 @@ export abstract class BaseWorker implements Worker {
   public readonly remotePersistence: PdlRemotePersistence;
   public readonly neuralBridge: PubNeuralBridge;
   public readonly deliveryGate?: RemoteDeliveryGate;
+  public readonly postTaskGate: PostTaskExperienceGate;
 
   constructor(
     protected readonly tasks: TaskRepository,
@@ -311,10 +312,12 @@ export abstract class BaseWorker implements Worker {
     remotePersistence?: PdlRemotePersistence,
     neuralBridge?: PubNeuralBridge,
     deliveryGate?: RemoteDeliveryGate,
+    postTaskGate?: PostTaskExperienceGate,
   ) {
     this.catalog = catalog;
     this.remotePersistence = remotePersistence ?? new PdlRemotePersistence(this.catalog);
-    this.neuralBridge = neuralBridge ?? new DefaultPubNeuralBridge();
+    this.neuralBridge = neuralBridge ?? new DefaultPubNeuralBridge(undefined, undefined, postTaskGate);
+    this.postTaskGate = postTaskGate ?? (this.neuralBridge as any).postTaskGate ?? new PostTaskExperienceGate();
     this.deliveryGate = deliveryGate ?? new RemoteDeliveryGate({
       client: new GitHubClient(),
       catalog: this.catalog,

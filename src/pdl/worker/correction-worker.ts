@@ -37,7 +37,7 @@ import { PdlGovernanceEngine, defaultGovernanceEngine } from '../governance/inde
 import { evaluatePersistenceGate } from '../persistence/persistence-gate.js';
 import { defaultCodeReviewManager, CodeReviewManager, type CodeReviewEvaluationInput, type CodeReviewResult } from '../../office/review.js';
 import { defaultCeoConversationStore, CeoConversationStore } from '../../office/ceo-conversation-store.js';
-import type { PubNeuralBridge, PreTaskKnowledgeGate } from '../neural/index.js';
+import type { PubNeuralBridge, PreTaskKnowledgeGate, PostTaskExperienceGate } from '../neural/index.js';
 
 const LEASE_TIMEOUT_MS = Number(process.env.WORKER_LEASE_TIMEOUT_MS ?? 30000);
 const HEARTBEAT_INTERVAL_MS = Number(process.env.WORKER_HEARTBEAT_MS ?? 10000);
@@ -77,8 +77,9 @@ export class PdlCorrectionWorker extends RouterWorker {
     reviewManager?: CodeReviewManager,
     conversationStore?: CeoConversationStore,
     preTaskGate?: PreTaskKnowledgeGate,
+    postTaskGate?: PostTaskExperienceGate,
   ) {
-    super(tasks, provider, name, onStreamEvent, executionSpecDb, governance, catalog, remotePersistence, neuralBridge, undefined, preTaskGate);
+    super(tasks, provider, name, onStreamEvent, executionSpecDb, governance, catalog, remotePersistence, neuralBridge, undefined, preTaskGate, postTaskGate);
     this.customRemotePersistence = remotePersistence;
     this.reviewManager = reviewManager ?? defaultCodeReviewManager;
     this.conversationStore = conversationStore ?? defaultCeoConversationStore;

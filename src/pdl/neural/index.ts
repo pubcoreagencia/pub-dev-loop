@@ -7,3 +7,4 @@ export * from './experience-types.js';
 export * from './experience-transport.js';
 export * from './experience-adapter.js';
 export * from './pre-task-gate.js';
+export * from './post-task-gate.js';

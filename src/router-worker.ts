@@ -6,7 +6,7 @@ import { PdlGovernanceEngine } from './pdl/governance/index.js';
 import type { ProductCatalog } from './pdl/products/catalog.js';
 import type { PdlRemotePersistence } from './pdl/persistence/index.js';
 import type { PubNeuralBridge, PreTaskKnowledgeResult } from './pdl/neural/index.js';
-import { PreTaskKnowledgeGate } from './pdl/neural/index.js';
+import { PreTaskKnowledgeGate, PostTaskExperienceGate } from './pdl/neural/index.js';
 import type { RemoteDeliveryGate } from './pdl/delivery/index.js';
 import { DefaultExecutionEngine } from './execution/default-execution-engine.js';
 import type { ExecutionResult } from './execution/execution-engine.js';
@@ -151,8 +151,9 @@ export class RouterWorker extends BaseWorker {
     neuralBridge?: PubNeuralBridge,
     deliveryGate?: RemoteDeliveryGate,
     preTaskGate?: PreTaskKnowledgeGate,
+    postTaskGate?: PostTaskExperienceGate,
   ) {
-    super(tasks ?? ({} as any), name, executionSpecDb, governance, catalog, remotePersistence, neuralBridge, deliveryGate);
+    super(tasks ?? ({} as any), name, executionSpecDb, governance, catalog, remotePersistence, neuralBridge, deliveryGate, postTaskGate);
     this.provider = provider ?? ({} as any);
     this.onStreamEvent = onStreamEvent;
     this.preTaskGate = preTaskGate ?? new PreTaskKnowledgeGate();

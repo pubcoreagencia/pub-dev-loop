@@ -12,6 +12,10 @@ import {
   LearningFeedbackEngine,
   type LearningFeedbackInput,
 } from '../../office/learning-feedback.js';
+import {
+  PostTaskExperienceGate,
+  type PostTaskExperienceResult,
+} from './post-task-gate.js';
 
 export class HttpPubNeuralClient implements PubNeuralClient {
   readonly endpoint?: string;
@@ -95,10 +99,16 @@ export class HttpPubNeuralClient implements PubNeuralClient {
 export class DefaultPubNeuralBridge implements PubNeuralBridge {
   private readonly feedbackEngine: LearningFeedbackEngine;
   private readonly client: PubNeuralClient;
+  public readonly postTaskGate: PostTaskExperienceGate;
 
-  constructor(feedbackEngine?: LearningFeedbackEngine, client?: PubNeuralClient) {
+  constructor(
+    feedbackEngine?: LearningFeedbackEngine,
+    client?: PubNeuralClient,
+    postTaskGate?: PostTaskExperienceGate
+  ) {
     this.feedbackEngine = feedbackEngine ?? new LearningFeedbackEngine();
     this.client = client ?? new HttpPubNeuralClient();
+    this.postTaskGate = postTaskGate ?? new PostTaskExperienceGate();
   }
 
   getClient(): PubNeuralClient {
@@ -206,11 +216,44 @@ export class DefaultPubNeuralBridge implements PubNeuralBridge {
     const ack = await this.client.submit(payload);
     const finalMemoryId = ack.memoryId || memoryId;
 
-    if (ack.status === 'ACKNOWLEDGED' || ack.status === 'PERSISTED') {
+    // 3. Phase E2: Controlled Post-Task Experience Gate Writeback
+    let experienceResult: PostTaskExperienceResult | undefined;
+    try {
+      experienceResult = await this.postTaskGate.evaluatePostTaskExperience({
+        task: input.task,
+        commitSha: input.commitSha,
+        remoteSha: input.remoteSha,
+        branch: input.branch,
+        status: input.task.status,
+        hasMaterialChanges: input.hasMaterialChanges,
+        evidence: {
+          validationPassed: payload.evidence.validationPassed,
+          worktreeClean: payload.evidence.worktreeClean,
+          pushSucceeded: payload.evidence.pushSucceeded,
+          remoteVerified: payload.evidence.remoteVerified,
+          runtimeVerified: payload.evidence.runtimeVerified,
+        },
+        candidateFindings: (input.task.result as any)?.candidateFindings,
+        trace: payload.trace,
+        completedAt: payload.completedAt,
+        ingestionSource: payload.ingestionSource,
+        taskStatePayload: payload,
+      });
+    } catch (expErr: any) {
+      console.warn(`[PubNeuralBridge] Warning during PostTaskExperienceGate evaluation: ${expErr?.message || String(expErr)}`);
+    }
+
+    const effectiveEventId = experienceResult?.eventId || ack.eventId;
+    const isIngested =
+      ack.status === 'ACKNOWLEDGED' ||
+      ack.status === 'PERSISTED' ||
+      Boolean(experienceResult?.isAccepted || experienceResult?.isDuplicate);
+
+    if (isIngested) {
       return {
         ingested: true,
-        status: ack.status,
-        eventId: ack.eventId,
+        status: ack.status === 'PERSISTED' || experienceResult?.isAccepted ? 'PERSISTED' : 'ACKNOWLEDGED',
+        eventId: effectiveEventId,
         memoryId: finalMemoryId,
         contractVersion: '1.0.0',
         targetSystem: 'pubcoreagencia/pub-neural',
@@ -221,6 +264,8 @@ export class DefaultPubNeuralBridge implements PubNeuralBridge {
           remoteSha: input.remoteSha,
           gatePassed: input.gateDecision.passed,
           ackDetails: ack.details,
+          experienceResult,
+          postTaskObservability: experienceResult?.observability,
         },
       };
     }
@@ -229,8 +274,8 @@ export class DefaultPubNeuralBridge implements PubNeuralBridge {
     return {
       ingested: false,
       status: ack.status,
-      error: ack.error,
-      eventId: ack.eventId,
+      error: ack.error || experienceResult?.reason,
+      eventId: effectiveEventId,
       memoryId: finalMemoryId,
       contractVersion: '1.0.0',
       targetSystem: 'pubcoreagencia/pub-neural',
@@ -240,6 +285,8 @@ export class DefaultPubNeuralBridge implements PubNeuralBridge {
         commitSha: input.commitSha,
         remoteSha: input.remoteSha,
         gatePassed: input.gateDecision.passed,
+        experienceResult,
+        postTaskObservability: experienceResult?.observability,
       },
     };
   }
