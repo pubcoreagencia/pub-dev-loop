@@ -241,5 +241,65 @@ describe('Phase 5.6: GitHubClient Implementation & Error Classification', () => 
     expect(capturedMethod).toBe('GET');
     expect(protection.required_pull_request_reviews?.required_approving_review_count).toBe(1);
   });
+
+  it('12. verifies mergePullRequest makes PUT request to /pulls/{number}/merge with required SHA in body', async () => {
+    let capturedUrl = '';
+    let capturedMethod = '';
+    let capturedBody = '';
+
+    const mockFetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      capturedUrl = url;
+      capturedMethod = init?.method || '';
+      capturedBody = String(init?.body || '');
+      return createMockResponse(200, { sha: 'merge_sha_123', merged: true, message: 'Merged' });
+    });
+
+    const client = new GitHubClient({
+      baseUrl: 'https://api.github.test',
+      fetchFn: mockFetch as unknown as typeof fetch,
+    });
+
+    const mergeRes = await client.mergePullRequest('pubcoreagencia', 'pub-rate-calculator', 17, {
+      sha: 'commit_sha_aaa',
+      merge_method: 'merge',
+      commit_title: 'Merge PR #17',
+    });
+
+    expect(capturedUrl).toBe('https://api.github.test/repos/pubcoreagencia/pub-rate-calculator/pulls/17/merge');
+    expect(capturedMethod).toBe('PUT');
+    expect(JSON.parse(capturedBody)).toEqual({
+      sha: 'commit_sha_aaa',
+      merge_method: 'merge',
+      commit_title: 'Merge PR #17',
+    });
+    expect(mergeRes.merged).toBe(true);
+    expect(mergeRes.sha).toBe('merge_sha_123');
+  });
+
+  it('13. verifies getBranch makes GET request to /branches/{branch}', async () => {
+    let capturedUrl = '';
+    let capturedMethod = '';
+
+    const mockFetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      capturedUrl = url;
+      capturedMethod = init?.method || '';
+      return createMockResponse(200, {
+        name: 'main',
+        commit: { sha: 'latest_main_sha' },
+      });
+    });
+
+    const client = new GitHubClient({
+      baseUrl: 'https://api.github.test',
+      fetchFn: mockFetch as unknown as typeof fetch,
+    });
+
+    const branch = await client.getBranch('pubcoreagencia', 'pub-rate-calculator', 'main');
+    expect(capturedUrl).toBe('https://api.github.test/repos/pubcoreagencia/pub-rate-calculator/branches/main');
+    expect(capturedMethod).toBe('GET');
+    expect(branch.name).toBe('main');
+    expect(branch.commit.sha).toBe('latest_main_sha');
+  });
 });
+
 

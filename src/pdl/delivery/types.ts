@@ -269,6 +269,7 @@ export interface GitHubPullRequest {
   draft: boolean;
   merged?: boolean;
   merged_at?: string | null;
+  merge_commit_sha?: string | null;
   mergeable: boolean | null;
   mergeable_state: string | null;
   head: {
@@ -379,3 +380,81 @@ export interface CiObservationResult {
   blocked: boolean;
   reasons: string[];
 }
+
+// ============================================================================
+// Phase 3B Types: Merge Execution, Reconciliation, and Main Verification
+// ============================================================================
+
+export type MergeExecutionStatus =
+  | 'MERGED'
+  | 'ALREADY_MERGED'
+  | 'BLOCKED'
+  | 'CONFLICT'
+  | 'FORBIDDEN'
+  | 'METHOD_NOT_ALLOWED'
+  | 'VALIDATION_FAILED'
+  | 'UNKNOWN';
+
+export interface MergeExecutionResult {
+  status: MergeExecutionStatus;
+  pullRequestNumber: number;
+  expectedHeadSha: string;
+  returnedMergeSha?: string | null;
+  message?: string;
+  httpStatus?: number;
+  observedAt: string;
+  reasons: string[];
+}
+
+export interface GitHubMergeResponse {
+  sha?: string;
+  merged: boolean;
+  message: string;
+}
+
+export interface MergePullRequestPayload {
+  sha: string;
+  merge_method: MergeMethod;
+  commit_title?: string;
+  commit_message?: string;
+}
+
+export interface GitHubBranch {
+  name: string;
+  commit: {
+    sha: string;
+    url?: string;
+  };
+  protected?: boolean;
+}
+
+export type MergeReconciliationDecision =
+  | 'MERGED_CONFIRMED'
+  | 'MERGE_UNCONFIRMED'
+  | 'CLOSED_UNMERGED'
+  | 'UNKNOWN';
+
+export interface MergeReconciliationResult {
+  decision: MergeReconciliationDecision;
+  isMerged: boolean;
+  mergeCommitSha?: string | null;
+  prState: 'OPEN' | 'CLOSED' | 'MERGED' | 'UNKNOWN';
+  reasons: string[];
+  observedAt: string;
+}
+
+export type MainVerificationStatus =
+  | 'MAIN_VERIFIED'
+  | 'NOT_VERIFIED'
+  | 'BLOCKED';
+
+export interface MainVerificationResult {
+  status: MainVerificationStatus;
+  mainAdvanced: boolean;
+  previousMainSha: string | null;
+  currentMainSha: string | null;
+  mergeCommitSha?: string | null;
+  verifiedAt: string;
+  reasons: string[];
+}
+

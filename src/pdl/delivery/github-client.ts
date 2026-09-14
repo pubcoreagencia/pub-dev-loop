@@ -20,6 +20,9 @@ import type {
   GitHubReview,
   RawRulesetRule,
   RawClassicBranchProtection,
+  GitHubMergeResponse,
+  MergePullRequestPayload,
+  GitHubBranch,
 } from './types.js';
 
 // ============================================================================
@@ -65,6 +68,20 @@ export class GitHubConflictError extends GitHubApiError {
   constructor(status: number, statusText: string, endpoint: string, body: unknown) {
     super(status, statusText, endpoint, body);
     this.name = 'GitHubConflictError';
+  }
+}
+
+export class GitHubMethodNotAllowedError extends GitHubApiError {
+  constructor(status: number, statusText: string, endpoint: string, body: unknown) {
+    super(status, statusText, endpoint, body);
+    this.name = 'GitHubMethodNotAllowedError';
+  }
+}
+
+export class GitHubValidationFailedError extends GitHubApiError {
+  constructor(status: number, statusText: string, endpoint: string, body: unknown) {
+    super(status, statusText, endpoint, body);
+    this.name = 'GitHubValidationFailedError';
   }
 }
 
@@ -175,8 +192,14 @@ export class GitHubClient {
         if (status === 404) {
           throw new GitHubNotFoundError(status, statusText, path, responseBody);
         }
+        if (status === 405) {
+          throw new GitHubMethodNotAllowedError(status, statusText, path, responseBody);
+        }
         if (status === 409) {
           throw new GitHubConflictError(status, statusText, path, responseBody);
+        }
+        if (status === 422) {
+          throw new GitHubValidationFailedError(status, statusText, path, responseBody);
         }
         if (status === 429) {
           const resetHeader = response.headers.get('x-ratelimit-reset');
@@ -295,5 +318,34 @@ export class GitHubClient {
   async getBranchProtection(owner: string, repo: string, branch: string): Promise<RawClassicBranchProtection> {
     const endpoint = `/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/protection`;
     return this.request<RawClassicBranchProtection>(endpoint, { method: 'GET' });
+  }
+
+  /**
+   * Retrieves branch details including the latest commit SHA.
+   */
+  async getBranch(owner: string, repo: string, branch: string): Promise<GitHubBranch> {
+    const endpoint = `/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}`;
+    return this.request<GitHubBranch>(endpoint, { method: 'GET' });
+  }
+
+  /**
+   * Merges a pull request using the GitHub PR Merge API.
+   * Mandates a non-empty sha (expectedHeadSha) for TOCTOU safety.
+   */
+  async mergePullRequest(
+    owner: string,
+    repo: string,
+    pullNumber: number,
+    payload: MergePullRequestPayload
+  ): Promise<GitHubMergeResponse> {
+    if (!payload.sha || payload.sha.trim().length === 0) {
+      throw new Error('mergePullRequest requires a non-empty sha (expectedHeadSha) for TOCTOU safety');
+    }
+    const endpoint = `/repos/${owner}/${repo}/pulls/${pullNumber}/merge`;
+    return this.request<GitHubMergeResponse>(endpoint, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
   }
 }
