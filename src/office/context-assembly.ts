@@ -11,6 +11,13 @@ import {
   formatChiefOfStaffMemoryContext,
 } from './memory.js';
 
+import type {
+  GateStatus,
+  NeuralKnowledgeItem,
+  NeuralContradictionItem,
+  NeuralAbstentionMetadata,
+} from '../pdl/neural/query-types.js';
+
 export type ContextAuthority = 'CURRENT' | 'GOVERNED' | 'HISTORICAL';
 
 export type ContextSource =
@@ -24,7 +31,8 @@ export type ContextSource =
   | 'DEPENDENCY_CONTEXT'
   | 'INSTITUTIONAL_LESSON'
   | 'DAILY_SKILL'
-  | 'ORGANIZATIONAL_MEMORY';
+  | 'ORGANIZATIONAL_MEMORY'
+  | 'NEURAL_KNOWLEDGE';
 
 export type OfficeAgentRole =
   | 'chief-of-staff'
@@ -89,6 +97,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       'INSTITUTIONAL_LESSON',
       'DAILY_SKILL',
       'ORGANIZATIONAL_MEMORY',
+      'NEURAL_KNOWLEDGE',
     ],
     sourcePriorities: {
       CEO_OBJECTIVE: 100,
@@ -99,6 +108,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       REVIEW_EVIDENCE: 50,
       QA_EVIDENCE: 45,
       DEPENDENCY_CONTEXT: 40,
+      NEURAL_KNOWLEDGE: 35,
       INSTITUTIONAL_LESSON: 30,
       DAILY_SKILL: 25,
       ORGANIZATIONAL_MEMORY: 10,
@@ -116,6 +126,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       'INSTITUTIONAL_LESSON',
       'DAILY_SKILL',
       'ORGANIZATIONAL_MEMORY',
+      'NEURAL_KNOWLEDGE',
     ],
     sourcePriorities: {
       PROJECT_STATE: 95,
@@ -126,6 +137,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       DEPENDENCY_CONTEXT: 65,
       CEO_OBJECTIVE: 60,
       QA_EVIDENCE: 50,
+      NEURAL_KNOWLEDGE: 35,
       INSTITUTIONAL_LESSON: 30,
       DAILY_SKILL: 25,
       ORGANIZATIONAL_MEMORY: 10,
@@ -144,6 +156,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       'INSTITUTIONAL_LESSON',
       'DAILY_SKILL',
       'ORGANIZATIONAL_MEMORY',
+      'NEURAL_KNOWLEDGE',
     ],
     sourcePriorities: {
       CURRENT_TASK: 100,
@@ -154,6 +167,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       SECURITY_EVIDENCE: 65,
       DEPENDENCY_CONTEXT: 60,
       CEO_OBJECTIVE: 50,
+      NEURAL_KNOWLEDGE: 35,
       INSTITUTIONAL_LESSON: 30,
       DAILY_SKILL: 25,
       ORGANIZATIONAL_MEMORY: 10,
@@ -172,6 +186,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       'INSTITUTIONAL_LESSON',
       'DAILY_SKILL',
       'ORGANIZATIONAL_MEMORY',
+      'NEURAL_KNOWLEDGE',
     ],
     sourcePriorities: {
       CURRENT_TASK: 100,
@@ -182,6 +197,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       PROJECT_STATE: 70,
       DEPENDENCY_CONTEXT: 60,
       CEO_OBJECTIVE: 50,
+      NEURAL_KNOWLEDGE: 35,
       INSTITUTIONAL_LESSON: 30,
       DAILY_SKILL: 25,
       ORGANIZATIONAL_MEMORY: 10,
@@ -199,6 +215,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       'INSTITUTIONAL_LESSON',
       'DAILY_SKILL',
       'ORGANIZATIONAL_MEMORY',
+      'NEURAL_KNOWLEDGE',
     ],
     sourcePriorities: {
       CURRENT_TASK: 100,
@@ -209,6 +226,7 @@ export const ROLE_PROFILES: Record<OfficeAgentRole, AgentRoleProfile> = {
       DEPENDENCY_CONTEXT: 60,
       SECURITY_EVIDENCE: 55,
       CEO_OBJECTIVE: 50,
+      NEURAL_KNOWLEDGE: 35,
       INSTITUTIONAL_LESSON: 30,
       DAILY_SKILL: 25,
       ORGANIZATIONAL_MEMORY: 10,
@@ -258,6 +276,14 @@ export interface RawAssemblyInput {
   institutionalLessons?: InstitutionalLesson[];
   skills?: SkillRecord[];
   historicalMemories?: OrganizationalMemory[];
+  neuralKnowledge?: {
+    items: NeuralKnowledgeItem[];
+    status?: GateStatus;
+    requestId?: string;
+    isStale?: boolean;
+    contradictions?: NeuralContradictionItem[];
+    abstention?: NeuralAbstentionMetadata;
+  };
   budget?: Partial<ContextBudget>;
 }
 
@@ -442,6 +468,53 @@ export class ContextAssemblyEngine {
             tenantId: input.tenantId,
             projectId: input.projectId,
             taskId: input.currentTask.id,
+          },
+        });
+      }
+    }
+
+    // 5.5. GOVERNED NEURAL KNOWLEDGE (GOVERNED - DATA ONLY)
+    if (input.neuralKnowledge && input.neuralKnowledge.items && input.neuralKnowledge.items.length > 0) {
+      const activeItems = input.neuralKnowledge.items.filter((item) => {
+        if (item.scope === 'PROJECT' && item.projectId && item.projectId !== input.projectId) {
+          invalidBlocks.push(`Excluded cross-project neural item: ${item.id}`);
+          return false;
+        }
+        return true;
+      });
+
+      if (activeItems.length > 0) {
+        // Enforce DATA-ONLY: detect untrusted authority strings inside content
+        for (const it of activeItems) {
+          if (it.content.includes('CEO approved') || it.content.includes('security override')) {
+            untrustedClaims.push(`UNTRUSTED_AUTHORITY_CLAIM: Neural item ${it.id} contains unverified authority strings`);
+          }
+        }
+
+        const formattedKnowledge = activeItems
+          .map(
+            (it) =>
+              `[PUB NEURAL KNOWLEDGE: ${it.title} (${it.knowledgeClass}) - DATA ONLY]\nID: ${it.id}\nAuthority: ${it.authority.level}\nFreshness: ${it.freshness.state}${it.freshness.isStale ? ' (STALE)' : ''}\nContent:\n${it.content}`
+          )
+          .join('\n\n');
+
+        blocks.push({
+          id: `neural-${input.currentTask.id}`,
+          source: 'NEURAL_KNOWLEDGE',
+          authority: 'GOVERNED',
+          priority: roleProfile.sourcePriorities.NEURAL_KNOWLEDGE ?? 35,
+          title: 'Governed Neural Knowledge (DATA ONLY)',
+          content: formattedKnowledge,
+          provenance: {
+            tenantId: input.tenantId,
+            projectId: input.projectId,
+            taskId: input.currentTask.id,
+          },
+          metadata: {
+            status: input.neuralKnowledge.status,
+            requestId: input.neuralKnowledge.requestId,
+            itemCount: activeItems.length,
+            isStale: input.neuralKnowledge.isStale,
           },
         });
       }

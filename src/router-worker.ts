@@ -5,7 +5,8 @@ import { BaseWorker, type AttemptResult, type AttemptTrace, type WorkerExecution
 import { PdlGovernanceEngine } from './pdl/governance/index.js';
 import type { ProductCatalog } from './pdl/products/catalog.js';
 import type { PdlRemotePersistence } from './pdl/persistence/index.js';
-import type { PubNeuralBridge } from './pdl/neural/index.js';
+import type { PubNeuralBridge, PreTaskKnowledgeResult } from './pdl/neural/index.js';
+import { PreTaskKnowledgeGate } from './pdl/neural/index.js';
 import type { RemoteDeliveryGate } from './pdl/delivery/index.js';
 import { DefaultExecutionEngine } from './execution/default-execution-engine.js';
 import type { ExecutionResult } from './execution/execution-engine.js';
@@ -134,6 +135,7 @@ export type TaskStreamEventCallback = (
 export class RouterWorker extends BaseWorker {
   protected readonly provider: AgentProvider;
   protected readonly onStreamEvent?: TaskStreamEventCallback;
+  public readonly preTaskGate: PreTaskKnowledgeGate;
   private currentAttemptController?: AbortController;
   private currentAttemptSink?: StreamEventSink;
 
@@ -148,10 +150,12 @@ export class RouterWorker extends BaseWorker {
     remotePersistence?: PdlRemotePersistence,
     neuralBridge?: PubNeuralBridge,
     deliveryGate?: RemoteDeliveryGate,
+    preTaskGate?: PreTaskKnowledgeGate,
   ) {
     super(tasks ?? ({} as any), name, executionSpecDb, governance, catalog, remotePersistence, neuralBridge, deliveryGate);
     this.provider = provider ?? ({} as any);
     this.onStreamEvent = onStreamEvent;
+    this.preTaskGate = preTaskGate ?? new PreTaskKnowledgeGate();
   }
 
   protected emitLifecycleEvent(
@@ -278,6 +282,17 @@ export class RouterWorker extends BaseWorker {
     effectiveTask = await enrichReviewerTaskWithMemory(effectiveTask);
     effectiveTask = await enrichQaTaskWithMemory(effectiveTask);
     effectiveTask = await enrichChiefOfStaffTaskWithMemory(effectiveTask);
+
+    // Phase E1: Controlled Pre-Task Neural Knowledge Gate (Fail-open)
+    let preTaskKnowledgeOutcome: PreTaskKnowledgeResult | undefined;
+    try {
+      const evaluation = await this.preTaskGate.evaluatePreTaskKnowledge(effectiveTask);
+      effectiveTask = evaluation.task;
+      preTaskKnowledgeOutcome = evaluation.result;
+    } catch (err: any) {
+      console.warn(`[RouterWorker] Pre-task neural query failed-open: ${err?.message || String(err)}`);
+    }
+
     const config = getRetryConfig();
     const providers = this.getProviderChain();
     const maxAttempts = Math.min(config.maxAttempts, providers.length);
@@ -535,6 +550,10 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
             toolCalls: 0,
             toolRounds: 0,
           };
+
+          if (attemptExecutionResult && preTaskKnowledgeOutcome) {
+            (attemptExecutionResult.execution as any).preTaskKnowledge = preTaskKnowledgeOutcome.observability;
+          }
         }
 
         // Collect attempt trace
