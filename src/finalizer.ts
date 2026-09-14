@@ -155,7 +155,7 @@ export class WorkspaceValidator {
  * Result of task finalization (validation + auto-commit).
  */
 export interface FinalizeResult {
-  status: 'COMPLETED' | 'FAILED';
+  status: 'COMPLETED' | 'FAILED' | 'BLOCKED';
   commitSha: string | null;
   commitMessage: string | null;
   changedFiles: string[];

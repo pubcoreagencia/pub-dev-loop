@@ -6,6 +6,7 @@ import { PdlGovernanceEngine } from './pdl/governance/index.js';
 import type { ProductCatalog } from './pdl/products/catalog.js';
 import type { PdlRemotePersistence } from './pdl/persistence/index.js';
 import type { PubNeuralBridge } from './pdl/neural/index.js';
+import type { RemoteDeliveryGate } from './pdl/delivery/index.js';
 import { DefaultExecutionEngine } from './execution/default-execution-engine.js';
 import type { ExecutionResult } from './execution/execution-engine.js';
 import type { PreparedExecution } from './execution/execution-seam.js';
@@ -146,8 +147,9 @@ export class RouterWorker extends BaseWorker {
     catalog?: ProductCatalog,
     remotePersistence?: PdlRemotePersistence,
     neuralBridge?: PubNeuralBridge,
+    deliveryGate?: RemoteDeliveryGate,
   ) {
-    super(tasks ?? ({} as any), name, executionSpecDb, governance, catalog, remotePersistence, neuralBridge);
+    super(tasks ?? ({} as any), name, executionSpecDb, governance, catalog, remotePersistence, neuralBridge, deliveryGate);
     this.provider = provider ?? ({} as any);
     this.onStreamEvent = onStreamEvent;
   }

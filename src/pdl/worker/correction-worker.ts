@@ -534,7 +534,7 @@ export class PdlCorrectionWorker extends RouterWorker {
       // Enrich trace
       if (winningAttempt.trace) {
         winningAttempt.trace.finalizeWasCalled = this.finalizeWasCalled;
-        winningAttempt.trace.finalizeStatus = this.lastFinalize;
+        winningAttempt.trace.finalizeStatus = this.lastFinalize === 'BLOCKED' ? 'FAILED' : this.lastFinalize;
         winningAttempt.trace.commitSha = finalizeResult.commitSha;
         winningAttempt.trace.agentId = task.agentId ?? null;
       }
