@@ -4,6 +4,7 @@ import {
   type ProductCatalog,
   type ProductManifest,
 } from '../products/catalog.js';
+import { TrustBoundary } from '../security/trust-boundary.js';
 import type {
   RemotePersistenceOptions,
   RemotePersistenceResult,
@@ -302,8 +303,7 @@ export class PdlRemotePersistence {
       ? `https://x-access-token:${token}@github.com/${repoPath}.git`
       : manifest.repository;
 
-
-    // 8. Inspect Remote State & Fast-Forward Guard
+    // 8. Remote Inspection & Trusted Baseline Resolution (REMOTE-FIRST)
     let existingRemoteSha: string | null = null;
     try {
       const lsOutput = this.executor(
@@ -347,25 +347,121 @@ export class PdlRemotePersistence {
       };
     }
 
-    // If remote branch exists and differs, enforce Fast-Forward Only (Reject Divergence)
+    // Determine the single trusted base SHA from remote
+    let trustedBaseSha: string;
+    const defaultBranch = manifest.defaultBranch || 'main';
+
     if (existingRemoteSha) {
-      let isAncestor = false;
+      // Branch already exists on remote: baseline is the remote branch SHA
+      trustedBaseSha = existingRemoteSha;
+    } else {
+      // First push: query remote default branch directly
+      let remoteDefaultSha: string | null = null;
       try {
-        // Check if existingRemoteSha is an ancestor of local HEAD
-        this.executor('git', ['merge-base', '--is-ancestor', existingRemoteSha, options.localSha], options.workspace);
-        isAncestor = true;
-      } catch {
-        // Not an ancestor locally; attempt a fetch into temporary ref to verify
-        try {
-          this.executor('git', ['fetch', remoteUrl, `refs/heads/${options.branch}:refs/remotes/origin/${options.branch}`], options.workspace);
-          this.executor('git', ['merge-base', '--is-ancestor', existingRemoteSha, options.localSha], options.workspace);
-          isAncestor = true;
-        } catch {
-          isAncestor = false;
+        const defaultLsOutput = this.executor(
+          'git',
+          ['ls-remote', remoteUrl, `refs/heads/${defaultBranch}`],
+          options.workspace,
+        ).trim();
+
+        if (defaultLsOutput) {
+          const match = defaultLsOutput.match(/^([0-9a-f]{40})\s+/m);
+          if (match) {
+            remoteDefaultSha = match[1];
+          }
         }
+      } catch (defaultLsErr: any) {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch: options.branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha: options.localSha,
+          remoteSha: null,
+          remoteVerified: false,
+          errorCode: 'REMOTE_INSPECTION_FAILED',
+          errorMessage: redactToken(`Failed to inspect remote default branch '${defaultBranch}': ${defaultLsErr.message}`, token),
+        };
       }
 
-      if (!isAncestor) {
+      if (!remoteDefaultSha) {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch: options.branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha: options.localSha,
+          remoteSha: null,
+          remoteVerified: false,
+          errorCode: 'UNRESOLVED_REMOTE_BASELINE',
+          errorMessage: `Remote persistence blocked: failed to resolve trusted remote baseline for default branch '${defaultBranch}'. Autonomous first-push requires a verified remote baseline.`,
+        };
+      }
+
+      trustedBaseSha = remoteDefaultSha;
+    }
+
+    // 8.1 Advisory baseSha validation: caller-supplied baseSha must match trustedBaseSha
+    if (options.baseSha && options.baseSha !== trustedBaseSha) {
+      return {
+        status: 'FAILED',
+        repository: manifest.repository,
+        branch: options.branch,
+        pushAttempted: false,
+        pushSucceeded: false,
+        localSha: options.localSha,
+        remoteSha: existingRemoteSha,
+        remoteVerified: false,
+        errorCode: 'BASE_SHA_MISMATCH',
+        errorMessage: `Provided baseSha '${options.baseSha}' does not match trusted remote baseline '${trustedBaseSha}'. Caller-supplied baseSha override is strictly prohibited.`,
+      };
+    }
+
+    // 8.2 Ensure trustedBaseSha is available in local object database (fetch if necessary)
+    let isObjectAvailable = false;
+    try {
+      this.executor('git', ['cat-file', '-e', `${trustedBaseSha}^{commit}`], options.workspace);
+      isObjectAvailable = true;
+    } catch {
+      isObjectAvailable = false;
+    }
+
+    if (!isObjectAvailable) {
+      try {
+        const refToFetch = existingRemoteSha
+          ? `refs/heads/${options.branch}:refs/remotes/origin/${options.branch}`
+          : `refs/heads/${defaultBranch}:refs/remotes/origin/${defaultBranch}`;
+        this.executor('git', ['fetch', remoteUrl, refToFetch], options.workspace);
+        this.executor('git', ['cat-file', '-e', `${trustedBaseSha}^{commit}`], options.workspace);
+      } catch (fetchErr: any) {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch: options.branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha: options.localSha,
+          remoteSha: existingRemoteSha,
+          remoteVerified: false,
+          errorCode: 'REMOTE_OBJECT_UNAVAILABLE',
+          errorMessage: redactToken(`Trusted remote baseline commit '${trustedBaseSha}' could not be fetched into local repository: ${fetchErr.message}`, token),
+        };
+      }
+    }
+
+    // 8.3 Validate Ancestry / Fast-Forward
+    let isAncestor = false;
+    try {
+      this.executor('git', ['merge-base', '--is-ancestor', trustedBaseSha, options.localSha], options.workspace);
+      isAncestor = true;
+    } catch {
+      isAncestor = false;
+    }
+
+    if (!isAncestor) {
+      if (existingRemoteSha) {
         return {
           status: 'FAILED',
           repository: manifest.repository,
@@ -378,10 +474,56 @@ export class PdlRemotePersistence {
           errorCode: 'NON_FAST_FORWARD_REJECTED',
           errorMessage: `Remote branch '${options.branch}' has diverged (remote commit ${existingRemoteSha} is not ancestor of local ${options.localSha}). Force push is strictly prohibited.`,
         };
+      } else {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch: options.branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha: options.localSha,
+          remoteSha: null,
+          remoteVerified: false,
+          errorCode: 'DIVERGED_FROM_REMOTE_BASE',
+          errorMessage: `Local branch does not originate from trusted remote default branch '${defaultBranch}' (${trustedBaseSha}). Force push is strictly prohibited.`,
+        };
       }
     }
 
-    // 9. Execute Safe Push (Strictly Fast-Forward, NEVER --force)
+    // 8.4 Historical Changeset Security Gate (Single trusted baseline scan)
+    try {
+      const touchedFiles = this.collectRangeTouchedFiles(options.workspace, options.localSha, trustedBaseSha);
+      const check = this.validateChangesetSecurity(touchedFiles, options.workspace);
+      if (!check.allowed) {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch: options.branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha: options.localSha,
+          remoteSha: existingRemoteSha,
+          remoteVerified: false,
+          errorCode: 'PROTECTED_PATH_VIOLATION',
+          errorMessage: check.reason || 'Remote persistence blocked: push range touches Zone A protected paths',
+        };
+      }
+    } catch (gateErr: any) {
+      return {
+        status: 'FAILED',
+        repository: manifest.repository,
+        branch: options.branch,
+        pushAttempted: false,
+        pushSucceeded: false,
+        localSha: options.localSha,
+        remoteSha: existingRemoteSha,
+        remoteVerified: false,
+        errorCode: 'CHANGESET_INSPECTION_FAILED',
+        errorMessage: `Failed to inspect changeset for protected paths: ${gateErr.message}`,
+      };
+    }
+
+    // 9. Execute Safe Push (Normal push only, strictly fast-forward, NO --force, NO --force-with-lease)
     try {
       this.executor(
         'git',
@@ -396,7 +538,7 @@ export class PdlRemotePersistence {
         pushAttempted: true,
         pushSucceeded: false,
         localSha: options.localSha,
-        remoteSha: null,
+        remoteSha: existingRemoteSha,
         remoteVerified: false,
         errorCode: 'PUSH_FAILED',
         errorMessage: redactToken(`Push to remote repository failed: ${pushErr.message}`, token),
@@ -458,6 +600,105 @@ export class PdlRemotePersistence {
       remoteSha: verifiedRemoteSha,
       remoteVerified: true,
     };
+  }
+
+  /**
+   * Parse git --name-status output into a unique list of paths.
+   * Handles renames (R<score> old new) and copies (C<score> old new) by extracting both paths.
+   */
+  private parseNameStatusOutput(output: string): string[] {
+    const files = new Set<string>();
+    const lines = output.split(/\r?\n/);
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      const parts = line.split(/\t+/);
+      if (parts.length >= 2) {
+        for (let i = 1; i < parts.length; i++) {
+          let f = parts[i].trim();
+          if (f.startsWith('"') && f.endsWith('"')) {
+            f = f.slice(1, -1);
+          }
+          if (f) files.add(f);
+        }
+      } else {
+        const spaceParts = line.split(/\s+/);
+        if (spaceParts.length >= 2) {
+          for (let i = 1; i < spaceParts.length; i++) {
+            let f = spaceParts[i].trim();
+            if (f.startsWith('"') && f.endsWith('"')) {
+              f = f.slice(1, -1);
+            }
+            if (f) files.add(f);
+          }
+        }
+      }
+    }
+    return Array.from(files);
+  }
+
+  /**
+   * Collect all files touched in the push range (historical commits, net diff, and HEAD commit).
+   * Incorporates -m (merges), -M (renames), -C (copies), and --name-status.
+   * Fail-Closed: Any error in git log, git diff, or git diff-tree throws immediately.
+   */
+  private collectRangeTouchedFiles(workspace: string, localSha: string, baseCommit: string): string[] {
+    const fileSet = new Set<string>();
+
+    // 1. All files touched in ANY commit in baseCommit..localSha
+    const logOutput = this.executor(
+      'git',
+      ['log', `${baseCommit}..${localSha}`, '-m', '-M', '-C', '--name-status', '--format='],
+      workspace,
+    );
+    for (const f of this.parseNameStatusOutput(logOutput)) {
+      fileSet.add(f);
+    }
+
+    // 2. Net diff between baseCommit and localSha
+    const diffOutput = this.executor(
+      'git',
+      ['diff', baseCommit, localSha, '-M', '-C', '--name-status'],
+      workspace,
+    );
+    for (const f of this.parseNameStatusOutput(diffOutput)) {
+      fileSet.add(f);
+    }
+
+    // 3. Always inspect HEAD commit itself
+    const headOutput = this.executor(
+      'git',
+      ['diff-tree', '--no-commit-id', '-m', '-M', '-C', '--name-status', '-r', localSha],
+      workspace,
+    );
+    for (const f of this.parseNameStatusOutput(headOutput)) {
+      fileSet.add(f);
+    }
+
+    return Array.from(fileSet);
+  }
+
+  /**
+   * Validate a list of touched files against TrustBoundary Zone A and configuration integrity gates.
+   */
+  private validateChangesetSecurity(touchedFiles: string[], workspace: string): { allowed: boolean; reason?: string } {
+    const boundaryCheck = TrustBoundary.validateChangesetAgainstTrustBoundary(
+      touchedFiles,
+      workspace
+    );
+    if (!boundaryCheck.allowed) {
+      return boundaryCheck;
+    }
+
+    const configCheck = TrustBoundary.validateConfigurationIntegrity(
+      touchedFiles,
+      workspace
+    );
+    if (!configCheck.allowed) {
+      return configCheck;
+    }
+
+    return { allowed: true };
   }
 }
 

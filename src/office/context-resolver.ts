@@ -49,11 +49,15 @@ export interface ResolvedContext {
  */
 function getRealGitState(workspaceDir: string): ResolvedGitState {
   try {
-    const branch = execSync('git rev-parse --abbrev-ref HEAD', {
+    let branch = execSync('git rev-parse --abbrev-ref HEAD', {
       cwd: workspaceDir,
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 5000,
     }).toString().trim();
+
+    if (!branch || branch === 'HEAD') {
+      branch = process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || 'main';
+    }
 
     const headSha = execSync('git rev-parse HEAD', {
       cwd: workspaceDir,

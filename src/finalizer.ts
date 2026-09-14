@@ -1,13 +1,14 @@
 import { execSync, spawn } from 'node:child_process';
-import { WorkspaceSecurity } from './tools/security.js';
+import { WorkspaceSecurity, WorkspaceEnvironmentSecurity } from './tools/security.js';
+import { TrustBoundary } from './pdl/security/trust-boundary.js';
 import type { ToolExecutionContext } from './tools/types.js';
 import { sanitizeCommitMessage } from './tools/runtime.js';
 import type { RemotePersistenceResult } from './pdl/persistence/types.js';
 
 // Git subcommands that are explicitly blocked for security
 const BLOCKED_GIT_COMMANDS = [
-  'push', 'remote', 'reset', 'clean', 'checkout --', 'restore .',
-  'branch -D', 'branch -d', 'fetch', 'pull', 'merge',
+  'push', 'remote', 'reset', 'clean', 'checkout', 'restore',
+  'branch -D', 'branch -d', 'fetch', 'pull', 'merge', 'apply', 'patch',
 ];
 
 /**
@@ -35,10 +36,14 @@ export class WorkspaceValidator {
    */
   static captureSnapshot(root: string): WorkspaceSnapshot {
     try {
+      const safeEnv = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(process.env);
+      WorkspaceEnvironmentSecurity.assertNoGovernanceCredentials(safeEnv);
+
       const statusResult = execSync('git status --short', {
         cwd: root,
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 10000,
+        env: safeEnv,
       });
       const gitStatus = statusResult.toString().trim();
 
@@ -46,6 +51,7 @@ export class WorkspaceValidator {
         cwd: root,
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 10000,
+        env: safeEnv,
       });
       const trackedFiles = lsFilesResult.toString().trim().split('\n').filter(Boolean);
 
@@ -55,6 +61,7 @@ export class WorkspaceValidator {
           cwd: root,
           stdio: ['pipe', 'pipe', 'pipe'],
           timeout: 10000,
+          env: safeEnv,
         }).toString().trim();
         if (!/^[0-9a-f]{40}$/.test(headSha)) headSha = null;
       } catch {
@@ -62,8 +69,8 @@ export class WorkspaceValidator {
       }
 
       return { trackedFiles, gitStatus, headSha };
-    } catch {
-      return { trackedFiles: [], gitStatus: '', headSha: null };
+    } catch (err: any) {
+      return { trackedFiles: [], gitStatus: 'GIT_ERROR: ' + (err?.message || 'Failed to capture git state'), headSha: null };
     }
   }
 
@@ -113,10 +120,14 @@ export class WorkspaceValidator {
    */
   private static parseChangedFiles(root: string): string[] {
     try {
+      const safeEnv = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(process.env);
+      WorkspaceEnvironmentSecurity.assertNoGovernanceCredentials(safeEnv);
+
       const output = execSync('git status --short', {
         cwd: root,
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 10000,
+        env: safeEnv,
       }).toString();
 
       return output
@@ -134,8 +145,8 @@ export class WorkspaceValidator {
           return arrowIdx >= 0 ? filename.substring(arrowIdx + 4).trim() : filename;
         })
         .filter(Boolean);
-    } catch {
-      return [];
+    } catch (err: any) {
+      throw new Error(`Git status inspection failed: ${err?.message || err}`);
     }
   }
 }
@@ -213,20 +224,52 @@ export class TaskFinalizer {
   ): Promise<FinalizeResult> {
     // Check git status
     const gitStatusResult = await this.exec('git', ['status', '--short']);
+    if (gitStatusResult.exitCode !== 0 || gitStatusResult.status !== 'COMPLETED') {
+      console.error(`[TaskFinalizer] Git status command failed (exitCode=${gitStatusResult.exitCode}): ${gitStatusResult.stderr}`);
+      return {
+        status: 'FAILED',
+        commitSha: null,
+        commitMessage: null,
+        changedFiles: [],
+        gitStatus: '',
+        testsPassed: null,
+        testOutput: '',
+        errorCode: 'GIT_EXECUTION_FAILED',
+        errorMessage: `Git status execution failed: ${gitStatusResult.stderr || 'Command exited with non-zero status'}`,
+      };
+    }
     const gitStatus = gitStatusResult.stdout || '';
 
     const changedFiles = gitStatus
-      .trim()
-      .split('\n')
-      .filter(Boolean)
+      .split(/\r?\n/)
+      .filter(line => line.trim().length >= 4)
       .map(line => {
-        const filename = line.substring(3);
+        let filename = line.length >= 4 && line[2] === ' '
+          ? line.substring(3).trim()
+          : line.trimStart().replace(/^[^\s]+\s+/, '').trim();
+        if (filename.startsWith('"') && filename.endsWith('"')) {
+          filename = filename.slice(1, -1);
+        }
         const arrowIdx = filename.indexOf(' -> ');
-        return arrowIdx >= 0 ? filename.substring(arrowIdx + 4) : filename;
-      });
+        return arrowIdx >= 0 ? filename.substring(arrowIdx + 4).trim() : filename;
+      })
+      .filter(Boolean);
 
-    // No changes — task is complete, no commit needed
+    // No changes — check if task expected changes
     if (changedFiles.length === 0) {
+      if (options.expectChanges) {
+        return {
+          status: 'FAILED',
+          commitSha: null,
+          commitMessage: null,
+          changedFiles: [],
+          gitStatus: 'clean',
+          testsPassed: null,
+          testOutput: '',
+          errorCode: 'NO_CHANGES',
+          errorMessage: 'Task expected changes, but working tree is clean.',
+        };
+      }
       return {
         status: 'COMPLETED',
         commitSha: null,
@@ -237,6 +280,46 @@ export class TaskFinalizer {
         testOutput: '',
         errorCode: null,
         errorMessage: null,
+      };
+    }
+
+    // PRE-COMMIT TRUST BOUNDARY SECURITY GATE (Zone A Enforcement)
+    // Inspect all modified, added, deleted, renamed files in git status and diff.
+    const boundaryCheck = TrustBoundary.validateChangesetAgainstTrustBoundary(
+      changedFiles,
+      this.security.root
+    );
+    if (!boundaryCheck.allowed) {
+      console.error(`[TaskFinalizer] Commit blocked: ${boundaryCheck.reason}`);
+      return {
+        status: 'FAILED',
+        commitSha: null,
+        commitMessage: null,
+        changedFiles,
+        gitStatus,
+        testsPassed: null,
+        testOutput: '',
+        errorCode: 'SECURITY_VIOLATION',
+        errorMessage: boundaryCheck.reason || null,
+      };
+    }
+
+    const configCheck = TrustBoundary.validateConfigurationIntegrity(
+      changedFiles,
+      this.security.root
+    );
+    if (!configCheck.allowed) {
+      console.error(`[TaskFinalizer] Commit blocked: ${configCheck.reason}`);
+      return {
+        status: 'FAILED',
+        commitSha: null,
+        commitMessage: null,
+        changedFiles,
+        gitStatus,
+        testsPassed: null,
+        testOutput: '',
+        errorCode: 'SECURITY_VIOLATION',
+        errorMessage: configCheck.reason || null,
       };
     }
 
@@ -429,6 +512,19 @@ export class TaskFinalizer {
 
     // Verify working tree is clean after commit
     const finalStatusResult = await this.exec('git', ['status', '--short']);
+    if (finalStatusResult.exitCode !== 0 || finalStatusResult.status !== 'COMPLETED') {
+      return {
+        status: 'FAILED',
+        commitSha,
+        commitMessage,
+        changedFiles,
+        gitStatus: '',
+        testsPassed,
+        testOutput: this.redactSecrets(testOutput),
+        errorCode: 'GIT_EXECUTION_FAILED',
+        errorMessage: `Post-commit git status failed: ${finalStatusResult.stderr || 'Command failed'}`,
+      };
+    }
     const workingTreeClean = (finalStatusResult.stdout || '').trim() === '';
 
     return {
@@ -458,11 +554,14 @@ export class TaskFinalizer {
   private async execRaw(command: string, args: string[]): Promise<{ status: string; stdout: string; stderr: string; exitCode: number | null }> {
     return new Promise(resolve => {
       try {
+        const safeEnv = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(process.env);
+        WorkspaceEnvironmentSecurity.assertNoGovernanceCredentials(safeEnv);
         // execSync uses shell:true on Windows automatically for PATH resolution
         const output = execSync(command + ' ' + args.map(a => '"' + a.replace(/"/g, '\\"') + '"').join(' '), {
           cwd: this.security.root,
           stdio: ['pipe', 'pipe', 'pipe'],
           timeout: this.ctx.commandTimeoutMs,
+          env: safeEnv,
         });
         resolve({
           status: 'COMPLETED',
@@ -496,10 +595,13 @@ export class TaskFinalizer {
    */
   private async execShell(command: string, opts: { timeoutMs?: number }): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
     return new Promise(resolve => {
+      const safeEnv = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(process.env);
+      WorkspaceEnvironmentSecurity.assertNoGovernanceCredentials(safeEnv);
       const proc = spawn(command, {
         cwd: this.security.root,
         shell: true,
         timeout: opts.timeoutMs ?? this.ctx.commandTimeoutMs,
+        env: safeEnv,
       });
 
       let stdout = '';
@@ -528,8 +630,9 @@ export class TaskFinalizer {
   private redactSecrets(value: string): string {
     if (!value) return value;
     let result = value;
+    result = result.replace(/postgres(?:ql)?:\/\/[^\s'"`]+/gi, 'postgres://[REDACTED]');
     for (const [key, secret] of Object.entries(process.env)) {
-      if (secret && /(api[_-]?key|token|password|secret|credential|private[_-]?key)/i.test(key) && secret.length >= 4) {
+      if (secret && /(api[_-]?key|token|password|secret|credential|private[_-]?key|database|postgres)/i.test(key) && secret.length >= 4) {
         result = result.split(secret).join('[REDACTED]');
       }
     }

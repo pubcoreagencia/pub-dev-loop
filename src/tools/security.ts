@@ -1,5 +1,6 @@
 import { resolve, isAbsolute, relative, sep } from 'node:path';
-import { realpathSync } from 'node:fs';
+import { realpathSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 /**
  * WorkspaceSecurity: validates and resolves file paths within a workspace root.
@@ -14,8 +15,12 @@ export class WorkspaceSecurity {
   private readonly workspaceRoot: string;
 
   constructor(workspaceRoot: string) {
+    let root = workspaceRoot;
+    if (process.platform !== 'win32' && /^[a-zA-Z]:[\\/]/.test(root)) {
+      root = root.replace(/^[a-zA-Z]:/, '');
+    }
     // Normalize and resolve without requiring the directory to exist
-    this.workspaceRoot = resolve(workspaceRoot);
+    this.workspaceRoot = resolve(root);
   }
 
   /**
@@ -101,5 +106,440 @@ export class WorkspaceSecurity {
 
   get root(): string {
     return this.workspaceRoot;
+  }
+}
+
+/**
+ * Phase 5.5: Fail-closed invariant violation error when an unprivileged workspace process
+ * is found to possess database connection strings, administrative tokens, or governance keys.
+ */
+export class GovernanceSelfElevationViolationError extends Error {
+  constructor(message: string, readonly detectedKey?: string) {
+    super(`[SELF_ELEVATION_INVARIANT_VIOLATION] ${message}`);
+    this.name = 'GovernanceSelfElevationViolationError';
+  }
+}
+
+/**
+ * Phase 5.5: Anti-Self-Elevation Security Boundary.
+ *
+ * Enforces the core invariant:
+ * "Agent-executed workspace processes cannot modify PDL governance."
+ *
+ * Ensures that child processes spawned for tool execution, test commands, or git operations
+ * in the workspace receive a stripped environment with zero database credentials, zero governance
+ * administrative keys, zero cloud tokens, and zero provider secrets.
+ */
+export class WorkspaceEnvironmentSecurity {
+  public static readonly BLOCKED_KEY_PREFIXES = [
+    'DATABASE_',
+    'POSTGRES_',
+    'PG',
+    'SUPABASE_',
+    'NEON_',
+    'HYPERDRIVE_',
+    'REDIS_',
+    'MONGODB_',
+    'PDL_GOVERNANCE_',
+    'PDL_ADMIN_',
+    'GOVERNANCE_',
+    'KILL_SWITCH',
+    'KILLSWITCH',
+    'GITHUB_',
+    'GH_',
+    'PDL_GITHUB_',
+    'ROUTER_',
+    'OPENROUTER_',
+    'CODEX_',
+    'OPENAI_',
+    'ANTHROPIC_',
+    'GEMINI_',
+    'PUB_NEURAL_',
+    'PUB_MCP_',
+  ];
+
+  public static readonly BLOCKED_KEY_EXACT = new Set([
+    'DATABASE_URL',
+    'POSTGRES_URL',
+    'SUPABASE_DB_URL',
+    'SUPABASE_URL',
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_ANON_KEY',
+    'NEON_DATABASE_URL',
+    'DATABASE_PRIVATE_URL',
+    'DB_URL',
+    'CONNECTION_STRING',
+    'HYPERDRIVE_URL',
+    'PGPASSWORD',
+    'PGUSER',
+    'PGDATABASE',
+    'PGHOST',
+    'PGPORT',
+    'PGSSLMODE',
+    'PGOPTIONS',
+    'PDL_GOVERNANCE_ADMIN_KEY',
+    'PDL_GOVERNANCE_READ_KEY',
+    'PDL_ADMIN_KEY',
+    'GITHUB_TOKEN',
+    'GH_TOKEN',
+    'PDL_GITHUB_TOKEN',
+    'GH_ENTERPRISE_TOKEN',
+    'GITHUB_ENTERPRISE_TOKEN',
+    'ROUTER_API_KEY',
+    'ROUTER_BASE_URL',
+    'OPENROUTER_API_KEY',
+    'OPENROUTER_BASE_URL',
+    'PUB_NEURAL_ENDPOINT',
+    'PUB_NEURAL_TOKEN',
+    'PUB_MCP_AUTH_TOKEN',
+  ]);
+
+  public static readonly SENSITIVE_KEY_PATTERN =
+    /(api[_-]?key|token|password|secret|credential|private[_-]?key|database|postgres|supabase|neural|governance|kill[_-]?switch)/i;
+
+  public static readonly SENSITIVE_VALUE_PATTERN =
+    /(?:postgres(?:ql)?:\/\/|mysql:\/\/|redis:\/\/|mongodb:\/\/|ghp_[A-Za-z0-9_]{10,}|github_pat_[A-Za-z0-9_]{10,}|Bearer\s+[A-Za-z0-9._-]{10,})/i;
+
+  private static isolatedGhConfigDir: string | null = null;
+
+  /**
+   * Identifies whether a directory is a protected core operating system bin directory
+   * (such as /usr/bin or System32) that must never be removed from PATH.
+   */
+  public static isSystemBinDirectory(dirPath: string): boolean {
+    try {
+      const norm = resolve(dirPath).toLowerCase().replace(/\\/g, '/');
+      if (process.platform === 'win32') {
+        const sysRoot = (process.env.SystemRoot || 'C:\\Windows').toLowerCase().replace(/\\/g, '/');
+        return norm === sysRoot || norm.startsWith(sysRoot + '/');
+      } else {
+        return (
+          norm === '/bin' ||
+          norm === '/usr/bin' ||
+          norm === '/usr/local/bin' ||
+          norm === '/sbin' ||
+          norm === '/usr/sbin' ||
+          norm === '/usr/local/sbin'
+        );
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Provides a clean, isolated directory for GitHub CLI configuration.
+   * Completely neutralizes the host keyring and Windows Credential Manager
+   * by providing an explicit inert hosts.yml and config.yml, and populates
+   * a shadow bin/ directory containing inert blocking shims.
+   */
+  public static getIsolatedGhConfigDir(): string {
+    if (!this.isolatedGhConfigDir) {
+      const dir = resolve(tmpdir(), 'pdl-sandbox-gh-isolated');
+      try {
+        if (!existsSync(dir)) {
+          mkdirSync(dir, { recursive: true });
+        }
+        const hostsFile = resolve(dir, 'hosts.yml');
+        const inertHosts =
+          'github.com:\n' +
+          '    user: pdl-unauthenticated-sandbox\n' +
+          '    oauth_token: pdl-invalid-dummy-token\n' +
+          '    git_protocol: https\n';
+        writeFileSync(hostsFile, inertHosts, 'utf8');
+
+        const configFile = resolve(dir, 'config.yml');
+        const inertConfig = 'git_protocol: https\neditor: \nprompt: disabled\n';
+        writeFileSync(configFile, inertConfig, 'utf8');
+
+        // Create inert blocking shims in bin/ to shadow any system-level gh
+        const binDir = resolve(dir, 'bin');
+        if (!existsSync(binDir)) {
+          mkdirSync(binDir, { recursive: true });
+        }
+        // POSIX shim
+        const posixShim = resolve(binDir, 'gh');
+        writeFileSync(
+          posixShim,
+          '#!/bin/sh\necho "[PDL Security:BLOCK] Execution of GitHub CLI (gh) is prohibited in sanitized workspace" >&2\nexit 127\n',
+          { mode: 0o755 }
+        );
+        // Windows shims
+        writeFileSync(
+          resolve(binDir, 'gh.cmd'),
+          '@echo [PDL Security:BLOCK] Execution of GitHub CLI (gh) is prohibited in sanitized workspace 1>&2\r\n@exit /b 127\r\n'
+        );
+        writeFileSync(
+          resolve(binDir, 'gh.bat'),
+          '@echo [PDL Security:BLOCK] Execution of GitHub CLI (gh) is prohibited in sanitized workspace 1>&2\r\n@exit /b 127\r\n'
+        );
+      } catch {}
+      this.isolatedGhConfigDir = dir;
+    }
+    return this.isolatedGhConfigDir;
+  }
+
+  /**
+   * Sanitizes environment for workspace subprocesses:
+   * Completely strips database credentials, governance keys, provider tokens, and cloud secrets.
+   * Enforces an isolated GH_CONFIG_DIR with inert dummy tokens and sanitizes PATH to eliminate gh/gh.exe.
+   */
+  public static sanitizeWorkspaceEnv(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+    const safeEnv: NodeJS.ProcessEnv = {};
+
+    for (const [key, val] of Object.entries(baseEnv)) {
+      if (val === undefined) continue;
+
+      const upperKey = key.toUpperCase();
+
+      // Check exact blocked keys
+      if (this.BLOCKED_KEY_EXACT.has(upperKey)) {
+        continue;
+      }
+
+      // Check blocked prefixes
+      if (this.BLOCKED_KEY_PREFIXES.some(p => upperKey.startsWith(p))) {
+        continue;
+      }
+
+      // Check sensitive key regex
+      if (this.SENSITIVE_KEY_PATTERN.test(key)) {
+        continue;
+      }
+
+      // Check sensitive value regex (e.g. connection strings in non-standard keys)
+      if (this.SENSITIVE_VALUE_PATTERN.test(val)) {
+        continue;
+      }
+
+      safeEnv[key] = val;
+    }
+
+    // P0.4.1-A1 & Cross-Platform: Sanitize PATH to neutralize GitHub CLI while preserving system utilities
+    const pathKey = Object.keys(safeEnv).find(k => k.toUpperCase() === 'PATH') || 'PATH';
+    const rawPath = safeEnv[pathKey] || '';
+    if (rawPath) {
+      const pathSep = process.platform === 'win32' ? ';' : ':';
+      const cleanParts = rawPath
+        .split(pathSep)
+        .filter(part => {
+          const trimmed = part.trim();
+          if (!trimmed) return false;
+          const lower = trimmed.toLowerCase();
+          // Exclude dedicated GitHub CLI directories
+          if (
+            lower.includes('github cli') ||
+            lower.includes('github-cli') ||
+            lower.includes('cellar/gh') ||
+            lower.includes('/gh/bin') ||
+            lower.includes('\\gh\\bin')
+          ) {
+            return false;
+          }
+          // Exclude any non-system directory containing gh.exe or gh
+          if (!this.isSystemBinDirectory(trimmed)) {
+            try {
+              if (existsSync(resolve(trimmed, 'gh.exe')) || existsSync(resolve(trimmed, 'gh'))) {
+                return false;
+              }
+            } catch {}
+          }
+          return true;
+        });
+
+      // Prepend isolated shadow bin directory to ensure system-level gh is blocked
+      const ghIsolatedDir = this.getIsolatedGhConfigDir();
+      const shadowBinDir = resolve(ghIsolatedDir, 'bin');
+      safeEnv[pathKey] = shadowBinDir + pathSep + cleanParts.join(pathSep);
+    }
+
+    // P0.4.1-A2 & A3: Force isolated GitHub CLI configuration with inert dummy credentials
+    safeEnv['GH_CONFIG_DIR'] = this.getIsolatedGhConfigDir();
+
+    return safeEnv;
+  }
+
+  /**
+   * Fail-closed invariant gate:
+   * "Agent-executed workspace processes cannot modify PDL governance."
+   * Throws GovernanceSelfElevationViolationError if ANY prohibited credential or pattern exists.
+   */
+  public static assertNoGovernanceCredentials(env: NodeJS.ProcessEnv): void {
+    for (const [key, val] of Object.entries(env)) {
+      if (val === undefined) continue;
+
+      const upperKey = key.toUpperCase();
+
+      // GH_CONFIG_DIR is permitted ONLY when pointing to the isolated sandbox;
+      // if it points to host user profiles or credential stores, it fails closed.
+      if (upperKey === 'GH_CONFIG_DIR') {
+        const isolatedDir = resolve(this.getIsolatedGhConfigDir()).toLowerCase();
+        const incomingDir = resolve(String(val)).toLowerCase();
+        if (incomingDir !== isolatedDir) {
+          throw new GovernanceSelfElevationViolationError(
+            `Subprocess environment points GH_CONFIG_DIR to unapproved directory: "${val}". Agent-executed workspace processes cannot access host GitHub credentials.`,
+            'GH_CONFIG_DIR'
+          );
+        }
+        continue;
+      }
+
+      // Permitted ONLY if strictly containing the inert sandbox dummy token
+      if (upperKey === 'GH_TOKEN' || upperKey === 'GITHUB_TOKEN' || upperKey === 'PDL_GITHUB_TOKEN') {
+        if (val === 'pdl-invalid-dummy-token') {
+          continue;
+        }
+        throw new GovernanceSelfElevationViolationError(
+          `Subprocess environment contains unauthorized or real GitHub token in "${key}". Agent-executed workspace processes cannot modify PDL governance or access host credentials.`,
+          key
+        );
+      }
+
+      if (this.BLOCKED_KEY_EXACT.has(upperKey)) {
+        throw new GovernanceSelfElevationViolationError(
+          `Subprocess environment contains prohibited credential: "${key}". Agent-executed workspace processes cannot modify PDL governance.`,
+          key
+        );
+      }
+
+      if (this.BLOCKED_KEY_PREFIXES.some(p => upperKey.startsWith(p))) {
+        throw new GovernanceSelfElevationViolationError(
+          `Subprocess environment contains prohibited credential with prefix: "${key}". Agent-executed workspace processes cannot modify PDL governance.`,
+          key
+        );
+      }
+
+      if (this.SENSITIVE_KEY_PATTERN.test(key)) {
+        throw new GovernanceSelfElevationViolationError(
+          `Subprocess environment contains sensitive key: "${key}". Agent-executed workspace processes cannot modify PDL governance.`,
+          key
+        );
+      }
+
+      if (this.SENSITIVE_VALUE_PATTERN.test(val)) {
+        throw new GovernanceSelfElevationViolationError(
+          `Subprocess environment key "${key}" contains sensitive URI or secret value pattern. Agent-executed workspace processes cannot modify PDL governance.`,
+          key
+        );
+      }
+    }
+  }
+}
+
+/**
+ * Phase 5.5 / P0.3.1: Workspace Command & Host Credential Escape Security Gate.
+ *
+ * Enforces executable boundaries preventing autonomous workspace agents from invoking:
+ * - GitHub CLI (`gh`, `gh.exe`) directly, via relative/absolute paths, or wrapped in quotes.
+ * - Shell wrappers (`cmd`, `powershell`, `pwsh`, `bash`, `sh`) that execute `gh` or invoke GitHub administration.
+ * - Direct HTTP/CLI attacks against GitHub repository governance (protection, rulesets).
+ */
+export class WorkspaceCommandSecurity {
+  public static readonly PROHIBITED_EXECUTABLE_NAMES = new Set([
+    'gh',
+    'gh.exe',
+    'cmdkey',
+    'cmdkey.exe',
+  ]);
+
+  public static readonly SHELL_NAMES = new Set([
+    'cmd',
+    'cmd.exe',
+    'powershell',
+    'powershell.exe',
+    'pwsh',
+    'pwsh.exe',
+    'bash',
+    'bash.exe',
+    'sh',
+    'sh.exe',
+    'zsh',
+    'wscript',
+    'wscript.exe',
+    'cscript',
+    'cscript.exe',
+  ]);
+
+  /**
+   * Normalize an executable name or path to its bare command name (lowercased, no quotes, no path, no extension).
+   */
+  public static extractBasename(cmd: string): string {
+    if (!cmd) return '';
+    let clean = cmd.trim();
+    if ((clean.startsWith('"') && clean.endsWith('"')) || (clean.startsWith("'") && clean.endsWith("'"))) {
+      clean = clean.slice(1, -1).trim();
+    }
+    const parts = clean.split(/[\\/]/);
+    const filename = parts[parts.length - 1].toLowerCase();
+    return filename.replace(/\.(exe|cmd|bat|ps1|sh)$/i, '');
+  }
+
+  /**
+   * Check if a command string or executable + args represents a prohibited GitHub CLI execution or governance bypass.
+   */
+  public static validateCommand(command: string, args: string[] = []): { allowed: boolean; reason?: string } {
+    if (!command || typeof command !== 'string') {
+      return { allowed: true };
+    }
+
+    const trimmed = command.trim();
+    const baseExe = this.extractBasename(trimmed);
+
+    // 1. Direct executable check (gh, gh.exe, cmdkey, cmdkey.exe, or paths ending in them)
+    if (this.PROHIBITED_EXECUTABLE_NAMES.has(baseExe) || /(?:^|[\\/])(gh|cmdkey)(?:\.exe)?$/i.test(trimmed.replace(/^['"]|['"]$/g, ''))) {
+      return {
+        allowed: false,
+        reason: `[SECURITY_VIOLATION] Direct execution of prohibited tool ('${baseExe}') is strictly prohibited in autonomous workspace to prevent host credential escape.`,
+      };
+    }
+
+    // 2. Full command line text inspection
+    const fullCommandLine = [trimmed, ...args.map(a => String(a))].join(' ');
+
+    // 3. Detect any invocation of gh or gh.exe as a command or token
+    // Matches: gh, gh.exe, .\gh, "gh", 'gh', C:\...\gh.exe, & gh, Start-Process gh, etc.
+    const ghPattern = /(?:^|[;&|`\s("'])(?:[\w:.-]*[\\/])?gh(?:\.exe)?(?:$|[;&|`\s)"'])/i;
+    if (ghPattern.test(fullCommandLine)) {
+      return {
+        allowed: false,
+        reason: `[SECURITY_VIOLATION] Execution of GitHub CLI ('gh' / 'gh.exe') is strictly prohibited across all workspace execution surfaces.`,
+      };
+    }
+
+    // 3.1 Detect any invocation of cmdkey as a command or token
+    const cmdkeyPattern = /(?:^|[;&|`\s("'])(?:[\w:.-]*[\\/])?cmdkey(?:\.exe)?(?:$|[;&|`\s)"'])/i;
+    if (cmdkeyPattern.test(fullCommandLine)) {
+      return {
+        allowed: false,
+        reason: `[SECURITY_VIOLATION] Execution of credential management tool ('cmdkey') is strictly prohibited in autonomous workspace.`,
+      };
+    }
+
+    // 4. Detect shell wrapper escapes targeting gh subcommands or APIs
+    if (this.SHELL_NAMES.has(baseExe)) {
+      const shellSubcommand = args.join(' ');
+      if (ghPattern.test(shellSubcommand) || /\bgh\s+(?:api|auth|repo|ruleset|rulesets|pr|workflow|secret|variable|release)\b/i.test(shellSubcommand)) {
+        return {
+          allowed: false,
+          reason: `[SECURITY_VIOLATION] Shell invocation of GitHub CLI ('gh') is strictly prohibited.`,
+        };
+      }
+      if (cmdkeyPattern.test(shellSubcommand)) {
+        return {
+          allowed: false,
+          reason: `[SECURITY_VIOLATION] Shell invocation of credential tool ('cmdkey') is strictly prohibited.`,
+        };
+      }
+    }
+
+    // 5. Detect direct curl/web requests attempting to access or manipulate GitHub governance endpoints
+    if (/(?:curl|invoke-webrequest|invoke-restmethod|wget)\s+[^\n\r]*?(?:api\.github\.com[^\n\r]*?(?:protection|rulesets|collaborators|hooks))/i.test(fullCommandLine)) {
+      return {
+        allowed: false,
+        reason: `[SECURITY_VIOLATION] Direct API invocation targeting GitHub governance endpoints (protection/rulesets) is strictly prohibited.`,
+      };
+    }
+
+    return { allowed: true };
   }
 }

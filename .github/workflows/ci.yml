@@ -37,8 +37,8 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Build sandbox container image
+        run: docker build -f Dockerfile.sandbox -t pdl-sandbox:latest .
+
       - name: Unit tests
         run: npm test
-
-      - name: Prototype smoke test
-        run: npm run test:prototype

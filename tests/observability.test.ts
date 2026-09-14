@@ -74,6 +74,25 @@ describe('Observability Test Suite (A-E)', () => {
     }
   });
 
+  const dummyPrepared: any = {
+    executionSpec: {
+      specVersion: '1.0.0',
+      objective: 'Observability verification',
+      context: { version: '1.0.0', authoritativeContext: [], repositoryContext: [], operationalContext: [], relevantDocumentation: [], knownConstraints: [], limitations: [] },
+      constraints: [],
+      acceptanceCriteria: [],
+      validationPlan: [],
+      executionInstructions: [],
+      executionSteps: [{ id: 's1', description: 'step', critical: true }],
+      risks: [],
+      escalationConditions: [],
+      lineage: { intakeVersion: '1.0.0', intakeHash: 'hash', source: 'test', createdAt: new Date().toISOString() },
+      metadata: { generatedAt: new Date().toISOString(), specHash: 'hash' },
+    },
+    task: { id: 'dummy' },
+    envelope: {},
+  };
+
   /**
    * Test A — OpenRouter candidate loop creates modelAttempts
    * model-A:free fails with fallback-eligible error (capability/schema mismatch), model-B:free succeeds.
@@ -197,10 +216,11 @@ describe('Observability Test Suite (A-E)', () => {
     };
 
     const task = baseTask('TASK-OBS-C');
+    task.repository = testRepoUrl;
     const worker = new RouterWorker();
     worker.getProviderChain = () => [openRouterProvider, success9RouterProvider];
 
-    const result = await (worker as any).executeWithRetry(task, testRepoUrl);
+    const result = await (worker as any).executeWithRetry(task, testRepoUrl, dummyPrepared);
     expect(result.status).toBe('COMPLETED');
     const lastTrace = result.trace.attempts[result.trace.attempts.length - 1];
 
@@ -242,10 +262,11 @@ describe('Observability Test Suite (A-E)', () => {
     };
 
     const task = baseTask('TASK-OBS-D');
+    task.repository = testRepoUrl;
     const worker = new RouterWorker();
     worker.getProviderChain = () => [legacyProvider];
 
-    const result = await (worker as any).executeWithRetry(task, testRepoUrl);
+    const result = await (worker as any).executeWithRetry(task, testRepoUrl, dummyPrepared);
     expect(result.status).toBe('COMPLETED');
     const lastTrace = result.trace.attempts[0];
     expect(lastTrace).toBeDefined();

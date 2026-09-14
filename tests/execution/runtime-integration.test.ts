@@ -59,6 +59,9 @@ function initGitRepo(root: string): void {
 function gitCommit(root: string, message: string): void {
   execSync('git add -A', { cwd: root, stdio: 'ignore' });
   execSync('git commit -m "' + message + '"', { cwd: root, stdio: 'ignore' });
+  try {
+    execSync('git branch -M main', { cwd: root, stdio: 'ignore' });
+  } catch {}
 }
 
 function createMemorySpecStore(): ExecutionSpecStore & { records: Map<string, ExecutionSpecRecord> } {
@@ -186,6 +189,9 @@ describe('Phase 3A.4 — Runtime Integration Verification', () => {
     initGitRepo(remoteRepoDir);
     await writeFile(join(remoteRepoDir, 'README.md'), '# Initial Repo\n', 'utf8');
     gitCommit(remoteRepoDir, 'Initial commit');
+    try {
+      execSync('git branch -M main', { cwd: remoteRepoDir, stdio: 'ignore' });
+    } catch {}
 
     defaultProductCatalog.register({
       productId: 'test',

@@ -268,4 +268,29 @@ describe('WorkspaceValidator', () => {
     const unexpected = WorkspaceValidator.detectUnexpectedChanges(testRoot, baseline, ['hello.txt']);
     expect(unexpected).toContain('unknown.txt');
   });
+
+  it('finalize fails closed with FAILED (never COMPLETED) when git status execution fails', async () => {
+    const finalizer = new TaskFinalizer(testRoot);
+    // Mock exec on finalizer instance to simulate git failure (e.g. exitCode 127 command not found)
+    (finalizer as any).exec = async () => ({
+      status: 'FAILED',
+      stdout: '',
+      stderr: 'git: command not found',
+      exitCode: 127,
+    });
+
+    const result = await finalizer.finalize('Test objective', 'Test prompt', {});
+    expect(result.status).toBe('FAILED');
+    expect(result.errorCode).toBe('GIT_EXECUTION_FAILED');
+    expect(result.errorMessage).toContain('git: command not found');
+    expect(result.status).not.toBe('COMPLETED');
+  });
+
+  it('finalize fails closed with FAILED when expectChanges is true but working tree is clean', async () => {
+    const finalizer = new TaskFinalizer(testRoot);
+    const result = await finalizer.finalize('Test objective', 'Test prompt', { expectChanges: true });
+    expect(result.status).toBe('FAILED');
+    expect(result.errorCode).toBe('NO_CHANGES');
+    expect(result.status).not.toBe('COMPLETED');
+  });
 });

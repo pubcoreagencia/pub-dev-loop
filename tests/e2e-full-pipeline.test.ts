@@ -7,6 +7,13 @@ import { join } from 'node:path';
 import { RouterWorker } from '../src/router-worker.js';
 import type { AgentProvider, ProviderTaskResult } from '../src/providers/types.js';
 import type { Task, TaskRepository } from '../src/domain.js';
+import {
+  computeSpecHash,
+  type ExecutionSpecRecord,
+  type ExecutionSpecStore,
+} from '../src/execution/execution-spec-persistence.js';
+import { normalizeTaskIntake } from '../src/task/intake.js';
+import { buildCanonicalExecutionSpec } from '../src/pdl/service/task-intake-service.js';
 
 /** Helper: create a temporary Git repo */
 function initGitRepo(root: string): void {
@@ -166,6 +173,69 @@ describe('E2E Full Pipeline (API → Worker → Provider → Finalizer → Git C
     try { await rm(testRoot, { recursive: true, force: true }); } catch {}
   });
 
+function createMemorySpecStore(): ExecutionSpecStore & { records: Map<string, ExecutionSpecRecord> } {
+  const records = new Map<string, ExecutionSpecRecord>();
+  return {
+    records,
+    async create(record: ExecutionSpecRecord) {
+      records.set(record.id, { ...record });
+      return { ...record };
+    },
+    async loadByTaskId(taskId: string) {
+      for (const record of records.values()) {
+        if (record.task_id === taskId || record.id === taskId) {
+          return { ...record };
+        }
+      }
+      return null;
+    },
+    async updateStatus(idOrTaskId: string, status: any, sealedAt?: string, specHash?: string, specContentJson?: string) {
+      let target: ExecutionSpecRecord | undefined;
+      for (const record of records.values()) {
+        if (record.id === idOrTaskId || record.task_id === idOrTaskId) {
+          target = record;
+          break;
+        }
+      }
+      if (!target) throw new Error('Record not found');
+      target.status = status;
+      if (sealedAt !== undefined) target.sealed_at = sealedAt;
+      if (specHash !== undefined) target.spec_hash = specHash;
+      if (specContentJson !== undefined) target.spec_content_json = specContentJson;
+      return { ...target };
+    },
+  };
+}
+
+function createMockExecutionSpecRecord(taskId: string): ExecutionSpecRecord {
+  const intake = normalizeTaskIntake({
+    rawRequest: 'Create hello.txt via mock provider',
+    source: 'e2e-test',
+    createdAt: new Date().toISOString(),
+  });
+  const spec = buildCanonicalExecutionSpec(intake);
+  const hash = computeSpecHash(spec);
+  const specWithHash = {
+    ...spec,
+    metadata: {
+      ...spec.metadata,
+      specHash: hash,
+    },
+  };
+  return {
+    id: `spec-${taskId}`,
+    task_id: taskId,
+    spec_version: '1.0.0',
+    spec_hash: hash,
+    objective: spec.objective,
+    lineage: spec.lineage,
+    status: 'SEALED',
+    created_at: new Date().toISOString(),
+    sealed_at: new Date().toISOString(),
+    spec_content_json: JSON.stringify(specWithHash),
+  };
+}
+
     it('completes a task, creates a commit with hello.txt, pushes to remote, and verifies remote', async () => {
       const task = taskRepo.create({
         project: 'e2e-pipeline',
@@ -174,8 +244,39 @@ describe('E2E Full Pipeline (API → Worker → Provider → Finalizer → Git C
         prompt: 'Create hello.txt',
       });
 
+      const specStore = createMemorySpecStore();
+      await specStore.create(createMockExecutionSpecRecord(task.id));
+
+      const mockRemotePersistence = {
+        persist: async (opts: any) => {
+          execSync(`git push "${remotePath.replace(/\\/g, '/')}" HEAD:refs/heads/${opts.branch}`, {
+            cwd: opts.workspace,
+            stdio: 'ignore',
+          });
+          return {
+            status: 'VERIFIED' as const,
+            repository: opts.product ?? 'e2e-pipeline',
+            branch: opts.branch,
+            pushAttempted: true,
+            pushSucceeded: true,
+            localSha: opts.localSha,
+            remoteSha: opts.localSha,
+            remoteVerified: true,
+          };
+        },
+      } as any;
+
       const provider = createMockFileProvider();
-      const worker = new RouterWorker(taskRepo, provider);
+      const worker = new RouterWorker(
+        taskRepo,
+        provider,
+        'router',
+        undefined,
+        specStore,
+        undefined,
+        undefined,
+        mockRemotePersistence,
+      );
 
       // Execute the worker loop (claim → execute → finalize)
       // Since executeOnce executes asynchronously and creates the workspace dynamically,

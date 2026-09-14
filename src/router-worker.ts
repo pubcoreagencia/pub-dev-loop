@@ -269,6 +269,7 @@ export class RouterWorker extends BaseWorker {
     if (!prepared) {
       throw new Error('RouterWorker: PreparedExecution is required; execution without sealed ExecutionSpec is prohibited');
     }
+    const finalPrepared: PreparedExecution = prepared;
     this.active = true;
     let effectiveTask = await enrichDeveloperTaskWithMemory(task);
     effectiveTask = await enrichArchitectTaskWithMemory(effectiveTask);
@@ -441,9 +442,9 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
             },
             finalization: undefined,
             specIdentity: {
-              specVersion: prepared.executionSpec.specVersion,
+              specVersion: finalPrepared.executionSpec.specVersion,
               taskId: task.id,
-              lineage: prepared.executionSpec.lineage,
+              lineage: finalPrepared.executionSpec.lineage,
             },
           };
         } else {
@@ -516,7 +517,7 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
 
           const engine = new DefaultExecutionEngine(attemptProvider);
           const attemptTask: Task = { ...effectiveTask, workspacePath: repo };
-          attemptExecutionResult = await engine.execute(attemptTask, prepared.executionSpec);
+          attemptExecutionResult = await engine.execute(attemptTask, finalPrepared.executionSpec);
           subResult = capturedSubResult ?? {
             status: attemptExecutionResult.execution.status === 'COMPLETED' ? 'COMPLETED' : 'FAILED',
             provider: provider.kind,

@@ -1,13 +1,15 @@
 import { promises as fs, constants as fsConstants } from 'node:fs';
 import { join, relative, sep, parse } from 'node:path';
 import { AgentExecutor, type ExecutionResult, type ExecutionRequest } from '../executor.js';
-import { WorkspaceSecurity } from './security.js';
+import { SandboxUnavailableError } from '../pdl/sandbox/types.js';
+import { WorkspaceSecurity, WorkspaceEnvironmentSecurity, WorkspaceCommandSecurity } from './security.js';
+import { TrustBoundary } from '../pdl/security/trust-boundary.js';
 import type { ToolResult, ToolExecutionContext, ToolDefinition } from './types.js';
 
 // Git subcommands that are explicitly blocked for security
 const BLOCKED_GIT_COMMANDS = [
-  'push', 'remote', 'reset', 'clean', 'checkout --', 'restore .',
-  'branch -D', 'branch -d', 'fetch', 'pull', 'merge',
+  'push', 'remote', 'reset', 'clean', 'checkout', 'restore',
+  'branch -D', 'branch -d', 'fetch', 'pull', 'merge', 'apply', 'patch',
 ];
 
 /**
@@ -268,6 +270,23 @@ export class ToolRuntime {
     const content = String(args.content ?? '');
     const resolved = this.security.resolvePath(path);
 
+    // Layer 1: Runtime Write Gate (Zone A Protected Paths)
+    const normalizedPath = TrustBoundary.normalizePath(resolved, this.security.root);
+    try {
+      TrustBoundary.assertProtectedPathWriteAllowed(normalizedPath, {
+        isAutonomousAgent: true,
+        workspaceRoot: this.security.root,
+      });
+    } catch (err: any) {
+      return {
+        toolCallId,
+        toolName: 'write_file',
+        success: false,
+        content: '',
+        error: err.message,
+      };
+    }
+
     if (content.length > this.ctx.maxWriteBytes) {
       return {
         toolCallId,
@@ -362,21 +381,32 @@ export class ToolRuntime {
     };
   }
 
+  /**
+   * Generates a safe, unprivileged environment for workspace subprocesses,
+   * enforcing the anti-self-elevation invariant:
+   * "Agent-executed workspace processes cannot modify PDL governance."
+   */
+  private getSafeEnvironment(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+    const safeEnv = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(baseEnv);
+    WorkspaceEnvironmentSecurity.assertNoGovernanceCredentials(safeEnv);
+    return safeEnv;
+  }
+
   private async gitDiff(toolCallId: string, args: Record<string, unknown>): Promise<ToolResult> {
-    const file = args.file ? String(args.file) : '';
-    const gitArgs = file ? ['diff', '--', file] : ['diff'];
-    
-    // Resolve and validate file path if specified
+    const file = args.file ? String(args.file) : undefined;
+    const gitArgs = ['diff'];
+
     if (file) {
       try {
-        this.security.resolvePath(file);
-      } catch (e: any) {
+        const resolved = this.security.resolvePath(file);
+        gitArgs.push('--', relative(this.security.root, resolved));
+      } catch (err: any) {
         return {
           toolCallId,
           toolName: 'git_diff',
           success: false,
           content: '',
-          error: `Invalid file path: ${e.message}`,
+          error: err.message,
         };
       }
     }
@@ -386,7 +416,7 @@ export class ToolRuntime {
       args: gitArgs,
       cwd: this.security.root,
       timeoutMs: this.ctx.commandTimeoutMs,
-      environment: process.env,
+      environment: this.getSafeEnvironment(),
     });
 
     return {
@@ -420,18 +450,24 @@ export class ToolRuntime {
       args: ['status', '--short'],
       cwd: this.security.root,
       timeoutMs: this.ctx.commandTimeoutMs,
-      environment: process.env,
+      environment: this.getSafeEnvironment(),
     });
 
     const gitStatus = statusResult.stdout || '';
-    const changedFiles = gitStatus.trim().split('\n').filter(Boolean).map(line => {
-      // git status --short format: "XY filename" or "XY filename -> newname"
-      // Extract filename (skip the 2-char status + space)
-      const filename = line.substring(3);
-      // Handle rename: "old -> new"
-      const arrowIdx = filename.indexOf(' -> ');
-      return arrowIdx >= 0 ? filename.substring(arrowIdx + 4) : filename;
-    });
+    const changedFiles = gitStatus
+      .split(/\r?\n/)
+      .filter(line => line.trim().length >= 4)
+      .map(line => {
+        let filename = line.length >= 4 && line[2] === ' '
+          ? line.substring(3).trim()
+          : line.trimStart().replace(/^[^\s]+\s+/, '').trim();
+        if (filename.startsWith('"') && filename.endsWith('"')) {
+          filename = filename.slice(1, -1);
+        }
+        const arrowIdx = filename.indexOf(' -> ');
+        return arrowIdx >= 0 ? filename.substring(arrowIdx + 4).trim() : filename;
+      })
+      .filter(Boolean);
 
     if (changedFiles.length === 0) {
       return {
@@ -443,13 +479,42 @@ export class ToolRuntime {
       };
     }
 
+    // Layer 2: Pre-Commit Security Gate (Zone A Protected Paths)
+    const boundaryCheck = TrustBoundary.validateChangesetAgainstTrustBoundary(
+      changedFiles,
+      this.security.root
+    );
+    if (!boundaryCheck.allowed) {
+      return {
+        toolCallId,
+        toolName: 'git_commit',
+        success: false,
+        content: '',
+        error: `[SECURITY_VIOLATION] ${boundaryCheck.reason}`,
+      };
+    }
+
+    const configCheck = TrustBoundary.validateConfigurationIntegrity(
+      changedFiles,
+      this.security.root
+    );
+    if (!configCheck.allowed) {
+      return {
+        toolCallId,
+        toolName: 'git_commit',
+        success: false,
+        content: '',
+        error: `[SECURITY_VIOLATION] ${configCheck.reason}`,
+      };
+    }
+
     // git add -A
     await this.executor.execute({
       command: 'git',
       args: ['add', '-A'],
       cwd: this.security.root,
       timeoutMs: this.ctx.commandTimeoutMs,
-      environment: process.env,
+      environment: this.getSafeEnvironment(),
     });
 
     // git diff --cached --stat (to show what will be committed)
@@ -458,7 +523,7 @@ export class ToolRuntime {
       args: ['diff', '--cached', '--stat'],
       cwd: this.security.root,
       timeoutMs: this.ctx.commandTimeoutMs,
-      environment: process.env,
+      environment: this.getSafeEnvironment(),
     });
 
     // git commit
@@ -467,7 +532,7 @@ export class ToolRuntime {
       args: ['commit', '-m', sanitizedMessage],
       cwd: this.security.root,
       timeoutMs: this.ctx.commandTimeoutMs,
-      environment: process.env,
+      environment: this.getSafeEnvironment(),
     });
 
     if (commitResult.status !== 'COMPLETED') {
@@ -486,7 +551,7 @@ export class ToolRuntime {
       args: ['rev-parse', 'HEAD'],
       cwd: this.security.root,
       timeoutMs: this.ctx.commandTimeoutMs,
-      environment: process.env,
+      environment: this.getSafeEnvironment(),
     });
 
     const commitSha = shaResult.stdout?.trim() || null;
@@ -497,7 +562,7 @@ export class ToolRuntime {
       args: ['status', '--short'],
       cwd: this.security.root,
       timeoutMs: this.ctx.commandTimeoutMs,
-      environment: process.env,
+      environment: this.getSafeEnvironment(),
     });
 
     const finalStatus = finalStatusResult.stdout || '';
@@ -534,6 +599,18 @@ export class ToolRuntime {
       };
     }
 
+    // Validate command security: block gh, gh.exe, shell escapes, and GitHub governance manipulation
+    const cmdSecurity = WorkspaceCommandSecurity.validateCommand(command);
+    if (!cmdSecurity.allowed) {
+      return {
+        toolCallId,
+        toolName: 'run_command',
+        success: false,
+        content: '',
+        error: cmdSecurity.reason || '[SECURITY_VIOLATION] Command blocked by workspace security policy.',
+      };
+    }
+
     // Block dangerous git operations in run_command too
     const blocked = checkBlockedGit(command);
     if (blocked) {
@@ -546,18 +623,59 @@ export class ToolRuntime {
       };
     }
 
+    // Block shell operations directly targeting Zone A paths
+    if (/(?:rm|del|move|mv|rename)\s+[^\n\r]*?(?:governance|catalog|persistence|security|agents\.md|pdl_operational_state|review)/i.test(command)) {
+      return {
+        toolCallId,
+        toolName: 'run_command',
+        success: false,
+        content: '',
+        error: `[SECURITY_VIOLATION] Autonomous deletion, move, or rename targeting Zone A protected paths is strictly prohibited.`,
+      };
+    }
+
     // Parse command into parts (simple split — no shell expansion)
     const parts = this.parseCommand(command);
+
+    // Validate parsed command and arguments as well
+    const partsSecurity = WorkspaceCommandSecurity.validateCommand(parts[0], parts.slice(1));
+    if (!partsSecurity.allowed) {
+      return {
+        toolCallId,
+        toolName: 'run_command',
+        success: false,
+        content: '',
+        error: partsSecurity.reason || '[SECURITY_VIOLATION] Command blocked by workspace security policy.',
+      };
+    }
+
+    const safeEnvironment = this.getSafeEnvironment(
+      this.ctx.redactSecrets ? this.redactEnv(process.env) : process.env
+    );
 
     const request: ExecutionRequest = {
       command: parts[0],
       args: parts.slice(1),
       cwd: this.security.root,
       timeoutMs,
-      environment: this.ctx.redactSecrets ? this.redactEnv(process.env) : process.env,
+      environment: safeEnvironment,
     };
 
-    const execResult = await this.executor.execute(request);
+    let execResult: ExecutionResult;
+    try {
+      execResult = await this.executor.execute(request);
+    } catch (err: any) {
+      if (err instanceof SandboxUnavailableError || err?.code === 'SANDBOX_UNAVAILABLE') {
+        return {
+          toolCallId,
+          toolName: 'run_command',
+          success: false,
+          content: '',
+          error: err.message || '[SANDBOX_UNAVAILABLE] Execution failed: Sandbox unavailable.',
+        };
+      }
+      throw err;
+    }
 
     if (execResult.status === 'COMPLETED') {
       return {
@@ -609,11 +727,15 @@ export class ToolRuntime {
   }
 
   /**
-   * Redact known secret patterns from environment variables.
+   * Redact known secret patterns from environment variables,
+   * completely scrubbing database URLs, governance keys, and cloud secrets.
    */
   private redactEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-    const redacted: NodeJS.ProcessEnv = { ...env };
-    for (const [key, value] of Object.entries(env)) {
+    // First, completely strip all database, governance, and sensitive variables
+    const scrubbed = WorkspaceEnvironmentSecurity.sanitizeWorkspaceEnv(env);
+    const redacted: NodeJS.ProcessEnv = { ...scrubbed };
+
+    for (const [key, value] of Object.entries(scrubbed)) {
       if (value && /(api[_-]?key|token|password|secret|credential|private[_-]?key)/i.test(key) && value.length >= 4) {
         redacted[key] = '[REDACTED]';
       }
