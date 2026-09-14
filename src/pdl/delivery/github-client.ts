@@ -18,6 +18,8 @@ import type {
   GitHubCheckRunsResponse,
   GitHubCombinedCommitStatus,
   GitHubReview,
+  RawRulesetRule,
+  RawClassicBranchProtection,
 } from './types.js';
 
 // ============================================================================
@@ -277,5 +279,21 @@ export class GitHubClient {
   async getPullRequestReviews(owner: string, repo: string, pullNumber: number): Promise<GitHubReview[]> {
     const endpoint = `/repos/${owner}/${repo}/pulls/${pullNumber}/reviews?per_page=100`;
     return this.request<GitHubReview[]>(endpoint, { method: 'GET' });
+  }
+
+  /**
+   * Retrieves branch rules from GitHub Rulesets.
+   */
+  async getBranchRules(owner: string, repo: string, branch: string): Promise<RawRulesetRule[]> {
+    const endpoint = `/repos/${owner}/${repo}/rules/branches/${encodeURIComponent(branch)}`;
+    return this.request<RawRulesetRule[]>(endpoint, { method: 'GET' });
+  }
+
+  /**
+   * Retrieves classic branch protection settings.
+   */
+  async getBranchProtection(owner: string, repo: string, branch: string): Promise<RawClassicBranchProtection> {
+    const endpoint = `/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/protection`;
+    return this.request<RawClassicBranchProtection>(endpoint, { method: 'GET' });
   }
 }

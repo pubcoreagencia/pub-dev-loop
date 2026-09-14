@@ -196,4 +196,50 @@ describe('Phase 5.6: GitHubClient Implementation & Error Classification', () => 
     });
     expect(res.number).toBe(42);
   });
+
+  it('10. verifies getBranchRules makes GET request to rules/branches endpoint', async () => {
+    let capturedUrl = '';
+    let capturedMethod = '';
+
+    const mockFetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      capturedUrl = url;
+      capturedMethod = init?.method || '';
+      return createMockResponse(200, [{ type: 'pull_request', parameters: { required_approving_review_count: 1 } }]);
+    });
+
+    const client = new GitHubClient({
+      baseUrl: 'https://api.github.test',
+      fetchFn: mockFetch as unknown as typeof fetch,
+    });
+
+    const rules = await client.getBranchRules('pubcoreagencia', 'pub-rate-calculator', 'main');
+    expect(capturedUrl).toBe('https://api.github.test/repos/pubcoreagencia/pub-rate-calculator/rules/branches/main');
+    expect(capturedMethod).toBe('GET');
+    expect(rules).toHaveLength(1);
+    expect(rules[0].type).toBe('pull_request');
+  });
+
+  it('11. verifies getBranchProtection makes GET request to branches/{branch}/protection endpoint', async () => {
+    let capturedUrl = '';
+    let capturedMethod = '';
+
+    const mockFetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      capturedUrl = url;
+      capturedMethod = init?.method || '';
+      return createMockResponse(200, {
+        required_pull_request_reviews: { required_approving_review_count: 1 },
+      });
+    });
+
+    const client = new GitHubClient({
+      baseUrl: 'https://api.github.test',
+      fetchFn: mockFetch as unknown as typeof fetch,
+    });
+
+    const protection = await client.getBranchProtection('pubcoreagencia', 'pub-rate-calculator', 'main');
+    expect(capturedUrl).toBe('https://api.github.test/repos/pubcoreagencia/pub-rate-calculator/branches/main/protection');
+    expect(capturedMethod).toBe('GET');
+    expect(protection.required_pull_request_reviews?.required_approving_review_count).toBe(1);
+  });
 });
+

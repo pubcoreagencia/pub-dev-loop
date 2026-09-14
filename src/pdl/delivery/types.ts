@@ -149,11 +149,24 @@ export interface NormalizedGovernance {
   unknownReasons: string[];
 }
 
+export interface GovernanceSnapshotSource {
+  rulesets: 'ACTIVE' | 'NONE' | 'UNKNOWN';
+  classicProtection: 'ACTIVE' | 'NONE' | 'UNKNOWN';
+}
+
 export interface GovernanceSnapshot {
-  normalized: NormalizedGovernance;
-  rulesetSource: 'ACTIVE' | 'NONE' | 'UNKNOWN';
-  classicProtectionSource: 'ACTIVE' | 'NONE' | 'UNKNOWN';
-  evaluatedAt: string;
+  repository: string;
+  targetBranch: string;
+  source: GovernanceSnapshotSource;
+  effectiveGovernance: NormalizedGovernance;
+  observedAt: string;
+  rawRulesets?: RawRulesetRule[] | null;
+  rawClassicProtection?: RawClassicBranchProtection | null;
+  // Backwards compatibility aliases
+  normalized?: NormalizedGovernance;
+  rulesetSource?: 'ACTIVE' | 'NONE' | 'UNKNOWN';
+  classicProtectionSource?: 'ACTIVE' | 'NONE' | 'UNKNOWN';
+  evaluatedAt?: string;
 }
 
 export interface MergeAuthorization {
@@ -161,6 +174,34 @@ export interface MergeAuthorization {
   authorized: boolean;
   reasons: string[];
   evaluatedAt: string;
+}
+
+export interface PreMergeRevalidationExpected {
+  expectedHeadSha: string;
+  expectedBaseBranch: string;
+  product: ProductManifest;
+  requestedMergeMethod: MergeMethod;
+  priorSnapshot?: {
+    pr?: PullRequestSnapshot | null;
+    governance?: GovernanceSnapshot | null;
+    ci?: CiObservation | null;
+  };
+}
+
+export interface PreMergeFreshState {
+  pr: PullRequestSnapshot | null;
+  governance: GovernanceSnapshot;
+  ci: CiObservation;
+}
+
+export interface PreMergeRevalidationResult {
+  decision: 'ALLOW' | 'DENY';
+  authorized: boolean;
+  reasons: string[];
+  revalidatedAt: string;
+  toctouViolations: string[];
+  authorization: MergeAuthorization;
+  freshSnapshot: PreMergeFreshState;
 }
 
 export interface PostMergeVerification {
