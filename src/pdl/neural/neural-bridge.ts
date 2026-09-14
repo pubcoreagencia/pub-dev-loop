@@ -232,6 +232,12 @@ export class DefaultPubNeuralBridge implements PubNeuralBridge {
           pushSucceeded: payload.evidence.pushSucceeded,
           remoteVerified: payload.evidence.remoteVerified,
           runtimeVerified: payload.evidence.runtimeVerified,
+          deliveryVerified: input.gateDecision.details?.deliveryVerified !== undefined
+            ? Boolean(input.gateDecision.details.deliveryVerified)
+            : (input.task.result as any)?.delivery?.status === 'DELIVERY_COMPLETED' ? true : undefined,
+          governanceVerified: input.gateDecision.details?.governanceVerified !== undefined
+            ? Boolean(input.gateDecision.details.governanceVerified)
+            : input.gateDecision.passed ? true : undefined,
         },
         candidateFindings: (input.task.result as any)?.candidateFindings,
         trace: payload.trace,

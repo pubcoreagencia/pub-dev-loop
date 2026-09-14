@@ -118,10 +118,19 @@ export class PostTaskExperienceGate {
   ): NeuralExperienceRecordPayload {
     // If an authentic NeuralTaskStatePayload is provided, adapt it cleanly
     if (input.taskStatePayload) {
-      return createExperienceRecordFromTaskState(
+      const record = createExperienceRecordFromTaskState(
         input.taskStatePayload,
         input.candidateFindings
       );
+      if (input.evidence) {
+        record.evidence = {
+          ...record.evidence,
+          deliveryVerified: input.evidence.deliveryVerified ?? record.evidence.deliveryVerified,
+          governanceVerified: input.evidence.governanceVerified ?? record.evidence.governanceVerified,
+          testSummary: input.evidence.testSummary ?? record.evidence.testSummary,
+        };
+      }
+      return record;
     }
 
     const { task } = input;
