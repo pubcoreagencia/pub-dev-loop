@@ -298,4 +298,55 @@ describe('Phase 5.6: PrLifecycleManager (Idempotency & TOCTOU Protection)', () =
       expect(result.reasons[0]).toContain('found \'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\'');
     });
   });
+
+  // 13. Real GitHub API list format where merged is null and merged_at is string (Check 1)
+  it('13. correctly identifies merged PR when GitHub list API returns merged=null and merged_at timestamp', async () => {
+    // Real GitHub API response from GET /repos/{owner}/{repo}/pulls has merged: null in list view!
+    const realGitHubListItem: GitHubPullRequest = {
+      number: 17,
+      html_url: 'https://github.com/pubcoreagencia/pub-rate-calculator/pull/17',
+      state: 'closed',
+      draft: false,
+      merged: null as any, // GitHub list API returns null!
+      merged_at: '2026-09-14T02:50:16Z',
+      mergeable: null,
+      mergeable_state: null,
+      head: {
+        ref: 'feat/rate-calculator-calc-engine',
+        sha: defaultInput.expectedHeadSha,
+      },
+      base: {
+        ref: 'main',
+        sha: 'e9cde396013a9c8ac1ff1d6568ae9bdf8ffdf63d',
+      },
+    };
+
+    const detailedPrResponse: GitHubPullRequest = {
+      ...realGitHubListItem,
+      merged: true, // Detailed endpoint sets merged: true
+      mergeable: true,
+      mergeable_state: 'clean',
+    };
+
+    const mockClient = {
+      getPullRequests: vi.fn().mockResolvedValue([realGitHubListItem]),
+      getPullRequest: vi.fn().mockResolvedValue(detailedPrResponse),
+      createPullRequest: vi.fn(),
+    } as unknown as GitHubClient;
+
+    const manager = new PrLifecycleManager(mockClient);
+    const result = await manager.ensurePullRequest(defaultInput);
+
+    expect(result.decision).toBe('PR_ALREADY_MERGED');
+    expect(result.blocked).toBe(false);
+    expect(result.alreadyDelivered).toBe(true);
+    expect(result.pr?.number).toBe(17);
+    expect(result.pr?.state).toBe('MERGED');
+    expect(mockClient.getPullRequest).toHaveBeenCalledWith(
+      'pubcoreagencia',
+      'pub-rate-calculator',
+      17
+    );
+    expect(mockClient.createPullRequest).not.toHaveBeenCalled();
+  });
 });

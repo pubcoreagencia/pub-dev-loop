@@ -394,4 +394,91 @@ describe('Phase 5.6: RemoteCiObserver Implementation & Polling Machine', () => {
 
     expect(progressList).toEqual(['PENDING', 'SUCCESS']);
   });
+
+  // 15. Required check = skipped -> SUCCESS (GitHub allows skipped required checks)
+  it('15. returns SUCCESS when required check has conclusion skipped', async () => {
+    const mockClient = {
+      getCheckRuns: vi.fn().mockResolvedValue({
+        total_count: 1,
+        check_runs: [createMockCheckRun('verify', 'completed', 'skipped')],
+      }),
+      getCommitStatuses: vi.fn().mockResolvedValue({ total_count: 0, statuses: [] }),
+    } as unknown as GitHubClient;
+
+    const observer = new RemoteCiObserver({ client: mockClient, nowFn, sleepFn });
+    const res = await observer.observe({
+      owner: 'pubcoreagencia',
+      repo: 'pub-rate-calculator',
+      headSha: 'sha123',
+      requiredChecks: ['verify'],
+    });
+
+    expect(res.status).toBe('SUCCESS');
+    expect(res.blocked).toBe(false);
+    expect(res.observation.completedSuccessfulChecks).toEqual(['verify']);
+  });
+
+  // 16. Required check = neutral -> SUCCESS (GitHub allows neutral required checks)
+  it('16. returns SUCCESS when required check has conclusion neutral', async () => {
+    const mockClient = {
+      getCheckRuns: vi.fn().mockResolvedValue({
+        total_count: 1,
+        check_runs: [createMockCheckRun('verify', 'completed', 'neutral')],
+      }),
+      getCommitStatuses: vi.fn().mockResolvedValue({ total_count: 0, statuses: [] }),
+    } as unknown as GitHubClient;
+
+    const observer = new RemoteCiObserver({ client: mockClient, nowFn, sleepFn });
+    const res = await observer.observe({
+      owner: 'pubcoreagencia',
+      repo: 'pub-rate-calculator',
+      headSha: 'sha123',
+      requiredChecks: ['verify'],
+    });
+
+    expect(res.status).toBe('SUCCESS');
+    expect(res.blocked).toBe(false);
+    expect(res.observation.completedSuccessfulChecks).toEqual(['verify']);
+  });
+
+  // 17. SHA Binding: Check run for older/different commit does NOT satisfy current SHA
+  it('17. enforces strict SHA binding and ignores check runs belonging to a different head_sha', async () => {
+    const mockClient = {
+      getCheckRuns: vi.fn().mockResolvedValue({
+        total_count: 1,
+        check_runs: [
+          {
+            id: 999,
+            name: 'verify',
+            head_sha: 'old_different_sha', // Belonged to a previous commit!
+            status: 'completed',
+            conclusion: 'success',
+          },
+        ],
+      }),
+      getCommitStatuses: vi.fn().mockResolvedValue({ total_count: 0, statuses: [] }),
+    } as unknown as GitHubClient;
+
+    const observer = new RemoteCiObserver({
+      client: mockClient,
+      pollIntervalMs: 5000,
+      gracePeriodMs: 10000,
+      nowFn,
+      sleepFn,
+    });
+
+    // We are observing 'sha123', but GitHub only returned check for 'old_different_sha'
+    const res = await observer.observe({
+      owner: 'pubcoreagencia',
+      repo: 'pub-rate-calculator',
+      headSha: 'sha123',
+      requiredChecks: ['verify'],
+    });
+
+    // Should NOT accept 'old_different_sha' as success for 'sha123'
+    expect(res.status).toBe('UNKNOWN');
+    expect(res.blocked).toBe(true);
+    expect(res.reasons[0]).toContain('missing after grace period: verify');
+  });
 });
+

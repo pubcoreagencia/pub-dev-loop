@@ -154,9 +154,14 @@ export class RemoteCiObserver {
       const missing: string[] = [];
       const unknownConclusions: string[] = [];
 
+      // Strict SHA binding: Only consider check runs matching the target headSha
+      const matchingShaCheckRuns = checkRuns.filter(
+        (cr) => !cr.head_sha || cr.head_sha === headSha
+      );
+
       if (requiredChecks.length === 0) {
         // Case: No required checks defined by governance
-        if (checkRuns.length === 0 && commitStatuses.length === 0) {
+        if (matchingShaCheckRuns.length === 0 && commitStatuses.length === 0) {
           latestObservation = {
             status: 'SUCCESS',
             completedSuccessfulChecks: [],
@@ -174,7 +179,7 @@ export class RemoteCiObserver {
         }
 
         // If checks exist without explicit required list, evaluate all existing check-runs
-        for (const cr of checkRuns) {
+        for (const cr of matchingShaCheckRuns) {
           if (cr.status !== 'completed') {
             pending.push(cr.name);
           } else if (cr.conclusion === 'success' || cr.conclusion === 'neutral' || cr.conclusion === 'skipped') {
@@ -193,7 +198,7 @@ export class RemoteCiObserver {
       } else {
         // Case: Explicit required status checks defined by governance
         for (const req of requiredChecks) {
-          const matchingCheckRun = checkRuns.find((cr) => cr.name === req);
+          const matchingCheckRun = matchingShaCheckRuns.find((cr) => cr.name === req);
 
           if (matchingCheckRun) {
             if (matchingCheckRun.status !== 'completed') {

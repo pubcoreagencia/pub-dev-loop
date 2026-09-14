@@ -33,10 +33,12 @@ export function toPullRequestSnapshot(
     reviewDecision = 'APPROVED';
   }
 
+  const isMerged = Boolean(pr.merged === true || pr.merged_at);
+
   return {
     number: pr.number,
     url: pr.html_url,
-    state: pr.state === 'open' ? 'OPEN' : (pr.merged ? 'MERGED' : 'CLOSED'),
+    state: pr.state === 'open' ? 'OPEN' : (isMerged ? 'MERGED' : 'CLOSED'),
     draft: Boolean(pr.draft),
     mergeable: pr.mergeable,
     mergeStateStatus: pr.mergeable_state ? pr.mergeable_state.toUpperCase() : null,
@@ -143,24 +145,34 @@ export class PrLifecycleManager {
 
     // When 0 open PRs exist, inspect historical closed PRs for this branch
     if (closedPrs.length > 0) {
+      const isPrMerged = (p: GitHubPullRequest) => Boolean(p.merged === true || p.merged_at);
+
       // Case E: Was any closed PR already merged containing the expected commit?
-      const alreadyMergedPr = closedPrs.find(
-        (p) => p.merged === true && p.head.sha === expectedHeadSha
+      const alreadyMergedCandidate = closedPrs.find(
+        (p) => isPrMerged(p) && p.head.sha === expectedHeadSha
       );
-      if (alreadyMergedPr) {
+
+      if (alreadyMergedCandidate) {
+        let fullMergedPr = alreadyMergedCandidate;
+        try {
+          fullMergedPr = await this.client.getPullRequest(owner, repo, alreadyMergedCandidate.number);
+        } catch {
+          // If detailed fetch fails, fall back to list representation
+        }
+
         return {
           decision: 'PR_ALREADY_MERGED',
           blocked: false,
           alreadyDelivered: true,
-          pr: toPullRequestSnapshot(alreadyMergedPr),
+          pr: toPullRequestSnapshot(fullMergedPr),
           reasons: [
-            `Pull Request #${alreadyMergedPr.number} was already merged containing expected commit '${expectedHeadSha}'`,
+            `Pull Request #${alreadyMergedCandidate.number} was already merged containing expected commit '${expectedHeadSha}'`,
           ],
         };
       }
 
       // Case D: A previous PR was closed without merging -> BLOCK (PR_PREVIOUSLY_REJECTED)
-      const rejectedPr = closedPrs.find((p) => p.merged !== true);
+      const rejectedPr = closedPrs.find((p) => !isPrMerged(p));
       if (rejectedPr) {
         return {
           decision: 'BLOCKED_PREVIOUSLY_REJECTED',
