@@ -58,9 +58,29 @@ describe('RouterWorker fallbackChain on error/timeout', () => {
     try {
       const task: Task = {
         id: 'dummy',
+        repository: localRepo,
         prototypeSessionId: 'sess',
         objective: 'test-action',
         branch: undefined,
+      };
+
+      const dummyPrepared: any = {
+        executionSpec: {
+          specVersion: '1.0.0',
+          objective: 'test-action',
+          context: { version: '1.0.0', authoritativeContext: [], repositoryContext: [], operationalContext: [], relevantDocumentation: [], knownConstraints: [], limitations: [] },
+          constraints: [],
+          acceptanceCriteria: [],
+          validationPlan: [],
+          executionInstructions: [],
+          executionSteps: [{ id: 's1', description: 'step', critical: true }],
+          risks: [],
+          escalationConditions: [],
+          lineage: { intakeVersion: '1.0.0', intakeHash: 'hash', source: 'test', createdAt: new Date().toISOString() },
+          metadata: { generatedAt: new Date().toISOString(), specHash: 'hash' },
+        },
+        task,
+        envelope: {},
       };
 
       const worker = new RouterWorker();
@@ -70,7 +90,7 @@ describe('RouterWorker fallbackChain on error/timeout', () => {
         new SuccessProvider('openrouter', 'model-B'),
       ];
 
-      const result = await (worker as any).executeWithRetry(task, localRepo);
+      const result = await (worker as any).executeWithRetry(task, localRepo, dummyPrepared);
       const lastTrace = result.trace.attempts[result.trace.attempts.length - 1];
       expect(lastTrace.fallbackChain).toEqual([
         'openrouter/model-A',

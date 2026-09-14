@@ -62,6 +62,7 @@ function run(cmd: string, args: string[], cwd?: string): Promise<string> {
 export class PdlCorrectionWorker extends RouterWorker {
   public readonly reviewManager: CodeReviewManager;
   public readonly conversationStore: CeoConversationStore;
+  private readonly customRemotePersistence?: PdlRemotePersistence;
 
   constructor(
     tasks?: TaskRepository,
@@ -77,6 +78,7 @@ export class PdlCorrectionWorker extends RouterWorker {
     conversationStore?: CeoConversationStore,
   ) {
     super(tasks, provider, name, onStreamEvent, executionSpecDb, governance, catalog, remotePersistence, neuralBridge);
+    this.customRemotePersistence = remotePersistence;
     this.reviewManager = reviewManager ?? defaultCodeReviewManager;
     this.conversationStore = conversationStore ?? defaultCeoConversationStore;
   }
@@ -417,15 +419,18 @@ export class PdlCorrectionWorker extends RouterWorker {
           finalizeResult.errorCode = (finalizationDecision as any).reasonCode;
           finalizeResult.errorMessage = `Remote finalization blocked by governance: ${(finalizationDecision as any).reason}`;
           this.lastFinalizeStatus = 'FAILED';
-        } else if (autonomyCheck.permitted && catalogProduct?.remotePersistenceEligible) {
-          console.log(`[PDL Worker] Initiating canonical remote persistence for product '${catalogProduct.productId}'...`);
-          const persistenceResult = await defaultRemotePersistence.persist({
+        } else if (autonomyCheck.permitted && (catalogProduct?.remotePersistenceEligible || this.customRemotePersistence)) {
+          console.log(`[PDL Worker] Initiating canonical remote persistence for product '${catalogProduct?.productId || task.project}'...`);
+          const persistenceEngine = this.customRemotePersistence ?? defaultRemotePersistence;
+          const persistenceResult = await persistenceEngine.persist({
             workspace: winningAttempt.workspace,
-            product: catalogProduct,
+            product: catalogProduct ?? (task.project || task.repository),
             branch,
             localSha: finalizeResult.commitSha,
             targetRepository: task.repository,
-          });
+            requested: !task.prototypeSessionId,
+            gitToken: process.env.PDL_GITHUB_TOKEN || process.env.GITHUB_TOKEN,
+          } as any);
           finalizeResult.remotePersistence = persistenceResult;
           if (persistenceResult.status !== 'VERIFIED') {
             console.error(`[PDL Worker] REMOTE_PERSISTENCE_FAILED (${persistenceResult.errorCode}):`, persistenceResult.errorMessage);

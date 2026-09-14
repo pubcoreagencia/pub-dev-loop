@@ -95,7 +95,7 @@ export class OpenRouterProvider implements AgentProvider {
     this.timeoutMs = timeoutMs;
     this.maxToolRounds = Number(process.env.OPENROUTER_MAX_TOOL_ROUNDS ?? 20);
     this.maxToolCalls = Number(process.env.OPENROUTER_MAX_TOOL_CALLS ?? 50);
-    this.model = modelOverride ?? process.env.OPENROUTER_MODEL ?? 'cohere/north-mini-code:free';
+    this.model = modelOverride ?? process.env.OPENROUTER_MODEL ?? null;
     this.enableStream = enableStream;
     this.consumer = consumer;
   }
@@ -176,8 +176,9 @@ export class OpenRouterProvider implements AgentProvider {
       };
     });
 
-    // Strict FREE_ONLY_POLICY: Filter out any non-free models
-    const candidateEntries = rawCandidateEntries.filter(e => isFreeModel(e.model));
+    // Strict FREE_ONLY_POLICY: Filter out non-free models unless paid fallback is explicitly enabled in config
+    const allowPaidFallback = Boolean(cfg.policy?.tiers?.tier3PaidFallback && cfg.policy.tiers.tier3PaidFallback.length > 0);
+    const candidateEntries = rawCandidateEntries.filter(e => isFreeModel(e.model) || (allowPaidFallback && !e.free));
 
     if (candidateEntries.length === 0) {
       return {
@@ -338,11 +339,13 @@ export class OpenRouterProvider implements AgentProvider {
                   const isServerError = response.status >= 500;
                   const determinedErrorCode = isAuth
                     ? 'AUTHENTICATION_FAILURE'
-                    : isRateLimit
-                      ? 'RATE_LIMITED'
-                      : isServerError
-                        ? 'PROVIDER_UNAVAILABLE'
-                        : (hasFallbacks ? 'ALL_PROVIDERS_FAILED' : 'ROUTER_HTTP_ERROR');
+                    : (hasFallbacks
+                      ? 'ALL_PROVIDERS_FAILED'
+                      : (isRateLimit
+                        ? 'RATE_LIMITED'
+                        : isServerError
+                          ? 'PROVIDER_UNAVAILABLE'
+                          : 'ROUTER_HTTP_ERROR'));
                   return {
                     status: isAuth ? 'FAILED' : 'ROUTER_HTTP_ERROR',
                     provider: this.kind,

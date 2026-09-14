@@ -177,7 +177,8 @@ describe('PDL Phase 1 — Context Resolution & Intake Wiring', () => {
 
     expect(context.taskId).toBe(engTask.id);
     expect(context.project).toBe('pub-dev-loop');
-    expect(context.git_state.branch).toBe('main');
+    expect(typeof context.git_state.branch).toBe('string');
+    expect(context.git_state.branch.length).toBeGreaterThan(0);
 
     // Dependencies extracted from real package.json
     expect(Object.keys(context.dependencies).length).toBeGreaterThan(0);

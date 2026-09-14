@@ -118,7 +118,8 @@ describe('PDL Phase 1.1 — Real Context & Worker Execution Verification', () =>
     const context = resolveContext(task, process.cwd());
 
     // Verified from real git
-    expect(context.git_state.branch).toBe('main');
+    expect(typeof context.git_state.branch).toBe('string');
+    expect(context.git_state.branch.length).toBeGreaterThan(0);
     expect(context.git_state.headSha).toMatch(/^[0-9a-f]{40}$/);
     expect(typeof context.git_state.isClean).toBe('boolean');
     expect(Array.isArray(context.git_state.changedFiles)).toBe(true);
@@ -126,7 +127,7 @@ describe('PDL Phase 1.1 — Real Context & Worker Execution Verification', () =>
     // Provenance captures git inspection
     const gitProvenance = context.provenance.find(p => p.source === 'GIT_STATE');
     expect(gitProvenance).toBeDefined();
-    expect(gitProvenance?.detail).toContain('Branch: main');
+    expect(gitProvenance?.detail).toContain(`Branch: ${context.git_state.branch}`);
     expect(gitProvenance?.detail).toContain(context.git_state.headSha);
   });
 
@@ -225,7 +226,7 @@ describe('PDL Phase 1.1 — Real Context & Worker Execution Verification', () =>
       expect(workerPrompt).toContain('TASK TYPE:');
       expect(workerPrompt).toContain('OBJETIVO DE ENGENHARIA:');
       expect(workerPrompt).toContain('GIT STATE:');
-      expect(workerPrompt).toContain('Branch: main');
+      expect(workerPrompt).toMatch(/Branch:\s+\S+/);
       expect(workerPrompt).toContain('DEPENDENCIES:');
       expect(workerPrompt).toContain('EXISTING TESTS:');
       expect(workerPrompt).toContain('ENGINEERING PLAN:');

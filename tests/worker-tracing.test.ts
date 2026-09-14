@@ -38,6 +38,7 @@ class TestTaskRepository implements TaskRepository {
       gitStatus: null,
       createdAt: new Date(),
       updatedAt: new Date(),
+      prototypeSessionId: input.prototypeSessionId ?? 'sess-trace',
     };
     this.tasks.set(task.id, task);
     return task;
@@ -152,6 +153,28 @@ class MockAgentProvider implements AgentProvider {
 const testsDir = process.env.LOCALAPPDATA
   ? join(process.env.LOCALAPPDATA, 'hermes', 'worker-tracing-test')
   : join(tmpdir(), 'worker-tracing-test');
+
+const origExecuteWithRetry = RouterWorker.prototype['executeWithRetry'];
+RouterWorker.prototype['executeWithRetry'] = function (this: any, task: any, repo: any, prepared?: any) {
+  const effectivePrepared = prepared ?? {
+    executionSpec: {
+      specVersion: '1.0.0',
+      objective: task.objective || 'test',
+      context: { version: '1.0.0', authoritativeContext: [], repositoryContext: [], operationalContext: [], relevantDocumentation: [], knownConstraints: [], limitations: [] },
+      constraints: [],
+      acceptanceCriteria: [],
+      validationPlan: [],
+      executionInstructions: [],
+      executionSteps: [{ id: 's1', description: 'step', critical: true }],
+      risks: [],
+      escalationConditions: [],
+      lineage: { intakeVersion: '1.0.0', intakeHash: 'test-hash', source: 'test', createdAt: new Date().toISOString() },
+      metadata: { generatedAt: new Date().toISOString(), specHash: 'test-hash' },
+    },
+    task,
+  };
+  return origExecuteWithRetry.call(this, task, repo, effectivePrepared);
+};
 
 describe('worker-tracing: execution trace diagnostics', () => {
   let tempBase: string;

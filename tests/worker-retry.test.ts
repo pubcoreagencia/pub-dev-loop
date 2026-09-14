@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vitest';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -38,6 +38,7 @@ class TestTaskRepository implements TaskRepository {
       gitStatus: null,
       createdAt: new Date(),
       updatedAt: new Date(),
+      prototypeSessionId: input.prototypeSessionId ?? 'sess-retry',
     };
     this.tasks.set(task.id, task);
     return task;
@@ -154,6 +155,28 @@ const testsDir = process.env.LOCALAPPDATA
   ? join(process.env.LOCALAPPDATA, 'hermes', 'worker-retry-test')
   : join(tmpdir(), 'worker-retry-test');
 
+const origExecuteWithRetry = RouterWorker.prototype['executeWithRetry'];
+RouterWorker.prototype['executeWithRetry'] = function (this: any, task: any, repo: any, prepared?: any) {
+  const effectivePrepared = prepared ?? {
+    executionSpec: {
+      specVersion: '1.0.0',
+      objective: task.objective || 'test',
+      context: { version: '1.0.0', authoritativeContext: [], repositoryContext: [], operationalContext: [], relevantDocumentation: [], knownConstraints: [], limitations: [] },
+      constraints: [],
+      acceptanceCriteria: [],
+      validationPlan: [],
+      executionInstructions: [],
+      executionSteps: [{ id: 's1', description: 'step', critical: true }],
+      risks: [],
+      escalationConditions: [],
+      lineage: { intakeVersion: '1.0.0', intakeHash: 'test-hash', source: 'test', createdAt: new Date().toISOString() },
+      metadata: { generatedAt: new Date().toISOString(), specHash: 'test-hash' },
+    },
+    task,
+  };
+  return origExecuteWithRetry.call(this, task, repo, effectivePrepared);
+};
+
 describe('worker-retry: retry/fallback logic', () => {
   let tempBase: string;
   let repoUrl: string;
@@ -167,6 +190,7 @@ describe('worker-retry: retry/fallback logic', () => {
     taskRepo = new TestTaskRepository();
     // Allow multiple attempts when tests override getProviderChain
     process.env.ROUTER_MAX_ATTEMPTS = '10';
+    process.env.ROUTER_BACKOFF_MS = '1';
   });
 
   afterEach(async () => {

@@ -33,7 +33,7 @@ describe('P4.4 Routing Integration & Production Verification', () => {
       expect(reasoningCandidates[0].tier).toBe(1);
 
       // FAST_PROTOTYPE tasks
-      const prototypeUi = { objective: 'Create dashboard prototype for barber shop' };
+      const prototypeUi = { objective: 'Create dashboard prototype for barber shop', routingProfile: 'fast_prototype' as const };
       const protoPolicy = buildRoutingPolicy(prototypeUi);
       expect(protoPolicy.profile).toBe('fast_prototype');
       const protoCandidates = resolveCandidateModels(protoPolicy);

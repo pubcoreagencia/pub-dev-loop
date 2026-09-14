@@ -818,7 +818,29 @@ describe('PDL In-Process Correction Loop (Gate 3D.4)', () => {
       },
     };
 
-    const worker = new PdlCorrectionWorker(mockRepo, provider, 'pdl-router', undefined, mockSpecDb);
+    const mockRemotePersistence = {
+      persist: async (opts: any) => ({
+        status: 'VERIFIED' as const,
+        repository: opts.product?.repository ?? opts.product ?? 'pub-dev-loop',
+        branch: opts.branch ?? 'worker/pdl-router/task-1',
+        pushAttempted: true,
+        pushSucceeded: true,
+        localSha: opts.localSha,
+        remoteSha: opts.localSha,
+        remoteVerified: true,
+      }),
+    } as any;
+
+    const worker = new PdlCorrectionWorker(
+      mockRepo,
+      provider,
+      'pdl-router',
+      undefined,
+      mockSpecDb,
+      undefined,
+      undefined,
+      mockRemotePersistence
+    );
 
     // Configure test command to pass only when output.txt has 'fixed'
     const origCmd = process.env.TASK_TEST_COMMAND;

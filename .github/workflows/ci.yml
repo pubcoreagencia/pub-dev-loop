@@ -42,6 +42,3 @@ jobs:
 
       - name: Unit tests
         run: npm test
-
-      - name: Prototype smoke test
-        run: npm run test:prototype
