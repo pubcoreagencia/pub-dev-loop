@@ -206,12 +206,14 @@ export class RemoteDeliveryGate {
     // ------------------------------------------------------------------------
     // Step 2: Baseline Snapshot of Canonical Default Branch
     // ------------------------------------------------------------------------
-    let previousMainSha: string | null = null;
-    try {
-      const branchInfo = await this.client.getBranch(owner, repo, targetBranch);
-      previousMainSha = branchInfo?.commit?.sha || null;
-    } catch {
-      // Non-fatal if initial read fails, will fallback during verification
+    let previousMainSha: string | null = priorDeliveryState?.postMerge?.previousMainSha ?? null;
+    if (!previousMainSha) {
+      try {
+        const branchInfo = await this.client.getBranch(owner, repo, targetBranch);
+        previousMainSha = branchInfo?.commit?.sha || null;
+      } catch {
+        // Non-fatal if initial read fails, will fallback during verification
+      }
     }
 
     // ------------------------------------------------------------------------
@@ -238,7 +240,7 @@ export class RemoteDeliveryGate {
           headSha,
           prNumber: currentPrSnapshot.number,
           mergeCommitSha: reconcileOutcome.mergeCommitSha,
-          previousMainSha,
+          previousMainSha: priorDeliveryState?.postMerge?.previousMainSha ?? null,
           deliveryState,
           onHeartbeat,
           recordPhase,

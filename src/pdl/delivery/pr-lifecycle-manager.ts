@@ -64,20 +64,12 @@ export class PrLifecycleManager {
 
     let prs: GitHubPullRequest[];
     try {
-      // GitHub API accepts head filter as "owner:branch" or "branch"
+      // GitHub API accepts head filter as "owner:branch"
       prs = await this.client.getPullRequests(owner, repo, {
         head: `${owner}:${head}`,
         base,
         state: 'all',
       });
-      // Fallback: if search by "owner:branch" returns empty, query by branch directly
-      if (prs.length === 0) {
-        prs = await this.client.getPullRequests(owner, repo, {
-          head,
-          base,
-          state: 'all',
-        });
-      }
     } catch (err: unknown) {
       return {
         decision: 'BLOCKED_API_ERROR',
@@ -87,8 +79,10 @@ export class PrLifecycleManager {
       };
     }
 
-    const openPrs = prs.filter((p) => p.state === 'open');
-    const closedPrs = prs.filter((p) => p.state === 'closed');
+    // Client-side guard: strictly filter PRs matching the requested head branch
+    const matchingPrs = prs.filter((p) => p.head?.ref === head);
+    const openPrs = matchingPrs.filter((p) => p.state === 'open');
+    const closedPrs = matchingPrs.filter((p) => p.state === 'closed');
 
     // Case F: More than 1 candidate open PR found -> BLOCK (fail-closed, never close automatically)
     if (openPrs.length > 1) {
