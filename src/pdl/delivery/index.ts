@@ -5,3 +5,6 @@
 export * from './types.js';
 export * from './governance-normalizer.js';
 export * from './merge-authorizer.js';
+export * from './github-client.js';
+export * from './pr-lifecycle-manager.js';
+export * from './remote-ci-observer.js';

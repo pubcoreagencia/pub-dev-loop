@@ -209,3 +209,131 @@ export interface RemoteDeliveryResult {
   errorCode?: string;
   errorMessage?: string;
 }
+
+// ============================================================================
+// Phase 2 Types: GitHub Client, PR Lifecycle, and Remote CI Observer
+// ============================================================================
+
+export interface GitHubClientOptions {
+  token?: string;
+  baseUrl?: string;
+  timeoutMs?: number;
+  fetchFn?: typeof fetch;
+}
+
+export interface GitHubPullRequest {
+  number: number;
+  html_url: string;
+  state: 'open' | 'closed';
+  draft: boolean;
+  merged?: boolean;
+  mergeable: boolean | null;
+  mergeable_state: string | null;
+  head: {
+    ref: string;
+    sha: string;
+    user?: { login: string };
+    repo?: { name: string; owner?: { login: string } };
+  };
+  base: {
+    ref: string;
+    sha: string;
+  };
+  review_comments?: number;
+  commits?: number;
+}
+
+export interface GitHubCheckRun {
+  id: number;
+  name: string;
+  head_sha: string;
+  status: 'queued' | 'in_progress' | 'completed';
+  conclusion:
+    | 'success'
+    | 'failure'
+    | 'neutral'
+    | 'cancelled'
+    | 'timed_out'
+    | 'action_required'
+    | 'skipped'
+    | null;
+  started_at?: string;
+  completed_at?: string;
+  app?: {
+    id?: number;
+    name?: string;
+  };
+}
+
+export interface GitHubCheckRunsResponse {
+  total_count: number;
+  check_runs: GitHubCheckRun[];
+}
+
+export interface GitHubCommitStatusItem {
+  id: number;
+  state: 'pending' | 'success' | 'failure' | 'error';
+  context: string;
+  description?: string;
+  created_at?: string;
+}
+
+export interface GitHubCombinedCommitStatus {
+  state: 'pending' | 'success' | 'failure' | 'error';
+  total_count: number;
+  statuses: GitHubCommitStatusItem[];
+  sha: string;
+}
+
+export interface GitHubReview {
+  id: number;
+  user: { login: string };
+  state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'DISMISSED';
+  commit_id: string;
+}
+
+export interface PrLifecycleInput {
+  owner: string;
+  repo: string;
+  base: string;
+  head: string;
+  expectedHeadSha: string;
+  title: string;
+  body: string;
+  draft?: boolean;
+}
+
+export type PrLifecycleDecision =
+  | 'PR_CREATED'
+  | 'PR_REUSED'
+  | 'PR_ALREADY_MERGED'
+  | 'BLOCKED_SHA_DIVERGENCE'
+  | 'BLOCKED_PREVIOUSLY_REJECTED'
+  | 'BLOCKED_AMBIGUOUS_MULTIPLE_PRS'
+  | 'BLOCKED_API_ERROR';
+
+export interface PrLifecycleResult {
+  decision: PrLifecycleDecision;
+  blocked: boolean;
+  pr: PullRequestSnapshot | null;
+  reasons: string[];
+  alreadyDelivered?: boolean;
+}
+
+export interface CiObservationInput {
+  owner: string;
+  repo: string;
+  headSha: string;
+  requiredChecks: string[];
+  pollIntervalMs?: number;
+  maxWaitMs?: number;
+  gracePeriodMs?: number;
+  onProgress?: (observation: CiObservation) => void;
+}
+
+export interface CiObservationResult {
+  status: CiStatus;
+  observation: CiObservation;
+  blocked: boolean;
+  reasons: string[];
+}
