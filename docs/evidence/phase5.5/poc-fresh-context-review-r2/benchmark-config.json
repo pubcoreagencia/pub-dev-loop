@@ -1,0 +1,24 @@
+{
+  "benchmark": "PHASE 2B-R2 — CLEAN REAL-LLM CONTEXT ISOLATION BENCHMARK",
+  "version": "2.0.0",
+  "date": "2026-09-16",
+  "model": "nvidia/nemotron-3-super-120b-a12b:free",
+  "provider": "Nvidia via OpenRouter",
+  "temperature": 0.1,
+  "maxTokens": 1024,
+  "passesTarget": 5,
+  "tasksCount": 10,
+  "independentVariable": "Presence vs Absence of Author Operational Context",
+  "controlledVariables": [
+    "task_specification",
+    "starting_repository_context",
+    "code_diff_patch",
+    "system_prompt",
+    "review_checklist",
+    "output_json_schema",
+    "model_family",
+    "temperature",
+    "blind_scoring_oracle"
+  ],
+  "authorContextTemplate": "AUTHOR CONTEXT (PRIOR SESSION LOG):\nTask intake processed at session start. Author reviewed project architecture, inspected target file, drafted unit specifications, and completed initial implementation pass against constraints. No operational tool errors recorded."
+}
