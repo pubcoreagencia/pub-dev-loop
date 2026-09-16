@@ -1,4 +1,4 @@
-﻿# PHASE 5 — RESEARCH IMPLEMENTATION DECISION SYNTHESIS
+# PHASE 5 — RESEARCH IMPLEMENTATION DECISION SYNTHESIS
 ## Issue #24 — P0 Benchmark: Engineering Harness (PDL vs ECC vs TeamAI vs Skills)
 **Date:** 2026-09-16  
 **Operator:** MATHEUS  
@@ -33,29 +33,29 @@ Adhering to the PUB Research Implementation Hierarchy (**Research → Benchmark 
 | Phase | Target Evaluated | Method & Sample Size | Primary Findings | Outcome |
 | :--- | :--- | :--- | :--- | :--- |
 | **Phase 1** | ECC, TeamAI, Portable Skills | Deep technical audit & PDL baseline (1,796 tests) | ECC lacks autonomous backend primitives; TeamAI is a client dotfile sync; Skills and Review warranted empirical testing. | Closed with 2 PoC designs |
-| **Phase 2A** | Portable Skills Ingestion | 13 fixtures (valid, malformed, malicious traversal) | 100% acceptance of valid skills, 100% rejection of malicious paths, 48.5% context footprint reduction via lazy progressive disclosure. | **VALIDATED** (Loader feasibility) |
+| **Phase 2A** | Portable Skills Ingestion | 13 fixtures (valid, malformed, malicious traversal) | 100% acceptance of valid skills, 100% rejection of malicious paths, 48.5% context footprint reduction via lazy progressive disclosure. Format and loader parsing validated; cross-harness runtime equivalence not evaluated. | **VALIDATED** (Loader feasibility only) |
 | **Phase 2B-S** | Fresh-Context Review (Simulation) | Synthetic deterministic reviewer | Protocol verification only; highlighted necessity of live LLM evaluation. | Preserved as simulation protocol |
-| **Phase 2B-R1** | Fresh-Context Review (Exploratory) | 60 live LLM inferences (10 tasks, 3 passes) | Revealed prompt asymmetry and keyword evaluator limitations; fresh reviewer trailed in detection. | Prompt framing calibrated for R2 |
-| **Phase 2B-R2** | Clean Context Isolation Benchmark | 60 live LLM inferences with causal semantic oracles | Control (53.3%) vs Fresh (60.0%) (+6.7 p.p.); fresh review had fewer false alarms on general logic, but broke contract grounding on interfaces. | **INCONCLUSIVE / MARGINAL** |
-| **Phase 3** | Specialized Security Review | 60 live LLM inferences + 29 repairs across 10 OWASP classes | Control Self-Review (56.7% detection, 85% precision) outperformed Fresh Security Review (43.3% detection, 68.4% precision); fresh reviewer produced 2x more false positives. | **NOT SUPPORTED** |
-| **Phase 4** | Planning Gate (Simple vs Complex) | 90 live execution runs across 15 tasks (30 Simple, 60 Complex) | Planning increased complex task pass rate from 40.0% to 66.7% (+26.7 p.p.), but tripled token overhead (925 → 2,764) and increased regressions on simple tasks. | **PARTIALLY SUPPORTED** (Selective only) |
+| **Phase 2B-R1** | Fresh-Context Review (Exploratory) | 20 live LLM inferences (10 tasks, 1 pass, Control vs Fresh) | Revealed prompt framing asymmetry and keyword evaluator limitations; fresh reviewer trailed in detection. | Prompt framing calibrated for R2 |
+| **Phase 2B-R2** | Clean Context Isolation Benchmark | 60 live LLM inferences with causal semantic oracles (10 tasks, 3 passes) | Control (53.3%) vs Fresh (60.0%) (+6.7 p.p.); fresh review had fewer false alarms on general logic, but broke contract grounding on interfaces. | **INCONCLUSIVE / MARGINAL** |
+| **Phase 3** | Specialized Security Review | 60 live LLM inferences + 29 repairs across 10 OWASP classes (3 passes) | Control Self-Review (56.7% detection, 85% precision) outperformed Fresh Security Review (43.3% detection, 68.4% precision); fresh reviewer produced 2x more false positives (6 vs 3). | **NOT SUPPORTED** |
+| **Phase 4** | Planning Gate (Simple vs Complex) | 90 live execution runs across 15 tasks (30 Simple, 60 Complex, 3 passes) | Planning increased complex task pass rate from 40.0% to 66.7% (+26.7 p.p.) with zero regressions, but tripled token overhead (925 → 2,764) and increased regressions on simple tasks. | **PARTIALLY SUPPORTED** (Candidate for selective trigger only) |
 
 ---
 
 ## 3. Final Decision Matrix
 
-| Capability | Empirical Evidence Base | Observed Benchmark Result | Final Architectural Decision | Confidence | PDL Impact | Proposed Implementation Scope |
+| Capability | Empirical Evidence Base | Observed Benchmark Result | Final Architectural Decision | Qualitative Confidence | PDL Impact | Proposed Implementation Scope |
 | :--- | :--- | :--- | :---: | :---: | :--- | :--- |
-| **ECC Full Harness** | Codebase audit of `affaan-m/ECC` | Prompt wrappers/hooks for interactive Claude Code CLI | **REJECT** | High | Zero | Do not import framework. Extract isolated concepts if needed. |
-| **TeamAI CLI** | Codebase audit of `Tencent/teamai-cli` | Client-side git dotfile synchronizer for desktop IDEs | **REJECT** | High | Zero | Do not integrate. PDL persistence is already Git-canonical. |
-| **Portable Skills (`SKILL.md`)** | Phase 2A PoC (13 fixtures, zero-dependency parser) | 48.5% context reduction; safe boundary containment | **ADAPT / CANDIDATE** | High | Medium | Build lightweight zero-dependency consumer loader in PDL; PUB Neural owns skills. |
-| **Universal Fresh-Context Review** | Phase 2B-R2 (60 live runs, 10 tasks) | Marginal difference (+6.7 p.p.); contract starvation | **REJECT** | High | Zero | Do not add mandatory `ReviewGate` to PDL lifecycle. |
-| **Specialized Fresh Security Review** | Phase 3 (60 live runs, 10 OWASP tasks, 29 repairs) | Self-review outperformed fresh reviewer (56.7% vs 43.3%); 2x false alarms | **REJECT** | High | Zero | Do not create `SecurityReviewWorker`. Enforce checklist in primary worker self-review. |
-| **Universal Planning Gate** | Phase 4 Simple Tier (30 runs, 5 simple tasks) | Tripled tokens (+198.8%), doubled latency (+93.6%), increased regressions | **REJECT** | High | Zero | Reject mandatory planning on all tasks. |
-| **Complexity-Triggered Planning** | Phase 4 Complex Tier (60 runs, 10 complex tasks) | Pass rate jumped from 40.0% to 66.7% (+26.7 p.p.); zero regressions | **ADAPT / CANDIDATE** | High | High | Add pre-implementation planning phase triggered strictly by complexity heuristics. |
-| **Strict Test-Driven Development (TDD)** | Audit of PDL test gates & existing verification | PDL already enforces fail-closed test execution before git persistence | **DEFER** | Medium | Low | Existing `PersistenceGate` already requires passing tests; strict RED→GREEN enforcement not needed. |
-| **Dynamic Scoped Rules (`.cursorrules`)** | Architectural audit of prompt fragmentation | Unnecessary overhead; PDL governance must remain centralized and immutable | **REJECT / DEFER** | High | Zero | Maintain centralized, audited governance rules in repo root and fail-closed gates. |
-| **Subagent Task Delegation** | Architecture review of multi-agent concurrency | Context starvation observed in isolated agents; increases coordination overhead | **DEFER** | Medium | Medium | Maintain single-worker accountability for core execution; defer autonomous subagent graphs. |
+| **ECC Full Harness** | Codebase audit of `affaan-m/ECC` | Prompt wrappers/hooks for interactive Claude Code CLI | **REJECT** | HIGH | Zero | Do not import framework. Extract isolated concepts if needed. |
+| **TeamAI CLI** | Codebase audit of `Tencent/teamai-cli` | Client-side git dotfile synchronizer for desktop IDEs | **REJECT** | HIGH | Zero | Do not integrate. PDL persistence is already Git-canonical. |
+| **Portable Skills (`SKILL.md`)** | Phase 2A PoC (13 fixtures, zero-dependency parser) | 48.5% context reduction; safe boundary containment | **ADAPT / CANDIDATE** | HIGH | Medium | Build lightweight zero-dependency consumer loader in PDL; PUB Neural owns skills. Production not yet authorized. |
+| **Universal Fresh-Context Review** | Phase 2B-R2 (60 live runs, 10 tasks) | Marginal difference (+6.7 p.p.); contract starvation | **REJECT** | HIGH | Zero | Do not add mandatory `ReviewGate` to PDL lifecycle. |
+| **Specialized Fresh Security Review** | Phase 3 (60 live runs, 10 OWASP tasks, 29 repairs) | Self-review outperformed fresh reviewer (56.7% vs 43.3%); 2x false alarms | **REJECT** | HIGH | Zero | Do not create `SecurityReviewWorker`. Enforce checklist in primary worker self-review. |
+| **Universal Planning Gate** | Phase 4 Simple Tier (30 runs, 5 simple tasks) | Tripled tokens (+198.8%), doubled latency (+93.6%), increased regressions | **REJECT** | HIGH | Zero | Reject mandatory planning on all tasks. |
+| **Complexity-Triggered Planning** | Phase 4 Complex Tier (60 runs, 10 complex tasks) | Pass rate increased from 40.0% to 66.7% (+26.7 p.p.); zero regressions | **ADAPT / CANDIDATE** | HIGH | High | Add pre-implementation planning phase triggered strictly by complexity heuristics. Future hypothesis only. |
+| **Strict Test-Driven Development (TDD)** | Audit of PDL test gates & existing verification | PDL already enforces fail-closed test execution before git persistence | **DEFER** | MODERATE | Low | Existing `PersistenceGate` already requires passing tests; strict RED→GREEN enforcement not needed. |
+| **Dynamic Scoped Rules (`.cursorrules`)** | Architectural audit of prompt fragmentation | Unnecessary overhead; PDL governance must remain centralized and immutable | **REJECT / DEFER** | HIGH | Zero | Maintain centralized, audited governance rules in repo root and fail-closed gates. |
+| **Subagent Task Delegation** | Architecture review of multi-agent concurrency | Context starvation observed in isolated agents; increases coordination overhead | **DEFER** | MODERATE | Medium | Maintain single-worker accountability for core execution; defer autonomous subagent graphs. |
 
 ---
 
@@ -68,7 +68,7 @@ Adhering to the PUB Research Implementation Hierarchy (**Research → Benchmark 
 * **Rationale:** TeamAI is primarily an external synchronization utility for sharing IDE rules and prompt configs across team workstations via Git. PDL already treats Git and the repository filesystem as the canonical single source of truth.
 
 ### 4.3 Universal Fresh-Context Review & Fresh Security Reviewer
-* **Rationale:** Across both generic logic tasks (R2) and specialized security vulnerabilities (Phase 3), the hypothesis that clean context improves defect discovery was not supported. Without the author's operational context, reviewers hallucinated false alarms on valid constructs and missed critical multi-step flaws due to context starvation. Author self-review guided by structured checklists proved more accurate, faster, and more cost-effective.
+* **Rationale:** Across both generic logic tasks (R2) and specialized security vulnerabilities (Phase 3), the hypothesis that clean context improves defect discovery was not supported. Without the author's operational context, reviewers produced false alarms on valid constructs and missed critical multi-step flaws due to context starvation. Author self-review guided by structured checklists proved more accurate, faster, and more cost-effective under tested conditions.
 
 ### 4.4 Universal Planning Gate
 * **Rationale:** Subjecting trivial tasks (e.g. updating a docstring, renaming an internal variable, adding a configuration constant) to structured planning resulted in a 300% token inflation, doubled wall-clock latency, and triggered over-engineering regressions.
@@ -77,9 +77,9 @@ Adhering to the PUB Research Implementation Hierarchy (**Research → Benchmark 
 
 ## 5. Architectural Candidates for Future Implementation
 
-### Candidate A: Complexity-Triggered Planning
-* **Architectural Boundary:** Internal pre-implementation sub-step within `TaskWorker` (or equivalent execution unit).
-* **Owning Component:** `src/pdl/planning/` (new modular component, when authorized).
+### Candidate A: Complexity-Triggered Planning (Hypothesis / Candidate Only)
+* **Architectural Boundary:** Internal pre-implementation sub-step within `TaskWorker` (or equivalent execution unit). Not yet approved for implementation.
+* **Owning Component:** `src/pdl/planning/` (future modular component, if authorized).
 * **Trigger Policy (Heuristic):**
   ```text
   TASK ARRIVAL
@@ -110,8 +110,8 @@ Adhering to the PUB Research Implementation Hierarchy (**Research → Benchmark 
 * **Rollback Strategy:** Feature flag `PDL_PLANNING_TRIGGER_ENABLED = false` reverting worker immediately to direct execution.
 * **Identified Risks:** Over-classification of simple tasks as complex (causing unnecessary latency); under-classification of complex tasks (missing planning benefits).
 
-### Candidate B: Portable Skills (`SKILL.md`) Consumption
-* **Architectural Boundary:** Isolated utility loader in `src/pdl/skills/` (new modular component, when authorized).
+### Candidate B: Portable Skills (`SKILL.md`) Consumption (Candidate Only)
+* **Architectural Boundary:** Isolated utility loader in `src/pdl/skills/` (future modular component, if authorized).
 * **Owning Component:** External repository **PUB NEURAL** acts as author and canonical source of truth; PDL acts strictly as a downstream consumer layer.
 * **Interfaces:**
   - `SkillCatalog.load(directoryPath: string): Promise<SkillMetadata[]>` (metadata only, ~150 bytes per skill).
@@ -121,7 +121,7 @@ Adhering to the PUB Research Implementation Hierarchy (**Research → Benchmark 
   - Zero arbitrary shell execution during skill discovery or parsing.
   - Fail-closed parsing (malformed YAML frontmatter rejected without crashing loader).
 * **Rollback Strategy:** Skills ingestion is entirely stateless; if disabled via config, PDL operates without skills.
-* **Identified Risks:** Drift between skills authored in PUB Neural and runtime environment capabilities in PDL.
+* **Identified Risks & Limits:** Cross-harness runtime equivalence across heterogeneous models is not yet evaluated. Production implementation is not yet authorized.
 
 ---
 
@@ -185,12 +185,12 @@ The empirical evidence and decisions generated in Issue #24 should be promoted t
 
 ---
 
-## 10. Confidence Assessment
+## 10. Qualitative Confidence Assessment
 
-- **Confidence in Rejecting ECC / TeamAI:** **HIGH (99%)** — Full audits established clear architectural misalignment.
-- **Confidence in Rejecting Universal Review Gate:** **HIGH (95%)** — 180 live LLM runs across generic and security tasks demonstrated lack of universal advantage and double the false positives.
-- **Confidence in Complexity-Triggered Planning:** **HIGH (90%)** — 90 controlled runs demonstrated clear dichotomy (+26.7 p.p. on complex tasks vs. tripled overhead on simple tasks).
-- **Confidence in Portable Skills Consumption:** **HIGH (95%)** — Isolated PoC proved safety, context reduction, and clean interface boundaries.
+- **Confidence in Rejecting ECC / TeamAI:** **HIGH** — Full audits established clear architectural misalignment with autonomous server execution.
+- **Confidence in Rejecting Universal Review Gate:** **HIGH** — 140 live LLM evaluation inferences (20 in R1, 60 in R2, 60 in Phase 3) across generic and security tasks demonstrated lack of universal advantage and double the false positives in security.
+- **Confidence in Complexity-Triggered Planning:** **HIGH** — 90 controlled runs demonstrated clear dichotomy (+26.7 p.p. on complex tasks vs. tripled overhead on simple tasks).
+- **Confidence in Portable Skills Consumption:** **HIGH** — Isolated PoC proved loader safety, context reduction, and clean interface boundaries on tested fixtures (cross-harness runtime equivalence remaining unverified).
 
 ---
 
