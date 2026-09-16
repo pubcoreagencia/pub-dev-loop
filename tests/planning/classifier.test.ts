@@ -77,7 +77,7 @@ describe('TaskComplexityClassifier — Unit Tests', () => {
   });
 
   describe('Hard Signals (Unconditional Planning)', () => {
-    it('HARD_01_LIFECYCLE_CORE: triggers on core engine path', () => {
+    it('HARD_01_LIFECYCLE_CORE: triggers on existing core engine path', () => {
       const task = createMockTask();
       const spec = createMockSpec({
         executionInstructions: ['Modify src/pdl/scheduler/types.ts to update transitions'],
@@ -87,6 +87,54 @@ describe('TaskComplexityClassifier — Unit Tests', () => {
       expect(decision.tier).toBe('COMPLEX');
       expect(decision.planningRequired).toBe(true);
       expect(decision.hardSignalsTriggered).toContain('HARD_01_LIFECYCLE_CORE');
+    });
+
+    it('HARD_01_LIFECYCLE_CORE: triggers on delivery architectural subsystem', () => {
+      const task = createMockTask();
+      const spec = createMockSpec({
+        executionInstructions: ['Implement merge verifier in src/pdl/delivery/merge-executor.ts'],
+      });
+
+      const decision = classifier.evaluate(task, spec);
+      expect(decision.tier).toBe('COMPLEX');
+      expect(decision.planningRequired).toBe(true);
+      expect(decision.hardSignalsTriggered).toContain('HARD_01_LIFECYCLE_CORE');
+    });
+
+    it('HARD_01_LIFECYCLE_CORE: triggers on neural architectural subsystem', () => {
+      const task = createMockTask();
+      const spec = createMockSpec({
+        executionInstructions: ['Align post-task writeback in src/pdl/neural/post-task-gate.ts'],
+      });
+
+      const decision = classifier.evaluate(task, spec);
+      expect(decision.tier).toBe('COMPLEX');
+      expect(decision.planningRequired).toBe(true);
+      expect(decision.hardSignalsTriggered).toContain('HARD_01_LIFECYCLE_CORE');
+    });
+
+    it('HARD_01_LIFECYCLE_CORE: does NOT trigger on arbitrary src/ paths or utils', () => {
+      const task = createMockTask();
+      const spec = createMockSpec({
+        executionInstructions: ['Update helper in src/utils/string-formatter.ts'],
+      });
+
+      const decision = classifier.evaluate(task, spec);
+      expect(decision.hardSignalsTriggered).not.toContain('HARD_01_LIFECYCLE_CORE');
+      expect(decision.tier).toBe('SIMPLE');
+      expect(decision.planningRequired).toBe(false);
+    });
+
+    it('HARD_01_LIFECYCLE_CORE: does NOT treat src/api-worker.ts as a hard-path alias', () => {
+      const task = createMockTask();
+      const spec = createMockSpec({
+        executionInstructions: ['Update route handler in src/api-worker.ts'],
+      });
+
+      const decision = classifier.evaluate(task, spec);
+      expect(decision.hardSignalsTriggered).not.toContain('HARD_01_LIFECYCLE_CORE');
+      // Verify no hard signal triggered artificially
+      expect(decision.hardSignalsTriggered).toHaveLength(0);
     });
 
     it('HARD_02_PERSISTENCE_SCHEMA: triggers on db migrations or sql schema', () => {

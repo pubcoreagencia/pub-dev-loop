@@ -5,7 +5,7 @@
  * sealed ExecutionSpec, task instructions, and repo metadata.
  *
  * Hard Signals:
- * - HARD_01_LIFECYCLE_CORE: Target paths touch scheduler, reaper, dlq, retry, governance, persistence, router-worker
+ * - HARD_01_LIFECYCLE_CORE: Target paths touch scheduler, reaper, dlq, retry, governance, persistence, delivery, neural, router-worker
  * - HARD_02_PERSISTENCE_SCHEMA: Target paths touch db/migrations/ or SQL schemas
  * - HARD_03_BREAKING_CONTRACT: Target paths touch types/contracts (*types.ts, *contract*.ts) and modify existing types
  * - HARD_04_CIRCULAR_DEP_REFACTOR: Instructions declare "refactor", "extract module", or "circular dependency"
@@ -124,8 +124,8 @@ export class TaskComplexityClassifier {
 
     // ─── 1. HARD SIGNALS ───────────────────────────────────────────────
 
-    // HARD_01_LIFECYCLE_CORE: Target paths include src/pdl/{scheduler,reaper,dlq,retry,governance,persistence}/ or src/router-worker.ts
-    const coreLifecyclePattern = /(?:^|\/)(?:src\/pdl\/(?:scheduler|reaper|dlq|retry|governance|persistence)\/|src\/router-worker\.ts)/i;
+    // HARD_01_LIFECYCLE_CORE: Target paths include src/pdl/{scheduler,reaper,dlq,retry,governance,persistence,delivery,neural}/ or src/router-worker.ts
+    const coreLifecyclePattern = /(?:^|\/)(?:src\/pdl\/(?:scheduler|reaper|dlq|retry|governance|persistence|delivery|neural)\/|src\/router-worker\.ts)/i;
     const hasCoreLifecycleFile = targetFiles.some(f => coreLifecyclePattern.test(f.replace(/\\/g, '/')));
     const mentionsCoreInText = combinedInstructionsText.includes('src/pdl/scheduler') ||
       combinedInstructionsText.includes('src/pdl/reaper') ||
@@ -133,6 +133,8 @@ export class TaskComplexityClassifier {
       combinedInstructionsText.includes('src/pdl/retry') ||
       combinedInstructionsText.includes('src/pdl/governance') ||
       combinedInstructionsText.includes('src/pdl/persistence') ||
+      combinedInstructionsText.includes('src/pdl/delivery') ||
+      combinedInstructionsText.includes('src/pdl/neural') ||
       combinedInstructionsText.includes('src/router-worker.ts');
 
     if (hasCoreLifecycleFile || mentionsCoreInText) {
