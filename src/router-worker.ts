@@ -20,6 +20,14 @@ import { StreamEventSink, type OperationalEventEnvelope, type OperationalEventTy
 import { verifyRepositoryIdentity } from './pdl/security/repository-identity.js';
 import { classifyTaskProfile } from './routing/index.js';
 import {
+  TaskComplexityClassifier,
+  defaultComplexityClassifier,
+  TaskPlanner,
+  type ComplexityClassificationDecision,
+  type StructuredExecutionPlan,
+  type ComplexityPlanningMode,
+} from './pdl/planning/index.js';
+import {
   enrichDeveloperTaskWithMemory,
   enrichArchitectTaskWithMemory,
   enrichReviewerTaskWithMemory,
@@ -308,6 +316,38 @@ const executedAttempts: string[] = [];
 const action = typeof task.objective === 'string' && task.objective.trim() !== '' ? task.objective : undefined;
     const errors: { provider: string; status: string; message: string; attempt: number }[] = [];
 
+    // Phase 7: Complexity-Triggered Planning (Task-level classification)
+    const planningMode = (process.env.PDL_COMPLEXITY_PLANNING_MODE || 'OFF').toUpperCase() as ComplexityPlanningMode;
+    const classification = defaultComplexityClassifier.evaluate(effectiveTask, finalPrepared.executionSpec);
+
+    this.emitLifecycleEvent(
+      task.id,
+      0,
+      'task_complexity_classified',
+      {
+        taskId: task.id,
+        tier: classification.tier,
+        planningRequired: classification.planningRequired,
+        hardSignals: classification.hardSignalsTriggered,
+        softSignals: classification.softSignalsTriggered,
+        score: classification.softSignalScore,
+        durationMs: classification.evaluationDurationMs,
+      }
+    );
+
+    // Determine if planning should be active for this task
+    let isPlanningActive = false;
+    if (planningMode === 'FULL') {
+      isPlanningActive = classification.planningRequired;
+    } else if (planningMode === 'CANARY') {
+      const activeProject = (task as any).activeProject || (task as any).project || '';
+      const isCanaryTarget = activeProject === 'pub-dev-loop-template';
+      isPlanningActive = isCanaryTarget && classification.planningRequired;
+    }
+    // 'OFF' and 'SHADOW': isPlanningActive = false (shadow only emits telemetry)
+
+    let cachedPlan: StructuredExecutionPlan | undefined = undefined;
+
     for (let attempt = 0; attempt < effectiveProviders.length; attempt++) {
       const provider = effectiveProviders[attempt];
 
@@ -427,6 +467,140 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
           attemptSink
         );
 
+        // Phase 7: Attempt-Level Planning (if active and required)
+        if (isPlanningActive) {
+          if (!cachedPlan) {
+            // Need to generate plan on this attempt
+            const catalogProduct = this.catalog?.resolve((task as any).activeProject || (task as any).project || task.repository);
+            const planResult = await TaskPlanner.generatePlan({
+              task: { ...effectiveTask, workspacePath: repo },
+              spec: finalPrepared.executionSpec,
+              provider,
+              attempt,
+              product: catalogProduct,
+              authorizedScope: catalogProduct?.allowedPaths,
+              onPlanningStarted: () => {
+                this.emitLifecycleEvent(
+                  task.id,
+                  attempt,
+                  'planning_started',
+                  {
+                    taskId: task.id,
+                    attempt,
+                    provider: provider.kind,
+                    model: provider.model,
+                  },
+                  attemptSink
+                );
+              },
+              onPlanGenerated: (tokensUsed, durationMs) => {
+                this.emitLifecycleEvent(
+                  task.id,
+                  attempt,
+                  'plan_generated',
+                  {
+                    taskId: task.id,
+                    attempt,
+                    tokensUsed,
+                    durationMs,
+                  },
+                  attemptSink
+                );
+              },
+              onPlanValidated: (plan) => {
+                this.emitLifecycleEvent(
+                  task.id,
+                  attempt,
+                  'plan_validated',
+                  {
+                    taskId: task.id,
+                    attempt,
+                    filesCount: plan.filesToChange.length,
+                    stepsCount: plan.implementationSteps.length,
+                  },
+                  attemptSink
+                );
+              },
+              onPlanRejected: (reasons, fatal) => {
+                this.emitLifecycleEvent(
+                  task.id,
+                  attempt,
+                  'plan_rejected',
+                  {
+                    taskId: task.id,
+                    attempt,
+                    reasons,
+                    fatal,
+                  },
+                  attemptSink
+                );
+              },
+            });
+
+            if (planResult.status !== 'SUCCESS' || !planResult.plan) {
+              // FAIL-CLOSED: Planning failure NEVER degrades to blind direct execution
+              await rm(attemptWS, { recursive: true, force: true });
+              workspaceCleaned = true;
+              return {
+                status: 'FAILED',
+                workspace: attemptWS,
+                baselineSnapshot: attemptBaseline,
+                declaredChangedFiles: [],
+                stdout: '',
+                stderr: `Complexity planning failed closed: ${planResult.errorMessage || 'Plan generation or validation failed'}`,
+                exitCode: 1,
+                provider: provider.kind,
+                model: provider.model,
+                toolCalls: 0,
+                toolRounds: 0,
+                durationMs: Date.now() - globalStart,
+                errorCode: planResult.errorCode || 'PLAN_VALIDATION_FAILED',
+                errorMessage: planResult.errorMessage || 'Plan validation failed closed',
+                trace: {
+                  totalDurationMs: Date.now() - globalStart,
+                  totalAttempts: attempt + 1,
+                  providerChainLength: effectiveProviders.length,
+                  attempts: attemptTraces,
+                  winningAttempt: null,
+                  finalStatus: 'FAILED',
+                  errorCode: planResult.errorCode || 'PLAN_VALIDATION_FAILED',
+                  errorMessage: planResult.errorMessage || 'Plan validation failed closed',
+                  timedOut: false,
+                  globalTimeoutMs: config.timeoutTotalMs,
+                  finalizeWasCalled: false,
+                  finalizeStatus: null,
+                  commitSha: null,
+                  agentId: task.agentId ?? null,
+                },
+              };
+            }
+
+            cachedPlan = planResult.plan;
+          }
+
+          this.emitLifecycleEvent(
+            task.id,
+            attempt,
+            'execution_path_selected',
+            {
+              taskId: task.id,
+              path: 'PLANNED',
+            },
+            attemptSink
+          );
+        } else {
+          this.emitLifecycleEvent(
+            task.id,
+            attempt,
+            'execution_path_selected',
+            {
+              taskId: task.id,
+              path: 'DIRECT',
+            },
+            attemptSink
+          );
+        }
+
         let subResult: ProviderTaskResult;
         let attemptExecutionResult: ExecutionResult | undefined;
 
@@ -535,7 +709,30 @@ const action = typeof task.objective === 'string' && task.objective.trim() !== '
 
           const engine = new DefaultExecutionEngine(attemptProvider);
           const attemptTask: Task = { ...effectiveTask, workspacePath: repo };
-          attemptExecutionResult = await engine.execute(attemptTask, finalPrepared.executionSpec);
+
+          let executionSpecToRun = finalPrepared.executionSpec;
+          if (cachedPlan) {
+            const planInstructions: string[] = [
+              `EXECUTION PLAN (${cachedPlan.complexityAssessment}):`,
+              `Goal: ${cachedPlan.goal}`,
+              `Files to Change: ${cachedPlan.filesToChange.join(', ')}`,
+              'Implementation Steps:',
+              ...cachedPlan.implementationSteps.map(s => `  ${s.stepNumber}. [${s.targetFile}] ${s.description}`),
+              'Test Strategy:',
+              ...cachedPlan.testStrategy.map(t => `  - ${t}`),
+            ];
+
+            const existingInstructions = Array.isArray(finalPrepared.executionSpec.executionInstructions)
+              ? finalPrepared.executionSpec.executionInstructions
+              : [];
+
+            executionSpecToRun = {
+              ...finalPrepared.executionSpec,
+              executionInstructions: [...existingInstructions, ...planInstructions],
+            };
+          }
+
+          attemptExecutionResult = await engine.execute(attemptTask, executionSpecToRun);
           subResult = capturedSubResult ?? {
             status: attemptExecutionResult.execution.status === 'COMPLETED' ? 'COMPLETED' : 'FAILED',
             provider: provider.kind,

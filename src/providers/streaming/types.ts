@@ -18,7 +18,13 @@ export type OperationalEventType =
   | 'retry_started'
   | 'task_completed'
   | 'task_failed'
-  | 'task_cancelled';
+  | 'task_cancelled'
+  | 'task_complexity_classified'
+  | 'planning_started'
+  | 'plan_generated'
+  | 'plan_validated'
+  | 'plan_rejected'
+  | 'execution_path_selected';
 
 export interface ToolCallDelta {
   index: number;
