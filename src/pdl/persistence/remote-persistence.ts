@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import {
   defaultProductCatalog,
   type ProductCatalog,
@@ -7,8 +8,10 @@ import {
 import { TrustBoundary } from '../security/trust-boundary.js';
 import type {
   RemotePersistenceOptions,
+  RemotePersistenceRequest,
   RemotePersistenceResult,
   RemotePersistenceStatus,
+  RemoteTransport,
 } from './types.js';
 
 export const CANONICAL_PROTECTED_BRANCHES = [
@@ -101,15 +104,22 @@ export function getGitHubToken(explicitToken?: string): string {
  * - Guarantees credential redaction and zero credential persistence in repository config or logs.
  */
 export class PdlRemotePersistence {
+  private readonly customTransport?: RemoteTransport;
+
   constructor(
     private readonly catalog: ProductCatalog = defaultProductCatalog,
     private readonly executor: GitExecutor = defaultGitExecutor,
-  ) {}
+    transport?: RemoteTransport,
+  ) {
+    this.customTransport = transport;
+  }
 
   /**
    * Complete remote persistence pipeline: validation -> fast-forward check -> push -> verification.
    */
   async persist(options: RemotePersistenceOptions): Promise<RemotePersistenceResult> {
+    const transport = options.transport ?? this.customTransport ?? new GitHubTransport();
+
     if (options.requested === false) {
       return {
         status: 'NOT_REQUESTED',
@@ -247,7 +257,17 @@ export class PdlRemotePersistence {
         if (originUrl) {
           const normOrigin = normalizeRepoPath(originUrl);
           const normManifest = normalizeRepoPath(manifest.repository);
-          if (normOrigin !== normManifest) {
+          
+          let matchesOrigin = normOrigin === normManifest;
+          if (!matchesOrigin && (transport as any)?.stagingBareRepoPath) {
+            const stagingPath = ((transport as any).stagingBareRepoPath as string).replace(/\\/g, '/');
+            const cleanOrigin = originUrl.replace(/\\/g, '/').replace(/^file:\/\/\/?/, '');
+            const cleanStaging = stagingPath.replace(/^file:\/\/\/?/, '');
+            matchesOrigin = cleanOrigin.toLowerCase().includes(cleanStaging.toLowerCase()) ||
+                            cleanStaging.toLowerCase().includes(cleanOrigin.toLowerCase());
+          }
+
+          if (!matchesOrigin) {
             return {
               status: 'FAILED',
               repository: manifest.repository,
@@ -265,6 +285,7 @@ export class PdlRemotePersistence {
       } catch {
         // Origin not set; allowed since we use explicit remote URL for push
       }
+
     } catch (wsErr: any) {
       return {
         status: 'FAILED',
@@ -280,327 +301,21 @@ export class PdlRemotePersistence {
       };
     }
 
-    // 7. Resolve Authentication Token (PDL_GITHUB_TOKEN > GITHUB_TOKEN for GitHub remotes)
-    const isGitHub = manifest.repository.includes('github.com');
-    const token = getGitHubToken(options.gitToken);
-    if (isGitHub && !token) {
-      return {
-        status: 'FAILED',
-        repository: manifest.repository,
-        branch: options.branch,
-        pushAttempted: false,
-        pushSucceeded: false,
-        localSha: options.localSha,
-        remoteSha: null,
-        remoteVerified: false,
-        errorCode: 'MISSING_GITHUB_TOKEN',
-        errorMessage: 'No authorized GitHub token available for PDL remote persistence (PDL_GITHUB_TOKEN required).',
-      };
-    }
-
-    const repoPath = normalizeRepoPath(manifest.repository);
-    const remoteUrl = isGitHub
-      ? `https://x-access-token:${token}@github.com/${repoPath}.git`
-      : manifest.repository;
-
-    // 8. Remote Inspection & Trusted Baseline Resolution (REMOTE-FIRST)
-    let existingRemoteSha: string | null = null;
-    try {
-      const lsOutput = this.executor(
-        'git',
-        ['ls-remote', remoteUrl, `refs/heads/${options.branch}`],
-        options.workspace,
-      ).trim();
-
-      if (lsOutput) {
-        const match = lsOutput.match(/^([0-9a-f]{40})\s+/m);
-        if (match) {
-          existingRemoteSha = match[1];
-        }
-      }
-    } catch (lsErr: any) {
-      return {
-        status: 'FAILED',
-        repository: manifest.repository,
-        branch: options.branch,
-        pushAttempted: false,
-        pushSucceeded: false,
-        localSha: options.localSha,
-        remoteSha: null,
-        remoteVerified: false,
-        errorCode: 'REMOTE_INSPECTION_FAILED',
-        errorMessage: redactToken(`Failed to inspect remote repository: ${lsErr.message}`, token),
-      };
-    }
-
-    // If remote already contains this exact commit, it's already verified
-    if (existingRemoteSha && existingRemoteSha === options.localSha) {
-      return {
-        status: 'VERIFIED',
-        repository: manifest.repository,
-        branch: options.branch,
-        pushAttempted: false,
-        pushSucceeded: true,
-        localSha: options.localSha,
-        remoteSha: existingRemoteSha,
-        remoteVerified: true,
-      };
-    }
-
-    // Determine the single trusted base SHA from remote
-    let trustedBaseSha: string;
-    const defaultBranch = manifest.defaultBranch || 'main';
-
-    if (existingRemoteSha) {
-      // Branch already exists on remote: baseline is the remote branch SHA
-      trustedBaseSha = existingRemoteSha;
-    } else {
-      // First push: query remote default branch directly
-      let remoteDefaultSha: string | null = null;
-      try {
-        const defaultLsOutput = this.executor(
-          'git',
-          ['ls-remote', remoteUrl, `refs/heads/${defaultBranch}`],
-          options.workspace,
-        ).trim();
-
-        if (defaultLsOutput) {
-          const match = defaultLsOutput.match(/^([0-9a-f]{40})\s+/m);
-          if (match) {
-            remoteDefaultSha = match[1];
-          }
-        }
-      } catch (defaultLsErr: any) {
-        return {
-          status: 'FAILED',
-          repository: manifest.repository,
-          branch: options.branch,
-          pushAttempted: false,
-          pushSucceeded: false,
-          localSha: options.localSha,
-          remoteSha: null,
-          remoteVerified: false,
-          errorCode: 'REMOTE_INSPECTION_FAILED',
-          errorMessage: redactToken(`Failed to inspect remote default branch '${defaultBranch}': ${defaultLsErr.message}`, token),
-        };
-      }
-
-      if (!remoteDefaultSha) {
-        return {
-          status: 'FAILED',
-          repository: manifest.repository,
-          branch: options.branch,
-          pushAttempted: false,
-          pushSucceeded: false,
-          localSha: options.localSha,
-          remoteSha: null,
-          remoteVerified: false,
-          errorCode: 'UNRESOLVED_REMOTE_BASELINE',
-          errorMessage: `Remote persistence blocked: failed to resolve trusted remote baseline for default branch '${defaultBranch}'. Autonomous first-push requires a verified remote baseline.`,
-        };
-      }
-
-      trustedBaseSha = remoteDefaultSha;
-    }
-
-    // 8.1 Advisory baseSha validation: caller-supplied baseSha must match trustedBaseSha
-    if (options.baseSha && options.baseSha !== trustedBaseSha) {
-      return {
-        status: 'FAILED',
-        repository: manifest.repository,
-        branch: options.branch,
-        pushAttempted: false,
-        pushSucceeded: false,
-        localSha: options.localSha,
-        remoteSha: existingRemoteSha,
-        remoteVerified: false,
-        errorCode: 'BASE_SHA_MISMATCH',
-        errorMessage: `Provided baseSha '${options.baseSha}' does not match trusted remote baseline '${trustedBaseSha}'. Caller-supplied baseSha override is strictly prohibited.`,
-      };
-    }
-
-    // 8.2 Ensure trustedBaseSha is available in local object database (fetch if necessary)
-    let isObjectAvailable = false;
-    try {
-      this.executor('git', ['cat-file', '-e', `${trustedBaseSha}^{commit}`], options.workspace);
-      isObjectAvailable = true;
-    } catch {
-      isObjectAvailable = false;
-    }
-
-    if (!isObjectAvailable) {
-      try {
-        const refToFetch = existingRemoteSha
-          ? `refs/heads/${options.branch}:refs/remotes/origin/${options.branch}`
-          : `refs/heads/${defaultBranch}:refs/remotes/origin/${defaultBranch}`;
-        this.executor('git', ['fetch', remoteUrl, refToFetch], options.workspace);
-        this.executor('git', ['cat-file', '-e', `${trustedBaseSha}^{commit}`], options.workspace);
-      } catch (fetchErr: any) {
-        return {
-          status: 'FAILED',
-          repository: manifest.repository,
-          branch: options.branch,
-          pushAttempted: false,
-          pushSucceeded: false,
-          localSha: options.localSha,
-          remoteSha: existingRemoteSha,
-          remoteVerified: false,
-          errorCode: 'REMOTE_OBJECT_UNAVAILABLE',
-          errorMessage: redactToken(`Trusted remote baseline commit '${trustedBaseSha}' could not be fetched into local repository: ${fetchErr.message}`, token),
-        };
-      }
-    }
-
-    // 8.3 Validate Ancestry / Fast-Forward
-    let isAncestor = false;
-    try {
-      this.executor('git', ['merge-base', '--is-ancestor', trustedBaseSha, options.localSha], options.workspace);
-      isAncestor = true;
-    } catch {
-      isAncestor = false;
-    }
-
-    if (!isAncestor) {
-      if (existingRemoteSha) {
-        return {
-          status: 'FAILED',
-          repository: manifest.repository,
-          branch: options.branch,
-          pushAttempted: false,
-          pushSucceeded: false,
-          localSha: options.localSha,
-          remoteSha: existingRemoteSha,
-          remoteVerified: false,
-          errorCode: 'NON_FAST_FORWARD_REJECTED',
-          errorMessage: `Remote branch '${options.branch}' has diverged (remote commit ${existingRemoteSha} is not ancestor of local ${options.localSha}). Force push is strictly prohibited.`,
-        };
-      } else {
-        return {
-          status: 'FAILED',
-          repository: manifest.repository,
-          branch: options.branch,
-          pushAttempted: false,
-          pushSucceeded: false,
-          localSha: options.localSha,
-          remoteSha: null,
-          remoteVerified: false,
-          errorCode: 'DIVERGED_FROM_REMOTE_BASE',
-          errorMessage: `Local branch does not originate from trusted remote default branch '${defaultBranch}' (${trustedBaseSha}). Force push is strictly prohibited.`,
-        };
-      }
-    }
-
-    // 8.4 Historical Changeset Security Gate (Single trusted baseline scan)
-    try {
-      const touchedFiles = this.collectRangeTouchedFiles(options.workspace, options.localSha, trustedBaseSha);
-      const check = this.validateChangesetSecurity(touchedFiles, options.workspace);
-      if (!check.allowed) {
-        return {
-          status: 'FAILED',
-          repository: manifest.repository,
-          branch: options.branch,
-          pushAttempted: false,
-          pushSucceeded: false,
-          localSha: options.localSha,
-          remoteSha: existingRemoteSha,
-          remoteVerified: false,
-          errorCode: 'PROTECTED_PATH_VIOLATION',
-          errorMessage: check.reason || 'Remote persistence blocked: push range touches Zone A protected paths',
-        };
-      }
-    } catch (gateErr: any) {
-      return {
-        status: 'FAILED',
-        repository: manifest.repository,
-        branch: options.branch,
-        pushAttempted: false,
-        pushSucceeded: false,
-        localSha: options.localSha,
-        remoteSha: existingRemoteSha,
-        remoteVerified: false,
-        errorCode: 'CHANGESET_INSPECTION_FAILED',
-        errorMessage: `Failed to inspect changeset for protected paths: ${gateErr.message}`,
-      };
-    }
-
-    // 9. Execute Safe Push (Normal push only, strictly fast-forward, NO --force, NO --force-with-lease)
-    try {
-      this.executor(
-        'git',
-        ['push', remoteUrl, `HEAD:refs/heads/${options.branch}`],
-        options.workspace,
-      );
-    } catch (pushErr: any) {
-      return {
-        status: 'FAILED',
-        repository: manifest.repository,
-        branch: options.branch,
-        pushAttempted: true,
-        pushSucceeded: false,
-        localSha: options.localSha,
-        remoteSha: existingRemoteSha,
-        remoteVerified: false,
-        errorCode: 'PUSH_FAILED',
-        errorMessage: redactToken(`Push to remote repository failed: ${pushErr.message}`, token),
-      };
-    }
-
-    // 10. Remote Verification Post-Push (Inspect remote to prove SHA exists)
-    let verifiedRemoteSha: string | null = null;
-    try {
-      const verifyOutput = this.executor(
-        'git',
-        ['ls-remote', remoteUrl, `refs/heads/${options.branch}`],
-        options.workspace,
-      ).trim();
-
-      if (verifyOutput) {
-        const match = verifyOutput.match(/^([0-9a-f]{40})\s+/m);
-        if (match) {
-          verifiedRemoteSha = match[1];
-        }
-      }
-    } catch (verifyErr: any) {
-      return {
-        status: 'FAILED',
-        repository: manifest.repository,
-        branch: options.branch,
-        pushAttempted: true,
-        pushSucceeded: true,
-        localSha: options.localSha,
-        remoteSha: null,
-        remoteVerified: false,
-        errorCode: 'REMOTE_VERIFICATION_FAILED',
-        errorMessage: redactToken(`Failed to verify remote SHA after push: ${verifyErr.message}`, token),
-      };
-    }
-
-    if (!verifiedRemoteSha || verifiedRemoteSha !== options.localSha) {
-      return {
-        status: 'FAILED',
-        repository: manifest.repository,
-        branch: options.branch,
-        pushAttempted: true,
-        pushSucceeded: true,
-        localSha: options.localSha,
-        remoteSha: verifiedRemoteSha,
-        remoteVerified: false,
-        errorCode: 'REMOTE_SHA_MISMATCH',
-        errorMessage: `Remote SHA '${verifiedRemoteSha || 'unknown'}' does not match expected local SHA '${options.localSha}'. Remote verification failed.`,
-      };
-    }
-
-    return {
-      status: 'VERIFIED',
-      repository: manifest.repository,
+    // 7-10. Delegate remote inspection, baseline resolution, push and verification to the configured RemoteTransport
+    return transport.persist({
+      workspace: options.workspace,
+      manifest,
       branch: options.branch,
-      pushAttempted: true,
-      pushSucceeded: true,
       localSha: options.localSha,
-      remoteSha: verifiedRemoteSha,
-      remoteVerified: true,
-    };
+      baseSha: options.baseSha,
+      targetRepository: options.targetRepository,
+      gitToken: options.gitToken,
+      executor: this.executor,
+      collectRangeTouchedFiles: (ws, sha, base) => this.collectRangeTouchedFiles(ws, sha, base),
+      validateChangesetSecurity: (files, ws) => this.validateChangesetSecurity(files, ws),
+    });
   }
+
 
   /**
    * Parse git --name-status output into a unique list of paths.
@@ -703,3 +418,721 @@ export class PdlRemotePersistence {
 }
 
 export const defaultRemotePersistence = new PdlRemotePersistence();
+
+/**
+ * Standard Production GitHub Transport.
+ * Performs authenticated Git push to GitHub repositories with strict token resolution,
+ * remote ls-remote baseline resolution, fast-forward checks, and post-push SHA verification.
+ */
+export class GitHubTransport implements RemoteTransport {
+  readonly name = 'github';
+
+  async persist(request: RemotePersistenceRequest): Promise<RemotePersistenceResult> {
+    const {
+      workspace,
+      manifest,
+      branch,
+      localSha,
+      baseSha,
+      gitToken,
+      executor,
+      collectRangeTouchedFiles,
+      validateChangesetSecurity,
+    } = request;
+
+    const isGitHub = manifest.repository.includes('github.com');
+    const token = getGitHubToken(gitToken);
+    if (isGitHub && !token) {
+      return {
+        status: 'FAILED',
+        repository: manifest.repository,
+        branch,
+        pushAttempted: false,
+        pushSucceeded: false,
+        localSha,
+        remoteSha: null,
+        remoteVerified: false,
+        errorCode: 'MISSING_GITHUB_TOKEN',
+        errorMessage: 'No authorized GitHub token available for PDL remote persistence (PDL_GITHUB_TOKEN required).',
+      };
+    }
+
+    const repoPath = normalizeRepoPath(manifest.repository);
+    const remoteUrl = isGitHub
+      ? `https://x-access-token:${token}@github.com/${repoPath}.git`
+      : manifest.repository;
+
+    // Remote Inspection & Trusted Baseline Resolution (REMOTE-FIRST)
+    let existingRemoteSha: string | null = null;
+    try {
+      const lsOutput = executor(
+        'git',
+        ['ls-remote', remoteUrl, `refs/heads/${branch}`],
+        workspace,
+      ).trim();
+
+      if (lsOutput) {
+        const match = lsOutput.match(/^([0-9a-f]{40})\s+/m);
+        if (match) {
+          existingRemoteSha = match[1];
+        }
+      }
+    } catch (lsErr: any) {
+      return {
+        status: 'FAILED',
+        repository: manifest.repository,
+        branch,
+        pushAttempted: false,
+        pushSucceeded: false,
+        localSha,
+        remoteSha: null,
+        remoteVerified: false,
+        errorCode: 'REMOTE_INSPECTION_FAILED',
+        errorMessage: redactToken(`Failed to inspect remote repository: ${lsErr.message}`, token),
+      };
+    }
+
+    // If remote already contains this exact commit, it's already verified
+    if (existingRemoteSha && existingRemoteSha === localSha) {
+      return {
+        status: 'VERIFIED',
+        repository: manifest.repository,
+        branch,
+        pushAttempted: false,
+        pushSucceeded: true,
+        localSha,
+        remoteSha: existingRemoteSha,
+        remoteVerified: true,
+      };
+    }
+
+    // Determine the single trusted base SHA from remote
+    let trustedBaseSha: string;
+    const defaultBranch = manifest.defaultBranch || 'main';
+
+    if (existingRemoteSha) {
+      trustedBaseSha = existingRemoteSha;
+    } else {
+      let remoteDefaultSha: string | null = null;
+      try {
+        const defaultLsOutput = executor(
+          'git',
+          ['ls-remote', remoteUrl, `refs/heads/${defaultBranch}`],
+          workspace,
+        ).trim();
+
+        if (defaultLsOutput) {
+          const match = defaultLsOutput.match(/^([0-9a-f]{40})\s+/m);
+          if (match) {
+            remoteDefaultSha = match[1];
+          }
+        }
+      } catch (defaultLsErr: any) {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha,
+          remoteSha: null,
+          remoteVerified: false,
+          errorCode: 'REMOTE_INSPECTION_FAILED',
+          errorMessage: redactToken(`Failed to inspect remote default branch '${defaultBranch}': ${defaultLsErr.message}`, token),
+        };
+      }
+
+      if (!remoteDefaultSha) {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha,
+          remoteSha: null,
+          remoteVerified: false,
+          errorCode: 'UNRESOLVED_REMOTE_BASELINE',
+          errorMessage: `Remote persistence blocked: failed to resolve trusted remote baseline for default branch '${defaultBranch}'. Autonomous first-push requires a verified remote baseline.`,
+        };
+      }
+
+      trustedBaseSha = remoteDefaultSha;
+    }
+
+    // Advisory baseSha validation
+    if (baseSha && baseSha !== trustedBaseSha) {
+      return {
+        status: 'FAILED',
+        repository: manifest.repository,
+        branch,
+        pushAttempted: false,
+        pushSucceeded: false,
+        localSha,
+        remoteSha: existingRemoteSha,
+        remoteVerified: false,
+        errorCode: 'BASE_SHA_MISMATCH',
+        errorMessage: `Provided baseSha '${baseSha}' does not match trusted remote baseline '${trustedBaseSha}'. Caller-supplied baseSha override is strictly prohibited.`,
+      };
+    }
+
+    // Ensure trustedBaseSha is available in local object database (fetch if necessary)
+    let isObjectAvailable = false;
+    try {
+      executor('git', ['cat-file', '-e', `${trustedBaseSha}^{commit}`], workspace);
+      isObjectAvailable = true;
+    } catch {
+      isObjectAvailable = false;
+    }
+
+    if (!isObjectAvailable) {
+      try {
+        const refToFetch = existingRemoteSha
+          ? `refs/heads/${branch}:refs/remotes/origin/${branch}`
+          : `refs/heads/${defaultBranch}:refs/remotes/origin/${defaultBranch}`;
+        executor('git', ['fetch', remoteUrl, refToFetch], workspace);
+        executor('git', ['cat-file', '-e', `${trustedBaseSha}^{commit}`], workspace);
+      } catch (fetchErr: any) {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha,
+          remoteSha: existingRemoteSha,
+          remoteVerified: false,
+          errorCode: 'REMOTE_OBJECT_UNAVAILABLE',
+          errorMessage: redactToken(`Trusted remote baseline commit '${trustedBaseSha}' could not be fetched into local repository: ${fetchErr.message}`, token),
+        };
+      }
+    }
+
+    // Validate Ancestry / Fast-Forward
+    let isAncestor = false;
+    try {
+      executor('git', ['merge-base', '--is-ancestor', trustedBaseSha, localSha], workspace);
+      isAncestor = true;
+    } catch {
+      isAncestor = false;
+    }
+
+    if (!isAncestor) {
+      if (existingRemoteSha) {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha,
+          remoteSha: existingRemoteSha,
+          remoteVerified: false,
+          errorCode: 'NON_FAST_FORWARD_REJECTED',
+          errorMessage: `Remote branch '${branch}' has diverged (remote commit ${existingRemoteSha} is not ancestor of local ${localSha}). Force push is strictly prohibited.`,
+        };
+      } else {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha,
+          remoteSha: null,
+          remoteVerified: false,
+          errorCode: 'DIVERGED_FROM_REMOTE_BASE',
+          errorMessage: `Local branch does not originate from trusted remote default branch '${defaultBranch}' (${trustedBaseSha}). Force push is strictly prohibited.`,
+        };
+      }
+    }
+
+    // Historical Changeset Security Gate
+    try {
+      const touchedFiles = collectRangeTouchedFiles(workspace, localSha, trustedBaseSha);
+      const check = validateChangesetSecurity(touchedFiles, workspace);
+      if (!check.allowed) {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha,
+          remoteSha: existingRemoteSha,
+          remoteVerified: false,
+          errorCode: 'PROTECTED_PATH_VIOLATION',
+          errorMessage: check.reason || 'Remote persistence blocked: push range touches Zone A protected paths',
+        };
+      }
+    } catch (gateErr: any) {
+      return {
+        status: 'FAILED',
+        repository: manifest.repository,
+        branch,
+        pushAttempted: false,
+        pushSucceeded: false,
+        localSha,
+        remoteSha: existingRemoteSha,
+        remoteVerified: false,
+        errorCode: 'CHANGESET_INSPECTION_FAILED',
+        errorMessage: `Failed to inspect changeset for protected paths: ${gateErr.message}`,
+      };
+    }
+
+    // Execute Safe Push
+    try {
+      executor(
+        'git',
+        ['push', remoteUrl, `HEAD:refs/heads/${branch}`],
+        workspace,
+      );
+    } catch (pushErr: any) {
+      return {
+        status: 'FAILED',
+        repository: manifest.repository,
+        branch,
+        pushAttempted: true,
+        pushSucceeded: false,
+        localSha,
+        remoteSha: existingRemoteSha,
+        remoteVerified: false,
+        errorCode: 'PUSH_FAILED',
+        errorMessage: redactToken(`Push to remote repository failed: ${pushErr.message}`, token),
+      };
+    }
+
+    // Remote Verification Post-Push
+    let verifiedRemoteSha: string | null = null;
+    try {
+      const verifyOutput = executor(
+        'git',
+        ['ls-remote', remoteUrl, `refs/heads/${branch}`],
+        workspace,
+      ).trim();
+
+      if (verifyOutput) {
+        const match = verifyOutput.match(/^([0-9a-f]{40})\s+/m);
+        if (match) {
+          verifiedRemoteSha = match[1];
+        }
+      }
+    } catch (verifyErr: any) {
+      return {
+        status: 'FAILED',
+        repository: manifest.repository,
+        branch,
+        pushAttempted: true,
+        pushSucceeded: true,
+        localSha,
+        remoteSha: null,
+        remoteVerified: false,
+        errorCode: 'REMOTE_VERIFICATION_FAILED',
+        errorMessage: redactToken(`Failed to verify remote SHA after push: ${verifyErr.message}`, token),
+      };
+    }
+
+    if (!verifiedRemoteSha || verifiedRemoteSha !== localSha) {
+      return {
+        status: 'FAILED',
+        repository: manifest.repository,
+        branch,
+        pushAttempted: true,
+        pushSucceeded: true,
+        localSha,
+        remoteSha: verifiedRemoteSha,
+        remoteVerified: false,
+        errorCode: 'REMOTE_SHA_MISMATCH',
+        errorMessage: `Remote SHA '${verifiedRemoteSha || 'unknown'}' does not match expected local SHA '${localSha}'. Remote verification failed.`,
+      };
+    }
+
+    return {
+      status: 'VERIFIED',
+      repository: manifest.repository,
+      branch,
+      pushAttempted: true,
+      pushSucceeded: true,
+      localSha,
+      remoteSha: verifiedRemoteSha,
+      remoteVerified: true,
+    };
+  }
+}
+
+/**
+ * Local Bare Git Repository Staging Transport.
+ * Enables fully autonomous local staging / proofs without external GitHub tokens or network calls,
+ * while strictly enforcing the same repository authority, fast-forward ancestry, changeset security,
+ * real Git push, and remote post-push SHA verification.
+ */
+export class LocalStagingTransport implements RemoteTransport {
+  readonly name = 'local-staging';
+
+  constructor(
+    public readonly stagingBareRepoPath: string,
+    private readonly fsExists: (path: string) => boolean = existsSync,
+  ) {
+    if (!stagingBareRepoPath || !stagingBareRepoPath.trim()) {
+      throw new Error('LocalStagingTransport requires a non-empty stagingBareRepoPath');
+    }
+  }
+
+  async persist(request: RemotePersistenceRequest): Promise<RemotePersistenceResult> {
+    const {
+      workspace,
+      manifest,
+      branch,
+      localSha,
+      baseSha,
+      executor,
+      collectRangeTouchedFiles,
+      validateChangesetSecurity,
+    } = request;
+
+    const normalizedStagingPath = this.stagingBareRepoPath.replace(/\\/g, '/');
+
+    // 1. Verify that the staging bare repo exists and is a valid git repository
+    if (!this.fsExists(this.stagingBareRepoPath)) {
+      return {
+        status: 'FAILED',
+        repository: manifest.repository,
+        branch,
+        pushAttempted: false,
+        pushSucceeded: false,
+        localSha,
+        remoteSha: null,
+        remoteVerified: false,
+        errorCode: 'STAGING_REPO_NOT_FOUND',
+        errorMessage: `Local staging bare repository does not exist at '${this.stagingBareRepoPath}'.`,
+      };
+    }
+
+    try {
+      const isBare = executor('git', ['rev-parse', '--is-bare-repository'], this.stagingBareRepoPath).trim();
+      if (isBare !== 'true') {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha,
+          remoteSha: null,
+          remoteVerified: false,
+          errorCode: 'STAGING_REPO_INVALID',
+          errorMessage: `Staging target repository at '${this.stagingBareRepoPath}' is not a bare git repository.`,
+        };
+      }
+    } catch (bareErr: any) {
+      return {
+        status: 'FAILED',
+        repository: manifest.repository,
+        branch,
+        pushAttempted: false,
+        pushSucceeded: false,
+        localSha,
+        remoteSha: null,
+        remoteVerified: false,
+        errorCode: 'STAGING_REPO_INVALID',
+        errorMessage: `Failed to inspect staging repository at '${this.stagingBareRepoPath}': ${bareErr.message}`,
+      };
+    }
+
+    // 2. Remote Inspection & Trusted Baseline Resolution in the Staging Bare Repository
+    let existingRemoteSha: string | null = null;
+    try {
+      const lsOutput = executor(
+        'git',
+        ['ls-remote', normalizedStagingPath, `refs/heads/${branch}`],
+        workspace,
+      ).trim();
+
+      if (lsOutput) {
+        const match = lsOutput.match(/^([0-9a-f]{40})\s+/m);
+        if (match) {
+          existingRemoteSha = match[1];
+        }
+      }
+    } catch (lsErr: any) {
+      return {
+        status: 'FAILED',
+        repository: manifest.repository,
+        branch,
+        pushAttempted: false,
+        pushSucceeded: false,
+        localSha,
+        remoteSha: null,
+        remoteVerified: false,
+        errorCode: 'REMOTE_INSPECTION_FAILED',
+        errorMessage: `Failed to inspect staging remote: ${lsErr.message}`,
+      };
+    }
+
+    // If staging remote already contains this exact commit, it's already verified
+    if (existingRemoteSha && existingRemoteSha === localSha) {
+      return {
+        status: 'VERIFIED',
+        repository: manifest.repository,
+        branch,
+        pushAttempted: false,
+        pushSucceeded: true,
+        localSha,
+        remoteSha: existingRemoteSha,
+        remoteVerified: true,
+      };
+    }
+
+    // Determine the single trusted base SHA from remote staging
+    let trustedBaseSha: string;
+    const defaultBranch = manifest.defaultBranch || 'main';
+
+    if (existingRemoteSha) {
+      trustedBaseSha = existingRemoteSha;
+    } else {
+      let remoteDefaultSha: string | null = null;
+      try {
+        const defaultLsOutput = executor(
+          'git',
+          ['ls-remote', normalizedStagingPath, `refs/heads/${defaultBranch}`],
+          workspace,
+        ).trim();
+
+        if (defaultLsOutput) {
+          const match = defaultLsOutput.match(/^([0-9a-f]{40})\s+/m);
+          if (match) {
+            remoteDefaultSha = match[1];
+          }
+        }
+      } catch (defaultLsErr: any) {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha,
+          remoteSha: null,
+          remoteVerified: false,
+          errorCode: 'REMOTE_INSPECTION_FAILED',
+          errorMessage: `Failed to inspect staging default branch '${defaultBranch}': ${defaultLsErr.message}`,
+        };
+      }
+
+      if (!remoteDefaultSha) {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha,
+          remoteSha: null,
+          remoteVerified: false,
+          errorCode: 'UNRESOLVED_REMOTE_BASELINE',
+          errorMessage: `Remote persistence blocked: failed to resolve trusted remote baseline for default branch '${defaultBranch}' in staging target.`,
+        };
+      }
+
+      trustedBaseSha = remoteDefaultSha;
+    }
+
+    // Advisory baseSha validation
+    if (baseSha && baseSha !== trustedBaseSha) {
+      return {
+        status: 'FAILED',
+        repository: manifest.repository,
+        branch,
+        pushAttempted: false,
+        pushSucceeded: false,
+        localSha,
+        remoteSha: existingRemoteSha,
+        remoteVerified: false,
+        errorCode: 'BASE_SHA_MISMATCH',
+        errorMessage: `Provided baseSha '${baseSha}' does not match trusted remote baseline '${trustedBaseSha}'. Caller-supplied baseSha override is strictly prohibited.`,
+      };
+    }
+
+    // Ensure trustedBaseSha is available in local object database
+    let isObjectAvailable = false;
+    try {
+      executor('git', ['cat-file', '-e', `${trustedBaseSha}^{commit}`], workspace);
+      isObjectAvailable = true;
+    } catch {
+      isObjectAvailable = false;
+    }
+
+    if (!isObjectAvailable) {
+      try {
+        const refToFetch = existingRemoteSha
+          ? `refs/heads/${branch}:refs/remotes/origin/${branch}`
+          : `refs/heads/${defaultBranch}:refs/remotes/origin/${defaultBranch}`;
+        executor('git', ['fetch', normalizedStagingPath, refToFetch], workspace);
+        executor('git', ['cat-file', '-e', `${trustedBaseSha}^{commit}`], workspace);
+      } catch (fetchErr: any) {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha,
+          remoteSha: existingRemoteSha,
+          remoteVerified: false,
+          errorCode: 'REMOTE_OBJECT_UNAVAILABLE',
+          errorMessage: `Trusted remote baseline commit '${trustedBaseSha}' could not be fetched into local repository: ${fetchErr.message}`,
+        };
+      }
+    }
+
+    // Validate Ancestry / Fast-Forward
+    let isAncestor = false;
+    try {
+      executor('git', ['merge-base', '--is-ancestor', trustedBaseSha, localSha], workspace);
+      isAncestor = true;
+    } catch {
+      isAncestor = false;
+    }
+
+    if (!isAncestor) {
+      if (existingRemoteSha) {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha,
+          remoteSha: existingRemoteSha,
+          remoteVerified: false,
+          errorCode: 'NON_FAST_FORWARD_REJECTED',
+          errorMessage: `Remote branch '${branch}' has diverged (remote commit ${existingRemoteSha} is not ancestor of local ${localSha}). Force push is strictly prohibited.`,
+        };
+      } else {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha,
+          remoteSha: null,
+          remoteVerified: false,
+          errorCode: 'DIVERGED_FROM_REMOTE_BASE',
+          errorMessage: `Local branch does not originate from trusted remote default branch '${defaultBranch}' (${trustedBaseSha}). Force push is strictly prohibited.`,
+        };
+      }
+    }
+
+    // Historical Changeset Security Gate
+    try {
+      const touchedFiles = collectRangeTouchedFiles(workspace, localSha, trustedBaseSha);
+      const check = validateChangesetSecurity(touchedFiles, workspace);
+      if (!check.allowed) {
+        return {
+          status: 'FAILED',
+          repository: manifest.repository,
+          branch,
+          pushAttempted: false,
+          pushSucceeded: false,
+          localSha,
+          remoteSha: existingRemoteSha,
+          remoteVerified: false,
+          errorCode: 'PROTECTED_PATH_VIOLATION',
+          errorMessage: check.reason || 'Remote persistence blocked: push range touches Zone A protected paths',
+        };
+      }
+    } catch (gateErr: any) {
+      return {
+        status: 'FAILED',
+        repository: manifest.repository,
+        branch,
+        pushAttempted: false,
+        pushSucceeded: false,
+        localSha,
+        remoteSha: existingRemoteSha,
+        remoteVerified: false,
+        errorCode: 'CHANGESET_INSPECTION_FAILED',
+        errorMessage: `Failed to inspect changeset for protected paths: ${gateErr.message}`,
+      };
+    }
+
+    // Execute Real Push to Bare Repository
+    try {
+      executor(
+        'git',
+        ['push', normalizedStagingPath, `HEAD:refs/heads/${branch}`],
+        workspace,
+      );
+    } catch (pushErr: any) {
+      return {
+        status: 'FAILED',
+        repository: manifest.repository,
+        branch,
+        pushAttempted: true,
+        pushSucceeded: false,
+        localSha,
+        remoteSha: existingRemoteSha,
+        remoteVerified: false,
+        errorCode: 'PUSH_FAILED',
+        errorMessage: `Push to staging repository failed: ${pushErr.message}`,
+      };
+    }
+
+    // Post-Push Remote Verification (Proof that the commit exists in the bare repo)
+    let verifiedRemoteSha: string | null = null;
+    try {
+      const verifyOutput = executor(
+        'git',
+        ['ls-remote', normalizedStagingPath, `refs/heads/${branch}`],
+        workspace,
+      ).trim();
+
+      if (verifyOutput) {
+        const match = verifyOutput.match(/^([0-9a-f]{40})\s+/m);
+        if (match) {
+          verifiedRemoteSha = match[1];
+        }
+      }
+    } catch (verifyErr: any) {
+      return {
+        status: 'FAILED',
+        repository: manifest.repository,
+        branch,
+        pushAttempted: true,
+        pushSucceeded: true,
+        localSha,
+        remoteSha: null,
+        remoteVerified: false,
+        errorCode: 'REMOTE_VERIFICATION_FAILED',
+        errorMessage: `Failed to verify remote SHA in staging repository after push: ${verifyErr.message}`,
+      };
+    }
+
+    if (!verifiedRemoteSha || verifiedRemoteSha !== localSha) {
+      return {
+        status: 'FAILED',
+        repository: manifest.repository,
+        branch,
+        pushAttempted: true,
+        pushSucceeded: true,
+        localSha,
+        remoteSha: verifiedRemoteSha,
+        remoteVerified: false,
+        errorCode: 'REMOTE_SHA_MISMATCH',
+        errorMessage: `Remote SHA '${verifiedRemoteSha || 'unknown'}' in staging repository does not match expected local SHA '${localSha}'. Remote verification failed.`,
+      };
+    }
+
+    return {
+      status: 'VERIFIED',
+      repository: manifest.repository,
+      branch,
+      pushAttempted: true,
+      pushSucceeded: true,
+      localSha,
+      remoteSha: verifiedRemoteSha,
+      remoteVerified: true,
+    };
+  }
+}
