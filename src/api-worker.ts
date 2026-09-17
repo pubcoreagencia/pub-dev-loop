@@ -38,6 +38,9 @@ import { resolveContext } from './office/context-resolver.js';
 import { ChiefOfStaffAgent, defaultChiefOfStaffAgent } from './office/chief-of-staff-agent.js';
 import { defaultCeoConversationStore } from './office/ceo-conversation-store.js';
 import { defaultPubNeuralBridge } from './pdl/neural/neural-bridge.js';
+import { CeoCommandGateway } from './pdl/ceo/command-gateway.js';
+import type { CeoCommandInputPacket } from './pdl/ceo/types.js';
+import { PdlGovernanceEngine, defaultGovernanceEngine } from './pdl/governance/index.js';
 
 export interface HyperdriveBinding {
   connectionString: string;
@@ -2564,53 +2567,69 @@ ${d.commits.slice(0, 3).join('\n') || '- Repositório sincronizado na branch pri
       // CEO COMMAND & CHIEF OF STAFF ORCHESTRATION ROUTES (CEO_COMMAND_01, 02, 03, 08, 09)
       // =========================================================================
 
-      // POST /office/ceo/command (Direct CEO Command to Chief of Staff)
+      // POST /office/ceo/command (Direct CEO Command via CeoCommandGateway)
       if (method === 'POST' && path === '/office/ceo/command') {
         try {
           const body = (await request.json().catch(() => ({}))) as any;
-          const { message, conversationId, project, repository, workspaceDir, executeSynchronously } = body;
+          const { message, conversationId, project, repository, workspaceDir, executeSynchronously, idempotencyKey } = body;
 
           if (!message || typeof message !== 'string' || !message.trim()) {
             return jsonResponse({ error: 'message is required' }, 400);
           }
 
           const connectionString = (env as any)?.DATABASE_URL || (env as any)?.HYPERDRIVE?.connectionString || process.env.DATABASE_URL;
-          let agentToUse = defaultChiefOfStaffAgent;
+          let pool: any = undefined;
+          let taskRepo: any = undefined;
+          let intakeService: any = undefined;
+          let govEngine: PdlGovernanceEngine = (env as any)?.governanceEngine || defaultGovernanceEngine;
 
           if (connectionString) {
             try {
               const isLocal = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
-              const pool = new Pool({
+              pool = new Pool({
                 connectionString,
                 ssl: isLocal ? false : { rejectUnauthorized: false },
               });
-              const taskRepo = new PostgresTaskRepository(pool);
-              const intakeService = new TaskIntakeService(pool);
-              agentToUse = new ChiefOfStaffAgent(
-                defaultCeoConversationStore,
-                defaultAgentRegistry,
-                defaultPubNeuralBridge,
-                defaultCodeReviewManager,
-                taskRepo,
-                undefined,
-                pool,
-                intakeService
-              );
+              taskRepo = new PostgresTaskRepository(pool);
+              intakeService = new TaskIntakeService(pool);
+              govEngine = new PdlGovernanceEngine({ pool });
             } catch (initErr: any) {
-              console.warn('[API Worker] Could not initialize Postgres pool for ChiefOfStaffAgent, using default:', initErr.message);
+              console.warn('[API Worker] Could not initialize Postgres pool for CeoCommandGateway, using default:', initErr.message);
             }
           }
 
-          const result = await agentToUse.handleCommand({
-            message: message.trim(),
-            conversationId,
+          // Authoritative Operator Context: Established strictly by backend, NOT trusted from client payload
+          const gatewayPacket: CeoCommandInputPacket = {
+            command: message.trim(),
             project,
             repository,
-            workspaceDir,
-            executeSynchronously: Boolean(executeSynchronously),
+            conversationId,
+            idempotencyKey,
+            trustedContext: {
+              operatorId: 'MATHEUS',
+              role: 'CEO',
+              channel: 'chat',
+              verified: true,
+            },
+          };
+
+          const gateway = new CeoCommandGateway({
+            governance: govEngine,
+            intakeService,
+            taskRepo,
+            conversationStore: defaultCeoConversationStore,
+            pool,
           });
 
-          return jsonResponse(result, 200);
+          const gatewayResult = await gateway.handleCommand(gatewayPacket);
+
+          // If blocked by governance or validation, return deterministic blocked result
+          if (gatewayResult.status === 'BLOCKED') {
+            const statusHttp = gatewayResult.governanceDecision.reasonCode === 'MISSING_PROJECT' ? 400 : 403;
+            return jsonResponse(gatewayResult, statusHttp);
+          }
+
+          return jsonResponse(gatewayResult, 200);
         } catch (err: any) {
           console.error('[API Worker] CEO Command error:', err);
           return jsonResponse({ error: err.message }, 500);

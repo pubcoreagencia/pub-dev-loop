@@ -1543,7 +1543,7 @@ export const useStore = create<OfficeState>((set, get) => ({
       const result = await sendCeoCommand({
         message: objectiveText,
         project: state.activeProject,
-        repository: state.activeRepo,
+        repository: state.activeRepository || (state as any).activeRepo,
       });
 
       // Se um especialista singular foi alocado, atualiza apenas o estado dele para 'working'
