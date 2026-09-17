@@ -81,6 +81,7 @@ export class OpenRouterProvider implements AgentProvider {
   readonly maxToolCalls: number;
   readonly enableStream: boolean;
   readonly consumer?: StreamConsumer;
+  private readonly executor?: AgentExecutor;
 
   constructor(
     baseUrl = process.env.OPENROUTER_BASE_URL ?? DEFAULT_OPENROUTER_BASE_URL,
@@ -89,6 +90,7 @@ export class OpenRouterProvider implements AgentProvider {
     modelOverride?: string,
     enableStream = process.env.OPENROUTER_STREAM_ENABLED === 'true',
     consumer?: StreamConsumer,
+    executor?: AgentExecutor,
   ) {
     this.baseUrl = normalizeBaseUrl(baseUrl, DEFAULT_OPENROUTER_BASE_URL);
     this.apiKey = resolveOpenRouterApiKey(apiKey);
@@ -98,6 +100,7 @@ export class OpenRouterProvider implements AgentProvider {
     this.model = modelOverride ?? process.env.OPENROUTER_MODEL ?? null;
     this.enableStream = enableStream;
     this.consumer = consumer;
+    this.executor = executor;
   }
 
   async execute(
@@ -136,7 +139,7 @@ export class OpenRouterProvider implements AgentProvider {
       maxWriteBytes: Number(process.env.OPENROUTER_MAX_WRITE_BYTES ?? 256 * 1024),
       redactSecrets: true,
     };
-    const runtime = new ToolRuntime(ctx, new AgentExecutor());
+    const runtime = new ToolRuntime(ctx, this.executor ?? new AgentExecutor());
     const toolDefs = runtime.getToolDefinitions();
     const messages: OpenAIChatMessage[] = [
       buildSystemPrompt(workspace, task),
