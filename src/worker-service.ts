@@ -33,7 +33,7 @@ import {
   type RemotePersistenceResult,
 } from './pdl/persistence/index.js';
 import { ProductCatalog, defaultProductCatalog } from './pdl/products/catalog.js';
-import { DefaultPubNeuralBridge, type PubNeuralBridge } from './pdl/neural/index.js';
+import { DefaultPubNeuralBridge, type PubNeuralBridge, PreTaskKnowledgeGate } from './pdl/neural/index.js';
 import {
   RemoteDeliveryGate,
   evaluateDeliveryGatePolicy,
