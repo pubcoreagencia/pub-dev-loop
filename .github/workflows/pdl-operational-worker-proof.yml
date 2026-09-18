@@ -102,9 +102,7 @@ jobs:
           const id = crypto.randomUUID();
           const repo = process.env.PROOF_REPOSITORY;
           const result = await pool.query(
-            'INSERT INTO tasks (id, project, repository, objective, prompt, priority)
-             VALUES ($1, $2, $3, $4, $5, $6)
-             RETURNING id',
+            "INSERT INTO tasks (id, project, repository, objective, prompt, priority) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
             [
               id,
               'pdl-operational-governance-proof',
