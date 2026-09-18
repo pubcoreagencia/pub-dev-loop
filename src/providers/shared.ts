@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { URL } from 'node:url';
 
-export const DEFAULT_ROUTER_BASE_URL = 'http://localhost:20128/v1';
+export const DEFAULT_ROUTER_BASE_URL = 'http://127.0.0.1:20128/v1';
 export const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
 export function normalizeBaseUrl(value: string | undefined, fallback: string): string {
