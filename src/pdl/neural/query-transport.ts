@@ -84,6 +84,15 @@ export class HttpNeuralQueryTransport implements NeuralQueryTransport {
       };
     }
 
+    if (!this.token) {
+      return {
+        request_id: payload.request_id,
+        status: 'UNAVAILABLE',
+        results: [],
+        reason: 'PUB Neural token not configured (PUB_NEURAL_TOKEN missing)',
+      };
+    }
+
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
