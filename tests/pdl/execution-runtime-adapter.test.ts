@@ -20,7 +20,7 @@ const task = {
 const executionSpec = {
   specVersion: 'execution-spec-v1',
   lineage: {
-    taskId: task.id,
+    intakeVersion: '1.0.0',
     intakeHash: 'test-hash',
     source: 'test',
     createdAt: '2026-09-18T00:00:00.000Z',
