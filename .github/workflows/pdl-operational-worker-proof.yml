@@ -125,6 +125,37 @@ jobs:
           echo "task_id=$TASK_ID" >> "$GITHUB_OUTPUT"
           echo "Seeded task: $TASK_ID"
 
+      - name: Seed sealed ExecutionSpec
+        env:
+          TASK_ID: ${{ steps.seed.outputs.task_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { Pool } from 'pg';
+          import { createExecutionSpec, sealExecutionSpec } from './dist/execution/execution-spec-persistence.js';
+          const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+          const now = new Date().toISOString();
+          const spec = {
+            specVersion: '1.0.0',
+            objective: 'Create OPERATIONAL_GOVERNANCE_PROOF.md with the exact text PDL GOVERNANCE OPERATIONAL PROOF.',
+            context: { kind: 'UNKNOWN', reason: 'Controlled operational proof context' },
+            constraints: ['Do not modify any other file'],
+            acceptanceCriteria: ['OPERATIONAL_GOVERNANCE_PROOF.md exists with exact requested content'],
+            validationPlan: ['Verify the requested file exists and contains the exact text'],
+            executionInstructions: ['Use the existing PDL execution runtime and provider path'],
+            executionSteps: [],
+            risks: ['Controlled disposable proof workspace'],
+            escalationConditions: ['Stop on governance denial or provider failure'],
+            lineage: { intakeVersion: '1.0.0', intakeHash: 'p1-2-operational-proof', source: 'pdl-operational-worker-proof', createdAt: now },
+            metadata: { generatedAt: now, specHash: 'pending' },
+          };
+          await createExecutionSpec(pool, process.env.TASK_ID, spec);
+          const sealed = await sealExecutionSpec(pool, process.env.TASK_ID);
+          console.log(JSON.stringify({ taskId: sealed.task_id, status: sealed.status, specHash: sealed.spec_hash }));
+          await pool.end();
+          NODE
+
       - name: Start canonical PDL worker
         shell: bash
         run: |
