@@ -24,7 +24,7 @@ import {
 } from './execution/finalization-bridge.js';
 import { DefaultExecutionEngine } from './execution/default-execution-engine.js';
 import type { AgentProvider, ProviderTaskInput } from './providers/types.js';
-import { PdlGovernanceEngine, PdlExecutionGovernance, PDL_EXECUTION_GOVERNANCE_VERSION, type GovernanceCapability } from './pdl/governance/index.js';
+import { PdlGovernanceEngine, PdlExecutionGovernance, PDL_EXECUTION_GOVERNANCE_VERSION, type GovernanceCapability, type GovernanceDecision } from './pdl/governance/index.js';
 import { verifyRepositoryIdentity } from './pdl/security/repository-identity.js';
 import {
   PdlRemotePersistence,
@@ -396,8 +396,10 @@ export abstract class BaseWorker implements Worker {
     this.lastExecutedTask = task;
 
     // Gate B: Check governance before running/executing claimed task
+    let executionPolicyDecision: GovernanceDecision | undefined;
     if (this.governance) {
       const execDecision = await this.governance.evaluateExecution(task);
+      executionPolicyDecision = execDecision;
       if (!execDecision.allowed) {
         console.log(`[BaseWorker] Execution start blocked by governance (${execDecision.reasonCode}): ${execDecision.reason}`);
         this.lastExecutedTask = {
@@ -424,6 +426,7 @@ export abstract class BaseWorker implements Worker {
         action: 'TOOL_EXECUTION' as const,
         requestedCapabilities: ['WORKSPACE_READ', 'WORKSPACE_WRITE', 'COMMAND_EXECUTION'] as GovernanceCapability[],
         grantedCapabilities: ['WORKSPACE_READ', 'WORKSPACE_WRITE', 'COMMAND_EXECUTION'] as GovernanceCapability[],
+        policyDecision: executionPolicyDecision,
       };
       const authorization = await this.executionGovernance.authorize(governanceRequest);
       if (authorization.authorization !== 'ALLOW') {
@@ -532,6 +535,7 @@ export abstract class BaseWorker implements Worker {
           action: 'TOOL_EXECUTION' as const,
           requestedCapabilities: ['WORKSPACE_READ', 'WORKSPACE_WRITE', 'COMMAND_EXECUTION'] as GovernanceCapability[],
           grantedCapabilities: ['WORKSPACE_READ', 'WORKSPACE_WRITE', 'COMMAND_EXECUTION'] as GovernanceCapability[],
+          policyDecision: executionPolicyDecision,
         };
         governancePostAudit = await this.executionGovernance.recordPostExecution(governanceRequest, winningAttempt.status === 'COMPLETED' ? 'COMPLETED' : 'FAILED', { provider: winningAttempt.provider ?? 'unknown', runtimeStatus: winningAttempt.status, durationMs: winningAttempt.durationMs, toolCalls: winningAttempt.toolCalls, toolRounds: winningAttempt.toolRounds });
       }
