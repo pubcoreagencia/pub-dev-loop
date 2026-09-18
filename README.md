@@ -1,64 +1,267 @@
-# PUB DEV LOOP V0.1
 
-Cloud-first MVP for a persistent coding-task loop: HTTP API -> PostgreSQL queue -> Codex worker -> Git branch -> persisted result.
+# PUB DEV LOOP (PDL)
 
-PUB DEV LOOP's broader purpose is to let GPT plan and review a controlled engineering loop while workers implement tasks and Git preserves the audit trail. The current operational MVP is deliberately cloud-only with Codex as its sole worker; broader multi-worker ambitions remain future work.
+**PUB DEV LOOP (PDL)** is the governed engineering runtime of the PUB software house.
 
-## Run locally with Docker
+PDL is **the system**, not an AI coding agent. Its responsibility is to receive engineering work, establish execution identity and policy, execute work in isolated workspaces through a provider/gateway layer, validate and correct the result, review it, persist it remotely, emit evidence, and hand the resulting experience to PUB Neural.
 
-1. Copy `.env.example` to `.env` and keep `AGENT_MODE=mock` initially.
-2. Run `docker compose up --build`.
-3. Check `curl http://localhost:3000/health`.
+The provider/model layer is intentionally replaceable.
 
-Create a task:
+## Canonical architecture
 
-```sh
-curl -X POST http://localhost:3000/tasks -H "Content-Type: application/json" -d '{"project":"demo","repository":"https://github.com/org/repo.git","objective":"Add a health check","prompt":"Implement the requested health check."}'
-```
+~~~text
+                         PDL
+              ┌──────────────────────┐
+              │ SOFTWARE HOUSE ENGINE │
+              │                      │
+              │ intake / scheduling  │
+              │ governance            │
+              │ execution             │
+              │ validation/correction │
+              │ review                │
+              │ persistence/delivery  │
+              │ evidence / Neural     │
+              └──────────┬───────────┘
+                         │
+                         ▼
+                    OpenRouter
+                         │
+                    fallback
+                         ▼
+                      9router
+                         │
+                  provider/model pool
+~~~
 
-The worker polls the database, claims the highest-priority queued task atomically, clones its repository to a temporary directory, creates `worker/codex/TASK-ID`, runs the selected agent, and records Git metadata and the result. There is deliberately no automatic merge.
+**Canonical gateway path: PDL → OpenRouter → 9router fallback → provider/model.**
 
-## Native development
+OpenRouter and 9router are infrastructure used by PDL. The concrete model/provider is an implementation detail of the provider layer and must not redefine the PDL architecture.
 
-Install dependencies with `npm install`, set `DATABASE_URL`, run `npm run db:migrate`, then use `npm run dev` for the API and `npm run worker` in another process. `npm test` runs unit lifecycle tests; `npm run build` compiles TypeScript.
+### Hermes, Antigravity, Codex and other coding agents
 
-## API
+These are **external execution tools**, not components of PDL's architecture.
 
-- `GET /health`
-- `POST /tasks`
-- `GET /tasks`
-- `GET /tasks/:id`
-- `POST /tasks/:id/cancel` (queued/assigned only)
-- `POST /tasks/:id/retry` (failed, blocked, cancelled, needs-review)
+During PDL development, a human may use any available coding agent to modify the PDL repository. That temporary development workflow must not be confused with the final PDL runtime.
 
-Task states: `QUEUED`, `ASSIGNED`, `RUNNING`, `TESTING`, `COMPLETED`, `FAILED`, `BLOCKED`, `CANCELLED`, `NEEDS_REVIEW`.
+In particular, **Hermes is not PDL** and PDL is not architecturally coupled to Hermes.
 
-## Configuration and limitations
+The intended operating model is:
 
-`.env.example` lists all supported configuration. Never commit `.env`, tokens, or private keys. Project-specific test commands and pushing commits are intentionally not implemented in V0.1, so the result is a local branch/commit record only.
+~~~text
+Human / product intake
+        ↓
+       PDL
+        ↓
+OpenRouter → 9router fallback
+        ↓
+provider / model
+        ↓
+isolated workspace execution
+        ↓
+validate → correct → review → finalize
+        ↓
+remote persistence / delivery
+        ↓
+evidence → PUB Neural
+~~~
 
-## Real Codex Worker
+## What PDL actually is
 
-`AGENT_MODE=mock` is the safe default. To use the real worker, install the Codex CLI in the Linux worker image, authenticate it non-interactively using the credential mechanism supported by the deployed CLI, set `AGENT_MODE=codex`, and set `AGENT_TIMEOUT_MS` as appropriate. The adapter invokes the documented headless form `codex -c approval_policy=never -c sandbox_mode=workspace-write exec <prompt>` only inside the task's isolated cloned workspace.
+PDL is a **governed software-engineering execution platform** with these responsibilities:
 
-`AGENT_PROVIDER` is the new explicit provider selector. Supported values are `mock`, `codex-api`, and `9router`. `codex-api` preserves the Codex worker path, while `9router` uses an OpenAI-compatible gateway as the planning brain and keeps filesystem, shell, and Git control inside the worker runtime.
+1. **Intake and durable task state**
+   - PostgreSQL-backed task queue.
+   - Explicit task lifecycle and leases.
+   - Execution specifications with lineage and sealed identity.
 
+2. **Scheduling and worker orchestration**
+   - Continuous bounded scheduling.
+   - Correction worker / execution loop.
+   - Retry and failure classification.
+   - Reaper and durable recovery mechanisms.
 
-`AgentExecutor` starts the process without a shell, captures stdout/stderr, redacts common secret values before persistence, and kills a timed-out process. A missing CLI records `CODEX_CLI_UNAVAILABLE`; an inaccessible CLI returns structured `START_ERROR`; authentication failures are captured as failed process results. The Docker image intentionally does not claim to contain Codex: install and authenticate the official Linux CLI in the production worker image before enabling this mode. This retains Linux/container/headless compatibility and does not require any desktop UI. `AUTO_PUSH` and auto-merge are not implemented.
+3. **Governance**
+   - Fail-closed policy evaluation.
+   - Execution authorization at the runtime boundary.
+   - Capability grants for workspace read/write, command execution, Git write and remote persistence.
+   - Post-execution governance evidence.
 
-For the first cloud proof, a manual GitHub Actions Ubuntu worker runs the real isolated `hello.txt` integration test. See [GitHub Actions Worker](docs/GITHUB_ACTIONS_WORKER.md). It is experimental and does not replace the Docker/Linux worker runtime.
+4. **Execution runtime**
+   - PDL Agent Runtime Contract V1 defines identity, lifecycle, evidence and terminal-result semantics.
+   - The contract wraps the existing runtime rather than creating a second runtime.
+   - DefaultExecutionEngine remains authoritative for physical provider execution.
+   - Provider/model selection is deliberately outside the runtime contract.
 
-`Dockerfile.worker` is the Linux runtime for the Codex worker. It installs Git and the official Codex Linux installer, then runs as the non-root `codex` user. It intentionally contains no credentials. In cloud production, use the platform Secret Manager to inject the credential supported by the installed Codex CLI and set only the non-secret `CODEX_AUTH_SECRET_REF` for deployment observability. The application does not read or log that credential.
+5. **Provider/gateway abstraction**
+   - OpenRouter is the primary gateway.
+   - 9router is the fallback gateway.
+   - Provider attempts are isolated and observable.
+   - Retry, timeout, quota and fallback behavior are bounded and recorded.
+   - The runtime does not depend on a specific coding-agent brand.
 
-### Controlled real integration test
+6. **Workspace and repository safety**
+   - Temporary isolated workspaces per execution attempt.
+   - Repository identity verification.
+   - Fail-closed behavior for identity or authorization mismatches.
+   - The provider operates inside the execution boundary; it does not own PDL's host or repository governance.
 
-The real test is isolated from `npm test`: provision a disposable cloned repository and authenticated Linux container, then run `RUN_CODEX_INTEGRATION=1 CODEX_INTEGRATION_REPOSITORY=/workspace/sandbox npm test -- tests/integration/codex-hello.integration.ts`. It asks Codex to create only `hello.txt` with `PUB DEV LOOP TEST`; no push or merge occurs. The worker itself creates `worker/codex/TASK-ID`, records its diff summary, and commits successful file changes locally with the worker identity.
+7. **Validation, correction and review**
+   - Execution success is not the same thing as engineering completion.
+   - Finalization validates the produced workspace before commit.
+   - Correction loops can remediate failed validation.
+   - Code review is a distinct quality gate.
 
-## System Architecture & PP Integration
+8. **Persistence and delivery**
+   - Local Git commit is not the terminal truth.
+   - Persistence gates evaluate whether work may be delivered remotely.
+   - Remote Git persistence/delivery is governed and evidenced.
+   - Repository identity and remote state are verified.
 
-PUB DEV LOOP (PDL) and PUB PROTOTYPE (PP) operate as two completely independent repositories with physical and logical database sovereignty:
+9. **Evidence and institutional memory**
+   - Execution traces, lifecycle state, finalization, governance and persistence outcomes are persisted as evidence.
+   - PUB Neural is the downstream institutional-memory layer.
+   - Neural receives execution experience. It is not the physical execution engine.
 
-- **PUB PROTOTYPE (`PP`)**: Independent repository focused on rapid, interactive MVP prototyping, user feedback, and prompt iteration.
-- **PUB DEV LOOP (`PDL`)**: Independent repository focused on autonomous software engineering, queue management, execution specifications, and deterministic code synthesis.
-- **Integration Seam**: Explicit HTTP boundary. When a prototype is approved and promoted in PP, PP invokes PDL's `POST /tasks/ingest` endpoint over HTTP. PDL persists the task and a sealed `ExecutionSpec` in its own PostgreSQL database.
-- **Database Sovereignty**: No shared database, no cross-database foreign keys, and zero internal code imports across repository boundaries.
+## Canonical lifecycle
+
+~~~text
+Task Intake
+    ↓
+ExecutionSpec / lineage
+    ↓
+Governance claim gate
+    ↓
+Task claim
+    ↓
+Governance execution gate
+    ↓
+Execution authorization
+    ↓
+Isolated workspace
+    ↓
+Provider execution
+    ↓
+Validation
+    ↓
+Correction when required
+    ↓
+Code review
+    ↓
+Finalization / local commit
+    ↓
+Persistence gate
+    ↓
+Remote persistence / delivery
+    ↓
+Post-execution evidence
+    ↓
+PUB Neural ingestion
+    ↓
+Terminal task state
+~~~
+
+A successful provider response is therefore only one phase of the system.
+
+## Current P1.1 / P1.2 architecture
+
+### P1.1: Agent Runtime Contract
+
+PDL now has an explicit runtime contract:
+
+- PDL_AGENT_RUNTIME_CONTRACT_VERSION = pdl-agent-runtime-v1
+- RuntimeContext
+- RuntimeEvidence
+- RuntimeResult
+- AgentRuntime
+- ExecutionEngineRuntimeAdapter
+
+The contract is intentionally narrow. It establishes identity, lifecycle and evidence semantics without taking over scheduling, governance, provider selection, workspace execution, finalization or Neural.
+
+### P1.2: Execution Governance
+
+The production worker path is now bounded by PdlExecutionGovernance.
+
+The production capability set is:
+
+- WORKSPACE_READ
+- WORKSPACE_WRITE
+- COMMAND_EXECUTION
+- GIT_WRITE
+- REMOTE_PERSISTENCE
+
+The worker reuses the authoritative policy decision where available, authorizes the execution boundary, and persists post-execution governance evidence.
+
+## Hard invariants
+
+| Invariant | Rule |
+|---|---|
+| **PDL is the system** | PDL is the engineering runtime/platform. Agents and models are replaceable execution resources. |
+| **Gateway separation** | PDL talks to OpenRouter first and uses 9router as fallback. |
+| **Provider neutrality** | Runtime contracts do not hard-code a model or coding-agent brand. |
+| **Fail-closed governance** | Missing identity, authorization, capability or required execution state blocks the operation. |
+| **Workspace isolation** | Provider execution occurs inside an isolated task workspace. |
+| **Repository identity** | canonical(TASK.repository) === canonical(GIT_REMOTE.origin) must hold at the enforced gates. |
+| **Execution ≠ completion** | Provider success does not imply validation, review, persistence or delivery success. |
+| **Evidence first** | Terminal runs must leave structured evidence sufficient to reconstruct the execution. |
+| **Persistence first** | Durable Git/remote state and PostgreSQL state outrank volatile chat/session state. |
+| **Neural downstream** | PUB Neural receives institutional evidence; it is not the physical execution engine. |
+| **No fake activity** | Operational state and metrics must represent real execution evidence only. |
+| **No architectural coupling to agents** | Hermes, Antigravity, Codex, Claude Code or another tool may be used externally without becoming part of PDL's identity. |
+
+## Repository and development
+
+Repository: pubcoreagencia/pub-dev-loop
+
+Current proof branch: pdl/p1-2-operational-worker-proof
+
+Current audited checkpoint:
+
+cceea37c49fa2bef35bb8a18034854f38860bd2a
+
+Current scripts include:
+
+~~~sh
+npm run typecheck
+npm run build
+npm test
+npm run pdl:api
+npm run pdl:worker
+npm run router:start
+npm run router:health
+~~~
+
+The repository also contains the legacy Codex adapter and compatibility paths. Their presence in source code does **not** mean Codex is the architectural center of PDL. The canonical architecture is the provider/gateway abstraction described above.
+
+## PDL, PP and other PUB repositories
+
+PDL is an independent engineering system.
+
+Other PUB products and repositories are execution targets or adjacent systems, not internal implementation modules of PDL. PDL must preserve repository, workspace and product isolation while operating on those targets.
+
+PUB Neural is the institutional-memory system connected downstream through an explicit bridge.
+
+## Current strategic direction
+
+The goal is not to build a permanent collection of coding-agent subscriptions around PDL.
+
+The goal is to finish PDL as the **software-house engineering runtime**, with the model/provider layer remaining replaceable behind the PDL gateway abstraction.
+
+Once PDL is operationally closed, the normal software-house workflow becomes:
+
+~~~text
+work arrives
+   ↓
+PDL
+   ↓
+OpenRouter → 9router fallback
+   ↓
+execution
+   ↓
+validation / correction / review
+   ↓
+delivery
+   ↓
+evidence / PUB Neural
+~~~
+
+That is the system being built.

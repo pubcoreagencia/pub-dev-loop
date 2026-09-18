@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS autonomy_cycles (
   state_before JSONB NOT NULL DEFAULT '{}'::jsonb,
   identified_gaps JSONB NOT NULL DEFAULT '[]'::jsonb,
   selected_action JSONB NOT NULL DEFAULT '{}'::jsonb,
-  generated_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+  generated_task_id UUID REFERENCES tasks(id) ON DELETE SET NULL,
   execution_status TEXT CHECK (execution_status IN (
     'QUEUED',
     'RUNNING',

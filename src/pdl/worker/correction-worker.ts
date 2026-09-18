@@ -33,7 +33,7 @@ import { PdlCorrectionLoop, type CorrectionLoopResult } from '../correction/inde
 import { defaultProductCatalog, type ProductCatalog } from '../products/catalog.js';
 import { defaultRepositoryAuthorizationPolicy } from '../security/repo-authorization.js';
 import { defaultRemotePersistence, type PdlRemotePersistence } from '../persistence/remote-persistence.js';
-import { PdlGovernanceEngine, defaultGovernanceEngine } from '../governance/index.js';
+import { PdlGovernanceEngine, defaultGovernanceEngine, PDL_EXECUTION_GOVERNANCE_VERSION } from '../governance/index.js';
 import { evaluatePersistenceGate } from '../persistence/persistence-gate.js';
 import { defaultCodeReviewManager, CodeReviewManager, type CodeReviewEvaluationInput, type CodeReviewResult } from '../../office/review.js';
 import { defaultCeoConversationStore, CeoConversationStore } from '../../office/ceo-conversation-store.js';
@@ -129,6 +129,7 @@ export class PdlCorrectionWorker extends RouterWorker {
     let winningAttempt: AttemptResult | undefined;
     let branch: string | undefined;
     let heartbeat: NodeJS.Timeout | undefined;
+    let governancePostAudit: Awaited<ReturnType<NonNullable<typeof this.executionGovernance>['recordPostExecution']>> | undefined;
 
     const startHeartbeat = (id: string) => {
       heartbeat = setInterval(async () => {
@@ -194,6 +195,30 @@ export class PdlCorrectionWorker extends RouterWorker {
 
       // 2. Delegate provider attempts to inherited executeWithRetry
       winningAttempt = await this.executeWithRetry(task, task.repository, prepared);
+
+      // 2.1 P1.2 Post-execution governance audit (mirrors BaseWorker pattern)
+      if (this.executionGovernance) {
+        const governanceRequest = {
+          governanceVersion: PDL_EXECUTION_GOVERNANCE_VERSION,
+          task,
+          gate: 'EXECUTION' as const,
+          action: 'TOOL_EXECUTION' as const,
+          requestedCapabilities: ['WORKSPACE_READ', 'WORKSPACE_WRITE', 'COMMAND_EXECUTION', 'GIT_WRITE', 'REMOTE_PERSISTENCE'] as any[],
+          grantedCapabilities: ['WORKSPACE_READ', 'WORKSPACE_WRITE', 'COMMAND_EXECUTION', 'GIT_WRITE', 'REMOTE_PERSISTENCE'] as any[],
+          policyDecision: undefined,
+        };
+        governancePostAudit = await this.executionGovernance.recordPostExecution(
+          governanceRequest,
+          winningAttempt.status === 'COMPLETED' ? 'COMPLETED' : 'FAILED',
+          {
+            provider: winningAttempt.provider ?? 'unknown',
+            runtimeStatus: winningAttempt.status,
+            durationMs: winningAttempt.durationMs,
+            toolCalls: winningAttempt.toolCalls,
+            toolRounds: winningAttempt.toolRounds,
+          }
+        );
+      }
 
       if (!this.active) {
         throw new Error('Worker cancelled');
@@ -427,7 +452,6 @@ export class PdlCorrectionWorker extends RouterWorker {
             product: catalogProduct ?? (task.project || task.repository),
             branch,
             localSha: finalizeResult.commitSha,
-            targetRepository: task.repository,
             requested: !task.prototypeSessionId,
             gitToken: process.env.PDL_GITHUB_TOKEN || process.env.GITHUB_TOKEN,
           } as any);
@@ -570,6 +594,7 @@ export class PdlCorrectionWorker extends RouterWorker {
           review: reviewResult,
           persistenceGate: gateDecision,
           remotePersistence: finalizeResult.remotePersistence,
+          governance: governancePostAudit,
         },
         leaseOwner: null,
         leaseDeadline: null,

@@ -16,6 +16,8 @@ import { PdlRetryPolicy } from '../retry/index.js';
 import { PdlDeadLetterRepository } from '../dlq/index.js';
 import type { SchedulerSessionInfo } from '../scheduler/types.js';
 import type { AgentProvider } from '../../providers/types.js';
+import { PdlRemotePersistence } from '../persistence/remote-persistence.js';
+import { resolveIsolatedGitExecutorFromEnv } from '../persistence/git-transport.js';
 
 const PORT = Number(process.env.PDL_WORKER_PORT ?? 3003);
 const POLL_INTERVAL_MS = Number(process.env.PDL_WORKER_POLL_INTERVAL_MS ?? process.env.WORKER_POLL_INTERVAL_MS ?? 3000);
@@ -29,17 +31,23 @@ export function createPdlWorkerDaemon(
   const taskRepo = tasks ?? new PostgresTaskRepository(pool);
   const provider = providerOverride ?? (process.env.AGENT_PROVIDER ? createProvider(process.env.AGENT_PROVIDER) : undefined);
 
+  // If isolated git transport is configured via environment (for testing/proofs), instantiate custom PdlRemotePersistence
+  const isolatedExecutor = resolveIsolatedGitExecutorFromEnv();
+  const remotePersistence = isolatedExecutor
+    ? new PdlRemotePersistence(undefined, isolatedExecutor)
+    : undefined;
+
   if (provider) {
     if (provider.kind === 'mock' && process.env.NODE_ENV !== 'test') {
       console.error('[PDL Worker] FATAL: Real provider not configured (AGENT_PROVIDER resolves to mock). Worker cannot start.');
       process.exit(1);
     }
     const gov = governance ?? new PdlGovernanceEngine({ pool });
-    return new PdlCorrectionWorker(taskRepo, provider, 'pdl-router', undefined, pool, gov);
+    return new PdlCorrectionWorker(taskRepo, provider, 'pdl-router', undefined, pool, gov, undefined, remotePersistence);
   }
 
   if (process.env.NODE_ENV === 'test') {
-    return new CodexWorker(taskRepo, createAgent(), 'codex', pool);
+    return new CodexWorker(taskRepo, createAgent(), 'codex', pool, undefined, undefined, remotePersistence);
   }
 
   console.error('[PDL Worker] FATAL: No AGENT_PROVIDER defined. Worker cannot start without a real provider.');

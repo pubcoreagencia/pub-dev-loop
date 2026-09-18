@@ -1,0 +1,294 @@
+name: PDL Operational Worker Proof
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - pdl/p1-2-operational-worker-proof
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  operational-worker-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pubdevloop
+          POSTGRES_PASSWORD: pubdevloop
+          POSTGRES_DB: pubdevloop
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U pubdevloop -d pubdevloop"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      DATABASE_URL: postgres://pubdevloop:pubdevloop@127.0.0.1:5432/pubdevloop
+      AGENT_PROVIDER: openrouter
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      OPENROUTER_MODEL: openrouter/free
+      OPENROUTER_TIMEOUT_MS: "180000"
+      ROUTER_MAX_ATTEMPTS: "1"
+      ROUTER_TIMEOUT_TOTAL_MS: "180000"
+      ROUTER_TIMEOUT_PER_ATTEMPT_MS: "180000"
+      ROUTER_BACKOFF_MS: "1000"
+      WORKER_POLL_INTERVAL_MS: "1000"
+      WORKER_LEASE_TIMEOUT_MS: "30000"
+      WORKER_HEARTBEAT_MS: "5000"
+      PDL_WORKER_PORT: "3303"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --include=dev
+
+      - name: Configure Git identity
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@example.com"
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify provider secret
+        run: |
+          test -n "${OPENROUTER_API_KEY:-}" || {
+            echo "OPENROUTER_API_KEY GitHub secret is required for the real-provider operational proof."
+            exit 1
+          }
+
+      - name: Run database migrations
+        run: npm run db:migrate
+
+      - name: Configure controlled governance proof state
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module -e "import { Pool } from 'pg'; const p=new Pool({connectionString:process.env.DATABASE_URL}); await p.query(\"UPDATE pdl_governance_state SET active_level=3, kill_switch_active=false, allowed_products='[\\\"pub-dev-loop-template\\\"]'::jsonb, updated_at=now(), updated_by='p1-2-operational-proof', reason='Controlled P1.2 operational worker proof' WHERE id='canonical'\"); await p.end();"
+
+      - name: Create disposable local bare upstream repository and sandbox baseline
+        id: sandbox
+        shell: bash
+        run: |
+          set -euo pipefail
+          CANONICAL_URL="https://github.com/pubcoreagencia/pub-dev-loop-template.git"
+          UPSTREAM_BARE="$(mktemp -d)/upstream.git"
+
+          # Clone canonical repository as bare upstream to preserve continuous Git history
+          git clone --bare "$CANONICAL_URL" "$UPSTREAM_BARE"
+          git -C "$UPSTREAM_BARE" config user.name "PUB DEV LOOP Operational Proof"
+          git -C "$UPSTREAM_BARE" config user.email "proof@pub.dev.loop"
+
+          # Explicitly ensure bare HEAD points to refs/heads/main
+          git -C "$UPSTREAM_BARE" symbolic-ref HEAD refs/heads/main
+
+          echo "upstream_bare=$UPSTREAM_BARE" >> "$GITHUB_OUTPUT"
+          echo "canonical_url=$CANONICAL_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Seed controlled task
+        id: seed
+        env:
+          CANONICAL_URL: ${{ steps.sandbox.outputs.canonical_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TASK_ID="$(node --input-type=module <<'NODE'
+          import { Pool } from 'pg';
+          import crypto from 'node:crypto';
+          const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+          const id = crypto.randomUUID();
+          const canonicalRepo = process.env.CANONICAL_URL;
+          const result = await pool.query(
+            "INSERT INTO tasks (id, project, repository, objective, prompt, priority) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+            [
+              id,
+              'pub-dev-loop-template',
+              canonicalRepo,
+              'Create OPERATIONAL_GOVERNANCE_PROOF.md with the exact text PDL GOVERNANCE OPERATIONAL PROOF.',
+              'Create a file named OPERATIONAL_GOVERNANCE_PROOF.md containing exactly: PDL GOVERNANCE OPERATIONAL PROOF. Do not modify any other file.',
+              100
+            ],
+          );
+          console.log(result.rows[0].id);
+          await pool.end();
+          NODE
+          )"
+          echo "task_id=$TASK_ID" >> "$GITHUB_OUTPUT"
+          echo "Seeded task: $TASK_ID"
+
+      - name: Seed sealed ExecutionSpec
+        env:
+          TASK_ID: ${{ steps.seed.outputs.task_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { Pool } from 'pg';
+          import { createExecutionSpec, sealExecutionSpec } from './dist/execution/execution-spec-persistence.js';
+          const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+          const now = new Date().toISOString();
+          const spec = {
+            specVersion: '1.0.0',
+            objective: 'Create OPERATIONAL_GOVERNANCE_PROOF.md with the exact text PDL GOVERNANCE OPERATIONAL PROOF.',
+            context: { kind: 'UNKNOWN', reason: 'Controlled operational proof context' },
+            constraints: ['Do not modify any other file'],
+            acceptanceCriteria: ['OPERATIONAL_GOVERNANCE_PROOF.md exists with exact requested content'],
+            validationPlan: ['Verify the requested file exists and contains the exact text'],
+            executionInstructions: ['Use the existing PDL execution runtime and provider path'],
+            executionSteps: [{ id: 'create-proof-file', description: 'Create OPERATIONAL_GOVERNANCE_PROOF.md with the exact requested content', critical: true }],
+            risks: ['Controlled disposable proof workspace'],
+            escalationConditions: ['Stop on governance denial or provider failure'],
+            lineage: { intakeVersion: '1.0.0', intakeHash: 'p1-2-operational-proof', source: 'pdl-operational-worker-proof', createdAt: now },
+            metadata: { generatedAt: now, specHash: 'pending' },
+          };
+          await createExecutionSpec(pool, process.env.TASK_ID, spec);
+          const sealed = await sealExecutionSpec(pool, process.env.TASK_ID);
+          console.log(JSON.stringify({ taskId: sealed.task_id, status: sealed.status, specHash: sealed.spec_hash }));
+          await pool.end();
+          NODE
+
+      - name: Start canonical PDL worker
+        env:
+          PDL_GITHUB_TOKEN: "pdl_proof_ephemeral_token_safe_isolated"
+          PDL_ISOLATED_GIT_TRANSPORT: |
+            {"https://github.com/pubcoreagencia/pub-dev-loop-template.git":"${{ steps.sandbox.outputs.upstream_bare }}"}
+          PDL_GIT_TRANSPORT_AUDIT_LOG: /tmp/git-transport-audit.jsonl
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup npm run pdl:worker > worker.log 2>&1 &
+          echo $! > worker.pid
+          sleep 3
+          curl -fsS http://127.0.0.1:3303/ready
+
+      - name: Observe real worker execution
+        env:
+          TASK_ID: ${{ steps.seed.outputs.task_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TASK_SETTLED=false
+          for i in $(seq 1 120); do
+            ROW="$(node --input-type=module -e "import { Pool } from 'pg'; const p=new Pool({connectionString:process.env.DATABASE_URL}); const r=await p.query('SELECT id,status,worker,result,error,commit_sha,git_status FROM tasks WHERE id=\$1',[process.env.TASK_ID]); if (!r.rows[0]) process.exit(2); console.log(JSON.stringify(r.rows[0])); await p.end();")"
+            echo "$ROW"
+            STATUS="$(ROW="$ROW" node --input-type=module -e 'const x=JSON.parse(process.env.ROW); console.log(x.status)')"
+            if [[ "$STATUS" == "COMPLETED" || "$STATUS" == "FAILED" || "$STATUS" == "BLOCKED" || "$STATUS" == "NEEDS_REVIEW" ]]; then
+              TASK_SETTLED=true
+              break
+            fi
+            sleep 3
+          done
+
+          if [[ "$TASK_SETTLED" != "true" ]]; then
+            echo "::error::Observer timed out while task remained in non-terminal state: $STATUS"
+          fi
+
+          export FINAL_ROW="$ROW"
+          node --input-type=module <<'NODE'
+          const t = JSON.parse(process.env.FINAL_ROW);
+          console.log('FINAL_TASK=' + JSON.stringify(t, null, 2));
+          if (t.status !== 'COMPLETED') {
+            throw new Error('Operational proof task did not complete: ' + t.status + ' error=' + (t.error ?? 'null'));
+          }
+          if (!t.result || !t.result.governance) {
+            throw new Error('Missing persisted P1.2 governance evidence');
+          }
+          const g = t.result.governance;
+          if (g.event !== 'POST_EXECUTION') throw new Error('Expected POST_EXECUTION governance event, got ' + g.event);
+          if (g.executionStatus !== 'COMPLETED') throw new Error('Expected governance executionStatus COMPLETED, got ' + g.executionStatus);
+          if (g.decisionCode !== 'EXECUTION_OBSERVED') throw new Error('Expected EXECUTION_OBSERVED, got ' + g.decisionCode);
+          console.log('P1.2 GOVERNANCE OPERATIONAL PROOF: PASS');
+          NODE
+
+      - name: Verify isolated bare repository persistence and anti-leak audit
+        env:
+          UPSTREAM_BARE: ${{ steps.sandbox.outputs.upstream_bare }}
+          TASK_ID: ${{ steps.seed.outputs.task_id }}
+          AUDIT_LOG: /tmp/git-transport-audit.jsonl
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMMIT_SHA="$(node --input-type=module -e "import { Pool } from 'pg'; const p=new Pool({connectionString:process.env.DATABASE_URL}); const r=await p.query('SELECT commit_sha FROM tasks WHERE id=\$1',[process.env.TASK_ID]); console.log(r.rows[0].commit_sha); await p.end();")"
+          echo "Expected commit SHA: $COMMIT_SHA"
+
+          # 1. Verify that bare upstream received the push and contains the exact commit
+          git -C "$UPSTREAM_BARE" cat-file -e "${COMMIT_SHA}^{commit}" || {
+            echo "::error::Commit $COMMIT_SHA was not found in isolated bare repository $UPSTREAM_BARE"
+            exit 1
+          }
+          echo "Verified commit $COMMIT_SHA exists in isolated bare upstream repository."
+
+          # 2. Prove that OPERATIONAL_GOVERNANCE_PROOF.md was committed to the pushed branch
+          SHOW_OUTPUT="$(git -C "$UPSTREAM_BARE" show "${COMMIT_SHA}:OPERATIONAL_GOVERNANCE_PROOF.md")"
+          echo "OPERATIONAL_GOVERNANCE_PROOF.md content:"
+          echo "$SHOW_OUTPUT"
+          test -n "$SHOW_OUTPUT" || {
+            echo "::error::Proof file not present in commit object"
+            exit 1
+          }
+
+          # 3. Anti-leak verification on transport audit log
+          test -f "$AUDIT_LOG" || {
+            echo "::error::Audit log $AUDIT_LOG was not generated"
+            exit 1
+          }
+          echo "--- Isolated Transport Audit Log ---"
+          cat "$AUDIT_LOG"
+
+          # Verify no leaked credentials and every operation resolved to bare
+          node --input-type=module <<NODE
+          import fs from 'node:fs';
+          const content = fs.readFileSync('$AUDIT_LOG', 'utf8').trim();
+          if (!content) throw new Error('Audit log is empty');
+          const lines = content.split('\n');
+          for (const l of lines) {
+            const ev = JSON.parse(l);
+            if (ev.resolvedTarget !== '$UPSTREAM_BARE') {
+              throw new Error('Audit target mismatch: expected $UPSTREAM_BARE, got ' + ev.resolvedTarget);
+            }
+            if (ev.isLocalBare !== true) {
+              throw new Error('Audit reported non-bare target');
+            }
+            if (l.includes('ghp_') || l.includes('github_pat_') || l.includes('x-access-token')) {
+              throw new Error('Credential detected in audit log!');
+            }
+          }
+          console.log('ANTI-LEAK AUDIT: VERIFIED PASS (' + lines.length + ' remote operations intercepted safely to bare)');
+          NODE
+
+          echo "ISOLATED BARE UPSTREAM PERSISTENCE: VERIFIED PASS"
+
+      - name: Evidence summary
+        if: always()
+        env:
+          TASK_ID: ${{ steps.seed.outputs.task_id }}
+        shell: bash
+        run: |
+          echo "## PDL Operational Worker Proof" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Canonical entrypoint: \`src/pdl/worker/entry.ts\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Database: PostgreSQL 16 service container" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Provider: OpenRouter real provider path" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Task ID: $TASK_ID" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Governance boundary: P1.2 production BaseWorker integration" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Worker log" >> "$GITHUB_STEP_SUMMARY"
+          tail -n 120 worker.log || true

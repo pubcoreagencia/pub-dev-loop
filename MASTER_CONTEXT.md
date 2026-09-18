@@ -1,156 +1,551 @@
-# PUB DEV LOOP (THE OFFICE) — UNIFIED MASTER CONTEXT
-**Canonical Architectural Source of Truth & Operational Specification**
+
+# PDL — MASTER CONTEXT
+## Canonical Architectural Source of Truth
+**Repository:** pubcoreagencia/pub-dev-loop  
+**Current proof branch:** pdl/p1-2-operational-worker-proof  
+**Current audited checkpoint:** cceea37c49fa2bef35bb8a18034854f38860bd2a  
+**Last architectural update:** 2026-09-18
 
 ---
 
-## SUMÁRIO EXECUTIVO & TAXONOMIA ARQUITETURAL
+# 1. IDENTITY
 
-O **PUB DEV LOOP (PDL)** é uma plataforma unificada de engenharia de software em nuvem, governada e orientada a evidências. A arquitetura separa estritamente o **motor de execução (PDL Engine)** da **interface visual (THE OFFICE)**:
+**PUB DEV LOOP (PDL) is the governed engineering runtime of the PUB software house.**
 
-### As 5 Camadas Canônicas do Sistema:
-1. **Camada 1: PDL ENGINE Operacional (`src/pdl/`, `src/worker-service.ts`, `src/router-worker.ts`):** `[IMPLEMENTADO]`
-   - Fila durável PostgreSQL, isolamento estrito de workspace, `TaskFinalizer` com validação de typecheck/build/testes, `FinalizationBridge` e **Invariante de Identidade de Repositório** (`canonical(TASK.repository) === canonical(GIT_REMOTE.origin)`).
-   - Fases 5.5 Steps 1 a 4 ativas (Governança, Scheduler Contínuo Limitado, Retry Bounded / DLQ durável, Reaper Periódico).
-2. **Camada 2: Provider / Gateway Runtime (`src/providers/`):** `[IMPLEMENTADO]`
-   - Dual Gateway (`openrouter` primário, `9router` fallback), política **FREE MODELS ONLY** estrita (custo zero absoluto), circuit breaker (`ModelHealthTracker`), quota handling e proteção contra fallback com execução parcial.
-3. **Camada 3: Autonomia & Governança Executiva:** `[IMPLEMENTADO / BLOQUEADO]`
-   - Governança de Portões (Níveis 0 a 4, Fail-Closed, Kill Switch, Product Catalog): `[IMPLEMENTADO]`
-   - Autonomy Loop Bounded (`Mission`, `analyzeGaps`, `selectNextBestAction`): `[IMPLEMENTADO]`
-   - Campaign Orchestration (Phase 5.5 Step 5): `[NÃO IMPLEMENTADO / BLOQUEADO]`
-   - Autonomia Irrestrita 24/7 (Phase 5.5 Step 6 / Loops em Cloudflare Cron): `[BLOQUEADO / DESMANTELADO]`
-4. **Camada 4: THE OFFICE — Interface & Visualização (`frontend/`):** `[PARCIAL / PROTÓTIPO]`
-   - Escritório virtual 3D (Three.js/React), mesas dos agentes, presença do CEO e painéis operacionais. Atua estritamente como cliente de visualização/monitoramento humano, sem poder de mutação autônoma no backend.
-5. **Camada 5: Memória & Aprendizagem Institucional (`src/office/`):** `[PARCIAL / PLANEJADO]`
-   - Detecção de Padrões, Validação de Lições e Feedback de Resultados: `[PARCIAL]` (módulos e testes unitários implementados, sem injeção automática mandatória em cada ciclo do worker daemon).
-   - Daily Skill Learning (`SkillRecord`): `[PLANEJADO]`
-   - The Living Workplace & Turntable (som/música compartilhada): `[PLANEJADO]`
+PDL is not a coding agent, not a model, and not a subscription to an agent product.
+
+PDL is the system that controls the engineering lifecycle:
+
+**intake → identity → governance → execution → validation → correction → review → finalization → persistence/delivery → evidence → institutional memory**
+
+The model/provider layer is replaceable.
+
+The permanent architectural center is PDL.
 
 ---
 
-# PARTE I — A FUNDAÇÃO & O QUE ERA A IDEIA (THE CORE ENGINE)
+# 2. THE MOST IMPORTANT ARCHITECTURAL DISTINCTION
 
-## 1. Identidade, Filosofia e Escopo Original
-O PUB DEV LOOP nasceu com uma premissa inegociável: **Engenharia de software automatizada, auditável, reproduzível e puramente em nuvem (Cloud-First & Cloud-Only)**.
-Máquinas locais de desenvolvimento são apenas clientes de visualização; o cérebro operacional e o runtime de execução vivem na nuvem.
+## PDL is the system
 
-### O Ciclo Puro da Engine:
-$$\text{Task API} \longrightarrow \text{PostgreSQL Queue} \longrightarrow \text{Isolated Worker} \longrightarrow \text{Provider (LLM)} \longrightarrow \text{Workspace} \longrightarrow \text{Automated Tests} \longrightarrow \text{Git Commit} \longrightarrow \text{Result Persistence}$$
+Hermes, Antigravity, Codex, Claude Code and other coding agents are external execution tools.
 
-## 2. Invariantes Fundamentais da Engine
-1. **Soberania do Worker sobre o Workspace:** O Worker é o proprietário absoluto do workspace temporário, da execução de processos no sistema operacional, do Git e da finalização da tarefa. O modelo/provedor de IA é apenas uma fonte de sugestão de código e *jamais* possui acesso direto ao host ou controle do repositório.
-2. **Persistence-First Continuity Protocol:** Sessões de chat, contextos de IA e máquinas locais são voláteis. O **Git** e o **PostgreSQL** são as únicas fontes duráveis de verdade. Qualquer evolução do projeto deve ser materializada no repositório.
-   $$\text{READ CONTEXT} \longrightarrow \text{IMPLEMENT} \longrightarrow \text{VALIDATE} \longrightarrow \text{UPDATE CONTEXT} \longrightarrow \text{COMMIT} \longrightarrow \text{PUSH/PR} \longrightarrow \text{VERIFY PERSISTENCE}$$
-3. **Segurança & Gestão de Segredos:** Segredos (chaves de API, tokens de autenticação) são injetados exclusivamente em tempo de execução via variáveis de ambiente/Secret Managers. Nunca são gravados em arquivos commitados, logs de execução ou resultados de tarefas.
-4. **Proibição Absoluta de Fake Activity:** O sistema jamais deve gerar simulações artificiais de progresso, trabalho falso ou diálogos fictícios. O estado visual e as métricas refletem exclusivamente execuções e dados empíricos reais.
-5. **Hard Repository Identity Invariant:** `canonical(TASK.repository) === canonical(GIT_REMOTE.origin)` verificado compulsoriamente pelo `RepositoryIdentityVerifier` no Gate 1 (pós-checkout) e Gate 2 (pré-execução do agente). Qualquer divergência aborta imediatamente a tarefa em *fail-closed*.
+They may be used by humans while developing PDL, but they are not architectural components of PDL.
 
-## 3. Arquitetura de Execução e Resiliência `[IMPLEMENTADO]`
-* **Dual Gateway Resiliente:** Roteamento de modelos com fallback automático entre gateways (`PRIMARY_GATEWAY = "openrouter"`, `FALLBACK_GATEWAY = "9router"`), gerenciamento de cotas (HTTP 429) e timeout global (`ROUTER_TIMEOUT_TOTAL_MS`).
-* **Ciclos de Worker Serializados (ADR-001):** Execução agendada sequencialmente para evitar condições de corrida em workers concorrentes.
-* **Sanitização de Estado (ADR-002):** Proibição estrita de valores `undefined` em queries do PostgreSQL para garantir persistência determinística de falhas e sucessos.
-* **Task Finalizer (`src/finalizer.ts`):** Validação automática de syntax/typecheck/build/testes antes de comitar qualquer alteração local no branch do Git.
-* **Hardening de Produção Phase 5.5:** Governança Níveis 0-4 (`src/pdl/governance/`), Continuous Scheduler Bounded (`src/pdl/scheduler/`), Bounded Retry / DLQ durável (`src/pdl/retry/`, `src/pdl/dlq/`) e Periodic Reaper (`src/pdl/reaper/`).
+**Hermes is not PDL.**
+
+A temporary workflow such as:
+
+~~~text
+Human → Hermes → OpenRouter / 9router → code
+~~~
+
+describes how PDL itself may currently be developed.
+
+It does not describe the target architecture of the software house.
 
 ---
 
-# PARTE II — A CAMADA THE OFFICE (INTERFACE ESPACIAL & PROTÓTIPO)
+# 3. CANONICAL PDL ARCHITECTURE
 
-## 4. THE OFFICE — A Interface Espacial do Escritório Virtual `[PARCIAL / INTERFACE VISUAL]`
-O PUB DEV LOOP possui em seu frontend uma metáfora organizacional interativa denominada **THE OFFICE** (`frontend/`), onde o CEO visualiza a equipe de 5 funcionários virtuais canônicos.
+~~~text
+                         PDL
+              ┌──────────────────────┐
+              │ SOFTWARE HOUSE ENGINE │
+              │                      │
+              │ intake / scheduling  │
+              │ governance            │
+              │ execution             │
+              │ validation/correction │
+              │ review                │
+              │ persistence/delivery  │
+              │ evidence / Neural     │
+              └──────────┬───────────┘
+                         │
+                         ▼
+                    OpenRouter
+                         │
+                    fallback
+                         ▼
+                      9router
+                         │
+                  provider/model pool
+~~~
 
-### Os 5 Papéis Canônicos:
-1. **Chief of Staff (CoS) — `chief-of-staff`:** Braço direito do CEO. Desdobra objetivos estratégicos em planos organizacionais estruturados, coordena handoffs e acompanha a execução global.
-2. **Arquiteto de Software (Architect) — `architect`:** Responsável pelo design de alto nível, contratos de API, isolamento de dependências, integridade de arquitetura e mitigação de débitos técnicos.
-3. **Desenvolvedor Full-Stack (Developer) — `developer`:** Implementador das soluções, refatorações, criação de endpoints e código de aplicação dentro de workspaces isolados.
-4. **Revisor de Código (Reviewer) — `reviewer`:** Guardião estrito de qualidade e segurança. Aplica guardrails rigorosos de review, aponta violações de regras e impõe o limite inegociável de **`MAX_REVIEW_ITERATIONS = 3`**.
-5. **Engenheiro de QA (QA Engineer) — `qa-engineer`:** Validador empírico de testes unitários, testes de regressão, suites E2E e confirmação de remediações comprovadas.
+### Canonical gateway rule
 
-## 5. Soberania do CEO & Contratos de Decisão Governada `[IMPLEMENTADO / CONTRATOS TIPADOS]`
-* **Soberania do CEO:** O CEO humano é o árbitro supremo. Decisões de arquitetura crítica, aprovação de desvios de segurança e promoção para produção exigem autorização explícita do CEO.
-* **Decision Context Engine (`src/office/decision-context.ts`):** Estrutura o raciocínio operacional dos agentes em contratos estritamente tipados:
-  $$\text{OBJETIVO} \longrightarrow \text{RESPONSABILIDADE} \longrightarrow \text{EVIDÊNCIA} \longrightarrow \text{RESTRIÇÕES} \longrightarrow \text{OPÇÕES} \longrightarrow \text{RECOMENDAÇÃO} \longrightarrow \text{PRÓXIMO PASSO} \longrightarrow \text{GOVERNANCE CHECK}$$
-* **Governed Context Assembly (`src/office/context-assembly.ts`):** Hierarquia estrita de autoridade na montagem de prompts:
-  $$\text{EVIDÊNCIA DO RUNTIME ATUAL} > \text{LIÇÕES INSTITUCIONAIS VALIDADAS} > \text{MEMÓRIA ORGANIZACIONAL HISTÓRICA}$$
+**PDL → OpenRouter → 9router fallback → provider/model**
 
-## 6. Memória Organizacional e Governança `[PARCIAL / LÓGICA TIPADA]`
-* **Tipos de Memória:** `DECISION`, `REVIEW_FINDING`, `TASK_RESULT`, `LESSON`, `PROJECT_CONTEXT`, `AGENT_CONTEXT`, `PLAN`.
-* **Motor de Governança (`src/office/memory-governance.ts`):** Transições de ciclo de vida (`ACTIVE`, `SUPERSEDED`, `BLOCKED`), desduplicação determinística, cálculo de qualidade e quarentena para memórias contraditórias (`CONTRADICTORY_UNRESOLVED`).
+OpenRouter and 9router are the gateway/infrastructure layer used by PDL.
 
-## 7. Pipeline de Aprendizagem Institucional `[PARCIAL / HEURÍSTICA TIPADA]`
-O THE OFFICE aprende com o trabalho real através de uma esteira determinística de promoção sem dependência de LLM ou bancos vetoriais:
-$$\text{Evento Real} \longrightarrow \text{Memória} \longrightarrow \text{Padrão SHA-256} \longrightarrow \text{Candidato a Lição} \longrightarrow \text{Validação pelo CEO} \longrightarrow \text{Lição Institucional} \longrightarrow \text{Recuperação por Papel}$$
-* **Detecção de Padrões (`src/office/pattern-detection.ts`):** Identifica recorrências corroboradas por $\ge 3$ tarefas independentes.
-* **Validação Governada (`src/office/lesson-validation.ts`):** Aplica a Matriz de Governança, exigindo aprovação do CEO para diretrizes estratégicas e de segurança.
-* **Recuperação de Lições (`src/office/lesson-retrieval.ts`):** Injeta heurísticas governadas no contexto de decisão de forma consultiva e subordinada à evidência atual.
+The concrete model or provider is not the identity of PDL.
 
-## 8. Feedback Loop, Inteligência e Consciência Organizacional `[PARCIAL / HEURÍSTICA TIPADA]`
-* **Learning Feedback Loop (`src/office/learning-feedback.ts`):** Deriva sinais estruturados a partir dos resultados reais de tarefas, revisões e testes.
-* **Organizational Intelligence (`src/office/organizational-intelligence.ts`):** Motor diagnóstica que computa métricas de entrega, qualidade, riscos operacionais, tendências temporais e gargalos.
-* **Organizational Awareness (`src/office/organizational-awareness.ts`):** O THE OFFICE enxerga o pulso da organização em tempo real (`GET /office/awareness`, pulso no `OfficeHeader.tsx`, `AwarenessPanel.tsx`).
-  * *Invariante Central:* As recomendações são estritamente consultivas (`requiresHumanDecision: true`) e os gargalos refletem fluxos de processos sem linguagem punitiva a funcionários.
-
-## 9. Padrão de Interface & Idioma (Office First / pt-BR First) `[CONTRATO DE DESIGN]`
-* Toda a interface visível do THE OFFICE é padronizada em **Português do Brasil (pt-BR)**.
-* A interface primária é o **OfficeFloorMap 3D** (espaço físico, mesas dos agentes, presença do CEO e chat global de comando). Painéis operacionais abrem em overlays/modais discretos para nunca transformar o produto em um dashboard tradicional.
+The PDL runtime must remain provider-neutral.
 
 ---
 
-# PARTE III — O QUE PRECISA SE TORNAR (THE AUTONOMOUS HORIZON & ROADMAP)
+# 4. PDL RESPONSIBILITIES
 
-## 10. Phase 8.7 — Daily Skill Learning & Organizational Compounding `[PLANEJADO]`
-Transformação de lições institucionais validadas em **Skills Reutilizáveis Tipadas** (`SkillRecord`):
-* **Catálogo de Skills (`src/office/skills.ts`):** `name`, `description`, `capability`, `sourceExperiences`, `confidence`, `version`, `applicableContexts`, `limitations`.
-* **Compounding Organizacional:** Agentes consultam e executam skills consolidadas para acelerar rotinas de scaffolding, validação, remediação de bugs comuns e arquitetura.
+## 4.1 Intake and durable state
 
-## 11. Phase 8.8 — Governed Autonomous Execution & Adaptive Task Flow `[PLANEJADO / SUJEITO À AUTORIZAÇÃO DE MATHEUS]`
-* Capacidade do Chief of Staff de orquestrar pipelines de tarefas multi-etapas com delegação automática para especialistas e checkpoints de aprovação do CEO em pontos críticos.
-* Resolução adaptativa de gargalos com base nos sinais da inteligência organizacional, mantendo a soberania humana intacta (Regra 8 de `AGENTS.md`).
+PDL owns the engineering task lifecycle.
 
-## 12. Phase 8.9 — Ecossistema Multi-Projeto & Colaboração Global `[PLANEJADO / RESTRINGIDO POR PRODUCT ISOLATION]`
-* Suporte à alternância dinâmica de contexto de projetos, com isolamento estrito de workspaces e sem mutação cruzada entre repositórios (Hard Repository Identity Invariant).
+Current foundation includes:
 
-## 13. Phase 9.0 — The Living Workplace & Turntable `[PLANEJADO]`
-* **Toca-Discos do Escritório (The Office Turntable):** Sistema virtual de som compartilhado no escritório onde o CEO faz upload e reproduz trilhas musicais para o ambiente, com reações ambientais leves e não-bloqueantes dos agentes.
-* **Colaboração Espacial Avançada:** Animações e movimentações físicas autênticas quando houver handoffs de tarefas e reuniões estratégicas entre funcionários.
+- PostgreSQL-backed task queue.
+- Durable task state.
+- Task claiming and leases.
+- Explicit lifecycle states.
+- ExecutionSpec persistence.
+- ExecutionSpec lineage and sealed execution identity.
+
+A task is not merely a prompt. It is a governed unit of work with identity, repository, execution specification and terminal evidence.
 
 ---
 
-# PARTE IV — MATRIZ DE REGRAS E INVARIANTES ABSOLUTOS
+## 4.2 Scheduling and worker orchestration
 
-| Invariante / Regra | Definição Canônica |
+PDL contains the worker/scheduler layer responsible for moving durable tasks through execution.
+
+Current architectural pieces include:
+
+- continuous bounded scheduling;
+- correction worker;
+- retry/failure handling;
+- lease heartbeat;
+- reaper/recovery;
+- terminal task persistence.
+
+The scheduler is bounded by governance and execution policy.
+
+---
+
+## 4.3 Governance
+
+Governance is a PDL runtime boundary, not an optional UI feature.
+
+Current components include:
+
+- PdlGovernanceEngine;
+- PdlExecutionGovernance;
+- policy decisions;
+- fail-closed authorization;
+- capability grants;
+- kill-switch/policy controls;
+- post-execution governance evidence.
+
+### Production execution capabilities
+
+The production worker path explicitly authorizes:
+
+- WORKSPACE_READ
+- WORKSPACE_WRITE
+- COMMAND_EXECUTION
+- GIT_WRITE
+- REMOTE_PERSISTENCE
+
+The worker reuses an authoritative policy decision when available instead of evaluating the same policy redundantly.
+
+Execution authorization happens before actual execution.
+
+Post-execution governance evidence is persisted.
+
+---
+
+# 5. PDL AGENT RUNTIME CONTRACT V1
+
+P1.1 made the existing runtime boundary explicit.
+
+This did **not** create a second execution runtime.
+
+The contract exists to stabilize the boundary between task identity, lifecycle, evidence and the physical execution engine.
+
+## Contract
+
+- PDL_AGENT_RUNTIME_CONTRACT_VERSION = pdl-agent-runtime-v1
+- RuntimeContext
+- RuntimeEvidence
+- RuntimeResult
+- AgentRuntime
+- ExecutionEngineRuntimeAdapter
+
+## Contract invariants
+
+1. Single runtime. The contract wraps the existing execution path.
+2. Fail closed. Missing execution identity or required authorization blocks execution.
+3. Provider neutrality. The contract does not select a model/provider.
+4. Workspace authority. Physical execution remains owned by the existing execution boundary.
+5. Evidence is first-class.
+6. Finalization remains separate from provider execution.
+7. PUB Neural remains downstream memory, not physical execution.
+8. External agent-runtime designs are references only. PDL-native contracts are authoritative.
+
+## Existing mapping
+
+| Contract concept | PDL implementation |
 |---|---|
-| **Office First** | O escritório virtual espacial e a colaboração entre funcionários é a experiência central do produto, nunca um dashboard BI tradicional. |
-| **Soberania do CEO** | Nenhuma ação autônoma pode aprovar produção, alterar regras de segurança ou ignorar o limite de `MAX_REVIEW_ITERATIONS = 3` sem aprovação do CEO. |
-| **Precedência da Verdade** | $\text{RUNTIME ATUAL} > \text{EXECUÇÃO REAL} > \text{REVIEW REAL} > \text{QA REAL} > \text{FEEDBACK} > \text{PADRÕES} > \text{LIÇÕES} > \text{MEMÓRIA HISTÓRICA}$ |
-| **Isolamento de Tenant & Projeto** | Nenhuma informação, memória, inteligência ou skill de um Tenant/Projeto pode vazar para outro. |
-| **Zero Fake Activity** | Proibição absoluta de animações falsas, conversas fabricadas ou métricas fictícias. Apenas dados empíricos reais. |
-| **Decisão Humana em Recomendações** | Todas as recomendações geradas por inteligência organizacional possuem `requiresHumanDecision: true`. |
-| **pt-BR First** | Todos os textos visíveis ao usuário no THE OFFICE são em Português do Brasil. |
-| **Persistence-First** | O Git e o PostgreSQL são a única fonte durável de verdade da engenharia. |
-
-
----
-
-## 5. Configurações de Autonomia e Governança Operacional
-- **Modo de Governança Vigente:** Fail-Closed / Nível 0 (Manual) e Nível 1 (Tarefa Única Autorizada por MATHEUS)
-- **Cloudflare Cron:** Desativado (`"crons": []` em `wrangler.jsonc`)
-- **Invariante de Identidade de Repositório:** Ativo (`canonical(TASK.repository) === canonical(GIT_REMOTE.origin)`)
-- **Mutação Multi-Repo:** Bloqueada e estruturalmente desmantelada (CEO Recovery Protocol)
+| Execution Inbox | PostgreSQL task queue + scheduler |
+| Agent Loop | PdlContinuousScheduler + PdlCorrectionWorker |
+| Governance | PdlGovernanceEngine |
+| Execution Engine | DefaultExecutionEngine |
+| Provider | AgentProvider / RouterProvider / OpenRouterProvider |
+| Workspace runtime | RouterWorker attempt workspace + sandbox/executor |
+| Validation | finalization + validation commands |
+| Correction | PdlCorrectionLoop |
+| Review | CodeReviewManager |
+| Persistence | persistence gate + remote persistence |
+| Evidence | task result, trace, finalization and lifecycle evidence |
+| Institutional handoff | PubNeuralBridge |
 
 ---
 
-## 6. Alinhamento Canônico do Ecossistema de Repositórios GitHub
+# 6. PROVIDER AND GATEWAY LAYER
 
-| Projeto / Repositório | Papel Canônico no Ecossistema | Classificação |
-| :--- | :--- | :--- |
-| **`pubcore`** | **PUB Core [SISTEMA]** — Plataforma e sistema web principal da PUB Core Holding (Vite + Supabase + Cloudflare). | Sistema / Aplicação Web |
-| **`pub-core-holding-portal`** | **PUB Core [LANDING PAGE]** — Portal institucional e comercial oficial da PUB Core Holding (Next.js + Tailwind). | Landing Page / Vitrine |
-| **`pub-core-os`** | **PUB Core OS [SISTEMA OPERACIONAL]** — Núcleo de governança institucional e sistema operacional unificador da holding. | Sistema Operacional / Governança |
-| **`pub-records`** | **PUB Records & Beats** — Gravadora oficial com plataforma `beats/` integrada (unificação de `PUB-BEATS`). | Gravadora & Música |
-| **`xp-audio-lab`** | **XP Audio Lab** — Estúdio oficial de produção de trilhas sonoras, sound design e engenharia acústica da PUB. | Produção Sonora & Soundtracks |
-| **`buzios-de-cima`** | **Búzios de Cima Drone** — Captação aérea, mapeamento e mídia audiovisual com drones em Armação dos Búzios. | Audiovisual & Drone |
-| **`eternize-seu-pinscher`** | **Eternize Seu Pinscher** — Marca oficial de eternização afetiva de animais em impressão 3D e memorabilia. | E-commerce / Impressão 3D |
-| **`pubet`** | **PUBET** — Setor oficial de entretenimento, apostas reguladas e iGaming da PUB Holding. | iGaming & Apostas |
-| **`pub-ecom`** | **PUB E-Commerce Monorepo** — Hub consolidado de e-commerce da holding reunindo Core, Hub Web App (`apps/hub`), Catalog Worker (`apps/catalog-worker`) e Landing Page (`apps/landing`). | Monorepo E-commerce |
-| **`pub-leads`** | **publeads** — Pipeline de prospecção, inteligência comercial e CRM unificado B2B. | CRM & Prospecção |
-| **`pub-dev-loop`** | **PUB DEV LOOP** — Motor de engenharia de software governado, com portões determinísticos de finalização e interface visual THE OFFICE. | Engine / Governança |
+The provider layer is below PDL, not above it.
+
+## Primary route
+
+**OpenRouter**
+
+## Fallback route
+
+**9router**
+
+The system records gateway/provider/model information in execution traces.
+
+Provider failure handling is bounded.
+
+Relevant execution controls include:
+
+- per-attempt timeout;
+- global timeout;
+- retryable status classification;
+- HTTP 429 handling;
+- HTTP 5xx handling;
+- connection/timeout retry;
+- fallback chain evidence;
+- attempt workspace isolation;
+- winner-attempt preservation.
+
+The architecture must never be rewritten around whichever provider happens to be available today.
+
+---
+
+# 7. WORKSPACE AND REPOSITORY AUTHORITY
+
+Physical repository manipulation belongs to the PDL execution boundary.
+
+A provider/model produces execution behavior inside a controlled workspace. It does not become the owner of PDL's governance model.
+
+## Repository identity invariant
+
+~~~text
+canonical(TASK.repository) === canonical(GIT_REMOTE.origin)
+~~~
+
+Repository identity is checked at enforced gates.
+
+Mismatch is fail-closed.
+
+## Workspace invariant
+
+Each provider attempt receives an isolated workspace.
+
+Baseline state is captured before execution.
+
+Changed files are attributed to the execution attempt.
+
+Failed attempts are cleaned up.
+
+The winning attempt is the one passed downstream to finalization.
+
+---
+
+# 8. EXECUTION IS NOT COMPLETION
+
+A provider returning success is not equivalent to a completed engineering task.
+
+The PDL lifecycle is:
+
+~~~text
+Task Intake
+   ↓
+ExecutionSpec / lineage
+   ↓
+Governance claim gate
+   ↓
+Task claim
+   ↓
+Governance execution gate
+   ↓
+Execution authorization
+   ↓
+Isolated workspace
+   ↓
+Provider execution
+   ↓
+Validation
+   ↓
+Correction
+   ↓
+Review
+   ↓
+Finalization / local commit
+   ↓
+Persistence gate
+   ↓
+Remote persistence / delivery
+   ↓
+Post-execution governance evidence
+   ↓
+PUB Neural
+   ↓
+Terminal task state
+~~~
+
+This distinction is fundamental.
+
+---
+
+# 9. VALIDATION, CORRECTION AND REVIEW
+
+PDL treats implementation, validation and acceptance as separate phases.
+
+## Validation
+
+Finalization evaluates the resulting workspace using the configured validation/test path.
+
+## Correction
+
+Failed validation can enter the correction loop rather than being falsely marked complete.
+
+## Review
+
+CodeReviewManager is a separate quality boundary.
+
+Review is not merely a provider response and is not equivalent to validation.
+
+---
+
+# 10. FINALIZATION AND PERSISTENCE
+
+Finalization is responsible for turning a valid workspace state into a durable local engineering result.
+
+Persistence is a separate concern.
+
+Current architecture includes:
+
+- TaskFinalizer;
+- FinalizationBridge;
+- persistence gate;
+- PdlRemotePersistence;
+- Git transport;
+- RemoteDeliveryGate;
+- GitHub client integration;
+- remote verification.
+
+A local commit is not enough to claim remote delivery.
+
+Remote state must be evaluated and evidenced.
+
+---
+
+# 11. EVIDENCE
+
+PDL is evidence-driven.
+
+The runtime persists structured information about:
+
+- task identity;
+- provider/model;
+- gateway;
+- attempt sequence;
+- fallback chain;
+- timing;
+- tool calls/rounds;
+- changed files;
+- validation/finalization result;
+- commit;
+- persistence;
+- delivery;
+- governance;
+- terminal outcome.
+
+Evidence exists so that a run can be reconstructed without relying on a volatile chat session.
+
+---
+
+# 12. PUB NEURAL
+
+PUB Neural is the institutional-memory layer of the PUB ecosystem.
+
+PDL emits completed-task experience to PUB Neural through an explicit bridge.
+
+The architectural relationship is:
+
+~~~text
+PDL execution
+     ↓
+real evidence
+     ↓
+PUB Neural
+     ↓
+institutional memory / retrieval / learning
+~~~
+
+PUB Neural is downstream.
+
+It does not replace the PDL execution engine.
+
+It does not become the worker.
+
+It does not own the physical workspace.
+
+---
+
+# 13. PDL AND THE OTHER PUB REPOSITORIES
+
+PDL is an independent system.
+
+Product repositories are execution targets or adjacent systems.
+
+PDL must preserve:
+
+- repository isolation;
+- workspace isolation;
+- product isolation;
+- explicit execution identity;
+- governed remote persistence.
+
+PDL is not implemented by importing another PUB product into its runtime.
+
+---
+
+# 14. THE OFFICE
+
+THE OFFICE / frontend is a visualization and human-observability surface around PDL functionality.
+
+It is not the architectural center of PDL.
+
+It must not be used as evidence that the underlying runtime depends on a fixed fictional team of agents.
+
+The backend execution runtime remains authoritative.
+
+If the visual layer shows agents, roles or activity, those representations must correspond to actual runtime state and evidence.
+
+No fake activity is permitted.
+
+---
+
+# 15. GOVERNANCE AND HUMAN AUTHORITY
+
+PDL is governed.
+
+Human authority remains above autonomous execution for actions that the governance policy marks as requiring authorization.
+
+The system must not silently bypass:
+
+- security policy;
+- repository identity;
+- capability authorization;
+- persistence policy;
+- delivery gates;
+- explicit human approval requirements.
+
+Fail-closed is preferred to ambiguous execution.
+
+---
+
+# 16. ABSOLUTE INVARIANTS
+
+| Invariant | Canonical rule |
+|---|---|
+| PDL identity | PDL is the software-house engineering runtime. |
+| Gateway | OpenRouter is primary; 9router is fallback. |
+| Provider neutrality | Models and agent brands are replaceable resources. |
+| Hermes separation | Hermes is an external coding agent, not a PDL component. |
+| Governance | Execution is authorized before physical execution. |
+| Fail-closed | Missing identity, policy or capability blocks execution. |
+| Workspace | Every provider attempt runs in an isolated workspace. |
+| Repository identity | Task repository must match the workspace Git origin at enforced gates. |
+| Validation | Provider success is not validation success. |
+| Completion | Validation, review, finalization and persistence are distinct states. |
+| Persistence | Local state and remote state are explicitly separated. |
+| Evidence | Terminal execution must be reconstructable from persisted evidence. |
+| Neural | PUB Neural is downstream institutional memory. |
+| Isolation | Product repositories do not become internal PDL modules. |
+| No fake activity | UI and metrics represent real runtime evidence only. |
+
+---
+
+# 17. CURRENT IMPLEMENTATION CHECKPOINT
+
+Current branch:
+
+**pdl/p1-2-operational-worker-proof**
+
+Current audited HEAD:
+
+**cceea37c49fa2bef35bb8a18034854f38860bd2a**
+
+Recent architectural milestones:
+
+1. P1.1 introduced the PDL Agent Runtime Contract.
+2. P1.1-B adapted the existing ExecutionEngine into that contract.
+3. P1.2 introduced the execution governance contract.
+4. P1.2 wired governance into the production worker path.
+5. P1.2 added the production proof that execution is authorized and post-execution governance evidence is persisted.
+
+The current codebase therefore represents PDL as a governed engineering runtime, not as a Codex-specific worker product.
+
+---
+
+# 18. LEGACY / HISTORICAL DOCUMENTATION RULE
+
+Older documentation may refer to:
+
+- Codex as the primary worker;
+- THE OFFICE as a multi-agent organization;
+- cloud-first MVP terminology;
+- older autonomy phases;
+- historical provider choices.
+
+Those descriptions are historical unless they match the current runtime implementation.
+
+The canonical architecture in this document takes precedence over obsolete descriptions.
+
+A legacy adapter remaining in source code does not redefine the architecture.
+
+---
+
+# 19. OPERATING PRINCIPLE
+
+The final operating model is intentionally simple at the top:
+
+~~~text
+WORK ARRIVES
+     ↓
+    PDL
+     ↓
+OpenRouter
+     ↓
+9router fallback
+     ↓
+provider/model
+     ↓
+controlled execution
+     ↓
+validate → correct → review
+     ↓
+finalize → persist → deliver
+     ↓
+evidence
+     ↓
+PUB Neural
+~~~
+
+The complexity belongs inside PDL.
+
+The user should not need to manually orchestrate coding agents forever.
+
+The strategic objective is for **PDL itself to become the operating system of the PUB software house**.

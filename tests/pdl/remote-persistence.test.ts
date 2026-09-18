@@ -356,4 +356,55 @@ describe('PDL Remote Product Finalization Layer (PdlRemotePersistence)', () => {
     expect(result.errorCode).toBe('PERSISTENCE_INELIGIBLE');
     expect(mockExecutor).not.toHaveBeenCalled();
   });
+
+  // L. clone source diferente de persistence target não gera REPOSITORY_MISMATCH quando targetRepository não é contaminado
+  it('L: clone source local/sandbox != persistence target não gera REPOSITORY_MISMATCH quando resolvido pelo catálogo', async () => {
+    mockExecutor.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git' && args[0] === 'rev-parse' && args[1] === '--is-inside-work-tree') return 'true';
+      if (cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return localSha;
+      if (cmd === 'git' && args[0] === 'remote' && args[1] === 'get-url') return 'https://github.com/pubcoreagencia/pub-rate-calculator.git';
+      if (cmd === 'git' && args[0] === 'ls-remote') return `${localSha}\trefs/heads/feat/clean-target\n`;
+      if (cmd === 'git' && args[0] === 'push') return '';
+      return '';
+    });
+
+    // Worker invokes persistence without contaminated targetRepository: task.repository
+    const result = await persistence.persist({
+      workspace: dummyWorkspace,
+      product: 'pub-rate-calculator',
+      branch: 'feat/clean-target',
+      localSha,
+      gitToken: dummyToken,
+    });
+
+    expect(result.status).toBe('VERIFIED');
+    expect(result.repository).toBe('https://github.com/pubcoreagencia/pub-rate-calculator.git');
+    expect(result.remoteSha).toBe(localSha);
+    expect(result.errorCode).toBeUndefined();
+  });
+
+  // M. workspace com origin não canônico continua gerando WORKSPACE_ORIGIN_MISMATCH (Fail-Closed)
+  it('M: workspace com origin não canônico continua gerando WORKSPACE_ORIGIN_MISMATCH', async () => {
+    mockExecutor.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'git' && args[0] === 'rev-parse' && args[1] === '--is-inside-work-tree') return 'true';
+      if (cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return localSha;
+      // Workspace origin points to unexpected/tampered URL
+      if (cmd === 'git' && args[0] === 'remote' && args[1] === 'get-url') return 'https://github.com/attacker/malicious-repo.git';
+      return '';
+    });
+
+    const result = await persistence.persist({
+      workspace: dummyWorkspace,
+      product: 'pub-rate-calculator',
+      branch: 'feat/tampered-origin',
+      localSha,
+      gitToken: dummyToken,
+    });
+
+    expect(result.status).toBe('FAILED');
+    expect(result.pushAttempted).toBe(false);
+    expect(result.pushSucceeded).toBe(false);
+    expect(result.errorCode).toBe('WORKSPACE_ORIGIN_MISMATCH');
+    expect(result.errorMessage).toContain('points to a different repository than authorized');
+  });
 });
