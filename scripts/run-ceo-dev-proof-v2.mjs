@@ -14,7 +14,8 @@ import { AgentExecutor } from '../dist/executor.js';
 import { RouterProvider } from '../dist/providers/router.js';
 import { PdlCorrectionWorker } from '../dist/pdl/worker/correction-worker.js';
 import { PostgresTaskRepository } from '../dist/repository.js';
-import { PdlGovernanceEngine } from '../dist/pdl/governance/index.js';
+import { PdlGovernanceEngine, DEFAULT_FAIL_CLOSED_LIMITS } from '../dist/pdl/governance/index.js';
+import { DEFAULT_ROUTER_BASE_URL, normalizeBaseUrl } from '../dist/providers/shared.js';
 import { defaultProductCatalog } from '../dist/pdl/products/catalog.js';
 import { PdlContinuousScheduler } from '../dist/pdl/scheduler/continuous-scheduler.js';
 import { CeoCommandGateway } from '../dist/pdl/ceo/command-gateway.js';
@@ -50,7 +51,53 @@ async function runProof() {
     ['canonical']
   )).rows[0];
 
-  console.log('[BASELINE] Governance:', JSON.stringify(govBefore));
+  console.log('[BASELINE] Governance before normalization:', JSON.stringify(govBefore));
+
+  // Proofs are fail-closed experiments. Never inherit a dirty governance state
+  // from a previous interrupted run, and never restore a non-canonical state.
+  await govEngine.updateLimits({
+    activeLevel: DEFAULT_FAIL_CLOSED_LIMITS.activeLevel,
+    killSwitchActive: DEFAULT_FAIL_CLOSED_LIMITS.killSwitchActive,
+    maxConsecutiveTasks: DEFAULT_FAIL_CLOSED_LIMITS.maxConsecutiveTasks,
+    maxTaskDurationMs: DEFAULT_FAIL_CLOSED_LIMITS.maxTaskDurationMs,
+    maxToolRoundsPerTask: DEFAULT_FAIL_CLOSED_LIMITS.maxToolRoundsPerTask,
+    maxCorrectionAttempts: DEFAULT_FAIL_CLOSED_LIMITS.maxCorrectionAttempts,
+    maxConsecutiveFailures: DEFAULT_FAIL_CLOSED_LIMITS.maxConsecutiveFailures,
+    allowedProducts: DEFAULT_FAIL_CLOSED_LIMITS.allowedProducts,
+  }, 'ceo-correction-proof-v2', 'Normalize proof harness to canonical fail-closed baseline');
+
+  const canonicalGov = await govEngine.loadLimits();
+  console.log('[BASELINE] Governance normalized:', JSON.stringify(canonicalGov));
+  if (
+    canonicalGov.activeLevel !== 0 ||
+    canonicalGov.killSwitchActive !== true ||
+    canonicalGov.maxConsecutiveTasks !== 1 ||
+    canonicalGov.maxConsecutiveFailures !== 1 ||
+    canonicalGov.maxCorrectionAttempts !== 2
+  ) {
+    throw new Error('FAIL: could not establish canonical fail-closed governance baseline');
+  }
+
+  const routerBaseUrl = normalizeBaseUrl(process.env.ROUTER_BASE_URL, DEFAULT_ROUTER_BASE_URL);
+  console.log('[ROUTER PREFLIGHT] Base URL:', routerBaseUrl);
+  const controller = new AbortController();
+  const preflightTimer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const response = await fetch(routerBaseUrl + '/models', {
+      method: 'GET',
+      headers: { Authorization: 'Bearer ' + process.env.ROUTER_API_KEY },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error('9Router preflight HTTP ' + response.status + (body ? ': ' + body.slice(0, 300) : ''));
+    }
+    console.log('[ROUTER PREFLIGHT] PASS /v1/models reachable');
+  } catch (error) {
+    throw new Error('FAIL: 9Router preflight failed at ' + routerBaseUrl + '/models: ' + (error instanceof Error ? error.message : String(error)));
+  } finally {
+    clearTimeout(preflightTimer);
+  }
 
   // Harness-only catalog override. The product manifest remains otherwise unchanged.
   const shopee = defaultProductCatalog.get('pub-shopee-scraper');
@@ -73,7 +120,7 @@ async function runProof() {
 
     const hostExecutor = new AgentExecutor(undefined, { allowHostExecution: true });
     const provider = new RouterProvider(
-      process.env.ROUTER_BASE_URL,
+      routerBaseUrl,
       process.env.ROUTER_API_KEY,
       300000,
       MODEL_ID,
@@ -221,20 +268,16 @@ async function runProof() {
       } catch {}
     }
 
-    if (govBefore) {
-      await pool.query(
-        'UPDATE pdl_governance_state SET active_level=$1, kill_switch_active=$2, max_consecutive_tasks=$3, allowed_products=$4, updated_at=now(), updated_by=$5, reason=$6 WHERE id=$7',
-        [
-          govBefore.active_level,
-          govBefore.kill_switch_active,
-          govBefore.max_consecutive_tasks,
-          JSON.stringify(govBefore.allowed_products),
-          'ceo-correction-proof-v2-finally',
-          'Restoring fail-closed baseline after CEO CORRECTION PROOF V2',
-          'canonical',
-        ],
-      );
-    }
+    await govEngine.updateLimits({
+      activeLevel: DEFAULT_FAIL_CLOSED_LIMITS.activeLevel,
+      killSwitchActive: DEFAULT_FAIL_CLOSED_LIMITS.killSwitchActive,
+      maxConsecutiveTasks: DEFAULT_FAIL_CLOSED_LIMITS.maxConsecutiveTasks,
+      maxTaskDurationMs: DEFAULT_FAIL_CLOSED_LIMITS.maxTaskDurationMs,
+      maxToolRoundsPerTask: DEFAULT_FAIL_CLOSED_LIMITS.maxToolRoundsPerTask,
+      maxCorrectionAttempts: DEFAULT_FAIL_CLOSED_LIMITS.maxCorrectionAttempts,
+      maxConsecutiveFailures: DEFAULT_FAIL_CLOSED_LIMITS.maxConsecutiveFailures,
+      allowedProducts: DEFAULT_FAIL_CLOSED_LIMITS.allowedProducts,
+    }, 'ceo-correction-proof-v2-finally', 'Restore canonical fail-closed baseline after CEO CORRECTION PROOF V2');
 
     const govAfter = (await pool.query(
       'SELECT active_level, kill_switch_active, allowed_products FROM pdl_governance_state WHERE id = $1',
