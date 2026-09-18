@@ -533,4 +533,86 @@ describe('PDL Neural Query Adapter (Phase C)', () => {
     expect(result.isUnavailable).toBe(true);
     expect(result.reason).toContain('PUB_NEURAL_ENDPOINT missing');
   });
+  it('21. sends authenticated requests to the canonical PUB Neural Runtime query endpoint', async () => {
+    const originalFetch = globalThis.fetch;
+    let capturedUrl = '';
+    let capturedInit: RequestInit | undefined;
+
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      capturedUrl = String(input);
+      capturedInit = init;
+      return new Response(JSON.stringify({
+        request_id: 'runtime-req-001',
+        status: 'NO_MATCH',
+        results: [],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    try {
+      const transport = new HttpNeuralQueryTransport({
+        endpoint: 'https://neural.example',
+        token: 'runtime-secret',
+      });
+
+      const result = await new DefaultPubNeuralQueryAdapter(transport).query(baseContext);
+
+      expect(result.status).toBe('NO_MATCH');
+      expect(capturedUrl).toBe('https://neural.example/api/v1/runtime/query');
+      expect(capturedInit?.method).toBe('POST');
+      expect((capturedInit?.headers as Record<string, string>).Authorization).toBe('Bearer runtime-secret');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('22. accepts an endpoint already rooted at /api/v1/runtime', async () => {
+    const originalFetch = globalThis.fetch;
+    let capturedUrl = '';
+
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      capturedUrl = String(input);
+      return new Response(JSON.stringify({
+        request_id: 'runtime-req-002',
+        status: 'NO_MATCH',
+        results: [],
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const transport = new HttpNeuralQueryTransport({
+        endpoint: 'https://neural.example/api/v1/runtime',
+        token: 'runtime-secret',
+      });
+      const result = await new DefaultPubNeuralQueryAdapter(transport).query(baseContext);
+      expect(result.status).toBe('NO_MATCH');
+      expect(capturedUrl).toBe('https://neural.example/api/v1/runtime/query');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('23. refuses network dispatch when the runtime token is missing', async () => {
+    const originalFetch = globalThis.fetch;
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response('{}', { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const transport = new HttpNeuralQueryTransport({
+        endpoint: 'https://neural.example',
+      });
+      const result = await new DefaultPubNeuralQueryAdapter(transport).query(baseContext);
+      expect(result.status).toBe('UNAVAILABLE');
+      expect(result.reason).toContain('PUB_NEURAL_TOKEN missing');
+      expect(called).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
 });
