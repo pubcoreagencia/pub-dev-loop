@@ -90,7 +90,8 @@ jobs:
           git -C "$SANDBOX" config user.name "PUB DEV LOOP Operational Proof"
           git -C "$SANDBOX" config user.email "proof@pub.dev.loop"
           printf '%s\n' '# PDL Operational Proof Sandbox' > "$SANDBOX/README.md"
-          git -C "$SANDBOX" add README.md
+          printf '%s\n' '# Autonomous Cycle Baseline' > "$SANDBOX/AUTONOMOUS_CYCLE.md"
+          git -C "$SANDBOX" add README.md AUTONOMOUS_CYCLE.md
           git -C "$SANDBOX" commit -m "test: initialize operational proof sandbox"
           echo "repository=$SANDBOX" >> "$GITHUB_OUTPUT"
 
