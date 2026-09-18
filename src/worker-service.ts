@@ -24,7 +24,7 @@ import {
 } from './execution/finalization-bridge.js';
 import { DefaultExecutionEngine } from './execution/default-execution-engine.js';
 import type { AgentProvider, ProviderTaskInput } from './providers/types.js';
-import { PdlGovernanceEngine } from './pdl/governance/index.js';
+import { PdlGovernanceEngine, PdlExecutionGovernance, PDL_EXECUTION_GOVERNANCE_VERSION, type GovernanceCapability } from './pdl/governance/index.js';
 import { verifyRepositoryIdentity } from './pdl/security/repository-identity.js';
 import {
   PdlRemotePersistence,
@@ -297,6 +297,8 @@ export abstract class BaseWorker implements Worker {
   public lastExecutedTask: Task | null = null;
 
   public readonly governance?: PdlGovernanceEngine;
+  /** P1.2 governance boundary around the existing execution path. */
+  public readonly executionGovernance?: PdlExecutionGovernance;
   public readonly catalog: ProductCatalog;
   public readonly remotePersistence: PdlRemotePersistence;
   public readonly neuralBridge: PubNeuralBridge;
@@ -321,6 +323,11 @@ export abstract class BaseWorker implements Worker {
     });
     if (governance) {
       this.governance = governance;
+      const productionCapabilities: GovernanceCapability[] = ['WORKSPACE_READ', 'WORKSPACE_WRITE', 'COMMAND_EXECUTION', 'GIT_WRITE', 'REMOTE_PERSISTENCE'];
+      this.executionGovernance = new PdlExecutionGovernance({
+        policyEngine: governance,
+        capabilityGrants: Object.fromEntries(productionCapabilities.map((cap) => [cap, true])) as Record<GovernanceCapability, boolean>,
+      });
     } else if (executionSpecDb && typeof (executionSpecDb as any).query === 'function') {
       this.governance = new PdlGovernanceEngine({ pool: executionSpecDb as any });
     }
@@ -409,9 +416,28 @@ export abstract class BaseWorker implements Worker {
       }
     }
 
+    if (this.executionGovernance) {
+      const governanceRequest = {
+        governanceVersion: PDL_EXECUTION_GOVERNANCE_VERSION,
+        task,
+        gate: 'EXECUTION' as const,
+        action: 'TOOL_EXECUTION' as const,
+        requestedCapabilities: ['WORKSPACE_READ', 'WORKSPACE_WRITE', 'COMMAND_EXECUTION'] as GovernanceCapability[],
+        grantedCapabilities: ['WORKSPACE_READ', 'WORKSPACE_WRITE', 'COMMAND_EXECUTION'] as GovernanceCapability[],
+      };
+      const authorization = await this.executionGovernance.authorize(governanceRequest);
+      if (authorization.authorization !== 'ALLOW') {
+        const reason = 'Execution blocked by P1.2 governance: ' + authorization.audit.decisionCode;
+        this.lastExecutedTask = { ...task, status: 'BLOCKED', error: reason };
+        await this.tasks.update(task.id, { status: 'BLOCKED', error: reason, result: { governance: { authorization: authorization.authorization, audit: authorization.audit } }, leaseOwner: null, leaseDeadline: null, workspacePath: null });
+        return true;
+      }
+    }
+
     this.active = true;
 
     let winningAttempt: AttemptResult | undefined;
+    let governancePostAudit: Awaited<ReturnType<PdlExecutionGovernance['recordPostExecution']>> | undefined;
     let branch: string = task.branch ?? `worker/${this.name}/${task.id}`;
     // TASK-000032: Heartbeat for crash recovery / lease management
     let heartbeat: NodeJS.Timeout | undefined;
@@ -498,6 +524,18 @@ export abstract class BaseWorker implements Worker {
       // Delegate ALL attempt/workspace lifecycle to subclass with prepared execution spec
       winningAttempt = await this.executeWithRetry(task, task.repository, prepared);
 
+      if (this.executionGovernance) {
+        const governanceRequest = {
+          governanceVersion: PDL_EXECUTION_GOVERNANCE_VERSION,
+          task,
+          gate: 'EXECUTION' as const,
+          action: 'TOOL_EXECUTION' as const,
+          requestedCapabilities: ['WORKSPACE_READ', 'WORKSPACE_WRITE', 'COMMAND_EXECUTION'] as GovernanceCapability[],
+          grantedCapabilities: ['WORKSPACE_READ', 'WORKSPACE_WRITE', 'COMMAND_EXECUTION'] as GovernanceCapability[],
+        };
+        governancePostAudit = await this.executionGovernance.recordPostExecution(governanceRequest, winningAttempt.status === 'COMPLETED' ? 'COMPLETED' : 'FAILED', { provider: winningAttempt.provider ?? 'unknown', runtimeStatus: winningAttempt.status, durationMs: winningAttempt.durationMs, toolCalls: winningAttempt.toolCalls, toolRounds: winningAttempt.toolRounds });
+      }
+
       if (!this.active) {
         throw new Error('Worker cancelled');
       }
@@ -524,6 +562,7 @@ export abstract class BaseWorker implements Worker {
             finalize: null,
             trace: winningAttempt.trace,
             executionResult: winningAttempt.executionResult,
+            governance: governancePostAudit,
           },
           // Clear lease — task is terminal
           leaseOwner: null,
@@ -760,6 +799,7 @@ export abstract class BaseWorker implements Worker {
           remotePersistence: remotePersistenceResult,
           persistenceGate: gateDecision,
           delivery: (finalizeResult as any).delivery || null,
+          governance: governancePostAudit,
         },
         // Clear lease — task is terminal
         leaseOwner: null,
