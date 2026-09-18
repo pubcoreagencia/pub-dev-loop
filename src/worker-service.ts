@@ -33,7 +33,7 @@ import {
   type RemotePersistenceResult,
 } from './pdl/persistence/index.js';
 import { ProductCatalog, defaultProductCatalog } from './pdl/products/catalog.js';
-import { DefaultPubNeuralBridge, type PubNeuralBridge } from './pdl/neural/index.js';
+import { DefaultPubNeuralBridge, type PubNeuralBridge, PreTaskKnowledgeGate } from './pdl/neural/index.js';
 import {
   RemoteDeliveryGate,
   evaluateDeliveryGatePolicy,
@@ -303,6 +303,7 @@ export abstract class BaseWorker implements Worker {
   public readonly remotePersistence: PdlRemotePersistence;
   public readonly neuralBridge: PubNeuralBridge;
   public readonly deliveryGate?: RemoteDeliveryGate;
+  public readonly preTaskGate: PreTaskKnowledgeGate;
 
   constructor(
     protected readonly tasks: TaskRepository,
@@ -313,10 +314,12 @@ export abstract class BaseWorker implements Worker {
     remotePersistence?: PdlRemotePersistence,
     neuralBridge?: PubNeuralBridge,
     deliveryGate?: RemoteDeliveryGate,
+    preTaskGate?: PreTaskKnowledgeGate,
   ) {
     this.catalog = catalog;
     this.remotePersistence = remotePersistence ?? new PdlRemotePersistence(this.catalog);
     this.neuralBridge = neuralBridge ?? new DefaultPubNeuralBridge();
+    this.preTaskGate = preTaskGate ?? new PreTaskKnowledgeGate();
     this.deliveryGate = deliveryGate ?? new RemoteDeliveryGate({
       client: new GitHubClient(),
       catalog: this.catalog,
@@ -522,6 +525,30 @@ export abstract class BaseWorker implements Worker {
           workspacePath: null,
         });
         return true;
+      }
+
+      // V1.1-C: one canonical Neural pre-task read before provider execution.
+      // Neural contributes DATA-ONLY context. Execution authority remains in PDL.
+      try {
+        const preTask = await this.preTaskGate.evaluatePreTaskKnowledge(task);
+        prepared = { ...prepared, task: preTask.task };
+        console.log(
+          "[BaseWorker] Pre-task Neural query for task " +
+            task.id +
+            ": status=" +
+            preTask.result.status +
+            ", items=" +
+            preTask.result.itemCount +
+            ", durationMs=" +
+            preTask.result.observability.durationMs
+        );
+      } catch (neuralPreTaskErr: any) {
+        console.warn(
+          "[BaseWorker] Pre-task Neural warning for task " +
+            task.id +
+            ": " +
+            (neuralPreTaskErr?.message || String(neuralPreTaskErr))
+        );
       }
 
       // Delegate ALL attempt/workspace lifecycle to subclass with prepared execution spec
