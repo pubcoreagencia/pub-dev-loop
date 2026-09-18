@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeToolCalls } from '../../src/providers/router.js';
+import { normalizeToolCalls, ToolCallSerializationError } from '../../src/providers/router.js';
 
 describe('RouterProvider tool-call serialization', () => {
   it('serializes object tool arguments to a JSON string', () => {
@@ -32,8 +32,8 @@ describe('RouterProvider tool-call serialization', () => {
     expect(result?.[0].function.arguments).toBe('{"path":"src/api/validation.ts"}');
   });
 
-  it('fails closed to an empty object for malformed or non-object arguments', () => {
-    const result = normalizeToolCalls([
+  it('fails with TOOL_PROTOCOL_FAILURE semantics for malformed or non-object arguments', () => {
+    expect(() => normalizeToolCalls([
       {
         id: 'call-3',
         type: 'function',
@@ -42,6 +42,9 @@ describe('RouterProvider tool-call serialization', () => {
           arguments: 'not-json',
         },
       },
+    ])).toThrow(ToolCallSerializationError);
+
+    expect(() => normalizeToolCalls([
       {
         id: 'call-4',
         type: 'function',
@@ -50,6 +53,9 @@ describe('RouterProvider tool-call serialization', () => {
           arguments: ('[]' as unknown) as string,
         },
       },
+    ])).toThrow(/must be a JSON object/);
+
+    expect(() => normalizeToolCalls([
       {
         id: 'call-5',
         type: 'function',
@@ -58,8 +64,6 @@ describe('RouterProvider tool-call serialization', () => {
           arguments: (42 as unknown) as string,
         },
       },
-    ]);
-
-    expect(result?.map((call) => call.function.arguments)).toEqual(['{}', '{}', '{}']);
+    ])).toThrow(/stringified JSON object/);
   });
 });
