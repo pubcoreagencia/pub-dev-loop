@@ -60,6 +60,38 @@ function buildUserPrompt(task: Task | ProviderTaskInput): OpenAIChatMessage {
 /**
  * Convert ToolDefinition[] to OpenAI tools format for the chat completion request.
  */
+export function normalizeToolCalls(toolCalls: ToolCall[] | undefined): ToolCall[] | undefined {
+  if (!toolCalls) return undefined;
+
+  return toolCalls.map((toolCall) => {
+    const rawArguments = (toolCall.function as unknown as { arguments: unknown }).arguments;
+    let argumentsText: string;
+
+    if (typeof rawArguments === 'string') {
+      try {
+        const parsed = JSON.parse(rawArguments);
+        argumentsText = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? JSON.stringify(parsed)
+          : JSON.stringify({});
+      } catch {
+        argumentsText = JSON.stringify({});
+      }
+    } else if (rawArguments && typeof rawArguments === 'object' && !Array.isArray(rawArguments)) {
+      argumentsText = JSON.stringify(rawArguments);
+    } else {
+      argumentsText = JSON.stringify({});
+    }
+
+    return {
+      ...toolCall,
+      function: {
+        ...toolCall.function,
+        arguments: argumentsText,
+      },
+    };
+  });
+}
+
 function toOpenAITools(defs: ToolDefinition[]) {
   return defs.map(def => ({
     type: 'function' as const,
@@ -655,7 +687,7 @@ export class RouterProvider implements AgentProvider {
         result.content = null;
       }
       if (msg.tool_calls) {
-        result.tool_calls = msg.tool_calls;
+        result.tool_calls = normalizeToolCalls(msg.tool_calls);
       }
       if (msg.tool_call_id) {
         result.tool_call_id = msg.tool_call_id;
