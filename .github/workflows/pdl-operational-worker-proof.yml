@@ -181,6 +181,7 @@ jobs:
 
       - name: Start canonical PDL worker
         env:
+          PDL_GITHUB_TOKEN: "pdl_proof_ephemeral_token_safe_isolated"
           PDL_ISOLATED_GIT_TRANSPORT: |
             {"https://github.com/pubcoreagencia/pub-dev-loop-template.git":"${{ steps.sandbox.outputs.upstream_bare }}"}
           PDL_GIT_TRANSPORT_AUDIT_LOG: /tmp/git-transport-audit.jsonl
