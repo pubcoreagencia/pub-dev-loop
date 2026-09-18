@@ -132,7 +132,7 @@ describe('P1.2 BaseWorker production governance integration', () => {
 
     expect(handled).toBe(true);
     expect(worker.events).toEqual(['EXECUTION_ENGINE_PATH']);
-    expect((worker as any).lastExecutedTask.status).toBe('FAILED');
+    expect((tasks as any).getCurrent().status).toBe('FAILED');
     const persisted = (tasks as any).getCurrent().result as any;
     expect(persisted.governance.event).toBe('POST_EXECUTION');
     expect(persisted.governance.executionStatus).toBe('FAILED');
