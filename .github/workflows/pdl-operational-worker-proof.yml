@@ -144,7 +144,7 @@ jobs:
             acceptanceCriteria: ['OPERATIONAL_GOVERNANCE_PROOF.md exists with exact requested content'],
             validationPlan: ['Verify the requested file exists and contains the exact text'],
             executionInstructions: ['Use the existing PDL execution runtime and provider path'],
-            executionSteps: [],
+            executionSteps: [{ id: 'create-proof-file', description: 'Create OPERATIONAL_GOVERNANCE_PROOF.md with the exact requested content', critical: true }],
             risks: ['Controlled disposable proof workspace'],
             escalationConditions: ['Stop on governance denial or provider failure'],
             lineage: { intakeVersion: '1.0.0', intakeHash: 'p1-2-operational-proof', source: 'pdl-operational-worker-proof', createdAt: now },
