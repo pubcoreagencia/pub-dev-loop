@@ -128,8 +128,6 @@ async function runProof() {
       console.log('[SCHEDULER]', ev.type, 'task=' + (ev.taskId || 'none'), 'reason=' + (ev.reasonCode || 'none'));
     });
 
-    await scheduler.start();
-
     const gateway = new CeoCommandGateway({
       governance: govEngine,
       catalog: defaultProductCatalog,
@@ -169,6 +167,32 @@ async function runProof() {
     }
 
     const taskId = gatewayResult.taskId;
+
+    // Proof isolation: the CEO-created task must be the first eligible queue candidate.
+    // Do this only after Gateway creation and before starting the generic scheduler.
+    const priorityResult = await pool.query(
+      `UPDATE tasks
+       SET priority = LEAST(
+         2147483647,
+         GREATEST(
+           1000000,
+           COALESCE(
+             (SELECT MAX(priority)::bigint + 1 FROM tasks WHERE id <> $1),
+             1000000
+           )
+         )
+       )
+       WHERE id = $1
+       RETURNING priority`,
+      [taskId],
+    );
+    console.log('[PROOF ISOLATION] Target task priority:', priorityResult.rows[0]?.priority);
+
+    // Start the generic scheduler only after the exact CEO task exists and is isolated
+    // at the top of the eligible queue. The scheduler still performs the canonical
+    // worker claim path, so this does not bypass dispatch/claim semantics.
+    await scheduler.start();
+
     let completedTask = null;
 
     for (let poll = 0; poll < 180; poll++) {
