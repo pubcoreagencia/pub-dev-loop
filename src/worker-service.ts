@@ -303,6 +303,7 @@ export abstract class BaseWorker implements Worker {
   public readonly remotePersistence: PdlRemotePersistence;
   public readonly neuralBridge: PubNeuralBridge;
   public readonly deliveryGate?: RemoteDeliveryGate;
+  public readonly preTaskGate: PreTaskKnowledgeGate;
 
   constructor(
     protected readonly tasks: TaskRepository,
@@ -313,10 +314,12 @@ export abstract class BaseWorker implements Worker {
     remotePersistence?: PdlRemotePersistence,
     neuralBridge?: PubNeuralBridge,
     deliveryGate?: RemoteDeliveryGate,
+    preTaskGate?: PreTaskKnowledgeGate,
   ) {
     this.catalog = catalog;
     this.remotePersistence = remotePersistence ?? new PdlRemotePersistence(this.catalog);
     this.neuralBridge = neuralBridge ?? new DefaultPubNeuralBridge();
+    this.preTaskGate = preTaskGate ?? new PreTaskKnowledgeGate();
     this.deliveryGate = deliveryGate ?? new RemoteDeliveryGate({
       client: new GitHubClient(),
       catalog: this.catalog,
