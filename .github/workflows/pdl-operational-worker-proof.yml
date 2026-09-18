@@ -43,7 +43,6 @@ jobs:
       WORKER_POLL_INTERVAL_MS: "1000"
       WORKER_LEASE_TIMEOUT_MS: "30000"
       WORKER_HEARTBEAT_MS: "5000"
-      NODE_ENV: production
       PDL_WORKER_PORT: "3303"
 
     steps:
@@ -57,7 +56,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --include=dev
 
       - name: Typecheck
         run: npm run typecheck
