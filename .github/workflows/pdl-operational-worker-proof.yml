@@ -98,18 +98,6 @@ jobs:
           git -C "$UPSTREAM_BARE" config user.name "PUB DEV LOOP Operational Proof"
           git -C "$UPSTREAM_BARE" config user.email "proof@pub.dev.loop"
 
-          # Temporary clone to append AUTONOMOUS_CYCLE.md baseline as a child commit on main
-          SEED_DIR="$(mktemp -d)"
-          git clone "$UPSTREAM_BARE" "$SEED_DIR"
-          git -C "$SEED_DIR" checkout main
-          git -C "$SEED_DIR" config user.name "PUB DEV LOOP Operational Proof"
-          git -C "$SEED_DIR" config user.email "proof@pub.dev.loop"
-          printf '%s\n' '# Autonomous Cycle Baseline' > "$SEED_DIR/AUTONOMOUS_CYCLE.md"
-          git -C "$SEED_DIR" add AUTONOMOUS_CYCLE.md
-          git -C "$SEED_DIR" commit -m "chore: add autonomous cycle baseline to proof upstream"
-          git -C "$SEED_DIR" push origin main
-          rm -rf "$SEED_DIR"
-
           # Explicitly ensure bare HEAD points to refs/heads/main
           git -C "$UPSTREAM_BARE" symbolic-ref HEAD refs/heads/main
 
