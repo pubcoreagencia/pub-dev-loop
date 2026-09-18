@@ -116,6 +116,117 @@ async function main() {
     process.exitCode = 4;
   }
 
+
+  try {
+    const executor = new AgentExecutor(undefined, { allowHostExecution: true });
+    const runtime = new ToolRuntime({
+      workspaceRoot: process.cwd(),
+      maxRounds: 20,
+      maxToolCalls: 50,
+      commandTimeoutMs: 60000,
+      maxFileBytes: 1024 * 1024,
+      maxWriteBytes: 256 * 1024,
+      redactSecrets: true,
+    }, executor);
+    const toolDefs = runtime.getToolDefinitions().map(def => ({
+      type: 'function',
+      function: {
+        name: def.name,
+        description: def.description,
+        parameters: def.parameters,
+      },
+    }));
+
+    const realisticResponse = await requestJson('/chat/completions', {
+      model: MODEL_ID,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'Workspace: ' + process.cwd() + '\n' +
+            'You are an autonomous coding agent. Use the available tools to inspect the workspace. ' +
+            'Read src/api/validation.ts first, then stop and report what you found.'
+        },
+        {
+          role: 'user',
+          content:
+            'Inspect src/api/validation.ts. Do not modify files. Use read_file on that exact path, then provide a one-sentence summary.'
+        }
+      ],
+      stream: false,
+      tools: toolDefs,
+      tool_choice: 'required',
+    });
+
+    log('REALISTIC TOOL-CALL status', realisticResponse.status);
+    log('REALISTIC TOOL-CALL body preview', realisticResponse.text.slice(0, 2500));
+
+    if (!realisticResponse.ok) {
+      process.exitCode = 6;
+    } else {
+      try {
+        const payload = JSON.parse(realisticResponse.text);
+        const message = payload?.choices?.[0]?.message;
+        log('REALISTIC tool name', message?.tool_calls?.[0]?.function?.name || null);
+        log('REALISTIC finish reason', payload?.choices?.[0]?.finish_reason || null);
+
+        if (!message?.tool_calls?.length) {
+          console.log('REALISTIC TOOL-CALL: model did not return a tool call');
+          process.exitCode = 6;
+        } else {
+          const tc = message.tool_calls[0];
+          const args = JSON.parse(tc.function.arguments);
+          const toolResult = await runtime.executeTool(tc.id, tc.function.name, args);
+          log('LOCAL TOOL RESULT', toolResult);
+
+          const followupMessages = [
+            {
+              role: 'system',
+              content:
+                'Workspace: ' + process.cwd() + '\n' +
+                'You are an autonomous coding agent. Continue using tools as needed.'
+            },
+            {
+              role: 'user',
+              content:
+                'Inspect src/api/validation.ts. Do not modify files. Use read_file on that exact path, then provide a one-sentence summary.'
+            },
+            {
+              role: 'assistant',
+              content: message.content ?? null,
+              tool_calls: message.tool_calls,
+            },
+            {
+              role: 'tool',
+              content: toolResult.success ? (toolResult.content || '(no output)') : ('Error: ' + (toolResult.error || 'Tool execution failed')),
+              tool_call_id: toolResult.toolCallId,
+            },
+          ];
+
+          const secondResponse = await requestJson('/chat/completions', {
+            model: MODEL_ID,
+            messages: followupMessages,
+            stream: false,
+            tools: toolDefs,
+            tool_choice: 'auto',
+          });
+
+          log('REALISTIC FOLLOW-UP status', secondResponse.status);
+          log('REALISTIC FOLLOW-UP body preview', secondResponse.text.slice(0, 2500));
+          if (!secondResponse.ok) {
+            process.exitCode = 7;
+          }
+        }
+      } catch (error) {
+        log('REALISTIC TOOL-CALL parse/execution error', error instanceof Error ? error.message : String(error));
+        process.exitCode = 6;
+      }
+    }
+  } catch (error) {
+    log('REALISTIC TOOL-CALL NETWORK ERROR', error instanceof Error ? error.message : String(error));
+    process.exitCode = 6;
+  }
+
   const pool = new Pool({ connectionString: PG_URL });
   try {
     const result = await pool.query(
