@@ -229,7 +229,8 @@ async function runProof() {
     ? JSON.parse(executionOutcome.result)
     : executionOutcome.result;
 
-  const correctionHistory = resultObj?.correction?.correctionHistory
+  const correctionHistory = resultObj?.corrections
+    ?? resultObj?.correction?.correctionHistory
     ?? resultObj?.correctionHistory
     ?? resultObj?.finalize?.correctionHistory
     ?? [];
@@ -237,7 +238,8 @@ async function runProof() {
   const correctionExecuted =
     Array.isArray(correctionHistory) && correctionHistory.length > 0
       ? true
-      : resultObj?.correction?.attemptsExecuted > 0;
+      : (resultObj?.corrections?.length ?? 0) > 0
+        || resultObj?.correction?.attemptsExecuted > 0;
 
   console.log('==============================================================');
   console.log('PROOF RESULT');
@@ -249,7 +251,7 @@ async function runProof() {
   console.log('Tool Calls:', resultObj?.toolCalls);
   console.log('Tool Rounds:', resultObj?.toolRounds);
   console.log('Correction Executed:', correctionExecuted);
-  console.log('Correction Attempts:', resultObj?.correction?.attemptsExecuted ?? correctionHistory.length);
+  console.log('Correction Attempts:', resultObj?.corrections?.length ?? resultObj?.correction?.attemptsExecuted ?? correctionHistory.length);
   console.log('Tests Passed:', resultObj?.finalize?.testsPassed);
   console.log('Commit SHA:', executionOutcome.commit_sha);
   console.log('Remote Persistence:', resultObj?.remotePersistence?.status);
