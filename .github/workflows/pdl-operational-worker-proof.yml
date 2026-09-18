@@ -74,6 +74,12 @@ jobs:
       - name: Run database migrations
         run: npm run db:migrate
 
+      - name: Configure controlled governance proof state
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module -e "import { Pool } from 'pg'; const p=new Pool({connectionString:process.env.DATABASE_URL}); await p.query(\"UPDATE pdl_governance_state SET active_level=1, kill_switch_active=false, updated_at=now(), updated_by='p1-2-operational-proof', reason='Controlled P1.2 operational worker proof' WHERE id='canonical'\"); await p.end();
+
       - name: Create disposable local Git repository
         id: sandbox
         shell: bash
@@ -135,24 +141,7 @@ jobs:
         run: |
           set -euo pipefail
           for i in $(seq 1 120); do
-            ROW="$(node --input-type=module <<'NODE'
-            import { Pool } from 'pg';
-            const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-            const r = await pool.query('SELECT id,status,worker,result,error,commit_sha,git_status FROM tasks WHERE id=$1', [process.env.TASK_ID]);
-            if (!r.rows[0]) process.exit(2);
-            const t = r.rows[0];
-            console.log(JSON.stringify({
-              id:t.id,
-              status:t.status,
-              worker:t.worker,
-              result:t.result,
-              error:t.error,
-              commitSha:t.commit_sha,
-              gitStatus:t.git_status
-            }));
-            await pool.end();
-            NODE
-            )"
+            ROW="$(node --input-type=module -e "import { Pool } from 'pg'; const p=new Pool({connectionString:process.env.DATABASE_URL}); const r=await p.query('SELECT id,status,worker,result,error,commit_sha,git_status FROM tasks WHERE id=\\$1',[process.env.TASK_ID]); if (!r.rows[0]) process.exit(2); console.log(JSON.stringify(r.rows[0])); await p.end();")"
             echo "$ROW"
             STATUS="$(node --input-type=module -e 'const x=JSON.parse(process.env.ROW); console.log(x.status)' ROW="$ROW")"
             if [[ "$STATUS" == "COMPLETED" || "$STATUS" == "FAILED" || "$STATUS" == "BLOCKED" || "$STATUS" == "NEEDS_REVIEW" ]]; then
@@ -177,7 +166,6 @@ jobs:
           if (g.decisionCode !== 'EXECUTION_OBSERVED') throw new Error('Expected EXECUTION_OBSERVED, got ' + g.decisionCode);
           console.log('P1.2 GOVERNANCE OPERATIONAL PROOF: PASS');
           NODE
-
       - name: Evidence summary
         if: always()
         env:
