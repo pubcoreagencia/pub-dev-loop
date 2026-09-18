@@ -524,6 +524,30 @@ export abstract class BaseWorker implements Worker {
         return true;
       }
 
+      // V1.1-C: one canonical Neural pre-task read before provider execution.
+      // Neural contributes DATA-ONLY context. Execution authority remains in PDL.
+      try {
+        const preTask = await this.preTaskGate.evaluatePreTaskKnowledge(task);
+        prepared = { ...prepared, task: preTask.task };
+        console.log(
+          "[BaseWorker] Pre-task Neural query for task " +
+            task.id +
+            ": status=" +
+            preTask.result.status +
+            ", items=" +
+            preTask.result.itemCount +
+            ", durationMs=" +
+            preTask.result.observability.durationMs
+        );
+      } catch (neuralPreTaskErr: any) {
+        console.warn(
+          "[BaseWorker] Pre-task Neural warning for task " +
+            task.id +
+            ": " +
+            (neuralPreTaskErr?.message || String(neuralPreTaskErr))
+        );
+      }
+
       // Delegate ALL attempt/workspace lifecycle to subclass with prepared execution spec
       winningAttempt = await this.executeWithRetry(task, task.repository, prepared);
 
