@@ -91,14 +91,15 @@ jobs:
         run: |
           set -euo pipefail
           UPSTREAM_BARE="$(mktemp -d)/upstream.git"
-          git init --bare "$UPSTREAM_BARE"
+          git init --bare --initial-branch=main "$UPSTREAM_BARE"
+          git -C "$UPSTREAM_BARE" symbolic-ref HEAD refs/heads/main
           git -C "$UPSTREAM_BARE" config user.name "PUB DEV LOOP Operational Proof"
           git -C "$UPSTREAM_BARE" config user.email "proof@pub.dev.loop"
 
           # Create temporary seed clone to populate baseline on main in bare repo
           SEED_DIR="$(mktemp -d)"
           git clone "$UPSTREAM_BARE" "$SEED_DIR"
-          git -C "$SEED_DIR" checkout -b main || git -C "$SEED_DIR" checkout main || true
+          git -C "$SEED_DIR" checkout -B main
           git -C "$SEED_DIR" config user.name "PUB DEV LOOP Operational Proof"
           git -C "$SEED_DIR" config user.email "proof@pub.dev.loop"
           printf '%s\n' '# PDL Operational Proof Sandbox' > "$SEED_DIR/README.md"
@@ -107,6 +108,9 @@ jobs:
           git -C "$SEED_DIR" commit -m "test: initialize operational proof baseline"
           git -C "$SEED_DIR" push origin main
           rm -rf "$SEED_DIR"
+
+          # Explicitly ensure bare HEAD points to refs/heads/main
+          git -C "$UPSTREAM_BARE" symbolic-ref HEAD refs/heads/main
 
           # Configure ephemeral job-scoped insteadOf rewrite:
           # Maps canonical catalog URL to local bare repository for physical transport isolation
