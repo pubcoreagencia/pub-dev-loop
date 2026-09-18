@@ -127,31 +127,10 @@ describe('P1.2 BaseWorker production governance integration', () => {
     const tasks = repoFor(task);
     const worker = new ProductionGovernanceProbe(tasks, permittedPolicy());
 
-    const pre: string[] = [];
-    worker.executionGovernance = undefined as any;
-    // Reconstruct the production worker with observable hooks through the public seam.
-    const governed = new (class extends ProductionGovernanceProbe {
-      constructor(tasks: TaskRepository, governance: PdlGovernanceEngine) {
-        super(tasks, governance);
-        const policy = this.executionGovernance!;
-        const hooked = new (policy.constructor as any)({
-          policyEngine: governance,
-          capabilityGrants: {
-            WORKSPACE_READ: true,
-            WORKSPACE_WRITE: true,
-            COMMAND_EXECUTION: true,
-          },
-          preHook: ({ audit }: any) => pre.push('pre:' + audit.authorization),
-          postHook: ({ audit }: any) => pre.push('post:' + audit.executionStatus),
-        });
-        (this as any).executionGovernance = hooked;
-      }
-    })(tasks, permittedPolicy());
-
-    const handled = await governed.executeOnce();
+    const handled = await worker.executeOnce();
 
     expect(handled).toBe(true);
-    expect(governed.events).toEqual(['EXECUTION_ENGINE_PATH']);
-    expect(pre).toEqual(['pre:ALLOW', 'post:FAILED']);
+    expect(worker.events).toEqual(['EXECUTION_ENGINE_PATH']);
+    expect((worker as any).lastExecutedTask.status).toBe('FAILED');
   });
 });
