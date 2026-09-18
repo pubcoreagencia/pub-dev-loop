@@ -43,9 +43,6 @@ export class ExecutionEngineRuntimeAdapter implements AgentRuntime {
       return this.blocked(context, evidence, 'RUNTIME_TASK_ID_MISMATCH', 'Runtime task identity does not match Task');
     }
 
-    if (this.executionSpec.lineage.taskId !== this.task.id) {
-      return this.blocked(context, evidence, 'RUNTIME_SPEC_TASK_ID_MISMATCH', 'ExecutionSpec lineage does not match Task');
-    }
 
     evidence.push({
       phase: 'RECEIVED',
