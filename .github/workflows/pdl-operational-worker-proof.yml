@@ -1,6 +1,8 @@
 name: PDL Operational Worker Proof
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches:
       - pdl/p1-2-operational-worker-proof
