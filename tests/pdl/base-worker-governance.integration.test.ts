@@ -57,7 +57,7 @@ function permittedPolicy(): PdlGovernanceEngine {
   } as PdlGovernanceEngine;
 }
 
-function repoFor(task: Task): TaskRepository {
+function repoFor(task: Task): TaskRepository & { getCurrent: () => Task } {
   let current = task;
   return {
     claim: async () => ({ ...current, status: 'ASSIGNED' }),
@@ -66,7 +66,8 @@ function repoFor(task: Task): TaskRepository {
       return current;
     },
     heartbeat: async () => current,
-  } as TaskRepository;
+    getCurrent: () => current,
+  } as TaskRepository & { getCurrent: () => Task };
 }
 
 class ProductionGovernanceProbe extends BaseWorker {
@@ -132,5 +133,9 @@ describe('P1.2 BaseWorker production governance integration', () => {
     expect(handled).toBe(true);
     expect(worker.events).toEqual(['EXECUTION_ENGINE_PATH']);
     expect((worker as any).lastExecutedTask.status).toBe('FAILED');
+    const persisted = (tasks as any).getCurrent().result as any;
+    expect(persisted.governance.event).toBe('POST_EXECUTION');
+    expect(persisted.governance.executionStatus).toBe('FAILED');
+    expect(persisted.governance.decisionCode).toBe('EXECUTION_OBSERVED');
   });
 });
