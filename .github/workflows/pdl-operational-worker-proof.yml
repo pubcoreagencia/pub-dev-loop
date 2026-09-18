@@ -111,7 +111,7 @@ jobs:
             "INSERT INTO tasks (id, project, repository, objective, prompt, priority) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
             [
               id,
-              'pdl-operational-governance-proof',
+              'pub-dev-loop-template',
               repo,
               'Create OPERATIONAL_GOVERNANCE_PROOF.md with the exact text PDL GOVERNANCE OPERATIONAL PROOF.',
               'Create a file named OPERATIONAL_GOVERNANCE_PROOF.md containing exactly: PDL GOVERNANCE OPERATIONAL PROOF. Do not modify any other file.',
