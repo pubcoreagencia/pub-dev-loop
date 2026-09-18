@@ -61,6 +61,8 @@ export interface ExecutionGovernanceRequest {
   approval?: GovernanceApproval;
   delegation?: GovernanceDelegation;
   metadata?: Record<string, string>;
+  /** Existing authoritative policy decision, avoiding duplicate policy evaluation. */
+  policyDecision?: GovernanceDecision;
 }
 
 export interface GovernanceAuditEvent {
@@ -191,7 +193,7 @@ export class PdlExecutionGovernance {
       return { authorization: 'APPROVAL_REQUIRED', decision: null, audit };
     }
 
-    const decision = await this.policy.evaluateExecution(request.task);
+    const decision = request.policyDecision ?? await this.policy.evaluateExecution(request.task);
     if (!decision.allowed) {
       const audit = {
         ...baseAudit,
