@@ -427,7 +427,6 @@ export class PdlCorrectionWorker extends RouterWorker {
             product: catalogProduct ?? (task.project || task.repository),
             branch,
             localSha: finalizeResult.commitSha,
-            targetRepository: task.repository,
             requested: !task.prototypeSessionId,
             gitToken: process.env.PDL_GITHUB_TOKEN || process.env.GITHUB_TOKEN,
           } as any);

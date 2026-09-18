@@ -85,25 +85,49 @@ jobs:
           set -euo pipefail
           node --input-type=module -e "import { Pool } from 'pg'; const p=new Pool({connectionString:process.env.DATABASE_URL}); await p.query(\"UPDATE pdl_governance_state SET active_level=3, kill_switch_active=false, allowed_products='[\\\"pub-dev-loop-template\\\"]'::jsonb, updated_at=now(), updated_by='p1-2-operational-proof', reason='Controlled P1.2 operational worker proof' WHERE id='canonical'\"); await p.end();"
 
-      - name: Create disposable local Git repository
+      - name: Create disposable local bare upstream repository and sandbox baseline
         id: sandbox
         shell: bash
         run: |
           set -euo pipefail
-          SANDBOX="$(mktemp -d)"
-          git init "$SANDBOX"
-          git -C "$SANDBOX" config user.name "PUB DEV LOOP Operational Proof"
-          git -C "$SANDBOX" config user.email "proof@pub.dev.loop"
-          printf '%s\n' '# PDL Operational Proof Sandbox' > "$SANDBOX/README.md"
-          printf '%s\n' '# Autonomous Cycle Baseline' > "$SANDBOX/AUTONOMOUS_CYCLE.md"
-          git -C "$SANDBOX" add README.md AUTONOMOUS_CYCLE.md
-          git -C "$SANDBOX" commit -m "test: initialize operational proof sandbox"
-          echo "repository=$SANDBOX" >> "$GITHUB_OUTPUT"
+          UPSTREAM_BARE="$(mktemp -d)/upstream.git"
+          git init --bare "$UPSTREAM_BARE"
+          git -C "$UPSTREAM_BARE" config user.name "PUB DEV LOOP Operational Proof"
+          git -C "$UPSTREAM_BARE" config user.email "proof@pub.dev.loop"
+
+          # Create temporary seed clone to populate baseline on main in bare repo
+          SEED_DIR="$(mktemp -d)"
+          git clone "$UPSTREAM_BARE" "$SEED_DIR"
+          git -C "$SEED_DIR" checkout -b main || git -C "$SEED_DIR" checkout main || true
+          git -C "$SEED_DIR" config user.name "PUB DEV LOOP Operational Proof"
+          git -C "$SEED_DIR" config user.email "proof@pub.dev.loop"
+          printf '%s\n' '# PDL Operational Proof Sandbox' > "$SEED_DIR/README.md"
+          printf '%s\n' '# Autonomous Cycle Baseline' > "$SEED_DIR/AUTONOMOUS_CYCLE.md"
+          git -C "$SEED_DIR" add README.md AUTONOMOUS_CYCLE.md
+          git -C "$SEED_DIR" commit -m "test: initialize operational proof baseline"
+          git -C "$SEED_DIR" push origin main
+          rm -rf "$SEED_DIR"
+
+          # Configure ephemeral job-scoped insteadOf rewrite:
+          # Maps canonical catalog URL to local bare repository for physical transport isolation
+          CANONICAL_URL="https://github.com/pubcoreagencia/pub-dev-loop-template.git"
+          git config --global url."$UPSTREAM_BARE".insteadOf "$CANONICAL_URL"
+
+          # Verify rewrite is active before starting worker
+          RESOLVED_CLONE_TEST="$(git ls-remote "$CANONICAL_URL" refs/heads/main)"
+          test -n "$RESOLVED_CLONE_TEST" || {
+            echo "::error::Failed to resolve canonical URL via local insteadOf rewrite"
+            exit 1
+          }
+          echo "Verified local transport rewrite: $RESOLVED_CLONE_TEST"
+
+          echo "upstream_bare=$UPSTREAM_BARE" >> "$GITHUB_OUTPUT"
+          echo "canonical_url=$CANONICAL_URL" >> "$GITHUB_OUTPUT"
 
       - name: Seed controlled task
         id: seed
         env:
-          PROOF_REPOSITORY: ${{ steps.sandbox.outputs.repository }}
+          CANONICAL_URL: ${{ steps.sandbox.outputs.canonical_url }}
         shell: bash
         run: |
           set -euo pipefail
@@ -112,13 +136,13 @@ jobs:
           import crypto from 'node:crypto';
           const pool = new Pool({ connectionString: process.env.DATABASE_URL });
           const id = crypto.randomUUID();
-          const repo = process.env.PROOF_REPOSITORY;
+          const canonicalRepo = process.env.CANONICAL_URL;
           const result = await pool.query(
             "INSERT INTO tasks (id, project, repository, objective, prompt, priority) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
             [
               id,
               'pub-dev-loop-template',
-              repo,
+              canonicalRepo,
               'Create OPERATIONAL_GOVERNANCE_PROOF.md with the exact text PDL GOVERNANCE OPERATIONAL PROOF.',
               'Create a file named OPERATIONAL_GOVERNANCE_PROOF.md containing exactly: PDL GOVERNANCE OPERATIONAL PROOF. Do not modify any other file.',
               100
@@ -209,6 +233,34 @@ jobs:
           if (g.decisionCode !== 'EXECUTION_OBSERVED') throw new Error('Expected EXECUTION_OBSERVED, got ' + g.decisionCode);
           console.log('P1.2 GOVERNANCE OPERATIONAL PROOF: PASS');
           NODE
+
+      - name: Verify isolated bare repository persistence
+        env:
+          UPSTREAM_BARE: ${{ steps.sandbox.outputs.upstream_bare }}
+          TASK_ID: ${{ steps.seed.outputs.task_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMMIT_SHA="$(node --input-type=module -e "import { Pool } from 'pg'; const p=new Pool({connectionString:process.env.DATABASE_URL}); const r=await p.query('SELECT commit_sha FROM tasks WHERE id=\$1',[process.env.TASK_ID]); console.log(r.rows[0].commit_sha); await p.end();")"
+          echo "Expected commit SHA: $COMMIT_SHA"
+
+          # Verify that bare upstream received the push and contains the exact commit
+          git -C "$UPSTREAM_BARE" cat-file -e "${COMMIT_SHA}^{commit}" || {
+            echo "::error::Commit $COMMIT_SHA was not found in isolated bare repository $UPSTREAM_BARE"
+            exit 1
+          }
+          echo "Verified commit $COMMIT_SHA exists in isolated bare upstream repository."
+
+          # Prove that OPERATIONAL_GOVERNANCE_PROOF.md was committed to the pushed branch
+          SHOW_OUTPUT="$(git -C "$UPSTREAM_BARE" show "${COMMIT_SHA}:OPERATIONAL_GOVERNANCE_PROOF.md")"
+          echo "OPERATIONAL_GOVERNANCE_PROOF.md content:"
+          echo "$SHOW_OUTPUT"
+          test -n "$SHOW_OUTPUT" || {
+            echo "::error::Proof file not present in commit object"
+            exit 1
+          }
+          echo "ISOLATED BARE UPSTREAM PERSISTENCE: VERIFIED PASS"
+
       - name: Evidence summary
         if: always()
         env:

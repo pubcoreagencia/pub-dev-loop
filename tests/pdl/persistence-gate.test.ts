@@ -360,7 +360,6 @@ describe('Worker Governed Persistence Integration', () => {
         product: testTask.project,
         branch: testTask.branch,
         localSha: commitSha,
-        targetRepository: testTask.repository,
         requested: true,
       })
     );

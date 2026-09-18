@@ -642,7 +642,6 @@ export abstract class BaseWorker implements Worker {
             product: task.project || task.repository,
             branch,
             localSha: finalizeResult.commitSha,
-            targetRepository: task.repository,
             requested: !task.prototypeSessionId,
             gitToken: process.env.PDL_GITHUB_TOKEN || process.env.GITHUB_TOKEN,
           });
