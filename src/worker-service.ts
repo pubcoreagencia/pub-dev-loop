@@ -33,7 +33,7 @@ import {
   type RemotePersistenceResult,
 } from './pdl/persistence/index.js';
 import { ProductCatalog, defaultProductCatalog } from './pdl/products/catalog.js';
-import { DefaultPubNeuralBridge, type PubNeuralBridge, PostTaskExperienceGate } from './pdl/neural/index.js';
+import { DefaultPubNeuralBridge, type PubNeuralBridge, PostTaskExperienceGate, PreTaskKnowledgeGate } from './pdl/neural/index.js';
 import {
   RemoteDeliveryGate,
   evaluateDeliveryGatePolicy,
@@ -302,6 +302,7 @@ export abstract class BaseWorker implements Worker {
   public readonly neuralBridge: PubNeuralBridge;
   public readonly deliveryGate?: RemoteDeliveryGate;
   public readonly postTaskGate: PostTaskExperienceGate;
+  public readonly preTaskGate: PreTaskKnowledgeGate;
 
   constructor(
     protected readonly tasks: TaskRepository,
@@ -313,11 +314,13 @@ export abstract class BaseWorker implements Worker {
     neuralBridge?: PubNeuralBridge,
     deliveryGate?: RemoteDeliveryGate,
     postTaskGate?: PostTaskExperienceGate,
+    preTaskGate?: PreTaskKnowledgeGate,
   ) {
     this.catalog = catalog;
     this.remotePersistence = remotePersistence ?? new PdlRemotePersistence(this.catalog);
     this.neuralBridge = neuralBridge ?? new DefaultPubNeuralBridge(undefined, undefined, postTaskGate);
     this.postTaskGate = postTaskGate ?? (this.neuralBridge as any).postTaskGate ?? new PostTaskExperienceGate();
+    this.preTaskGate = preTaskGate ?? new PreTaskKnowledgeGate();
     this.deliveryGate = deliveryGate ?? new RemoteDeliveryGate({
       client: new GitHubClient(),
       catalog: this.catalog,
@@ -496,6 +499,16 @@ export abstract class BaseWorker implements Worker {
           workspacePath: null,
         });
         return true;
+      }
+
+      // Phase V1.1-C: single pre-task Neural knowledge read before execution.
+      // Neural is contextual DATA ONLY. Fail-open semantics preserve PDL execution autonomy.
+      try {
+        const preTask = await this.preTaskGate.evaluatePreTaskKnowledge(task);
+        prepared = { ...prepared, task: preTask.task };
+        console.log("[BaseWorker] Pre-task Neural query for task " + task.id + ": status=" + preTask.result.status + ", items=" + preTask.result.itemCount + ", durationMs=" + preTask.result.observability.durationMs + ".");
+      } catch (neuralPreTaskErr: any) {
+        console.warn("[BaseWorker] Pre-task Neural warning for task " + task.id + ": " + (neuralPreTaskErr?.message || String(neuralPreTaskErr)));
       }
 
       // Delegate ALL attempt/workspace lifecycle to subclass with prepared execution spec
