@@ -1,3 +1,147 @@
+import type { AgentProvider, ProviderTaskResult, ProviderResultStatus, ProviderTaskInput } from './providers/types.js';
+import type { Task, TaskRepository } from './domain.js';
+import { PDL_SYSTEM_INSTRUCTIONS } from './pdl/constants.js';
+import { BaseWorker, type AttemptResult, type AttemptTrace, type WorkerExecutionTrace } from './worker-service.js';
+import { PdlGovernanceEngine } from './pdl/governance/index.js';
+import type { ProductCatalog } from './pdl/products/catalog.js';
+import type { PdlRemotePersistence } from './pdl/persistence/index.js';
+import type { PubNeuralBridge, PreTaskKnowledgeResult } from './pdl/neural/index.js';
+import { PreTaskKnowledgeGate, PostTaskExperienceGate } from './pdl/neural/index.js';
+import type { RemoteDeliveryGate } from './pdl/delivery/index.js';
+import { DefaultExecutionEngine } from './execution/default-execution-engine.js';
+import type { ExecutionResult } from './execution/execution-engine.js';
+import type { PreparedExecution } from './execution/execution-seam.js';
+import type { ExecutionSpecDatabase } from './execution/execution-spec-persistence.js';
+import type { WorkspaceSnapshot } from './finalizer.js';
+import { captureWorkspaceSnapshot } from './finalizer.js';
+import { RouterProvider } from './providers/router.js';
+import { OpenRouterProvider } from './providers/openrouter.js';
+import { StreamEventSink, type OperationalEventEnvelope, type OperationalEventType } from './providers/streaming/index.js';
+import { verifyRepositoryIdentity } from './pdl/security/repository-identity.js';
+import { classifyTaskProfile } from './routing/index.js';
+import {
+  TaskComplexityClassifier,
+  defaultComplexityClassifier,
+  TaskPlanner,
+  type ComplexityClassificationDecision,
+  type StructuredExecutionPlan,
+  type ComplexityPlanningMode,
+} from './pdl/planning/index.js';
+import {
+  enrichDeveloperTaskWithMemory,
+  enrichArchitectTaskWithMemory,
+  enrichReviewerTaskWithMemory,
+  enrichQaTaskWithMemory,
+  enrichChiefOfStaffTaskWithMemory,
+} from './office/memory.js';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execSync } from 'node:child_process';
+
+function run(cmd: string, args: string[], cwd?: string): Promise<string> {
+  const escaped = args.map(a => '"' + String(a).replace(/"/g, '\\"') + '"').join(' ');
+  return new Promise((resolve, reject) => {
+    try {
+      const output = execSync(cmd + ' ' + escaped, {
+        cwd,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 60000,
+      });
+      resolve(output.toString());
+    } catch (error: any) {
+      reject(new Error(`${cmd} failed (${error.status ?? 'err'}): ${error.stderr || error.message}`));
+    }
+  });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Retryable provider statuses — per TASK-000030 v4.3
+const RETRYABLE_PROVIDER_STATUSES: ProviderResultStatus[] = [
+  'TIMED_OUT',
+  'ROUTER_TIMEOUT',
+  'ROUTER_CONNECTION_ERROR',
+];
+
+function isRetryableHttpStatus(statusCode: number | undefined): boolean {
+  // Fail closed: undefined httpStatus → NOT retryable
+  if (statusCode === undefined) return false;
+  // 429 (Too Many Requests) → retryable
+  if (statusCode === 429) return true;
+  // 5xx → retryable
+  if (statusCode >= 500 && statusCode < 600) return true;
+  // 4xx (except 429) → fail-fast
+  return false;
+}
+
+/**
+ * Determine if a ProviderTaskResult is retryable.
+ * Uses the original ProviderTaskResult BEFORE status mapping.
+ */
+function isRetryableProviderResult(result: ProviderTaskResult): boolean {
+  if (RETRYABLE_PROVIDER_STATUSES.includes(result.status)) return true;
+  if (result.status === 'ROUTER_HTTP_ERROR') {
+    return isRetryableHttpStatus(result.httpStatus);
+  }
+  // FAILED, START_ERROR, TOOL_LOOP_LIMIT, COMPLETED → non-retryable
+  return false;
+}
+
+/**
+ * Get a human-readable retry reason from a provider result.
+ */
+function getRetryReason(result: ProviderTaskResult): string | null {
+  if (result.status === 'TIMED_OUT') return 'provider_timeout';
+  if (result.status === 'ROUTER_TIMEOUT') return 'router_timeout';
+  if (result.status === 'ROUTER_CONNECTION_ERROR') return 'connection_error';
+  if (result.status === 'ROUTER_HTTP_ERROR') {
+    if (result.httpStatus !== undefined) {
+      return 'http_' + result.httpStatus;
+    }
+    return 'http_undefined';
+  }
+  return null;
+}
+
+function getRetryConfig(): {
+  maxAttempts?: number;
+  timeoutPerAttemptMs: number;
+  timeoutTotalMs: number;
+  backoffMs: number;
+} {
+  return {
+    maxAttempts: process.env.ROUTER_MAX_ATTEMPTS !== undefined ? Number(process.env.ROUTER_MAX_ATTEMPTS) : undefined,
+    timeoutPerAttemptMs: Number(process.env.ROUTER_TIMEOUT_PER_ATTEMPT_MS ?? 300000),
+    timeoutTotalMs: Number(process.env.ROUTER_TIMEOUT_TOTAL_MS ?? 600000),
+    backoffMs: Number(process.env.ROUTER_BACKOFF_MS ?? 1000),
+  };
+}
+
+/**
+ * RouterWorker: uses AgentProvider instances (typically RouterProvider) as the coding agent.
+ *
+ * Extends BaseWorker — inherits all finalization, auto-commit, and FAILED guard
+ * logic from BaseWorker + TaskFinalizer. Does NOT duplicate any of that logic.
+ *
+ * RESPONSIBILITY: implement `executeWithRetry(task, repository)` with retry/fallback
+ * between multiple RouterProvider instances via ROUTER_PROVIDER_CHAIN.
+ *
+ * Each attempt gets its own fresh workspace + clone + baseline.
+ * The winning attempt's workspace + baseline + declaredChangedFiles are returned
+ * as a unified AttemptResult to BaseWorker.executeOnce() for finalization.
+ */
+export type TaskStreamEventCallback = (
+  taskId: string,
+  attempt: number,
+  event: any,
+  envelope?: OperationalEventEnvelope
+) => void;
+
+export class RouterWorker extends BaseWorker {
+  protected readonly provider: AgentProvider;
   protected readonly onStreamEvent?: TaskStreamEventCallback;
   public readonly preTaskGate: PreTaskKnowledgeGate;
   private currentAttemptController?: AbortController;
@@ -17,7 +161,7 @@
     preTaskGate?: PreTaskKnowledgeGate,
     postTaskGate?: PostTaskExperienceGate,
   ) {
-    super(tasks ?? ({} as any), name, executionSpecDb, governance, catalog, remotePersistence, neuralBridge, deliveryGate, postTaskGate, preTaskGate);
+    super(tasks ?? ({} as any), name, executionSpecDb, governance, catalog, remotePersistence, neuralBridge, deliveryGate, postTaskGate);
     this.provider = provider ?? ({} as any);
     this.onStreamEvent = onStreamEvent;
     this.preTaskGate = preTaskGate ?? new PreTaskKnowledgeGate();
@@ -29,3 +173,1053 @@
     type: OperationalEventType,
     payload: Record<string, unknown>,
     sink?: StreamEventSink
+  ): void {
+    if (!this.onStreamEvent) return;
+
+    if (sink) {
+      sink.emitEnvelope(type, payload);
+    } else {
+      const envelope: OperationalEventEnvelope = {
+        taskId,
+        attempt,
+        seq: 0,
+        timestamp: new Date().toISOString(),
+        type,
+        payload,
+      };
+      try {
+        this.onStreamEvent(taskId, attempt, payload, envelope);
+      } catch {}
+    }
+  }
+
+  override async cancel(): Promise<void> {
+    await super.cancel();
+    if (this.currentAttemptSink) {
+      this.emitLifecycleEvent(
+        (this.currentAttemptSink as any).taskId || '',
+        (this.currentAttemptSink as any).attempt || 0,
+        'task_cancelled',
+        { cancelled: true },
+        this.currentAttemptSink
+      );
+    } else if (this.onStreamEvent) {
+      this.emitLifecycleEvent(
+        '',
+        0,
+        'task_cancelled',
+        { cancelled: true }
+      );
+    }
+    if (this.currentAttemptController) {
+      this.currentAttemptController.abort();
+    }
+  }
+
+  /**
+   * Build provider chain from ROUTER_PROVIDER_CHAIN env.
+   * Supports only RouterProvider instances (per TASK-000030 v4.3 scope).
+   *
+   * Format: "router:modelA,router:modelB"
+   * Default (no env): [this.provider] — current behavior preserved
+   */
+  protected getProviderChain(): AgentProvider[] {
+    const chain = process.env.ROUTER_PROVIDER_CHAIN;
+    if (!chain) {
+      if (this.provider.kind === 'openrouter' && process.env.OPENROUTER_FALLBACK_MODELS) {
+        const fallbacks = process.env.OPENROUTER_FALLBACK_MODELS.split(',').map(s => s.trim()).filter(Boolean);
+        if (fallbacks.length > 0) {
+          const providers: AgentProvider[] = [this.provider];
+          for (const fb of fallbacks) {
+            providers.push(
+              new OpenRouterProvider(
+                process.env.OPENROUTER_BASE_URL,
+                process.env.OPENROUTER_API_KEY,
+                Number(process.env.OPENROUTER_TIMEOUT_MS ?? 900000),
+                fb,
+              )
+            );
+          }
+          return providers;
+        }
+      }
+      return [this.provider];
+    }
+
+    const providers: AgentProvider[] = [];
+    const specs = chain.split(',').map(s => s.trim()).filter(Boolean);
+
+    for (const spec of specs) {
+      const [kind, ...rest] = spec.split(':');
+      const modelOverride = rest.join(':');
+
+      if (kind === 'router' || kind === '9router') {
+        providers.push(
+          new RouterProvider(
+            process.env.ROUTER_BASE_URL,
+            process.env.ROUTER_API_KEY,
+            Number(process.env.ROUTER_TIMEOUT_MS ?? 900000),
+            modelOverride || undefined,
+          )
+        );
+      } else if (kind === 'openrouter') {
+        providers.push(
+          new OpenRouterProvider(
+            process.env.OPENROUTER_BASE_URL,
+            process.env.OPENROUTER_API_KEY,
+            Number(process.env.OPENROUTER_TIMEOUT_MS ?? 900000),
+            modelOverride || undefined,
+          )
+        );
+      }
+    }
+
+    return providers.length > 0 ? providers : [this.provider];
+  }
+
+  /**
+   * Execute task with retry/fallback between RouterProvider instances.
+   *
+   * Each attempt:
+   * 1. Creates fresh workspace
+   * 2. Clones repository
+   * 3. Captures baseline
+   * 4. Executes provider on SAME workspace
+   *
+   * If retryable -> destroy workspace, backoff, try next provider
+   * If non-retryable -> destroy workspace, return FAILED (no finalize)
+   * If COMPLETED -> return attempt result (winner)
+   *
+   * TaskFinalizer receives EXACTLY the winning attempt's workspace + baseline + changedFiles.
+   * A full WorkerExecutionTrace is included in the result for diagnostics.
+   */
+  protected async executeWithRetry(
+    task: Task,
+    repository: string,
+    prepared?: PreparedExecution,
+  ): Promise<AttemptResult> {
+    if (!prepared) {
+      throw new Error('RouterWorker: PreparedExecution is required; execution without sealed ExecutionSpec is prohibited');
+    }
+    const finalPrepared: PreparedExecution = prepared;
+    this.active = true;
+    let effectiveTask = await enrichDeveloperTaskWithMemory(task);
+    effectiveTask = await enrichArchitectTaskWithMemory(effectiveTask);
+    effectiveTask = await enrichReviewerTaskWithMemory(effectiveTask);
+    effectiveTask = await enrichQaTaskWithMemory(effectiveTask);
+    effectiveTask = await enrichChiefOfStaffTaskWithMemory(effectiveTask);
+
+    // Phase E1: Controlled Pre-Task Neural Knowledge Gate (Fail-open)
+    let preTaskKnowledgeOutcome: PreTaskKnowledgeResult | undefined;
+    try {
+      const evaluation = await this.preTaskGate.evaluatePreTaskKnowledge(effectiveTask);
+      effectiveTask = evaluation.task;
+      preTaskKnowledgeOutcome = evaluation.result;
+    } catch (err: any) {
+      console.warn(`[RouterWorker] Pre-task neural query failed-open: ${err?.message || String(err)}`);
+    }
+
+    const config = getRetryConfig();
+    const providers = this.getProviderChain();
+    const defaultMaxAttempts = providers.length > 1 ? providers.length : 1;
+    const configuredMax = config.maxAttempts !== undefined ? config.maxAttempts : defaultMaxAttempts;
+    const maxAttempts = Math.max(1, Math.min(configuredMax, providers.length));
+    const effectiveProviders = providers.slice(0, maxAttempts);
+
+    const globalStart = Date.now();
+    const deadline = globalStart + config.timeoutTotalMs;
+
+    const attemptTraces: AttemptTrace[] = [];
+// Initialize per-task structures
+const executedAttempts: string[] = [];
+const action = typeof task.objective === 'string' && task.objective.trim() !== '' ? task.objective : undefined;
+    const errors: { provider: string; status: string; message: string; attempt: number }[] = [];
+
+    // Phase 7: Complexity-Triggered Planning (Task-level classification)
+    const planningMode = (process.env.PDL_COMPLEXITY_PLANNING_MODE || 'OFF').toUpperCase() as ComplexityPlanningMode;
+    const classification = defaultComplexityClassifier.evaluate(effectiveTask, finalPrepared.executionSpec);
+
+    this.emitLifecycleEvent(
+      task.id,
+      0,
+      'task_complexity_classified',
+      {
+        taskId: task.id,
+        tier: classification.tier,
+        planningRequired: classification.planningRequired,
+        hardSignals: classification.hardSignalsTriggered,
+        softSignals: classification.softSignalsTriggered,
+        score: classification.softSignalScore,
+        durationMs: classification.evaluationDurationMs,
+      }
+    );
+
+    // Determine if planning should be active for this task
+    let isPlanningActive = false;
+    if (planningMode === 'FULL') {
+      isPlanningActive = classification.planningRequired;
+    } else if (planningMode === 'CANARY') {
+      const activeProject = (task as any).activeProject || (task as any).project || '';
+      const isCanaryTarget = activeProject === 'pub-dev-loop-template';
+      isPlanningActive = isCanaryTarget && classification.planningRequired;
+    }
+    // 'OFF' and 'SHADOW': isPlanningActive = false (shadow only emits telemetry)
+
+    let cachedPlan: StructuredExecutionPlan | undefined = undefined;
+
+    for (let attempt = 0; attempt < effectiveProviders.length; attempt++) {
+      const provider = effectiveProviders[attempt];
+
+      // 1. CHECK GLOBAL DEADLINE BEFORE ANY OPERATION
+      const remainingBudget = deadline - Date.now();
+      if (remainingBudget <= 0) {
+        return {
+          status: 'FAILED',
+          workspace: '',
+          baselineSnapshot: { trackedFiles: [], gitStatus: '', headSha: null },
+          declaredChangedFiles: [],
+          stdout: '',
+          stderr: 'Total timeout exceeded before starting attempt ' + (attempt + 1),
+          exitCode: null,
+          provider: provider.kind,
+          model: provider.model,
+          toolCalls: 0,
+          toolRounds: 0,
+          durationMs: Date.now() - globalStart,
+          errorCode: 'ROUTER_TIMEOUT_TOTAL',
+          errorMessage: 'Total timeout exceeded',
+          trace: {
+            totalDurationMs: Date.now() - globalStart,
+            totalAttempts: attempt,
+            providerChainLength: effectiveProviders.length,
+            attempts: attemptTraces,
+            winningAttempt: null,
+            finalStatus: 'FAILED',
+            errorCode: 'ROUTER_TIMEOUT_TOTAL',
+            errorMessage: 'Total timeout exceeded',
+            timedOut: true,
+            globalTimeoutMs: config.timeoutTotalMs,
+            finalizeWasCalled: false,
+            finalizeStatus: null,
+            commitSha: null,
+            agentId: task.agentId ?? null,
+          },
+        };
+      }
+
+      // 2. CREATE FRESH WORKSPACE FOR THIS ATTEMPT
+      const attemptWS = await mkdtemp(join(tmpdir(), 'pu-dev-loop-attempt-'));
+      const repo = join(attemptWS, 'repo');
+      const branch = task.branch ?? ('worker/' + this.name + '/' + task.id + '-attempt-' + attempt);
+
+      let attemptBaseline: WorkspaceSnapshot | undefined;
+      let workspaceCleaned = false;
+
+      try {
+        // 3. CLONE (respecting deadline)
+        const cloneRemaining = deadline - Date.now();
+        if (cloneRemaining <= 0) {
+          await rm(attemptWS, { recursive: true, force: true });
+          workspaceCleaned = true;
+          return this.createTotalTimeoutResult(globalStart, config.timeoutTotalMs, attemptTraces, effectiveProviders.length);
+        }
+
+        await run('git', ['clone', repository, repo]);
+        if (task.branch) {
+          try {
+            await run('git', ['fetch', 'origin', task.branch], repo);
+            await run('git', ['checkout', '-B', task.branch, `origin/${task.branch}`], repo);
+          } catch {
+            await run('git', ['checkout', '-B', task.branch], repo);
+          }
+        } else {
+          await run('git', ['checkout', '-b', branch], repo);
+        }
+
+        // GATE 1: Post-Provisioning Repository Identity Verification
+        verifyRepositoryIdentity({
+          taskRepository: task.repository,
+          workspacePath: repo,
+          gate: 'Gate 1 (Post-Provisioning)',
+          activeProject: (task as any).activeProject || (task as any).project,
+        });
+
+        // 4. CAPTURE BASELINE (of THIS attempt's workspace)
+        attemptBaseline = captureWorkspaceSnapshot(repo);
+
+        // 5. EXECUTE PROVIDER ON THIS ATTEMPT'S WORKSPACE
+        // Provider timeout: min(per-attempt, remaining budget) — hard ceiling
+        const providerRemaining = deadline - Date.now();
+        const effectiveTimeout = Math.min(
+          config.timeoutPerAttemptMs,
+          Math.max(0, providerRemaining),
+        );
+
+        // Setup attempt-level AbortController & StreamEventSink
+        const attemptController = new AbortController();
+        this.currentAttemptController = attemptController;
+
+        const attemptSink = new StreamEventSink(
+          {
+            onEnvelope: (envelope) => {
+              if (this.onStreamEvent) {
+                try {
+                  this.onStreamEvent(envelope.taskId || task.id, envelope.attempt ?? attempt, envelope.payload, envelope);
+                } catch {}
+              }
+            },
+          },
+          { taskId: task.id, attempt }
+        );
+        this.currentAttemptSink = attemptSink;
+
+        // Emit lifecycle: attempt_started
+        this.emitLifecycleEvent(
+          task.id,
+          attempt,
+          'attempt_started',
+          {
+            attempt,
+            provider: provider.kind,
+            model: provider.model,
+          },
+          attemptSink
+        );
+
+        // Phase 7: Attempt-Level Planning (if active and required)
+        if (isPlanningActive) {
+          if (!cachedPlan) {
+            // Need to generate plan on this attempt
+            const catalogProduct = this.catalog?.resolve((task as any).activeProject || (task as any).project || task.repository);
+            const planResult = await TaskPlanner.generatePlan({
+              task: { ...effectiveTask, workspacePath: repo },
+              spec: finalPrepared.executionSpec,
+              provider,
+              attempt,
+              product: catalogProduct,
+              authorizedScope: catalogProduct?.allowedPaths,
+              onPlanningStarted: () => {
+                this.emitLifecycleEvent(
+                  task.id,
+                  attempt,
+                  'planning_started',
+                  {
+                    taskId: task.id,
+                    attempt,
+                    provider: provider.kind,
+                    model: provider.model,
+                  },
+                  attemptSink
+                );
+              },
+              onPlanGenerated: (tokensUsed, durationMs) => {
+                this.emitLifecycleEvent(
+                  task.id,
+                  attempt,
+                  'plan_generated',
+                  {
+                    taskId: task.id,
+                    attempt,
+                    tokensUsed,
+                    durationMs,
+                  },
+                  attemptSink
+                );
+              },
+              onPlanValidated: (plan) => {
+                this.emitLifecycleEvent(
+                  task.id,
+                  attempt,
+                  'plan_validated',
+                  {
+                    taskId: task.id,
+                    attempt,
+                    filesCount: plan.filesToChange.length,
+                    stepsCount: plan.implementationSteps.length,
+                  },
+                  attemptSink
+                );
+              },
+              onPlanRejected: (reasons, fatal) => {
+                this.emitLifecycleEvent(
+                  task.id,
+                  attempt,
+                  'plan_rejected',
+                  {
+                    taskId: task.id,
+                    attempt,
+                    reasons,
+                    fatal,
+                  },
+                  attemptSink
+                );
+              },
+            });
+
+            if (planResult.status !== 'SUCCESS' || !planResult.plan) {
+              // FAIL-CLOSED: Planning failure NEVER degrades to blind direct execution
+              await rm(attemptWS, { recursive: true, force: true });
+              workspaceCleaned = true;
+              return {
+                status: 'FAILED',
+                workspace: attemptWS,
+                baselineSnapshot: attemptBaseline,
+                declaredChangedFiles: [],
+                stdout: '',
+                stderr: `Complexity planning failed closed: ${planResult.errorMessage || 'Plan generation or validation failed'}`,
+                exitCode: 1,
+                provider: provider.kind,
+                model: provider.model,
+                toolCalls: 0,
+                toolRounds: 0,
+                durationMs: Date.now() - globalStart,
+                errorCode: planResult.errorCode || 'PLAN_VALIDATION_FAILED',
+                errorMessage: planResult.errorMessage || 'Plan validation failed closed',
+                trace: {
+                  totalDurationMs: Date.now() - globalStart,
+                  totalAttempts: attempt + 1,
+                  providerChainLength: effectiveProviders.length,
+                  attempts: attemptTraces,
+                  winningAttempt: null,
+                  finalStatus: 'FAILED',
+                  errorCode: planResult.errorCode || 'PLAN_VALIDATION_FAILED',
+                  errorMessage: planResult.errorMessage || 'Plan validation failed closed',
+                  timedOut: false,
+                  globalTimeoutMs: config.timeoutTotalMs,
+                  finalizeWasCalled: false,
+                  finalizeStatus: null,
+                  commitSha: null,
+                  agentId: task.agentId ?? null,
+                },
+              };
+            }
+
+            cachedPlan = planResult.plan;
+          }
+
+          this.emitLifecycleEvent(
+            task.id,
+            attempt,
+            'execution_path_selected',
+            {
+              taskId: task.id,
+              path: 'PLANNED',
+            },
+            attemptSink
+          );
+        } else {
+          this.emitLifecycleEvent(
+            task.id,
+            attempt,
+            'execution_path_selected',
+            {
+              taskId: task.id,
+              path: 'DIRECT',
+            },
+            attemptSink
+          );
+        }
+
+        let subResult: ProviderTaskResult;
+        let attemptExecutionResult: ExecutionResult | undefined;
+
+        if (effectiveTimeout <= 0) {
+          subResult = {
+            status: 'ROUTER_TIMEOUT',
+            provider: provider.kind,
+            model: provider.model,
+            exitCode: null,
+            durationMs: Date.now() - globalStart,
+            stdout: '',
+            stderr: 'No time budget remaining for provider execution',
+            changedFiles: [],
+            commit: null,
+            errorCode: 'ROUTER_TIMEOUT',
+            errorMessage: 'Remaining budget exhausted before provider execution',
+            toolCalls: 0,
+            toolRounds: 0,
+            httpStatus: undefined,
+          };
+          attemptExecutionResult = {
+            execution: {
+              status: 'FAILED',
+              provider: provider.kind,
+              model: provider.model,
+              workspace: repo,
+              changedFiles: [],
+              durationMs: Date.now() - globalStart,
+              errorCode: 'ROUTER_TIMEOUT',
+              errorMessage: 'Remaining budget exhausted before provider execution',
+            },
+            finalization: undefined,
+            specIdentity: {
+              specVersion: finalPrepared.executionSpec.specVersion,
+              taskId: task.id,
+              lineage: finalPrepared.executionSpec.lineage,
+            },
+          };
+        } else {
+          let timeoutTimer: NodeJS.Timeout | undefined;
+          let capturedSubResult: ProviderTaskResult | undefined;
+
+          const attemptProvider: AgentProvider = {
+            kind: provider.kind,
+            model: provider.model,
+            health: () => provider.health(),
+            capabilities: () => provider.capabilities(),
+            metadata: () => provider.metadata(),
+            execute: async (input: ProviderTaskInput, ws: string): Promise<ProviderTaskResult> => {
+              // GATE 2: Pre-Agent-Execution Repository Identity Verification
+              verifyRepositoryIdentity({
+                taskRepository: task.repository,
+                workspacePath: ws,
+                gate: 'Gate 2 (Pre-Agent-Execution)',
+                activeProject: (task as any).activeProject || (task as any).project,
+              });
+
+              try {
+                const taskWithInstructions: ProviderTaskInput = {
+                  ...input,
+                  systemInstructions: input.systemInstructions && input.systemInstructions.length > 0
+                    ? input.systemInstructions
+                    : [...PDL_SYSTEM_INSTRUCTIONS],
+                };
+                const res = await Promise.race([
+                  provider.execute(taskWithInstructions, ws, {
+                    signal: attemptController.signal,
+                    consumer: attemptSink,
+                  }),
+                  new Promise<ProviderTaskResult>((_, reject) => {
+                    timeoutTimer = setTimeout(() => {
+                      attemptController.abort();
+                      reject(new Error('Provider timeout after ' + effectiveTimeout + 'ms'));
+                    }, effectiveTimeout);
+                  }),
+                ]);
+                capturedSubResult = res;
+                return res;
+              } catch (error: any) {
+                const timeoutRes: ProviderTaskResult = {
+                  status: 'ROUTER_TIMEOUT',
+                  provider: provider.kind,
+                  model: provider.model,
+                  exitCode: null,
+                  durationMs: Date.now() - globalStart,
+                  stdout: '',
+                  stderr: error?.message || 'Provider timeout or cancelled',
+                  changedFiles: [],
+                  commit: null,
+                  errorCode: 'ROUTER_TIMEOUT',
+                  errorMessage: error?.message || 'Provider timeout or cancelled',
+                  toolCalls: 0,
+                  toolRounds: 0,
+                  httpStatus: undefined,
+                };
+                capturedSubResult = timeoutRes;
+                return timeoutRes;
+              } finally {
+                if (timeoutTimer) clearTimeout(timeoutTimer);
+                if (this.currentAttemptController === attemptController) {
+                  this.currentAttemptController = undefined;
+                }
+              }
+            },
+          };
+
+          const engine = new DefaultExecutionEngine(attemptProvider);
+          const attemptTask: Task = { ...effectiveTask, workspacePath: repo };
+
+          let executionSpecToRun = finalPrepared.executionSpec;
+          if (cachedPlan) {
+            const planInstructions: string[] = [
+              `EXECUTION PLAN (${cachedPlan.complexityAssessment}):`,
+              `Goal: ${cachedPlan.goal}`,
+              `Files to Change: ${cachedPlan.filesToChange.join(', ')}`,
+              'Implementation Steps:',
+              ...cachedPlan.implementationSteps.map(s => `  ${s.stepNumber}. [${s.targetFile}] ${s.description}`),
+              'Test Strategy:',
+              ...cachedPlan.testStrategy.map(t => `  - ${t}`),
+            ];
+
+            const existingInstructions = Array.isArray(finalPrepared.executionSpec.executionInstructions)
+              ? finalPrepared.executionSpec.executionInstructions
+              : [];
+
+            executionSpecToRun = {
+              ...finalPrepared.executionSpec,
+              executionInstructions: [...existingInstructions, ...planInstructions],
+            };
+          }
+
+          attemptExecutionResult = await engine.execute(attemptTask, executionSpecToRun);
+          subResult = capturedSubResult ?? {
+            status: attemptExecutionResult.execution.status === 'COMPLETED' ? 'COMPLETED' : 'FAILED',
+            provider: provider.kind,
+            model: provider.model,
+            exitCode: attemptExecutionResult.execution.status === 'COMPLETED' ? 0 : 1,
+            durationMs: attemptExecutionResult.execution.durationMs,
+            stdout: '',
+            stderr: attemptExecutionResult.execution.errorMessage || '',
+            changedFiles: attemptExecutionResult.execution.changedFiles,
+            commit: null,
+            errorCode: attemptExecutionResult.execution.errorCode,
+            errorMessage: attemptExecutionResult.execution.errorMessage,
+            toolCalls: 0,
+            toolRounds: 0,
+          };
+
+          if (attemptExecutionResult && preTaskKnowledgeOutcome) {
+            (attemptExecutionResult.execution as any).preTaskKnowledge = preTaskKnowledgeOutcome.observability;
+          }
+        }
+
+        // Collect attempt trace
+        const retryable = isRetryableProviderResult(subResult);
+        const modelName = provider.model || subResult.model || '';
+        const isFreeModel = modelName.includes(':free') || modelName.endsWith('/free');
+        const calculatedTier: 1 | 2 | 3 = modelName === 'openrouter/free'
+          ? 2
+          : isFreeModel
+          ? 1
+          : 3;
+        const taskProfile = classifyTaskProfile(task);
+
+        let fallbackType: 'retry' | 'model_switch' | 'tier_escalation' | undefined = undefined;
+        if (attempt > 0) {
+          const prevAttempt = attemptTraces[attempt - 1];
+          if (prevAttempt && prevAttempt.tier !== calculatedTier) {
+            fallbackType = 'tier_escalation';
+          } else if (prevAttempt && prevAttempt.model === provider.model) {
+            fallbackType = 'retry';
+          } else {
+            fallbackType = 'model_switch';
+          }
+        }
+        // Gather per-model attempts from provider result
+        const modelAttempts = subResult.modelAttempts ?? [];
+        const modelChain = modelAttempts.length > 0
+          ? modelAttempts.map(m => `${provider.kind}/${m}`)
+          : [`${provider.kind}/${subResult.model ?? provider.model ?? 'unknown'}`];
+
+        const trace: AttemptTrace = {
+          attempt,
+          provider: String(provider.kind),
+          model: provider.model,
+          status: subResult.status,
+          retryable,
+          retryReason: retryable ? getRetryReason(subResult) : null,
+          httpStatus: subResult.httpStatus,
+          errorCode: subResult.errorCode,
+          errorMessage: subResult.errorMessage,
+          toolCalls: subResult.toolCalls ?? 0,
+          toolRounds: subResult.toolRounds ?? 0,
+          durationMs: subResult.durationMs,
+          exitCode: subResult.exitCode,
+          attemptTimeoutMs: effectiveTimeout,
+          isWinner: false,
+          workspaceCreated: true,
+          workspaceCleaned: false,
+          tier: calculatedTier,
+          profile: taskProfile,
+          fallbackType,
+          promptTokens: subResult.promptTokens,
+          completionTokens: subResult.completionTokens,
+          totalTokens: subResult.totalTokens,
+          costUsd: subResult.costUsd,
+          // New fields
+          gateway: provider.kind,
+          action,
+          fallbackChain: [...executedAttempts, ...modelChain],
+          // Observability fields
+          fallbackUsed: subResult.fallbackUsed,
+          validationResult: subResult.validationResult ?? null,
+          errorClass: subResult.errorClass ?? null,
+          agentId: task.agentId ?? null,
+        };
+        // Record this attempt in executedAttempts after creating trace
+        executedAttempts.push(...modelChain);
+        attemptTraces.push(trace);
+
+        if (!this.active) {
+          await rm(attemptWS, { recursive: true, force: true });
+          workspaceCleaned = true;
+          attemptTraces[attemptTraces.length - 1].workspaceCleaned = true;
+          this.emitLifecycleEvent(
+            task.id,
+            attempt,
+            'task_cancelled',
+            {
+              attempt,
+              provider: provider.kind,
+              model: provider.model,
+            },
+            attemptSink
+          );
+          return {
+            status: 'FAILED',
+            workspace: attemptWS,
+            baselineSnapshot: attemptBaseline,
+            declaredChangedFiles: [],
+            stdout: '',
+            stderr: 'Worker cancelled',
+            exitCode: null,
+            provider: provider.kind,
+            model: provider.model,
+            toolCalls: 0,
+            toolRounds: 0,
+            durationMs: Date.now() - globalStart,
+            errorCode: 'WORKER_CANCELLED',
+            errorMessage: 'Worker was cancelled',
+            trace: {
+              totalDurationMs: Date.now() - globalStart,
+              totalAttempts: attempt + 1,
+              providerChainLength: effectiveProviders.length,
+              attempts: attemptTraces,
+              winningAttempt: null,
+              finalStatus: 'FAILED',
+              errorCode: 'WORKER_CANCELLED',
+              errorMessage: 'Worker was cancelled',
+              timedOut: false,
+              globalTimeoutMs: config.timeoutTotalMs,
+              finalizeWasCalled: false,
+              finalizeStatus: null,
+              commitSha: null,
+              agentId: task.agentId ?? null,
+            },
+          };
+        }
+
+        // 6. CLASSIFY RESULT
+        const isCompleted = subResult.status === 'COMPLETED';
+
+        if (isCompleted) {
+          attemptTraces[attemptTraces.length - 1].isWinner = true;
+          this.emitLifecycleEvent(
+            task.id,
+            attempt,
+            'attempt_completed',
+            {
+              attempt,
+              provider: subResult.provider,
+              model: subResult.model,
+              durationMs: subResult.durationMs,
+              changedFiles: subResult.changedFiles,
+              toolCalls: subResult.toolCalls,
+            },
+            attemptSink
+          );
+          return {
+            status: 'COMPLETED',
+            workspace: repo,
+            baselineSnapshot: attemptBaseline,
+            declaredChangedFiles: subResult.changedFiles,
+            stdout: subResult.stdout,
+            stderr: subResult.stderr,
+            exitCode: subResult.exitCode ?? 0,
+            provider: subResult.provider.toString(),
+            model: subResult.model,
+            toolCalls: subResult.toolCalls ?? 0,
+            toolRounds: subResult.toolRounds ?? 0,
+            durationMs: subResult.durationMs,
+            execution: subResult.execution as Record<string, unknown> | undefined,
+            errorCode: subResult.errorCode,
+            errorMessage: subResult.errorMessage,
+            executionResult: attemptExecutionResult,
+            trace: {
+              totalDurationMs: Date.now() - globalStart,
+              totalAttempts: attempt + 1,
+              providerChainLength: effectiveProviders.length,
+              attempts: attemptTraces,
+              winningAttempt: attempt,
+              finalStatus: 'COMPLETED',
+              errorCode: subResult.errorCode,
+              errorMessage: subResult.errorMessage,
+              timedOut: false,
+              globalTimeoutMs: config.timeoutTotalMs,
+              finalizeWasCalled: false,
+              finalizeStatus: null,
+              commitSha: null,
+              agentId: task.agentId ?? null,
+            },
+          };
+        }
+
+        // Non-COMPLETED — emit attempt_failed
+        this.emitLifecycleEvent(
+          task.id,
+          attempt,
+          'attempt_failed',
+          {
+            attempt,
+            provider: subResult.provider,
+            model: subResult.model,
+            errorCode: subResult.errorCode,
+            errorMessage: subResult.errorMessage,
+            retryable,
+          },
+          attemptSink
+        );
+
+        if (!retryable) {
+          await rm(attemptWS, { recursive: true, force: true });
+          workspaceCleaned = true;
+          attemptTraces[attemptTraces.length - 1].workspaceCleaned = true;
+          return {
+            status: 'FAILED',
+            workspace: attemptWS,
+            baselineSnapshot: attemptBaseline,
+            declaredChangedFiles: subResult.changedFiles,
+            stdout: subResult.stdout,
+            stderr: subResult.stderr,
+            exitCode: subResult.exitCode,
+            provider: subResult.provider.toString(),
+            model: subResult.model,
+            toolCalls: subResult.toolCalls ?? 0,
+            toolRounds: subResult.toolRounds ?? 0,
+            durationMs: subResult.durationMs,
+            execution: subResult.execution as Record<string, unknown> | undefined,
+            errorCode: subResult.errorCode,
+            errorMessage: subResult.errorMessage,
+            executionResult: attemptExecutionResult,
+            trace: {
+              totalDurationMs: Date.now() - globalStart,
+              totalAttempts: attempt + 1,
+              providerChainLength: effectiveProviders.length,
+              attempts: attemptTraces,
+              winningAttempt: null,
+              finalStatus: 'FAILED',
+              errorCode: subResult.errorCode,
+              errorMessage: subResult.errorMessage,
+              timedOut: false,
+              globalTimeoutMs: config.timeoutTotalMs,
+              finalizeWasCalled: false,
+              finalizeStatus: null,
+              commitSha: null,
+              agentId: task.agentId ?? null,
+            },
+          };
+        }
+
+        // RETRYABLE: record error, discard workspace, backoff
+        errors.push({
+          provider: subResult.provider.toString(),
+          status: subResult.status,
+          message: subResult.errorMessage || '',
+          attempt,
+        });
+
+        // Destroy this attempt's workspace BEFORE creating next attempt
+        await rm(attemptWS, { recursive: true, force: true });
+        workspaceCleaned = true;
+        attemptTraces[attemptTraces.length - 1].workspaceCleaned = true;
+
+        // Emit lifecycle: retry_started
+        if (attempt < effectiveProviders.length - 1) {
+          this.emitLifecycleEvent(
+            task.id,
+            attempt,
+            'retry_started',
+            {
+              fromAttempt: attempt,
+              toAttempt: attempt + 1,
+              nextProvider: effectiveProviders[attempt + 1]?.kind,
+            },
+            attemptSink
+          );
+        }
+
+        // BACKOFF (respecting deadline)
+        if (attempt < effectiveProviders.length - 1) {
+          const backoffRemaining = deadline - Date.now();
+          if (backoffRemaining <= 0) {
+            return this.createTotalTimeoutResult(globalStart, config.timeoutTotalMs, attemptTraces, effectiveProviders.length, task);
+          }
+          const backoffMs = Math.min(
+            config.backoffMs * (attempt + 1),
+            backoffRemaining,
+          );
+          await sleep(backoffMs);
+
+          if (deadline - Date.now() <= 0) {
+            return this.createTotalTimeoutResult(globalStart, config.timeoutTotalMs, attemptTraces, effectiveProviders.length, task);
+          }
+        }
+      } catch (error) {
+        // FIX: remainingBudget is scoped to the for-loop body; use deadline for timeout check
+        await rm(attemptWS, { recursive: true, force: true }).catch(() => {});
+        const elapsed = Date.now() - globalStart;
+        if (deadline - Date.now() <= 0) {
+          return this.createTotalTimeoutResult(globalStart, config.timeoutTotalMs, attemptTraces, effectiveProviders.length, task);
+        }
+
+        // Other setup errors — START_ERROR (fail-fast)
+        const trace: AttemptTrace = {
+          attempt,
+          provider: provider.kind,
+          model: provider.model,
+          status: 'START_ERROR',
+          retryable: false,
+          retryReason: null,
+          httpStatus: undefined,
+          errorCode: 'START_ERROR',
+          errorMessage: error instanceof Error ? error.message : String(error),
+          toolCalls: 0,
+          toolRounds: 0,
+          durationMs: elapsed,
+          exitCode: null,
+          attemptTimeoutMs: Math.min(config.timeoutPerAttemptMs, Math.max(0, deadline - Date.now() - elapsed)),
+          isWinner: false,
+          workspaceCreated: true,
+          workspaceCleaned: true,
+          agentId: task.agentId ?? null,
+        };
+        attemptTraces.push(trace);
+
+        return {
+          status: 'FAILED',
+          workspace: attemptWS,
+          baselineSnapshot: attemptBaseline || { trackedFiles: [], gitStatus: '', headSha: null },
+          declaredChangedFiles: [],
+          stdout: '',
+          stderr: String(error),
+          exitCode: null,
+          provider: provider.kind,
+          model: provider.model,
+          toolCalls: 0,
+          toolRounds: 0,
+          durationMs: elapsed,
+          errorCode: 'START_ERROR',
+          errorMessage: error instanceof Error ? error.message : String(error),
+          trace: {
+            totalDurationMs: elapsed,
+            totalAttempts: attempt + 1,
+            providerChainLength: effectiveProviders.length,
+            attempts: attemptTraces,
+            winningAttempt: null,
+            finalStatus: 'FAILED',
+            errorCode: 'START_ERROR',
+            errorMessage: error instanceof Error ? error.message : String(error),
+            timedOut: false,
+            globalTimeoutMs: config.timeoutTotalMs,
+            finalizeWasCalled: false,
+            finalizeStatus: null,
+            commitSha: null,
+            agentId: task.agentId ?? null,
+          },
+        };
+      }
+    }
+
+    // ALL PROVIDERS EXHAUSTED (all retryable failures)
+    return {
+      status: 'FAILED',
+      workspace: '',
+      baselineSnapshot: { trackedFiles: [], gitStatus: '', headSha: null },
+      declaredChangedFiles: [],
+      stdout: '',
+      stderr: 'All ' + effectiveProviders.length + ' providers failed:\n' +
+        errors.map(e => '  Attempt ' + e.attempt + ' [' + e.provider + ']: ' + e.status + ' - ' + e.message).join('\n'),
+      exitCode: null,
+      provider: 'all-providers-failed',
+      model: null,
+      toolCalls: 0,
+      toolRounds: 0,
+      durationMs: Date.now() - globalStart,
+      errorCode: 'ALL_PROVIDERS_FAILED',
+      errorMessage: 'All ' + effectiveProviders.length + ' providers failed:\n' +
+        errors.map(e => '  Attempt ' + e.attempt + ' [' + e.provider + ']: ' + e.status + ' - ' + e.message).join('\n'),
+      trace: {
+        totalDurationMs: Date.now() - globalStart,
+        totalAttempts: effectiveProviders.length,
+        providerChainLength: effectiveProviders.length,
+        attempts: attemptTraces,
+        winningAttempt: null,
+        finalStatus: 'FAILED',
+        errorCode: 'ALL_PROVIDERS_FAILED',
+        errorMessage: 'All ' + effectiveProviders.length + ' providers failed:\n' +
+          errors.map(e => '  Attempt ' + e.attempt + ' [' + e.provider + ']: ' + e.status + ' - ' + e.message).join('\n'),
+        timedOut: false,
+        globalTimeoutMs: config.timeoutTotalMs,
+        finalizeWasCalled: false,
+        finalizeStatus: null,
+        commitSha: null,
+        agentId: task.agentId ?? null,
+      },
+    };
+  }
+
+  // Retain executeTask for backward compatibility with tests that may stub it
+  protected async executeTask(task: Task, repo: string): Promise<{
+    stdout: string;
+    stderr: string;
+    exitCode: number | null;
+    status: 'COMPLETED' | 'FAILED';
+    provider: string | null;
+    model: string | null;
+    changedFiles: string[];
+    toolCalls: number;
+    toolRounds: number;
+    durationMs: number;
+    execution?: Record<string, unknown>;
+    errorCode?: string | null;
+  }> {
+    const result: ProviderTaskResult = await this.provider.execute(task, repo);
+    const status: 'COMPLETED' | 'FAILED' =
+      result.status === 'COMPLETED' ? 'COMPLETED' : 'FAILED';
+    return {
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.exitCode,
+      status,
+      provider: result.provider,
+      model: result.model,
+      changedFiles: result.changedFiles,
+      toolCalls: result.toolCalls ?? 0,
+      toolRounds: result.toolRounds ?? 0,
+      durationMs: result.durationMs,
+      execution: result.execution as Record<string, unknown> | undefined,
+      errorCode: result.errorCode,
+    };
+  }
+
+  private createTotalTimeoutResult(
+    globalStart: number,
+    totalMs: number,
+    attemptTraces: AttemptTrace[],
+    chainLength: number,
+    task?: Task,
+  ): AttemptResult {
+    return {
+      status: 'FAILED',
+      workspace: '',
+      baselineSnapshot: { trackedFiles: [], gitStatus: '', headSha: null },
+      declaredChangedFiles: [],
+      stdout: '',
+      stderr: 'Total timeout exceeded (' + (Date.now() - globalStart) + 'ms >= ' + totalMs + 'ms)',
+      exitCode: null,
+      provider: null,
+      model: null,
+      toolCalls: 0,
+      toolRounds: 0,
+      durationMs: Date.now() - globalStart,
+      errorCode: 'ROUTER_TIMEOUT_TOTAL',
+      errorMessage: 'Total timeout exceeded',
+      trace: {
+        totalDurationMs: Date.now() - globalStart,
+        totalAttempts: attemptTraces.length,
+        providerChainLength: chainLength,
+        attempts: attemptTraces.map(t => ({ ...t })),
+        winningAttempt: null,
+        finalStatus: 'FAILED',
+        errorCode: 'ROUTER_TIMEOUT_TOTAL',
+        errorMessage: 'Total timeout exceeded',
+        timedOut: true,
+        globalTimeoutMs: totalMs,
+        finalizeWasCalled: false,
+        finalizeStatus: null,
+        commitSha: null,
+        agentId: task?.agentId ?? null,
+      },
+    };
+  }
+}
