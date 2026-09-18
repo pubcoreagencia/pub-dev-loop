@@ -46,9 +46,9 @@ export class StubNeuralQueryTransport implements NeuralQueryTransport {
 }
 
 /**
- * Preparatory HTTP transport boundary scaffold for PUB Neural Query.
+ * HTTP transport boundary for the canonical PUB Neural Runtime Query API.
  *
- * PHASE C CONFORMANCE STATUS: PREPARATORY ONLY (NON-OPERATIONAL).
+ * Runtime contract: POST /api/v1/runtime/query.
  * - PUB Neural has NO active HTTP server, REST API, or MCP endpoint in Phase C.
  * - This class provides an offline-safe transport client scaffold that fails closed
  *   with { status: 'UNAVAILABLE' } when unconfigured or unreachable.
@@ -75,19 +75,29 @@ export class HttpNeuralQueryTransport implements NeuralQueryTransport {
       };
     }
 
+    if (!this.token) {
+      return {
+        request_id: payload.request_id,
+        status: 'UNAVAILABLE',
+        results: [],
+        reason: 'PUB Neural token not configured (PUB_NEURAL_TOKEN missing)',
+      };
+    }
+
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
-      const url = this.endpoint.endsWith('/')
-        ? `${this.endpoint}v1/query`
-        : `${this.endpoint}/v1/query`;
+      const base = this.endpoint.replace(/\/$/, '');
+      const url = /\/api\/v1\/runtime$/.test(base)
+        ? `${base}/query`
+        : `${base}/api/v1/runtime/query`;
 
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+          Authorization: `Bearer ${this.token}`,
         },
         body: JSON.stringify(payload),
         signal: controller.signal,
