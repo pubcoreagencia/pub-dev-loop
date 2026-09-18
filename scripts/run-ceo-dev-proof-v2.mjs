@@ -27,6 +27,10 @@ const PG_URL = process.env.DATABASE_URL || 'postgres://pubdevloop:pubdevloop@loc
 const MODEL_ID = 'kc/cohere/north-mini-code:free';
 
 async function runProof() {
+  // Force the proof through the injected RouterProvider/9Router path.
+  // Do not let ROUTER_PROVIDER_CHAIN replace the provider with a non-host executor.
+  delete process.env.ROUTER_PROVIDER_CHAIN;
+
   console.log('==============================================================');
   console.log('CEO CORRECTION PROOF V2 — 9ROUTER CANONICAL PATH');
   console.log('==============================================================');
