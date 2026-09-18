@@ -106,6 +106,19 @@ export const CANONICAL_PUB_PRODUCTS: Record<string, ProductManifest> = {
     maxAutonomyLevel: 4, // Frontend core requires human release approval before push
     remotePersistenceEligible: false,
   },
+  'pub-neural': {
+    productId: 'pub-neural',
+    repository: 'https://github.com/pubcoreagencia/pub-neural.git',
+    organization: 'pubcoreagencia',
+    defaultBranch: 'main',
+    developmentBranchPolicy: ['feat/*', 'feature/*', 'fix/*', 'worker/*', 'neural-*'],
+    testCommand: 'bash tests/ingestion/run_ingestion_tests.sh',
+    validationCommand: 'python3 -m compileall -q src',
+    allowedPaths: ['src/**', 'tests/**', 'docs/**', 'migrations/**', '*.md'],
+    protectedPaths: ['.github/**', '.env*'],
+    maxAutonomyLevel: 4,
+    remotePersistenceEligible: true,
+  },
 };
 
 export class ProductCatalog {
