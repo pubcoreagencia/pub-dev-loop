@@ -78,7 +78,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node --input-type=module -e "import { Pool } from 'pg'; const p=new Pool({connectionString:process.env.DATABASE_URL}); await p.query(\"UPDATE pdl_governance_state SET active_level=1, kill_switch_active=false, updated_at=now(), updated_by='p1-2-operational-proof', reason='Controlled P1.2 operational worker proof' WHERE id='canonical'\"); await p.end();"
+          node --input-type=module -e "import { Pool } from 'pg'; const p=new Pool({connectionString:process.env.DATABASE_URL}); await p.query(\"UPDATE pdl_governance_state SET active_level=3, kill_switch_active=false, updated_at=now(), updated_by='p1-2-operational-proof', reason='Controlled P1.2 operational worker proof' WHERE id='canonical'\"); await p.end();"
 
       - name: Create disposable local Git repository
         id: sandbox
@@ -143,7 +143,7 @@ jobs:
           for i in $(seq 1 120); do
             ROW="$(node --input-type=module -e "import { Pool } from 'pg'; const p=new Pool({connectionString:process.env.DATABASE_URL}); const r=await p.query('SELECT id,status,worker,result,error,commit_sha,git_status FROM tasks WHERE id=\$1',[process.env.TASK_ID]); if (!r.rows[0]) process.exit(2); console.log(JSON.stringify(r.rows[0])); await p.end();")"
             echo "$ROW"
-            STATUS="$(node --input-type=module -e 'const x=JSON.parse(process.env.ROW); console.log(x.status)' ROW="$ROW")"
+            STATUS="$(ROW="$ROW" node --input-type=module -e 'const x=JSON.parse(process.env.ROW); console.log(x.status)')"
             if [[ "$STATUS" == "COMPLETED" || "$STATUS" == "FAILED" || "$STATUS" == "BLOCKED" || "$STATUS" == "NEEDS_REVIEW" ]]; then
               break
             fi
