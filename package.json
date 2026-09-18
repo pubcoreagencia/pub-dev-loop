@@ -14,6 +14,7 @@
     "worker:health": "node dist/worker-health.js",
     "router:start": "powershell -ExecutionPolicy Bypass -File start-9router.ps1",
     "router:health": "node dist/router-health.js",
+    "router:diagnose": "node scripts/diagnose-9router.mjs",
     "build": "tsc -p tsconfig.json",
     "build:cf": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
