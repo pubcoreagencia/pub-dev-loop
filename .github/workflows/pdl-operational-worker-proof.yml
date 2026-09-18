@@ -78,7 +78,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node --input-type=module -e "import { Pool } from 'pg'; const p=new Pool({connectionString:process.env.DATABASE_URL}); await p.query(\"UPDATE pdl_governance_state SET active_level=1, kill_switch_active=false, updated_at=now(), updated_by='p1-2-operational-proof', reason='Controlled P1.2 operational worker proof' WHERE id='canonical'\"); await p.end();
+          node --input-type=module -e "import { Pool } from 'pg'; const p=new Pool({connectionString:process.env.DATABASE_URL}); await p.query(\"UPDATE pdl_governance_state SET active_level=1, kill_switch_active=false, updated_at=now(), updated_by='p1-2-operational-proof', reason='Controlled P1.2 operational worker proof' WHERE id='canonical'\"); await p.end();"
 
       - name: Create disposable local Git repository
         id: sandbox
