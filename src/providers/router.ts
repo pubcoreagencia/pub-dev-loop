@@ -60,37 +60,61 @@ function buildUserPrompt(task: Task | ProviderTaskInput): OpenAIChatMessage {
 /**
  * Convert ToolDefinition[] to OpenAI tools format for the chat completion request.
  */
+export class ToolCallSerializationError extends Error {
+  readonly code = 'TOOL_PROTOCOL_FAILURE';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'ToolCallSerializationError';
+  }
+}
+
 export function normalizeToolCalls(toolCalls: ToolCall[] | undefined): ToolCall[] | undefined {
   if (!toolCalls) return undefined;
 
   return toolCalls.map((toolCall) => {
     const rawArguments = (toolCall.function as unknown as { arguments: unknown }).arguments;
-    let argumentsText: string;
 
     if (typeof rawArguments === 'string') {
       try {
         const parsed = JSON.parse(rawArguments);
-        argumentsText = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-          ? JSON.stringify(parsed)
-          : JSON.stringify({});
-      } catch {
-        argumentsText = JSON.stringify({});
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          throw new ToolCallSerializationError(
+            `Tool call '${toolCall.function.name}' arguments must be a JSON object`,
+          );
+        }
+
+        return {
+          ...toolCall,
+          function: {
+            ...toolCall.function,
+            arguments: JSON.stringify(parsed),
+          },
+        };
+      } catch (error) {
+        if (error instanceof ToolCallSerializationError) throw error;
+        throw new ToolCallSerializationError(
+          `Tool call '${toolCall.function.name}' arguments are not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
-    } else if (rawArguments && typeof rawArguments === 'object' && !Array.isArray(rawArguments)) {
-      argumentsText = JSON.stringify(rawArguments);
-    } else {
-      argumentsText = JSON.stringify({});
     }
 
-    return {
-      ...toolCall,
-      function: {
-        ...toolCall.function,
-        arguments: argumentsText,
-      },
-    };
+    if (rawArguments && typeof rawArguments === 'object' && !Array.isArray(rawArguments)) {
+      return {
+        ...toolCall,
+        function: {
+          ...toolCall.function,
+          arguments: JSON.stringify(rawArguments),
+        },
+      };
+    }
+
+    throw new ToolCallSerializationError(
+      `Tool call '${toolCall.function.name}' arguments must be a stringified JSON object`,
+    );
   });
 }
+
 
 function toOpenAITools(defs: ToolDefinition[]) {
   return defs.map(def => ({
@@ -441,6 +465,28 @@ export class RouterProvider implements AgentProvider {
               }
               const failureType = classifyFailure(null, fetchErr instanceof Error ? fetchErr.message : 'Router connection error', true);
               defaultModelHealthTracker.recordFailure('9router', model, failureType, fetchErr instanceof Error ? fetchErr.message : 'Router connection error');
+
+              if (fetchErr instanceof ToolCallSerializationError) {
+                clearTimeout(timer);
+                return {
+                  status: 'FAILED',
+                  provider: this.kind,
+                  model: modelUsed ?? model,
+                  exitCode: null,
+                  durationMs: Date.now() - started,
+                  stdout: finalMessage || lastResponseText,
+                  stderr: fetchErr.message,
+                  changedFiles: runtime.getChangedFiles(),
+                  commit: null,
+                  errorCode: 'TOOL_PROTOCOL_FAILURE',
+                  errorMessage: fetchErr.message,
+                  toolCalls: totalToolCalls,
+                  toolRounds: toolRounds,
+                  modelAttempts,
+                  decisionTrace: routingResult.decisionTrace,
+                  fallbackUsed: modelAttempts.length > 1,
+                };
+              }
 
               const isAbort = fetchErr?.message?.includes('abort') || fetchErr?.name === 'AbortError' || controller.signal.aborted;
               if (isAbort) {
