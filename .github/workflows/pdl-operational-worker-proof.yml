@@ -112,18 +112,7 @@ jobs:
           # Explicitly ensure bare HEAD points to refs/heads/main
           git -C "$UPSTREAM_BARE" symbolic-ref HEAD refs/heads/main
 
-          # Configure ephemeral job-scoped insteadOf rewrite:
-          # Maps canonical catalog URL to local bare repository for physical transport isolation
           CANONICAL_URL="https://github.com/pubcoreagencia/pub-dev-loop-template.git"
-          git config --global url."$UPSTREAM_BARE".insteadOf "$CANONICAL_URL"
-
-          # Verify rewrite is active before starting worker
-          RESOLVED_CLONE_TEST="$(git ls-remote "$CANONICAL_URL" refs/heads/main)"
-          test -n "$RESOLVED_CLONE_TEST" || {
-            echo "::error::Failed to resolve canonical URL via local insteadOf rewrite"
-            exit 1
-          }
-          echo "Verified local transport rewrite: $RESOLVED_CLONE_TEST"
 
           echo "upstream_bare=$UPSTREAM_BARE" >> "$GITHUB_OUTPUT"
           echo "canonical_url=$CANONICAL_URL" >> "$GITHUB_OUTPUT"
@@ -191,6 +180,10 @@ jobs:
           NODE
 
       - name: Start canonical PDL worker
+        env:
+          PDL_ISOLATED_GIT_TRANSPORT: |
+            {"https://github.com/pubcoreagencia/pub-dev-loop-template.git":"${{ steps.sandbox.outputs.upstream_bare }}"}
+          PDL_GIT_TRANSPORT_AUDIT_LOG: /tmp/git-transport-audit.jsonl
         shell: bash
         run: |
           set -euo pipefail
@@ -238,24 +231,25 @@ jobs:
           console.log('P1.2 GOVERNANCE OPERATIONAL PROOF: PASS');
           NODE
 
-      - name: Verify isolated bare repository persistence
+      - name: Verify isolated bare repository persistence and anti-leak audit
         env:
           UPSTREAM_BARE: ${{ steps.sandbox.outputs.upstream_bare }}
           TASK_ID: ${{ steps.seed.outputs.task_id }}
+          AUDIT_LOG: /tmp/git-transport-audit.jsonl
         shell: bash
         run: |
           set -euo pipefail
           COMMIT_SHA="$(node --input-type=module -e "import { Pool } from 'pg'; const p=new Pool({connectionString:process.env.DATABASE_URL}); const r=await p.query('SELECT commit_sha FROM tasks WHERE id=\$1',[process.env.TASK_ID]); console.log(r.rows[0].commit_sha); await p.end();")"
           echo "Expected commit SHA: $COMMIT_SHA"
 
-          # Verify that bare upstream received the push and contains the exact commit
+          # 1. Verify that bare upstream received the push and contains the exact commit
           git -C "$UPSTREAM_BARE" cat-file -e "${COMMIT_SHA}^{commit}" || {
             echo "::error::Commit $COMMIT_SHA was not found in isolated bare repository $UPSTREAM_BARE"
             exit 1
           }
           echo "Verified commit $COMMIT_SHA exists in isolated bare upstream repository."
 
-          # Prove that OPERATIONAL_GOVERNANCE_PROOF.md was committed to the pushed branch
+          # 2. Prove that OPERATIONAL_GOVERNANCE_PROOF.md was committed to the pushed branch
           SHOW_OUTPUT="$(git -C "$UPSTREAM_BARE" show "${COMMIT_SHA}:OPERATIONAL_GOVERNANCE_PROOF.md")"
           echo "OPERATIONAL_GOVERNANCE_PROOF.md content:"
           echo "$SHOW_OUTPUT"
@@ -263,6 +257,36 @@ jobs:
             echo "::error::Proof file not present in commit object"
             exit 1
           }
+
+          # 3. Anti-leak verification on transport audit log
+          test -f "$AUDIT_LOG" || {
+            echo "::error::Audit log $AUDIT_LOG was not generated"
+            exit 1
+          }
+          echo "--- Isolated Transport Audit Log ---"
+          cat "$AUDIT_LOG"
+
+          # Verify no leaked credentials and every operation resolved to bare
+          node --input-type=module <<NODE
+          import fs from 'node:fs';
+          const content = fs.readFileSync('$AUDIT_LOG', 'utf8').trim();
+          if (!content) throw new Error('Audit log is empty');
+          const lines = content.split('\n');
+          for (const l of lines) {
+            const ev = JSON.parse(l);
+            if (ev.resolvedTarget !== '$UPSTREAM_BARE') {
+              throw new Error('Audit target mismatch: expected $UPSTREAM_BARE, got ' + ev.resolvedTarget);
+            }
+            if (ev.isLocalBare !== true) {
+              throw new Error('Audit reported non-bare target');
+            }
+            if (l.includes('ghp_') || l.includes('github_pat_') || l.includes('x-access-token')) {
+              throw new Error('Credential detected in audit log!');
+            }
+          }
+          console.log('ANTI-LEAK AUDIT: VERIFIED PASS (' + lines.length + ' remote operations intercepted safely to bare)');
+          NODE
+
           echo "ISOLATED BARE UPSTREAM PERSISTENCE: VERIFIED PASS"
 
       - name: Evidence summary
