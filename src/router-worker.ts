@@ -107,15 +107,15 @@ function getRetryReason(result: ProviderTaskResult): string | null {
 }
 
 function getRetryConfig(): {
-  maxAttempts: number;
+  maxAttempts?: number;
   timeoutPerAttemptMs: number;
   timeoutTotalMs: number;
   backoffMs: number;
 } {
   return {
-    maxAttempts: Number(process.env.ROUTER_MAX_ATTEMPTS ?? 1),
-    timeoutPerAttemptMs: Number(process.env.ROUTER_TIMEOUT_PER_ATTEMPT_MS ?? 60000),
-    timeoutTotalMs: Number(process.env.ROUTER_TIMEOUT_TOTAL_MS ?? 180000),
+    maxAttempts: process.env.ROUTER_MAX_ATTEMPTS !== undefined ? Number(process.env.ROUTER_MAX_ATTEMPTS) : undefined,
+    timeoutPerAttemptMs: Number(process.env.ROUTER_TIMEOUT_PER_ATTEMPT_MS ?? 300000),
+    timeoutTotalMs: Number(process.env.ROUTER_TIMEOUT_TOTAL_MS ?? 600000),
     backoffMs: Number(process.env.ROUTER_BACKOFF_MS ?? 1000),
   };
 }
@@ -226,6 +226,23 @@ export class RouterWorker extends BaseWorker {
   protected getProviderChain(): AgentProvider[] {
     const chain = process.env.ROUTER_PROVIDER_CHAIN;
     if (!chain) {
+      if (this.provider.kind === 'openrouter' && process.env.OPENROUTER_FALLBACK_MODELS) {
+        const fallbacks = process.env.OPENROUTER_FALLBACK_MODELS.split(',').map(s => s.trim()).filter(Boolean);
+        if (fallbacks.length > 0) {
+          const providers: AgentProvider[] = [this.provider];
+          for (const fb of fallbacks) {
+            providers.push(
+              new OpenRouterProvider(
+                process.env.OPENROUTER_BASE_URL,
+                process.env.OPENROUTER_API_KEY,
+                Number(process.env.OPENROUTER_TIMEOUT_MS ?? 900000),
+                fb,
+              )
+            );
+          }
+          return providers;
+        }
+      }
       return [this.provider];
     }
 
@@ -304,7 +321,9 @@ export class RouterWorker extends BaseWorker {
 
     const config = getRetryConfig();
     const providers = this.getProviderChain();
-    const maxAttempts = Math.min(config.maxAttempts, providers.length);
+    const defaultMaxAttempts = providers.length > 1 ? providers.length : 1;
+    const configuredMax = config.maxAttempts !== undefined ? config.maxAttempts : defaultMaxAttempts;
+    const maxAttempts = Math.max(1, Math.min(configuredMax, providers.length));
     const effectiveProviders = providers.slice(0, maxAttempts);
 
     const globalStart = Date.now();

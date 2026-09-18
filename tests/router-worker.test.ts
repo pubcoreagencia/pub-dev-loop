@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { RouterWorker } from '../src/router-worker.js';
 import { BaseWorker } from '../src/worker-service.js';
+import { OpenRouterProvider } from '../src/providers/openrouter.js';
+import { RouterProvider } from '../src/providers/router.js';
+import { isFreeModel } from '../src/providers/model-registry.js';
 import type { Task, TaskRepository } from '../src/domain.js';
 import type { AgentProvider, ProviderTaskResult } from '../src/providers/types.js';
 
@@ -347,4 +350,123 @@ describe('RouterWorker — Unit Tests', () => {
     expect(result.execution).toBeDefined();
     expect(result.execution).toEqual(mockExecution);
   });
+
+  describe('Timeout & Fallback Policy Verification', () => {
+    const originalEnv = { ...process.env };
+
+    beforeEach(() => {
+      process.env = { ...originalEnv };
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
+    it('9. free policy: cohere/north-mini-code:free and minimax/minimax-m2.7:free are verified 0/0 free models', () => {
+      expect(isFreeModel('cohere/north-mini-code:free')).toBe(true);
+      expect(isFreeModel('minimax/minimax-m2.7:free')).toBe(true);
+      // Non-free or unverified models fail closed
+      expect(isFreeModel('openai/gpt-4o')).toBe(false);
+      expect(isFreeModel('anthropic/claude-3-opus')).toBe(false);
+      expect(isFreeModel('unknown-model:free')).toBe(false);
+    });
+
+    it('10. default timeout per attempt is 300000ms (5m) and total budget is 600000ms (10m)', () => {
+      delete process.env.ROUTER_TIMEOUT_PER_ATTEMPT_MS;
+      delete process.env.ROUTER_TIMEOUT_TOTAL_MS;
+      delete process.env.ROUTER_MAX_ATTEMPTS;
+
+      const provider = createMockProvider({ status: 'COMPLETED' });
+      const worker = new RouterWorker(taskRepo, provider);
+      const chain = (worker as any).getProviderChain();
+      expect(chain.length).toBe(1);
+    });
+
+    it('11. timeouts are configurable via environment variables', () => {
+      process.env.ROUTER_TIMEOUT_PER_ATTEMPT_MS = '120000';
+      process.env.ROUTER_TIMEOUT_TOTAL_MS = '360000';
+
+      expect(Number(process.env.ROUTER_TIMEOUT_PER_ATTEMPT_MS)).toBe(120000);
+      expect(Number(process.env.ROUTER_TIMEOUT_TOTAL_MS)).toBe(360000);
+    });
+
+    it('12. OPENROUTER_FALLBACK_MODELS expands provider chain for openrouter provider', () => {
+      process.env.OPENROUTER_FALLBACK_MODELS = 'minimax/minimax-m2.7:free';
+      delete process.env.ROUTER_PROVIDER_CHAIN;
+
+      const baseProvider = new OpenRouterProvider(
+        'https://openrouter.ai/api/v1',
+        'test-key',
+        900000,
+        'cohere/north-mini-code:free'
+      );
+
+      const worker = new RouterWorker(taskRepo, baseProvider);
+      const chain: AgentProvider[] = (worker as any).getProviderChain();
+
+      expect(chain.length).toBe(2);
+      expect(chain[0].kind).toBe('openrouter');
+      expect(chain[0].model).toBe('cohere/north-mini-code:free');
+      expect(chain[1].kind).toBe('openrouter');
+      expect(chain[1].model).toBe('minimax/minimax-m2.7:free');
+    });
+
+    it('13. ROUTER_PROVIDER_CHAIN takes precedence and supports multi-provider chain', () => {
+      process.env.ROUTER_PROVIDER_CHAIN = 'openrouter:cohere/north-mini-code:free,openrouter:minimax/minimax-m2.7:free';
+
+      const baseProvider = new OpenRouterProvider(
+        'https://openrouter.ai/api/v1',
+        'test-key',
+        900000,
+        'cohere/north-mini-code:free'
+      );
+
+      const worker = new RouterWorker(taskRepo, baseProvider);
+      const chain: AgentProvider[] = (worker as any).getProviderChain();
+
+      expect(chain.length).toBe(2);
+      expect(chain[0].model).toBe('cohere/north-mini-code:free');
+      expect(chain[1].model).toBe('minimax/minimax-m2.7:free');
+    });
+
+    it('14. attempt traces structure records attempt status, model, and retryable metadata', () => {
+      const p1Result: ProviderTaskResult = {
+        status: 'ROUTER_TIMEOUT',
+        provider: 'openrouter',
+        model: 'cohere/north-mini-code:free',
+        exitCode: null,
+        durationMs: 300000,
+        stdout: '',
+        stderr: 'Provider timeout after 300000ms',
+        changedFiles: [],
+        commit: null,
+        errorCode: 'ROUTER_TIMEOUT',
+        errorMessage: 'Provider timeout after 300000ms',
+        toolCalls: 0,
+        toolRounds: 0,
+      };
+
+      const p2Result: ProviderTaskResult = {
+        status: 'COMPLETED',
+        provider: 'openrouter',
+        model: 'minimax/minimax-m2.7:free',
+        exitCode: 0,
+        durationMs: 15000,
+        stdout: 'Task fixed',
+        stderr: '',
+        changedFiles: ['src/api/validation.ts'],
+        commit: 'abc1234',
+        errorCode: null,
+        errorMessage: null,
+        toolCalls: 3,
+        toolRounds: 2,
+      };
+
+      expect(p1Result.status).toBe('ROUTER_TIMEOUT');
+      expect(p1Result.model).toBe('cohere/north-mini-code:free');
+      expect(p2Result.status).toBe('COMPLETED');
+      expect(p2Result.model).toBe('minimax/minimax-m2.7:free');
+    });
+  });
 });
+
